@@ -3,7 +3,10 @@
 // package implements it in software for tests and screenshots.
 package ui
 
-import "math"
+import (
+	"image"
+	"math"
+)
 
 // Color is 0xAARRGGBB (straight alpha).
 type Color uint32
@@ -102,6 +105,9 @@ type Gfx interface {
 	Gradient(r Rect, top, bottom Color)
 	// FillPathGradient fills p with a vertical gradient from top (at y0) to bottom (at y1).
 	FillPathGradient(p *Path, top, bottom Color, y0, y1 float32)
+
+	// Image draws img to cover r (cropped to keep its shape), with rounded corners.
+	Image(img image.Image, r Rect, radius float32)
 
 	Text(s string, x, baseline float32, f Font, c Color)
 	Measure(s string, f Font) float32
@@ -482,3 +488,20 @@ func (r Rect) Intersects(o Rect) bool {
 }
 func (r Rect) Empty() bool                 { return r.W <= 0 || r.H <= 0 }
 func RectAround(cx, cy, w, h float32) Rect { return Rect{cx - w/2, cy - h/2, w, h} }
+
+// CoverRect returns the part of an image of size (iw, ih) that fills a box of
+// shape (w, h) without stretching (centered crop), in image pixels.
+func CoverRect(iw, ih int, w, h float32) image.Rectangle {
+	if iw <= 0 || ih <= 0 || w <= 0 || h <= 0 {
+		return image.Rect(0, 0, iw, ih)
+	}
+	ar := w / h
+	if float32(iw)/float32(ih) > ar {
+		cw := int(float32(ih) * ar)
+		x := (iw - cw) / 2
+		return image.Rect(x, 0, x+cw, ih)
+	}
+	ch := int(float32(iw) / ar)
+	y := (ih - ch) / 2
+	return image.Rect(0, y, iw, y+ch)
+}

@@ -23,6 +23,7 @@ const (
 	actFullscreen
 	actSettings
 	actMute
+	actAI
 	actTab1 // actTab1+n selects tab n+1; the last one is actTab9 (last tab)
 )
 
@@ -56,6 +57,8 @@ func vkAction(k webview.Key) action {
 			return actSettings
 		case vk == 'M':
 			return actMute
+		case vk == 'J':
+			return actAI
 		}
 	case k.Alt && !k.Ctrl:
 		switch vk {
@@ -118,6 +121,8 @@ func keyAction(k ui.KeyPress) action {
 			return actSettings
 		case ui.KM:
 			return actMute
+		case ui.KJ:
+			return actAI
 		}
 		for i, d := range digitKeys {
 			if k.Key == d {
@@ -189,18 +194,23 @@ func (a *App) do(act action) {
 		a.selectTab(int(act - actTab1))
 	case act == actSettings:
 		a.panel = !a.panel
+		a.ai.open = a.ai.open && !a.panel
+	case act == actAI:
+		if a.ai.open {
+			a.ai.open = false
+		} else {
+			a.openAI("")
+		}
 	case act == actFullscreen:
 		a.winFull = !a.winFull
 		a.h.SetFullscreen(a.winFull || a.full)
 	case t == nil:
 	case act == actReload:
 		a.reload(t)
-	case act == actBack && t.view != nil:
-		v := t.view
-		a.web(v.Back)
-	case act == actForward && t.view != nil:
-		v := t.view
-		a.web(v.Forward)
+	case act == actBack:
+		a.back(t)
+	case act == actForward:
+		a.forward(t)
 	case act == actMute:
 		a.toggleMute(t)
 	}
@@ -208,6 +218,12 @@ func (a *App) do(act action) {
 
 func (a *App) reload(t *Tab) {
 	if t.URL == "" {
+		return
+	}
+	if s := t.search; s != nil {
+		n := a.startSearch(s.Q, s.Mode, s.URL, t.private())
+		n.section = s.section
+		t.search = n
 		return
 	}
 	if t.Crashed || t.view == nil {
@@ -239,7 +255,7 @@ func (a *App) focusAddress() {
 	} else {
 		a.st.Focus = ID("addr")
 		if t != nil {
-			a.addr.Set(t.URL)
+			a.addr.Set(t.addrText())
 		}
 		a.addr.SelectAll()
 	}

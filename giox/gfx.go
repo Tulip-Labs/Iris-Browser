@@ -2,6 +2,7 @@
 package giox
 
 import (
+	"image"
 	"image/color"
 	"math"
 
@@ -30,6 +31,8 @@ type Gfx struct {
 	glyphs []text.Glyph
 	meas   map[measKey]float32
 	metric map[ui.Font][2]float32
+	images map[image.Image]paint.ImageOp
+	used   map[image.Image]bool
 }
 
 type mark struct {
@@ -62,7 +65,7 @@ func newShaper() *text.Shaper {
 
 // NewGfx makes the Gio drawing surface.
 func NewGfx() *Gfx {
-	return &Gfx{shaper: newShaper(), meas: map[measKey]float32{}, metric: map[ui.Font][2]float32{}}
+	return &Gfx{shaper: newShaper(), meas: map[measKey]float32{}, metric: map[ui.Font][2]float32{}, images: map[image.Image]paint.ImageOp{}, used: map[image.Image]bool{}}
 }
 
 // Begin starts a frame on ops with the device scale.
@@ -75,7 +78,38 @@ func (g *Gfx) Begin(ops *op.Ops, base float32) {
 	}
 }
 
+// Image draws img covering r with rounded corners. Each image is uploaded once
+// and kept while it is drawn; images not drawn for a frame are let go.
+func (g *Gfx) Image(img image.Image, r ui.Rect, radius float32) {
+	if img == nil || r.Empty() {
+		return
+	}
+	io, ok := g.images[img]
+	if !ok {
+		io = paint.NewImageOp(img)
+		io.Filter = paint.FilterLinear
+		g.images[img] = io
+	}
+	g.used[img] = true
+	b := img.Bounds()
+	src := ui.CoverRect(b.Dx(), b.Dy(), r.W, r.H)
+	defer clip.Outline{Path: g.spec(ui.NewPath().RoundRect(r, radius), true)}.Op().Push(g.ops).Pop()
+	sx, sy := r.W/float32(src.Dx()), r.H/float32(src.Dy())
+	tr := f32.Affine2D{}.Offset(f32.Pt(-float32(src.Min.X-b.Min.X), -float32(src.Min.Y-b.Min.Y))).Scale(f32.Point{}, f32.Pt(sx, sy)).Offset(f32.Pt(r.X, r.Y))
+	defer op.Affine(tr).Push(g.ops).Pop()
+	io.Add(g.ops)
+	paint.PaintOp{}.Add(g.ops)
+}
+
 func (g *Gfx) End() {
+	if len(g.images) > len(g.used) {
+		for k := range g.images {
+			if !g.used[k] {
+				delete(g.images, k)
+			}
+		}
+	}
+	clear(g.used)
 	for len(g.stack) > 0 {
 		g.stack[len(g.stack)-1]()
 		g.stack = g.stack[:len(g.stack)-1]

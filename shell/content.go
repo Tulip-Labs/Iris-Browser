@@ -9,22 +9,6 @@ import (
 	"litego/ui"
 )
 
-type quick struct {
-	name, url, color string
-}
-
-// quickSites open with one click from the new tab page (no bookmarks to keep).
-var quickSites = []quick{
-	{"Google", "https://www.google.com/", "#4285f4"},
-	{"YouTube", "https://www.youtube.com/", "#e62117"},
-	{"Gmail", "https://mail.google.com/", "#d93025"},
-	{"Maps", "https://www.google.com/maps", "#188038"},
-	{"WhatsApp", "https://web.whatsapp.com/", "#1fa855"},
-	{"Drive", "https://drive.google.com/", "#e3a008"},
-	{"GitHub", "https://github.com/", "#24292f"},
-	{"Wikipedia", "https://www.wikipedia.org/", "#55595f"},
-}
-
 // content draws what the page area shows when it is not a live page.
 func (a *App) content(r ui.Rect) {
 	g, th := a.u.G, a.u.Th
@@ -35,6 +19,8 @@ func (a *App) content(r ui.Rect) {
 	switch {
 	case t.URL == "":
 		a.ntp(r, t)
+	case t.search != nil:
+		a.results(r, t)
 	case t.Crashed:
 		a.message(r, ui.IWarning, "This page stopped working",
 			"Its process ended (it may have run out of memory). Reload to open it again.", "Reload", func() { a.reload(t) })
@@ -109,7 +95,8 @@ func wrap(g ui.Gfx, text string, f ui.Font, w float32) []string {
 	return out
 }
 
-// ntp is the new tab page, drawn by Lite Go itself so it opens instantly.
+// ntp is the new tab page, drawn by Lite Go itself so it opens instantly: the
+// mark, the search and its modes, nothing else.
 func (a *App) ntp(r ui.Rect, t *Tab) {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	ui.FillRound(g, r, 14, pageColor(th))
@@ -118,40 +105,40 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 	defer g.Restore()
 	colW := min(680, r.W-48)
 	cx := r.CX()
-	compact := r.H < 560
-	y := r.Y + max(28, r.H*0.13)
-	if compact {
-		y = r.Y + 24
-	}
 
-	// heading: the mark and what kind of tab this is
 	title, sub := "Lite Go", "Light on memory. Fast to Google and YouTube."
-	markCol := th.Primary
 	switch t.Kind {
 	case KPrivate:
-		title, sub, markCol = "Private tab", "Nothing from this tab is kept: no history, cookies or cache after the last private tab closes.", ui.Hex("#3a2d48")
+		title, sub = "Private tab", "Nothing from this tab is kept: no history, cookies or cache after the last private tab closes."
 	case KTemp:
-		title, sub, markCol = "Temporary tab", "A fresh session for this tab alone. Sign in to a second account here; it is wiped when the tab closes.", th.Hl
+		title, sub = "Temporary tab", "A fresh session for this tab alone. Sign in to a second account here; it is wiped when the tab closes."
 	case KContainer:
-		title, sub, markCol = t.Container, "A container: its own sign-ins and cookies, kept apart from your other tabs.", containerColor(t.Container)
+		title, sub = t.Container, "A container: its own sign-ins and cookies, kept apart from your other tabs."
 	}
-	ms := float32(40)
+	subLines := wrap(g, sub, ui.FBody, colW)
+	const ms = 44
+	blockH := float32(ms+16) + float32(len(subLines))*22 + 22 + 56 + 16 + 34
+	y := r.Y + max(24, (r.H-blockH)*0.38)
+
+	// heading: the mark (or the kind's icon in its color) and the title
 	tw := g.Measure(title, ui.FBig)
 	hx := cx - (ms+14+tw)/2
 	mr := ui.Rect{X: hx, Y: y, W: ms, H: ms}
-	logo(g, mr, th, markCol)
-	if t.Kind == KPrivate || t.Kind == KContainer || t.Kind == KTemp {
-		ic := map[Kind]ui.Icon{KPrivate: ui.IPrivate, KContainer: ui.IContainer, KTemp: ui.IReset}[t.Kind]
-		ui.FillRoundAccent(g, mr, ms*0.3, markCol)
-		ui.DrawIcon(g, ic, mr.CX()-11, mr.CY()-11, 22, ui.White)
+	if t.Kind == KNormal {
+		logo(g, mr, th, th.Primary)
+	} else {
+		ic, col := a.kindIcon(t)
+		ui.Shadow(g, mr, ms*0.3, th.Shadow, 0.6, 1.5)
+		ui.FillRoundAccent(g, mr, ms*0.3, col)
+		ui.DrawIcon(g, ic, mr.CX()-12, mr.CY()-12, 24, ui.White)
 	}
 	g.Text(title, hx+ms+14, ui.Mid(g, y, ms, ui.FBig), ui.FBig, th.OnSurface)
-	y += ms + 14
-	for _, ln := range wrap(g, sub, ui.FBody, colW) {
+	y += ms + 16
+	for _, ln := range subLines {
 		ui.TextCenter(g, ln, ui.Rect{X: cx - colW/2, Y: y, W: colW, H: 22}, ui.FBody, th.OnSurfaceVariant)
 		y += 22
 	}
-	y += 18
+	y += 22
 
 	// the search pill
 	sr := ui.Rect{X: cx - colW/2, Y: y, W: colW, H: 56}
@@ -175,6 +162,36 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 	y = sr.B() + 16
 
 	// search modes as M3 filter chips
+	a.modeChips(cx, y, func() { a.st.Focus = id; a.suggest(a.ntpQ.Text()) })
+
+	// footer: what the shield did and how much memory the pages use
+	fy := r.B() - 34
+	if fy > y+60 {
+		parts := []string{}
+		if a.shield.On {
+			parts = append(parts, "Shield on · "+comma(a.blockedTotal)+" ads and trackers blocked")
+		} else {
+			parts = append(parts, "Shield off")
+		}
+		if a.memMB > 0 {
+			parts = append(parts, "Pages "+mb(a.memMB))
+		}
+		s := strings.Join(parts, "   ·   ")
+		sw := g.Measure(s, ui.FSmall) + 24
+		ui.DrawIcon(g, ui.IShield, cx-sw/2-4, fy-1, 16, th.Primary)
+		g.Text(s, cx-sw/2+18, fy+12, ui.FSmall, th.OnSurfaceVariant)
+	}
+
+	if focused && len(a.sugg) > 0 {
+		h := float32(len(a.sugg))*40 + 12
+		a.suggestions(ui.Rect{X: sr.X, Y: sugTop, W: sr.W, H: h}, ID("sugN"))
+	}
+	_ = u
+}
+
+// modeChips draws the search modes centered at cx; picked runs after a change.
+func (a *App) modeChips(cx, y float32, picked func()) {
+	u, g, th := &a.u, a.u.G, a.u.Th
 	const chipH = 34
 	var widths []float32
 	total := float32(0)
@@ -202,102 +219,16 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 		if sel {
 			fg = th.OnSecondaryContainer
 		}
-		ic := modeIcons[i]
-		if sel {
-			ic = ui.ICheck
-		}
-		ui.DrawIcon(g, ic, cr.X+12, cr.CY()-9, 18, fg)
+		ui.DrawIcon(g, modeIcons[i], cr.X+12, cr.CY()-9, 18, fg)
 		g.Text(l, cr.X+36, ui.Mid(g, cr.Y, cr.H, ui.FSmallBold), ui.FSmallBold, fg)
 		if u.Clickable(ui.IdN("mode", i), cr) {
 			a.set.Mode = core.Mode(i)
 			a.set.Save()
-			a.st.Focus = id
-			a.suggest(a.ntpQ.Text())
+			if picked != nil {
+				picked()
+			}
 		}
 		x += widths[i] + 8
-	}
-	y += chipH + 30
-
-	// tiles: quick sites, then the most visited (never for private tabs)
-	tile := func(i int, idp, name, url string, col ui.Color, tr ui.Rect) {
-		hot := u.Hover(tr)
-		if hot {
-			ui.Glass(g, tr, 18, th, false, true)
-		}
-		cr := ui.RectAround(tr.CX(), tr.Y+32, 48, 48)
-		ui.FillRoundAccent(g, cr, 16, col)
-		ui.TextCenter(g, monogram(core.Host(url)), cr, ui.Font{Size: 20, Bold: true}, ui.White)
-		if name == "YouTube" {
-			// a small play mark reads better than a letter
-			ui.FillRoundAccent(g, cr, 16, col)
-			ui.DrawIcon(g, ui.IPlay, cr.CX()-11, cr.CY()-11, 22, ui.White)
-		}
-		ui.TextCenter(g, ui.Fit(g, name, ui.FSmall, tr.W-8), ui.Rect{X: tr.X, Y: cr.B() + 6, W: tr.W, H: 20}, ui.FSmall, th.OnSurface)
-		u.Tooltip(core.Display(url), tr)
-		if u.Clickable(ui.IdN(idp, i), tr) {
-			a.visit(url)
-		}
-	}
-	const th0 = 96
-	tw0 := float32(92)
-	cols := 4
-	if colW >= 8*78 {
-		cols, tw0 = 8, min(92, colW/8)
-	}
-	gridW := float32(cols) * tw0
-	gx := cx - gridW/2
-	for i, q := range quickSites {
-		c, row := i%cols, i/cols
-		tile(i, "quick", q.name, q.url, ui.Hex(q.color), ui.Rect{X: gx + float32(c)*tw0, Y: y + float32(row)*th0, W: tw0 - 6, H: th0 - 6})
-	}
-	y += float32((len(quickSites)+cols-1)/cols) * th0
-	if !t.private() {
-		var top []core.Entry
-		quickHost := map[string]bool{}
-		for _, q := range quickSites {
-			quickHost[core.Host(q.url)] = true
-		}
-		for _, e := range a.hist.Top(16) {
-			if !quickHost[core.Host(e.URL)] && len(top) < cols {
-				top = append(top, e)
-			}
-		}
-		if len(top) > 0 && y+th0+40 < r.B()-40 {
-			y += 10
-			g.Text("Most visited", gx+8, y+14, ui.FSmallBold, th.OnSurfaceVariant)
-			y += 26
-			for i, e := range top {
-				name := e.Title
-				if name == "" || len(name) > 22 {
-					name = strings.TrimPrefix(core.Host(e.URL), "www.")
-				}
-				tile(i, "top", name, e.URL, siteColor(core.Host(e.URL)), ui.Rect{X: gx + float32(i)*tw0, Y: y, W: tw0 - 6, H: th0 - 6})
-			}
-			y += th0
-		}
-	}
-
-	// footer: what the shield did and how much memory the pages use
-	fy := r.B() - 34
-	if fy > y+8 {
-		parts := []string{}
-		if a.shield.On {
-			parts = append(parts, "Shield on · "+comma(a.blockedTotal)+" ads and trackers blocked")
-		} else {
-			parts = append(parts, "Shield off")
-		}
-		if a.memMB > 0 {
-			parts = append(parts, "Pages "+mb(a.memMB))
-		}
-		s := strings.Join(parts, "   ·   ")
-		sw := g.Measure(s, ui.FSmall) + 24
-		ui.DrawIcon(g, ui.IShield, cx-sw/2-4, fy-1, 16, th.Primary)
-		g.Text(s, cx-sw/2+18, fy+12, ui.FSmall, th.OnSurfaceVariant)
-	}
-
-	if focused && len(a.sugg) > 0 {
-		h := float32(len(a.sugg))*40 + 12
-		a.suggestions(ui.Rect{X: sr.X, Y: sugTop, W: sr.W, H: h}, ID("sugN"))
 	}
 }
 

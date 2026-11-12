@@ -10,6 +10,8 @@ import (
 )
 
 func focusWindow(uintptr) {}
+func allowForeground(int) {}
+func setStartup(bool)     {}
 
 func totalMB() int {
 	f, err := os.Open("/proc/meminfo")

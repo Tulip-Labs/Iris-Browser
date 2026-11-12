@@ -8,6 +8,8 @@
 package shell
 
 import (
+	"context"
+	"image"
 	"sync"
 	"time"
 
@@ -26,6 +28,8 @@ type Host interface {
 	Close()
 	// FocusWindow takes the keyboard back from the page (call on the window thread).
 	FocusWindow()
+	// Quit ends Lite Go entirely (closing the window may keep it ready in the background).
+	Quit()
 }
 
 // Config sets up the interface.
@@ -35,6 +39,10 @@ type Config struct {
 	TotalMB int            // system memory, for the tab sleep plan
 	Version string
 	SelfMB  func() float64 // this process's memory (nil = unknown)
+	// SetBoost turns starting with Windows on or off (nil where it does not apply).
+	SetBoost func(on bool)
+	// Core reuses preloaded settings, history and shield (the background mode).
+	Core *Core
 }
 
 // App is the browser window's interface.
@@ -75,6 +83,8 @@ type App struct {
 	railScroll  ui.Scroll
 	stripScroll float32
 	newCont     *ui.TextEdit
+	contName    *ui.TextEdit
+	editCont    int
 	bar         infobar
 
 	insecureMu sync.Mutex
@@ -85,10 +95,20 @@ type App struct {
 	calls []func()
 
 	blockedTotal int
+
+	workers      [4]*worker
+	wakeAt       float64
+	thumbs       map[string]*thumb
+	thumbSem     chan struct{}
+	fetchImage   func(ctx context.Context, src string, maxW int) (image.Image, error)
+	ytSearch     func(ctx context.Context, q string) ([]core.VideoResult, error)
+	ai           aiPanel
 	memMB, appMB float64
 	lastMem      float64
 	lastTick     float64
 	start        time.Time
+	stop         chan struct{}
+	stopped      bool
 }
 
 type closedTab struct {
@@ -107,20 +127,28 @@ type infobar struct {
 // New makes the interface; call Started once the engine is running.
 func New(h Host, cfg Config) *App {
 	a := &App{h: h, cfg: cfg, eng: cfg.Engine, In: ui.NewInput(), Scale: 1,
-		addr: ui.NewTextEdit("", false), ntpQ: ui.NewTextEdit("", false), newCont: ui.NewTextEdit("", false),
-		insecureOK: map[string]bool{}, start: time.Now(), lastMem: -10}
-	a.set = core.LoadSettings(cfg.DataDir)
-	a.hist = core.OpenHistory(cfg.DataDir)
-	a.shield = core.NewShield()
-	a.shield.On = a.set.Shield
-	for _, h := range a.set.ShieldOff {
-		a.shield.SetSiteOff(h, true)
+		addr: ui.NewTextEdit("", false), ntpQ: ui.NewTextEdit("", false), newCont: ui.NewTextEdit("", false), contName: ui.NewTextEdit("", false), editCont: -1,
+		insecureOK: map[string]bool{}, start: time.Now(), lastMem: -10,
+		thumbs: map[string]*thumb{}, thumbSem: make(chan struct{}, 6), fetchImage: core.FetchImage, ytSearch: core.YouTubeSearch}
+	a.ai.input = ui.NewTextEdit("", false)
+	c := cfg.Core
+	if c == nil {
+		c = LoadCore(cfg.DataDir)
 	}
+	a.set, a.hist, a.shield = c.Settings, c.History, c.Shield
 	a.plan = core.Plan(cfg.TotalMB, a.set.Memory)
 	a.newTab(KNormal, "", "", true)
+	a.stop = make(chan struct{})
 	go func() { // the sleep policy and the memory readout need a frame now and then
-		for range time.Tick(2 * time.Second) {
-			h.Invalidate()
+		tk := time.NewTicker(2 * time.Second)
+		defer tk.Stop()
+		for {
+			select {
+			case <-tk.C:
+				h.Invalidate()
+			case <-a.stop:
+				return
+			}
 		}
 	}()
 	return a
@@ -202,6 +230,16 @@ func (a *App) Fullscreen() bool { return a.full || a.winFull }
 // Close flushes settings and closes every page (call before the window goes).
 func (a *App) Close() {
 	a.set.Flush()
+	if !a.stopped {
+		a.stopped = true
+		close(a.stop)
+	}
+	for _, w := range a.workers {
+		if w != nil && w.view != nil {
+			a.web(w.view.Close)
+			w.view = nil
+		}
+	}
 	for _, t := range a.tabs {
 		if t.view != nil {
 			v := t.view
@@ -234,8 +272,12 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	u.W, u.H, u.Layer, u.InputLayer, u.Redraw = w, h, 0, 0, false
 	a.MoveAreas = a.MoveAreas[:0]
 
+	if a.wakeAt > 0 && a.now() >= a.wakeAt {
+		a.wakeAt = 0
+	}
 	a.shortcuts()
 	a.tick()
+	a.runWorkers()
 
 	full := ui.Rect{W: w, H: h}
 	var page ui.Rect
@@ -277,3 +319,26 @@ func (a *App) OpenURL(u string) {
 	}
 	a.newTab(KNormal, "", u, true)
 }
+
+// Core is what loads before the window: settings, history and the shield.
+type Core struct {
+	Settings *core.Settings
+	History  *core.History
+	Shield   *core.Shield
+}
+
+// LoadCore loads them (the history and the shield finish in the background).
+func LoadCore(dir string) *Core {
+	c := &Core{Settings: core.LoadSettings(dir), History: core.OpenHistory(dir), Shield: core.NewShield()}
+	c.Shield.On = c.Settings.Shield
+	for _, h := range c.Settings.ShieldOff {
+		c.Shield.SetSiteOff(h, true)
+	}
+	return c
+}
+
+// Do runs f on the interface's loop (from any goroutine).
+func (a *App) Do(f func()) { a.post(f) }
+
+// NewTab opens a new tab page.
+func (a *App) NewTab() { a.newTab(KNormal, "", "", true) }

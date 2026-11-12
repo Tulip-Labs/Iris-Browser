@@ -39,8 +39,18 @@ copy /y THIRD_PARTY_NOTICES.md setup\payload\ >nul
 go build -trimpath -ldflags "-H windowsgui -s -w" -o "dist\Lite Go Setup.exe" .\cmd\litego-setup || ( echo Setup build failed. & pause & exit /b 1 )
 powershell -NoProfile -Command "Compress-Archive -Force -Path 'dist\Lite Go' -DestinationPath 'dist\LiteGo-portable.zip'"
 
+echo Packing for the Microsoft Store (MSIX for x64 and ARM64, and a bundle of both)...
+go run tools\msix.go -exe "dist\Lite Go\Lite Go.exe" -arch x64 -out dist\LiteGo_x64.msix || ( pause & exit /b 1 )
+set GOARCH=arm64
+go build -trimpath -ldflags "-H windowsgui -s -w" -o dist\LiteGo-arm64.exe .\cmd\litego || ( pause & exit /b 1 )
+set GOARCH=
+go run tools\msix.go -exe dist\LiteGo-arm64.exe -arch arm64 -out dist\LiteGo_arm64.msix || ( pause & exit /b 1 )
+go run tools\msix.go -bundle dist\LiteGo.msixbundle dist\LiteGo_x64.msix dist\LiteGo_arm64.msix || ( pause & exit /b 1 )
+del dist\LiteGo-arm64.exe
+
 echo.
 echo Done:
 echo   dist\Lite Go Setup.exe      the installer
 echo   dist\Lite Go\Lite Go.exe    portable (needs the WebView2 runtime, which Windows 10 and 11 have)
+echo   dist\LiteGo.msixbundle      for the Microsoft Store (x64 and ARM64; the Store signs it)
 pause

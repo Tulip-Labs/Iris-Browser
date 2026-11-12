@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"gioui.org/app"
@@ -31,16 +33,89 @@ import (
 const version = "1.0.0"
 
 func main() {
+	background := false
+	var urls []string
+	for _, a := range os.Args[1:] {
+		switch {
+		case a == "--background":
+			background = true
+		case !strings.HasPrefix(a, "-"):
+			urls = append(urls, a)
+		}
+	}
+	conf, webDir := dirs()
+	// Lite Go runs once: a second launch hands its addresses to the running one,
+	// whose window then appears at once (it is already loaded).
+	if background && running(conf) {
+		return // already ready
+	}
+	if !background && handOff(conf, urls) {
+		return
+	}
+	reqs := listen(conf)
+	r := &resident{conf: conf, webDir: webDir, core: shell.LoadCore(conf), gfx: giox.NewGfx()}
+	if r.core.Settings.Boost {
+		setStartup(true)
+	}
+	go func() {
+		if !background {
+			r.open(urls)
+		}
+		for req := range reqs {
+			if len(req) == 1 && req[0] == "--quit" { // the setup is updating Lite Go
+				r.core.Settings.Flush()
+				os.Exit(0)
+			}
+			r.open(req)
+		}
+	}()
+	app.Main()
+}
+
+// resident is the running Lite Go: what stays loaded between windows.
+type resident struct {
+	conf, webDir string
+	core         *shell.Core
+	gfx          *giox.Gfx
+	mu           sync.Mutex
+	cur          *shell.App
+	host         *host
+}
+
+// open shows the window (making it if needed) with urls in new tabs.
+func (r *resident) open(urls []string) {
+	r.mu.Lock()
+	a, h := r.cur, r.host
+	r.mu.Unlock()
+	if a != nil {
+		a.Do(func() {
+			if len(urls) == 0 {
+				a.NewTab()
+			}
+			for _, u := range urls {
+				a.OpenURL(u)
+			}
+			h.later(func() { h.w.Perform(system.ActionRaise) })
+		})
+		return
+	}
 	go func() {
 		w := new(app.Window)
 		w.Option(app.Title("Lite Go"), app.Size(unit.Dp(1280), unit.Dp(820)), app.MinSize(unit.Dp(480), unit.Dp(420)), app.Decorated(false))
-		if err := loop(w); err != nil {
+		err := r.loop(w, urls)
+		if err != nil {
 			log.Println(err)
-			os.Exit(1)
 		}
-		os.Exit(0)
+		r.mu.Lock()
+		r.cur, r.host = nil, nil
+		r.mu.Unlock()
+		if !r.core.Settings.Boost {
+			r.core.Settings.Flush()
+			os.Exit(0)
+		}
+		runtime.GC()
+		debug.FreeOSMemory() // between windows only the small resident part stays
 	}()
-	app.Main()
 }
 
 type pendingClip struct{ text *string }
@@ -54,12 +129,14 @@ type host struct {
 	clip  pendingClip
 	after []func() // window actions, done after the frame
 	quit  bool
+	exit  bool
 }
 
 func (h *host) Invalidate()             { h.w.Invalidate() }
 func (h *host) Clipboard() ui.Clipboard { return &h.clip }
 func (h *host) Minimize()               { h.later(func() { h.w.Perform(system.ActionMinimize) }) }
 func (h *host) Close()                  { h.quit = true; h.w.Invalidate() }
+func (h *host) Quit()                   { h.exit = true; h.quit = true; h.w.Invalidate() }
 func (h *host) FocusWindow()            { focusWindow(h.hwnd) }
 
 var maximized bool
@@ -106,18 +183,20 @@ func dirs() (conf, web string) {
 // tag receives every pointer and key event of the window.
 var tag = new(int)
 
-func loop(w *app.Window) error {
-	conf, webDir := dirs()
+func (r *resident) loop(w *app.Window, urls []string) error {
+	webDir := r.webDir
 	h := &host{w: w}
 	eng := webview.New()
-	a := shell.New(h, shell.Config{Engine: eng, DataDir: conf, TotalMB: totalMB(), Version: version, SelfMB: webview.SelfMB})
+	a := shell.New(h, shell.Config{Engine: eng, DataDir: r.conf, TotalMB: totalMB(), Version: version, SelfMB: webview.SelfMB,
+		Core: r.core, SetBoost: setStartup})
 	eng.SetPolicy(a.Policy())
-	for _, arg := range os.Args[1:] {
-		if !strings.HasPrefix(arg, "-") {
-			a.OpenURL(arg)
-		}
+	for _, u := range urls {
+		a.OpenURL(u)
 	}
-	g := giox.NewGfx()
+	r.mu.Lock()
+	r.cur, r.host = a, h
+	r.mu.Unlock()
+	g := r.gfx
 	rd := &giox.Reader{Tag: tag}
 	var ops op.Ops
 	in := a.In
@@ -192,6 +271,10 @@ func loop(w *app.Window) error {
 			if h.quit {
 				a.Close()
 				run(a.TakeWebCalls())
+				if h.exit {
+					r.core.Settings.Flush()
+					os.Exit(0)
+				}
 				return nil
 			}
 		}

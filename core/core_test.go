@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -105,5 +106,45 @@ func TestPlan(t *testing.T) {
 	}
 	if p := Plan(16384, "speed"); p.Live != 24 {
 		t.Fatalf("16 GB speed: %+v", p)
+	}
+}
+
+func TestContainersLegacy(t *testing.T) {
+	var s Settings
+	if err := json.Unmarshal([]byte(`{"containers":["Work",{"name":"Bank","icon":"dollar","color":"green"}]}`), &s); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Containers) != 2 || s.Containers[0].Name != "Work" || s.Containers[1].Icon != "dollar" {
+		t.Fatalf("%+v", s.Containers)
+	}
+}
+
+func TestGoogleQuery(t *testing.T) {
+	q, m, ok := GoogleQuery(ModeImages.URL("red pandas"))
+	if !ok || q != "red pandas" || m != ModeImages {
+		t.Fatal(q, m, ok)
+	}
+	if _, _, ok := GoogleQuery("https://www.youtube.com/results?search_query=x"); ok {
+		t.Fatal("youtube is not google")
+	}
+}
+
+func TestParsers(t *testing.T) {
+	web, _ := ParseWeb(`{"web":[{"t":"Go","u":"https://go.dev/","s":"Build simple software"},{"t":"","u":"x"}]}`)
+	if len(web) != 1 || web[0].Site != "go.dev" {
+		t.Fatalf("%+v", web)
+	}
+	ai := ParseAI(`{"ai":"red pandas\nAI Mode\nThinking\nRed pandas live in the Himalayas.\nShow more\n3 sites\nThey eat bamboo.","src":[{"t":"WWF","u":"https://wwf.org"}]}`, "red pandas")
+	if ai.Text != "Red pandas live in the Himalayas.\nThey eat bamboo." || len(ai.Sources) != 1 {
+		t.Fatalf("%q", ai.Text)
+	}
+	html := `<script>var ytInitialData = {"contents":{"x":[{"videoRenderer":{"videoId":"abc","title":{"runs":[{"text":"Lo-fi"}]},"ownerText":{"runs":[{"text":"Chill"}]},"lengthText":{"simpleText":"1:02:03"}}}]}};</script>`
+	v, err := ParseYouTube(html)
+	if err != nil || len(v) != 1 || v[0].Title != "Lo-fi" || v[0].Length != "1:02:03" {
+		t.Fatal(v, err)
+	}
+	p := PagePrompt("Summarize", "T", "https://a.b/", strings.Repeat("word ", 1000), "")
+	if len(p) > 1800 || !strings.Contains(p, "https://a.b/") {
+		t.Fatal(len(p))
 	}
 }

@@ -71,6 +71,8 @@ type View interface {
 	Wake()
 	Focus()
 	Eval(js string)
+	// Run evaluates js and reports its result as JSON ("null" when it failed).
+	Run(js string, done func(result string))
 	SetMuted(on bool)
 	Close()
 }

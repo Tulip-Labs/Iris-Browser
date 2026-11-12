@@ -3,7 +3,11 @@
 package main
 
 import (
+	"os"
+	"strings"
 	"unsafe"
+
+	"golang.org/x/sys/windows/registry"
 
 	"golang.org/x/sys/windows"
 )
@@ -13,7 +17,36 @@ var (
 	procSetFocus = user32.NewProc("SetFocus")
 	kernel32     = windows.NewLazySystemDLL("kernel32.dll")
 	procMemEx    = kernel32.NewProc("GlobalMemoryStatusEx")
+	procAllowFG  = user32.NewProc("AllowSetForegroundWindow")
 )
+
+// allowForeground lets the running Lite Go bring its window to the front.
+func allowForeground(pid int) {
+	if pid > 0 {
+		procAllowFG.Call(uintptr(pid))
+	}
+}
+
+const runKey = `Software\Microsoft\Windows\CurrentVersion\Run`
+
+// setStartup starts Lite Go in the background when Windows starts (not for the
+// Store package, whose startup Windows manages).
+func setStartup(on bool) {
+	exe, err := os.Executable()
+	if err != nil || strings.Contains(strings.ToLower(exe), `\windowsapps\`) {
+		return
+	}
+	k, _, err := registry.CreateKey(registry.CURRENT_USER, runKey, registry.SET_VALUE)
+	if err != nil {
+		return
+	}
+	defer k.Close()
+	if on {
+		_ = k.SetStringValue("Lite Go", `"`+exe+`" --background`)
+	} else {
+		_ = k.DeleteValue("Lite Go")
+	}
+}
 
 // focusWindow gives the keyboard back to the interface (from the page). Window thread only.
 func focusWindow(hwnd uintptr) {

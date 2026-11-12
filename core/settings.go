@@ -4,23 +4,28 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
 
 // Settings are Lite Go's preferences, kept in a small JSON file that loads instantly.
 type Settings struct {
-	Theme        string   `json:"theme"`
-	VerticalTabs bool     `json:"verticalTabs"`
-	Mode         Mode     `json:"mode"`
-	Shield       bool     `json:"shield"`
-	HTTPSOnly    bool     `json:"httpsOnly"`
-	YouTube      bool     `json:"youtube"`
-	Strict       bool     `json:"strict"`
-	Containers   []string `json:"containers"`
-	ShieldOff    []string `json:"shieldOff"`
+	Theme        string      `json:"theme"`
+	VerticalTabs bool        `json:"verticalTabs"`
+	Mode         Mode        `json:"mode"`
+	Shield       bool        `json:"shield"`
+	HTTPSOnly    bool        `json:"httpsOnly"`
+	YouTube      bool        `json:"youtube"`
+	Strict       bool        `json:"strict"`
+	Containers   []Container `json:"containers"`
+	ShieldOff    []string    `json:"shieldOff"`
 	// Memory is the tab sleep profile: "saver", "balanced" (default) or "speed".
 	Memory string `json:"memory"`
+	// LiteResults shows Google searches on Lite Go's own results page.
+	LiteResults bool `json:"liteResults"`
+	// Boost keeps Lite Go ready in the background so its window opens instantly.
+	Boost bool `json:"boost"`
 
 	path  string
 	mu    sync.Mutex
@@ -30,7 +35,8 @@ type Settings struct {
 // LoadSettings reads settings.json from dir ("" = defaults in memory only).
 func LoadSettings(dir string) *Settings {
 	s := &Settings{Theme: "crocus", Shield: true, HTTPSOnly: true, YouTube: true, Strict: true, Memory: "balanced",
-		Containers: []string{"Work", "Personal"}}
+		LiteResults: true, Boost: true,
+		Containers: []Container{{"Work", "briefcase", "blue"}, {"Personal", "person", "orange"}}}
 	if dir == "" {
 		return s
 	}
@@ -78,4 +84,38 @@ func (s *Settings) Flush() {
 	}
 	s.mu.Unlock()
 	s.write()
+}
+
+// Container is a named set of sign-ins with its own icon and color.
+type Container struct {
+	Name  string `json:"name"`
+	Icon  string `json:"icon"`
+	Color string `json:"color"`
+}
+
+// ContainerIcons and ContainerColors are the choices offered for containers.
+var (
+	ContainerIcons  = []string{"briefcase", "person", "cart", "dollar", "heart", "star", "book", "code", "gamepad", "home", "globe", "lab"}
+	ContainerColors = []string{"blue", "turquoise", "green", "yellow", "orange", "red", "pink", "purple"}
+)
+
+// UnmarshalJSON also reads the first format, where a container was only its name.
+func (c *Container) UnmarshalJSON(b []byte) error {
+	var name string
+	if json.Unmarshal(b, &name) == nil {
+		*c = Container{Name: name, Icon: "briefcase", Color: "blue"}
+		return nil
+	}
+	type plain Container
+	return json.Unmarshal(b, (*plain)(c))
+}
+
+// FindContainer returns the container named name (case does not matter).
+func (s *Settings) FindContainer(name string) (Container, bool) {
+	for _, c := range s.Containers {
+		if strings.EqualFold(c.Name, name) {
+			return c, true
+		}
+	}
+	return Container{Name: name, Icon: "briefcase", Color: "blue"}, false
 }

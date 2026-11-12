@@ -80,6 +80,14 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 		pr := ui.Rect{X: w - panelW - 8, Y: sugTop, W: panelW, H: full.H - sugTop - 8}
 		a.drawPanel(pr)
 		right = pr.X - 8
+	} else if a.ai.open {
+		pw := float32(aiW)
+		if w < 900 {
+			pw = 320
+		}
+		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - 8}
+		a.drawAI(pr)
+		right = pr.X - 8
 	}
 	if sugH > 0 {
 		a.suggestions(ui.Rect{X: addr.X, Y: sugTop + 2, W: addr.W, H: sugH - 6}, ID("sugA"))
@@ -123,44 +131,27 @@ func (a *App) tabIcon(t *Tab, x, y float32) {
 		ph := float32(math.Mod(a.now()*400, 360))
 		ui.StrokeOval(g, ui.Rect{X: x + 1.5, Y: y + 1.5, W: 13, H: 13}, 2, th.Primary.Alpha(0.18))
 		ui.Pen(g, ui.NewPath().Arc(x+8, y+8, 6.5, ph, ph+110, true), 2, th.Primary)
+	case t.search != nil:
+		ui.FillRoundAccent(g, ui.Rect{X: x, Y: y, W: 16, H: 16}, 5, th.Primary)
+		ui.DrawIcon(g, modeIcons[t.search.Mode], x+2, y+2, 12, ui.White)
 	case t.URL == "":
-		ic := ui.IHome
-		switch t.Kind {
-		case KPrivate:
-			ic = ui.IPrivate
-		case KTemp:
-			ic = ui.IReset
-		case KContainer:
-			ic = ui.IContainer
+		ic, col := a.kindIcon(t)
+		if t.Kind == KNormal {
+			col = th.OnSurfaceVariant
 		}
-		ui.DrawIcon(g, ic, x, y, 16, th.OnSurfaceVariant)
+		ui.DrawIcon(g, ic, x, y, 16, col)
+		return
 	default:
 		host := core.Host(t.URL)
 		c := siteColor(host)
 		ui.FillRoundAccent(g, ui.Rect{X: x, Y: y, W: 16, H: 16}, 5, c)
 		ui.TextCenter(g, monogram(host), ui.Rect{X: x, Y: y, W: 16, H: 16}, ui.Font{Size: 10, Bold: true}, ui.White)
 	}
-	switch t.Kind {
-	case KPrivate:
-		if t.URL != "" {
-			ui.FillOval(g, ui.Rect{X: x + 9, Y: y + 9, W: 10, H: 10}, ui.Hex("#2b2233"))
-			ui.DrawIcon(g, ui.IPrivate, x+9.5, y+9.5, 9, ui.White)
-		}
-	case KContainer:
-		ui.FillOval(g, ui.Rect{X: x + 10, Y: y + 10, W: 8, H: 8}, containerColor(t.Container))
-		ui.StrokeOval(g, ui.Rect{X: x + 10, Y: y + 10, W: 8, H: 8}, 1.2, frameColor(th))
-	case KTemp:
-		if t.URL != "" {
-			ui.FillOval(g, ui.Rect{X: x + 10, Y: y + 10, W: 8, H: 8}, th.Hl)
-		}
+	// the tab's kind as a small badge on its icon
+	if t.Kind != KNormal {
+		ic, col := a.kindIcon(t)
+		badge(g, ui.Rect{X: x + 8.5, Y: y + 8.5, W: 11, H: 11}, ic, col, frameColor(th))
 	}
-}
-
-func containerColor(name string) ui.Color {
-	pal := []string{"#3a7bd5", "#e0702a", "#2f9e62", "#c23b7a", "#8a5cd1", "#c9a227"}
-	h := fnv.New32a()
-	h.Write([]byte(strings.ToLower(name)))
-	return ui.Hex(pal[h.Sum32()%uint32(len(pal))])
 }
 
 func (t *Tab) label() string {
@@ -189,6 +180,18 @@ func (a *App) drawTab(i int, t *Tab, r ui.Rect) {
 		ui.Glass(g, r, 11, th, true, true)
 	} else if hot {
 		ui.FillRound(g, r, 11, th.Ink.Alpha(0.06))
+	}
+	if t.Kind != KNormal {
+		// the kind's color runs along the bottom of the tab
+		_, col := a.kindIcon(t)
+		if active {
+			ui.FillRound(g, r, 11, col.Alpha(0.08))
+		}
+		bw := min(r.W-22, float32(28))
+		if active {
+			bw = r.W - 22
+		}
+		ui.FillRound(g, ui.Rect{X: r.CX() - bw/2, Y: r.B() - 3, W: bw, H: 2.5}, 1.25, col.Alpha(0.9))
 	}
 	if u.Clickable(id, r) && !active {
 		a.selectTab(i)
@@ -324,7 +327,7 @@ func (a *App) rail(r ui.Rect) {
 		a.newTab(KPrivate, "", "", true)
 	}
 	if !narrow {
-		if u.IconButton(ID("railtemp"), ui.Rect{X: bx + bw + 4, Y: by, W: bw, H: 40}, ui.IReset, "New temporary tab", ui.IconOpt{}) {
+		if u.IconButton(ID("railtemp"), ui.Rect{X: bx + bw + 4, Y: by, W: bw, H: 40}, ui.IHourglass, "New temporary tab", ui.IconOpt{}) {
 			a.newTab(KTemp, "", "", true)
 		}
 	}
@@ -385,10 +388,10 @@ func (a *App) toolbar(r ui.Rect, vert bool) ui.Rect {
 		return u.IconButton(ID(id), b, ic, tip, ui.IconOpt{Disabled: dis})
 	}
 	hasPage := t != nil && t.URL != ""
-	if btn("back", ui.IChevronLeft, "Back  Alt+Left", t == nil || !t.CanBack) {
+	if btn("back", ui.IArrowLeft, "Back  Alt+Left", t == nil || !t.canBack()) {
 		a.do(actBack)
 	}
-	if btn("fwd", ui.IChevron, "Forward  Alt+Right", t == nil || !t.CanFwd) {
+	if btn("fwd", ui.IArrowRight, "Forward  Alt+Right", t == nil || !t.canForward()) {
 		a.do(actForward)
 	}
 	if t != nil && t.Loading {
@@ -397,7 +400,7 @@ func (a *App) toolbar(r ui.Rect, vert bool) ui.Rect {
 			a.web(v.Stop)
 			t.Loading = false
 		}
-	} else if btn("reload", ui.IReset, "Reload  Ctrl+R", !hasPage) {
+	} else if btn("reload", ui.IReload, "Reload  Ctrl+R", !hasPage) {
 		a.do(actReload)
 	}
 	x += 6
@@ -407,6 +410,15 @@ func (a *App) toolbar(r ui.Rect, vert bool) ui.Rect {
 	rx -= 40
 	if u.IconButton(ID("panel"), ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40}, ui.IMore, "Lite Go menu  Ctrl+,", ui.IconOpt{Toggled: a.panel}) {
 		a.panel = !a.panel
+		a.ai.open = a.ai.open && !a.panel
+	}
+	rx -= 44
+	if u.IconButton(ID("ai"), ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40}, ui.ISparkle, "Ask AI about this page  Ctrl+J", ui.IconOpt{Toggled: a.ai.open, Accent: th.Primary}) {
+		if a.ai.open {
+			a.ai.open = false
+		} else {
+			a.openAI("")
+		}
 	}
 	compact := r.W < 760
 	if !compact {
@@ -522,7 +534,7 @@ func (a *App) addressBar(r ui.Rect, t *Tab) {
 	if a.addrWas && !focused {
 		a.sugg = nil
 		if t != nil {
-			a.addr.Set(t.URL)
+			a.addr.Set(t.addrText())
 		}
 	}
 	rad := r.H / 2
@@ -548,32 +560,38 @@ func (a *App) addressBar(r ui.Rect, t *Tab) {
 	case t == nil || t.URL == "":
 		ic = modeIcons[a.set.Mode]
 	}
+	if t != nil && t.search != nil && !focused {
+		ic, icCol, tip = modeIcons[t.search.Mode], th.Primary, "Lite results"
+	}
 	ui.DrawIcon(g, ic, r.X+13, r.CY()-8, 16, icCol)
 	u.Tooltip(tip, ui.Rect{X: r.X, Y: r.Y, W: 38, H: r.H})
 	inner := ui.Rect{X: r.X + 36, Y: r.Y, W: r.W - 48, H: r.H}
 	// the tab's kind, as a chip at the end
 	if t != nil && t.Kind != KNormal {
 		lbl := map[Kind]string{KPrivate: "Private", KTemp: "Temporary", KContainer: t.Container}[t.Kind]
-		cw := g.Measure(lbl, ui.FSmallBold) + 30
+		kic, col := a.kindIcon(t)
+		cw := g.Measure(lbl, ui.FSmallBold) + 36
 		cr := ui.Rect{X: r.R() - cw - 6, Y: r.CY() - 12, W: cw, H: 24}
-		bg, fg := th.SecondaryContainer, th.OnSecondaryContainer
-		dot := th.Primary
-		switch t.Kind {
-		case KPrivate:
-			bg, fg, dot = ui.Hex("#2b2233"), ui.White, ui.Hex("#c9a7ff")
-		case KContainer:
-			dot = containerColor(t.Container)
-		case KTemp:
-			dot = th.Hl
-		}
-		ui.FillRound(g, cr, 12, bg)
-		ui.FillOval(g, ui.RectAround(cr.X+12, cr.CY(), 8, 8), dot)
-		g.Text(lbl, cr.X+21, ui.Mid(g, cr.Y, cr.H, ui.FSmallBold), ui.FSmallBold, fg)
+		ui.FillRound(g, cr, 12, col.Alpha(0.16))
+		ui.DrawIcon(g, kic, cr.X+8, cr.CY()-7, 14, col)
+		g.Text(lbl, cr.X+27, ui.Mid(g, cr.Y, cr.H, ui.FSmallBold), ui.FSmallBold, ui.Mix(col, th.Ink, 0.35))
 		inner.W -= cw + 6
 	}
 	if !focused {
 		text := ""
 		col := th.OnSurface
+		if t != nil && t.search != nil {
+			ui.TextFit(g, t.search.Q, inner.X, ui.Mid(g, r.Y, r.H, ui.FBody), ui.FBody, th.OnSurface, inner.W)
+			if u.Live() && in.Pressed && r.Contains(in.MX, in.MY) {
+				a.st.Focus = id
+				a.addr.Set(t.search.Q)
+				a.addr.SelectAll()
+				a.sugg, a.sugSel = nil, 0
+				in.Pressed = false
+			}
+			a.addrWas = a.st.Focus == id
+			return
+		}
 		if t != nil && t.URL != "" {
 			text = core.Display(t.URL)
 		} else {
@@ -596,7 +614,7 @@ func (a *App) addressBar(r ui.Rect, t *Tab) {
 		if u.Live() && in.Pressed && r.Contains(in.MX, in.MY) {
 			a.st.Focus = id
 			if t != nil {
-				a.addr.Set(t.URL)
+				a.addr.Set(t.addrText())
 			}
 			a.addr.SelectAll()
 			a.sugg, a.sugSel = nil, 0
@@ -613,7 +631,7 @@ func (a *App) addressBar(r ui.Rect, t *Tab) {
 		a.st.Focus = ui.ID{}
 		a.sugg = nil
 		if t != nil {
-			a.addr.Set(t.URL)
+			a.addr.Set(t.addrText())
 			if v := t.view; v != nil {
 				a.web(v.Focus)
 			}
@@ -703,7 +721,7 @@ func (a *App) visit(url string) {
 		return
 	}
 	a.navigate(t, url)
-	a.addr.Set(t.URL)
+	a.addr.Set(t.addrText())
 	if v := t.view; v != nil {
 		a.web(v.Focus)
 	}

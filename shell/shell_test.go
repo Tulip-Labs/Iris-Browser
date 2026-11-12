@@ -1,6 +1,13 @@
 package shell
 
 import (
+	"context"
+	"image"
+	"image/color"
+	"strings"
+	"time"
+
+	"litego/core"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,11 +26,14 @@ type fakeView struct {
 	asleep           bool
 	bounds           [4]int
 	focused, reloads int
+	run              func(js string) string
 }
 
 func (v *fakeView) Navigate(u string) {
 	v.url = u
-	v.ev.URL(u)
+	if v.ev.URL != nil {
+		v.ev.URL(u)
+	}
 	v.ev.Loading(true)
 	v.ev.Loading(false)
 }
@@ -37,17 +47,25 @@ func (v *fakeView) Sleep()                   { v.asleep, v.visible = true, false
 func (v *fakeView) Wake()                    { v.asleep = false }
 func (v *fakeView) Focus()                   { v.focused++ }
 func (v *fakeView) Eval(string)              {}
-func (v *fakeView) SetMuted(bool)            {}
-func (v *fakeView) Close()                   { v.closed = true }
+func (v *fakeView) Run(js string, done func(string)) {
+	if v.run != nil {
+		done(v.run(js))
+		return
+	}
+	done("null")
+}
+func (v *fakeView) SetMuted(bool) {}
+func (v *fakeView) Close()        { v.closed = true }
 
 type fakeEngine struct {
+	run   func(js string) string
 	views []*fakeView
 	opts  []webview.Options
 }
 
 func (e *fakeEngine) Start(uintptr, string, bool, func(error)) {}
 func (e *fakeEngine) NewView(o webview.Options, ev webview.Events, done func(webview.View, error)) {
-	v := &fakeView{ev: ev, visible: true}
+	v := &fakeView{ev: ev, visible: true, run: e.run}
 	e.views = append(e.views, v)
 	e.opts = append(e.opts, o)
 	done(v, nil)
@@ -69,6 +87,7 @@ func (h *fakeHost) ToggleMaximize()         {}
 func (h *fakeHost) SetFullscreen(on bool)   { h.full = on }
 func (h *fakeHost) Close()                  {}
 func (h *fakeHost) FocusWindow()            {}
+func (h *fakeHost) Quit()                   {}
 
 // ---- driver ----
 
@@ -169,6 +188,7 @@ func TestSearchOpensInSpareView(t *testing.T) {
 	d := newDriver(t, 1280, 800, true)
 	d.frames(2)
 	spare := d.eng.views[0]
+	d.a.set.LiteResults = false // this test is about the page itself
 	d.typeText("lofi beats")
 	if len(d.a.sugg) == 0 {
 		t.Fatal("no suggestions while typing")
@@ -304,9 +324,14 @@ func TestLayouts(t *testing.T) {
 	d.a.tabs[1].Audio = true
 	d.a.lastMem = -10
 	d.a.selectTab(1)
+	d.a.newTab(KContainer, "Work", "https://mail.google.com/", false)
+	d.a.newTab(KPrivate, "", "https://example.com/", false)
 	d.a.panel = true
+	d.a.editCont = 0
+	d.a.contName.Set("Work")
 	d.frames(2)
 	d.shot("panel")
+	d.a.editCont = -1
 	d.a.panel = false
 	d.a.set.VerticalTabs = true
 	d.a.set.Theme = "night"
@@ -351,4 +376,144 @@ func mockPage(g ui.Gfx, v *fakeView) {
 		ui.FillRound(g, ui.Rect{X: x, Y: y + cw*0.56 + 32, W: cw * 0.5, H: 10}, 5, ink)
 	}
 	g.Text("Page area (drawn by WebView2 in the app)", r.X+24, r.B()-20, ui.FSmall, ui.Hex("#a0a0aa"))
+}
+
+// ---- Lite results and the AI panel ----
+
+func fixtures(js string) string {
+	switch {
+	case strings.Contains(js, "a h3"):
+		return `{"web":[
+ {"t":"Red panda - Wikipedia","u":"https://en.wikipedia.org/wiki/Red_panda","s":"The red panda (Ailurus fulgens) is a small mammal native to the eastern Himalayas and southwestern China. It has dense reddish-brown fur with a black belly and legs.","site":"Wikipedia"},
+ {"t":"Red Panda | Species | WWF","u":"https://www.worldwildlife.org/species/red-panda","s":"Red pandas are shy, solitary animals that spend most of their lives in trees. They are endangered, with fewer than 10,000 left in the wild.","site":"World Wildlife Fund"},
+ {"t":"Red panda facts and photos | National Geographic","u":"https://www.nationalgeographic.com/animals/mammals/facts/red-panda","s":"Learn how red pandas use their bushy tails for balance and warmth in cold mountain forests.","site":"National Geographic"},
+ {"t":"Smithsonian's National Zoo: Red panda","u":"https://nationalzoo.si.edu/animals/red-panda","s":"Red pandas eat mostly bamboo leaves and shoots, plus fruit, roots and eggs.","site":"Smithsonian's National Zoo"}]}`
+	case strings.Contains(js, "imgrefurl"):
+		var b strings.Builder
+		b.WriteString(`{"images":[`)
+		for i := 0; i < 24; i++ {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString(`{"src":"https://img/` + string(rune('a'+i)) + `","page":"https://example.com/p","alt":"Red panda in a tree"}`)
+		}
+		b.WriteString(`]}`)
+		return b.String()
+	case strings.Contains(js, "aimc"):
+		return `{"ai":"red pandas\nAI Mode\nRed pandas are small, tree-dwelling mammals of the eastern Himalayas and southwestern China, about the size of a house cat.\nWhat they eat\n• Mostly bamboo leaves and shoots, up to 30% of their body weight a day\n• Fruit, acorns, roots and eggs when they find them\nWhy they are endangered\nHabitat loss and poaching have cut their numbers to under 10,000 in the wild.\nShow more\n4 sites","src":[{"t":"Red panda - Wikipedia","u":"https://en.wikipedia.org/wiki/Red_panda"},{"t":"WWF","u":"https://www.worldwildlife.org/species/red-panda"},{"t":"Nat Geo","u":"https://www.nationalgeographic.com/"}],"busy":false}`
+	case strings.Contains(js, "getSelection"):
+		return `{"title":"Red panda - Wikipedia","url":"https://en.wikipedia.org/wiki/Red_panda","text":"The red panda is a small mammal.","sel":""}`
+	}
+	return "null"
+}
+
+func synthImage(seed int) image.Image {
+	img := image.NewRGBA(image.Rect(0, 0, 160, 120))
+	hues := [][3]int{{190, 80, 40}, {60, 110, 70}, {170, 120, 70}, {70, 90, 140}, {200, 150, 90}, {120, 60, 50}}
+	h := hues[seed%len(hues)]
+	for y := 0; y < 120; y++ {
+		for x := 0; x < 160; x++ {
+			k := (x + y + seed*13) % 255
+			img.Set(x, y, color.RGBA{uint8((h[0] + k/3) % 256), uint8((h[1] + y/2) % 256), uint8((h[2] + x/4) % 256), 255})
+		}
+	}
+	return img
+}
+
+func newResultsDriver(t *testing.T, w, h float32) *driver {
+	d := newDriver(t, w, h, true)
+	d.eng.run = fixtures
+	n := 0
+	d.a.fetchImage = func(ctx context.Context, src string, maxW int) (image.Image, error) {
+		n++
+		return synthImage(n), nil
+	}
+	d.a.ytSearch = func(ctx context.Context, q string) ([]core.VideoResult, error) {
+		return []core.VideoResult{
+			{ID: "a", Title: "Red Pandas: the Firefoxes of the Himalayas", Channel: "Nature Now", Length: "12:04", Views: "1.2M views", Age: "1 year ago"},
+			{ID: "b", Title: "Baby red panda's first snow day", Channel: "Zoo Diaries", Length: "3:41", Views: "860K views", Age: "2 months ago"},
+			{ID: "c", Title: "How red pandas survive the cold", Channel: "Wild Science", Length: "8:15", Views: "430K views", Age: "3 weeks ago"},
+			{ID: "d", Title: "Red panda documentary (full)", Channel: "Earth Films", Length: "52:10", Views: "2.9M views", Age: "4 years ago"},
+			{ID: "e", Title: "Feeding time at the red panda house", Channel: "City Zoo", Length: "5:02", Views: "120K views", Age: "6 days ago"},
+			{ID: "f", Title: "Red panda vs giant panda: what is different?", Channel: "Explainers", Length: "9:48", Views: "2M views", Age: "1 year ago"},
+		}, nil
+	}
+	d.frames(2)
+	return d
+}
+
+func (d *driver) settle(n int) {
+	for i := 0; i < n; i++ {
+		time.Sleep(5 * time.Millisecond)
+		d.advance(0.8)
+	}
+}
+
+func TestLiteResults(t *testing.T) {
+	d := newResultsDriver(t, 1440, 900)
+	d.typeText("red pandas")
+	d.key(ui.KEnter, false, false)
+	d.settle(14)
+	tab := d.a.tab()
+	s := tab.search
+	if s == nil {
+		t.Fatal("a Google search should show Lite results")
+	}
+	if tab.view != nil && tab.shown {
+		t.Fatal("the Google page must not be shown under the results")
+	}
+	if len(s.Web) != 4 || len(s.Images) != 24 || len(s.Videos) != 6 || s.aiSt != stDone {
+		t.Fatalf("web %d images %d videos %d ai %v %q", len(s.Web), len(s.Images), len(s.Videos), s.aiSt, s.AI.Text)
+	}
+	if strings.Contains(s.AI.Text, "Show more") || strings.HasPrefix(s.AI.Text, "red pandas") {
+		t.Fatalf("AI text not cleaned: %q", s.AI.Text)
+	}
+	d.frames(2)
+	d.shot("results")
+	s.section = secImages
+	d.frames(2)
+	d.shot("results-images")
+	s.section = secVideos
+	d.frames(2)
+	d.shot("results-videos")
+	s.section = secAI
+	d.frames(2)
+	d.shot("results-ai")
+	s.section = secAll
+	// a link opens the page; Back returns to the results
+	d.a.visitFromResults(s.Web[0].URL)
+	d.frames(3)
+	if tab.search != nil || tab.URL != "https://en.wikipedia.org/wiki/Red_panda" {
+		t.Fatalf("link did not open: %q", tab.URL)
+	}
+	d.a.do(actBack)
+	d.frame()
+	if tab.search == nil {
+		t.Fatal("Back should return to the results")
+	}
+	if !tab.canForward() {
+		t.Fatal("Forward should return to the page")
+	}
+	// night theme
+	d.a.set.Theme = "night"
+	d.frames(2)
+	d.shot("results-night")
+}
+
+func TestAIPanel(t *testing.T) {
+	d := newResultsDriver(t, 1440, 900)
+	d.a.newTab(KNormal, "", "https://en.wikipedia.org/wiki/Red_panda", true)
+	d.frames(3)
+	d.a.tab().Title = "Red panda - Wikipedia"
+	d.a.openAI("")
+	d.frames(2)
+	d.shot("ai-empty")
+	d.a.askAI("Summarize this page")
+	d.settle(10)
+	turn := d.a.ai.turns[0]
+	if turn.state != stDone || !strings.Contains(turn.ans.Text, "bamboo") {
+		t.Fatalf("no answer: %v %q", turn.state, turn.ans.Text)
+	}
+	d.frames(2)
+	d.shot("ai-answer")
 }

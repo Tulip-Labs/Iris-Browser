@@ -4,6 +4,7 @@
 package raster
 
 import (
+	xdraw "golang.org/x/image/draw"
 	"image"
 	"image/color"
 	"image/draw"
@@ -349,3 +350,38 @@ func (c *Canvas) SavePNG(path string) error {
 
 var _ ui.Gfx = (*Canvas)(nil)
 var _ = draw.Over
+
+// Image draws img covering r (bilinear scaling), with rounded corners.
+func (c *Canvas) Image(img image.Image, r ui.Rect, radius float32) {
+	if img == nil || r.Empty() {
+		return
+	}
+	dr := c.devRect(r)
+	if dr.Empty() {
+		return
+	}
+	b := img.Bounds()
+	src := ui.CoverRect(b.Dx(), b.Dy(), r.W, r.H).Add(b.Min)
+	tmp := image.NewRGBA(image.Rect(0, 0, dr.Dx(), dr.Dy()))
+	xdraw.ApproxBiLinear.Scale(tmp, tmp.Bounds(), img, src, xdraw.Src, nil)
+	rad := radius * c.st.s
+	w, h := float32(dr.Dx()), float32(dr.Dy())
+	for y := 0; y < dr.Dy(); y++ {
+		for x := 0; x < dr.Dx(); x++ {
+			px, py := float32(x)+0.5, float32(y)+0.5
+			cx, cy := min(max(px, rad), w-rad), min(max(py, rad), h-rad)
+			if dx, dy := px-cx, py-cy; dx*dx+dy*dy > rad*rad {
+				continue
+			}
+			p := image.Pt(dr.Min.X+x, dr.Min.Y+y)
+			if !p.In(c.st.clip) {
+				continue
+			}
+			s := tmp.RGBAAt(x, y)
+			d := c.Img.RGBAAt(p.X, p.Y)
+			a := uint32(s.A)
+			mix := func(sv, dv uint8) uint8 { return uint8((uint32(sv)*255 + uint32(dv)*(255-a)) / 255) }
+			c.Img.SetRGBA(p.X, p.Y, color.RGBA{mix(s.R, d.R), mix(s.G, d.G), mix(s.B, d.B), mix(s.A, d.A)})
+		}
+	}
+}

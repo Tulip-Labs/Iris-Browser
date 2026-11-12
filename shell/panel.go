@@ -54,68 +54,142 @@ func (a *App) drawPanel(r ui.Rect) {
 	// new tabs
 	section("New tab")
 	bw := (w - 16) / 3
-	kinds := []struct {
-		label string
-		icon  ui.Icon
-		k     Kind
-	}{{"Tab", ui.IPlus, KNormal}, {"Private", ui.IPrivate, KPrivate}, {"Temporary", ui.IReset, KTemp}}
+	kinds := []Kind{KNormal, KPrivate, KTemp}
+	labels := []string{"Tab", "Private", "Temporary"}
 	for i, k := range kinds {
 		br := ui.Rect{X: x + float32(i)*(bw+8), Y: y, W: bw, H: 64}
-		hot := u.Hover(br)
-		ui.FillRound(g, br, 16, th.SecondaryContainer)
-		if hot {
+		ic, col := a.kindIcon(&Tab{Kind: k})
+		if k == KNormal {
+			ic = ui.IPlus
+		}
+		ui.FillRound(g, br, 16, col.Alpha(0.12))
+		if u.Hover(br) {
 			ui.FillRound(g, br, 16, th.Ink.Alpha(0.06))
 		}
-		ui.DrawIcon(g, k.icon, br.CX()-10, br.Y+12, 20, th.OnSecondaryContainer)
-		ui.TextCenter(g, ui.Fit(g, k.label, ui.FSmallBold, bw-8), ui.Rect{X: br.X, Y: br.Y + 36, W: br.W, H: 20}, ui.FSmallBold, th.OnSecondaryContainer)
+		ui.DrawIcon(g, ic, br.CX()-10, br.Y+12, 20, col)
+		ui.TextCenter(g, ui.Fit(g, labels[i], ui.FSmallBold, bw-8), ui.Rect{X: br.X, Y: br.Y + 36, W: br.W, H: 20}, ui.FSmallBold, th.OnSurface)
 		if u.Clickable(ui.IdN("pnew", i), br) {
-			a.newTab(k.k, "", "", true)
+			a.newTab(k, "", "", true)
 		}
 	}
 	y += 72
 	g.Text("Containers", x, y+14, ui.FSmallBold, th.OnSurfaceVariant)
-	y += 24
-	cx := x
-	for i, c := range a.set.Containers {
-		cw := g.Measure(c, ui.FSmallBold) + 34
-		if cx+cw > x+w {
-			cx = x
-			y += 40
+	y += 26
+	for i := 0; i < len(a.set.Containers); i++ {
+		c := a.set.Containers[i]
+		row := ui.Rect{X: x - 6, Y: y, W: w + 12, H: 44}
+		col := tone(th, c.Color)
+		if u.Hover(row) {
+			ui.FillRound(g, row, 14, th.Ink.Alpha(0.05))
 		}
-		cr := ui.Rect{X: cx, Y: y, W: cw, H: 32}
-		ui.StrokeRound(g, cr.Inset(0.5), 10, 1, th.Outline)
-		if u.Hover(cr) {
-			ui.FillRound(g, cr, 10, th.Ink.Alpha(0.06))
-		}
-		ui.FillOval(g, ui.RectAround(cr.X+14, cr.CY(), 10, 10), containerColor(c))
-		g.Text(c, cr.X+25, ui.Mid(g, cr.Y, cr.H, ui.FSmallBold), ui.FSmallBold, th.OnSurface)
-		u.Tooltip("New "+c+" tab", cr)
-		if u.Clickable(ui.IdN("cont", i), cr) {
-			a.newTab(KContainer, c, "", true)
-		}
-		cx += cw + 8
-	}
-	y += 40
-	fr := ui.Rect{X: x, Y: y, W: w - 52, H: 38}
-	add := func() {
-		name := strings.TrimSpace(a.newCont.Text())
-		if name == "" {
-			return
-		}
-		for _, c := range a.set.Containers {
-			if strings.EqualFold(c, name) {
-				return
+		ib := ui.RectAround(x+16, row.CY(), 32, 32)
+		ui.FillRoundAccent(g, ib, 10, col)
+		ui.DrawIcon(g, iconOf(c), ib.CX()-9, ib.CY()-9, 18, ui.White)
+		ui.TextFit(g, c.Name, x+42, ui.Mid(g, row.Y, row.H, ui.FBodyBold), ui.FBodyBold, th.OnSurface, w-130)
+		eb := ui.Rect{X: row.R() - 44, Y: row.CY() - 18, W: 36, H: 36}
+		if u.IconButton(ui.IdN("cedit", i), eb, ui.IEdit, "Edit "+c.Name, ui.IconOpt{Toggled: a.editCont == i}) {
+			if a.editCont == i {
+				a.editCont = -1
+			} else {
+				a.editCont = i
+				a.contName.Set(c.Name)
 			}
 		}
-		a.set.Containers = append(a.set.Containers, name)
-		a.set.Save()
-		a.newCont.Set("")
+		ob := ui.Rect{X: eb.X - 40, Y: eb.Y, W: 36, H: 36}
+		if u.IconButton(ui.IdN("copen", i), ob, ui.IPlus, "New "+c.Name+" tab", ui.IconOpt{Accent: col}) {
+			a.newTab(KContainer, c.Name, "", true)
+		}
+		if u.Clickable(ui.IdN("crow", i), ui.Rect{X: row.X, Y: row.Y, W: ob.X - row.X, H: row.H}) {
+			a.newTab(KContainer, c.Name, "", true)
+		}
+		y += 46
+		if a.editCont != i {
+			continue
+		}
+		// the editor: name, icon and color
+		card := ui.Rect{X: x - 6, Y: y, W: w + 12, H: 0}
+		ey := y + 10
+		nr := ui.Rect{X: x + 4, Y: ey, W: w - 8, H: 38}
+		rename := func() {
+			n := strings.TrimSpace(a.contName.Text())
+			if n == "" || strings.EqualFold(n, c.Name) {
+				return
+			}
+			if _, taken := a.set.FindContainer(n); taken {
+				return
+			}
+			for _, t := range a.tabs {
+				if t.Kind == KContainer && t.Container == c.Name {
+					t.Container = n
+				}
+			}
+			a.set.Containers[i].Name = n
+			a.set.Save()
+		}
+		ey += 46
+		ic := float32(30)
+		per := int((w - 8 + 6) / (ic + 6))
+		for j, name := range core.ContainerIcons {
+			cr := ui.Rect{X: x + 4 + float32(j%per)*(ic+6), Y: ey + float32(j/per)*(ic+6), W: ic, H: ic}
+			sel := name == c.Icon
+			if sel {
+				ui.FillRound(g, cr, 9, col)
+			} else if u.Hover(cr) {
+				ui.FillRound(g, cr, 9, th.Ink.Alpha(0.07))
+			}
+			icol := th.OnSurfaceVariant
+			if sel {
+				icol = ui.White
+			}
+			ui.DrawIcon(g, contIcons[name], cr.CX()-9, cr.CY()-9, 18, icol)
+			if u.Clickable(ui.Id("cicon/"+name), cr) {
+				a.set.Containers[i].Icon = name
+				a.set.Save()
+			}
+		}
+		ey += float32((len(core.ContainerIcons)+per-1)/per)*(ic+6) + 6
+		for j, name := range core.ContainerColors {
+			cr := ui.Rect{X: x + 4 + float32(j)*(ic+6), Y: ey, W: ic, H: ic}
+			cc := tone(th, name)
+			ui.FillOval(g, cr.Inset(3), cc)
+			if name == c.Color {
+				ui.StrokeOval(g, cr.Inset(0.5), 2, cc)
+			}
+			u.Tooltip(strings.ToUpper(name[:1])+name[1:], cr)
+			if u.Clickable(ui.Id("ccol/"+name), cr) {
+				a.set.Containers[i].Color = name
+				a.set.Save()
+			}
+		}
+		ey += ic + 10
+		del := ui.Rect{X: x + 4, Y: ey, W: 150, H: 36}
+		removed := u.Button(ui.Id("cdel"), del, "Remove", ui.ButtonOpt{Icon: ui.ITrash, HasIcon: true, Tip: "Its tabs keep their sign-ins until they close"})
+		ey += 46
+		card.H = ey - card.Y
+		ui.StrokeRound(g, card, 14, 1, th.OutlineVariant)
+		u.TextField(ID("cname"), nr, a.contName, ui.FieldOpt{Placeholder: "Name", OnEnter: rename})
+		if a.st.Focus != ID("cname") {
+			rename()
+		}
+		y = ey + 8
+		if removed {
+			a.set.Containers = append(a.set.Containers[:i], a.set.Containers[i+1:]...)
+			a.set.Save()
+			a.editCont = -1
+			break
+		}
+	}
+	fr := ui.Rect{X: x, Y: y + 2, W: w - 52, H: 38}
+	add := func() {
+		if a.addContainer(a.newCont.Text()) {
+			a.newCont.Set("")
+		}
 	}
 	u.TextField(ID("contname"), fr, a.newCont, ui.FieldOpt{Placeholder: "New container name", OnEnter: add})
-	if u.IconButton(ID("contadd"), ui.Rect{X: fr.R() + 8, Y: y - 1, W: 40, H: 40}, ui.IPlus, "Add container", ui.IconOpt{}) {
+	if u.IconButton(ID("contadd"), ui.Rect{X: fr.R() + 8, Y: y + 1, W: 40, H: 40}, ui.IPlus, "Add container", ui.IconOpt{}) {
 		add()
 	}
-	y += 44
+	y += 48
 	divider()
 
 	// look
@@ -160,7 +234,23 @@ func (a *App) drawPanel(r ui.Rect) {
 		a.set.Save()
 	}
 	y += 42
-	note("Google opens in English (US). AI Mode answers first; type \"yt \" before words to search YouTube.")
+	if v := check("lite", "Lite results for Google searches", a.set.LiteResults); v != a.set.LiteResults {
+		a.set.LiteResults = v
+		a.set.Save()
+	}
+	note("Google opens in English (US) and is shown on Lite Go's own page: the AI answer, links, pictures and videos, in your theme. \"On Google\" shows the original. Type \"yt \" before words to search YouTube.")
+	divider()
+
+	// startup
+	section("Startup")
+	if v := check("boost", "Open instantly (stay ready in the background)", a.set.Boost); v != a.set.Boost {
+		a.set.Boost = v
+		a.set.Save()
+		if a.cfg.SetBoost != nil {
+			a.cfg.SetBoost(v)
+		}
+	}
+	note("Lite Go keeps a small, page-free part of itself running after you close the window and when Windows starts, so the window appears the moment you click it.")
 	divider()
 
 	// shield
@@ -266,7 +356,7 @@ func (a *App) drawPanel(r ui.Rect) {
 		a.notify("History cleared.")
 	}
 	y += 48
-	note("Lite Go keeps no bookmarks. History feeds address suggestions and Most visited, and stays on this computer.")
+	note("Lite Go keeps no bookmarks. History feeds address suggestions and stays on this computer.")
 	divider()
 
 	// about
@@ -277,6 +367,11 @@ func (a *App) drawPanel(r ui.Rect) {
 	}
 	note(ver)
 	note("Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · PolyForm Noncommercial 1.0.0")
+	y += 8
+	if u.Button(ID("quit"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Quit Lite Go", ui.ButtonOpt{Icon: ui.IClose, HasIcon: true, Tip: "Closes the window and the part that keeps it ready"}) {
+		a.h.Quit()
+	}
+	y += 48
 	note("Shortcuts: Ctrl+T new tab, Ctrl+Shift+N private, Ctrl+W close, Ctrl+Shift+T reopen, Ctrl+L address, Ctrl+Tab next, Alt+Left back, F11 full screen.")
 	y += 16
 	sc.Content = y + sc.Y - body.Y

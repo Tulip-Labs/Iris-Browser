@@ -3,9 +3,11 @@
 package setup
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -84,8 +86,36 @@ func installEngine(progress func(float32)) error {
 	return nil
 }
 
+// quitRunning asks a running Lite Go (also one waiting in the background) to exit.
+func quitRunning() {
+	conf, err := os.UserConfigDir()
+	if err != nil {
+		return
+	}
+	b, err := os.ReadFile(filepath.Join(conf, "Lite Go", "instance.json"))
+	if err != nil {
+		return
+	}
+	var f struct {
+		Port  int    `json:"port"`
+		Token string `json:"token"`
+	}
+	if json.Unmarshal(b, &f) != nil || f.Port == 0 {
+		return
+	}
+	c, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", f.Port), 300*time.Millisecond)
+	if err != nil {
+		return
+	}
+	_ = c.SetDeadline(time.Now().Add(time.Second))
+	c.Write([]byte(f.Token + "\n[\"--quit\"]\n"))
+	c.Close()
+	time.Sleep(600 * time.Millisecond)
+}
+
 // copyApp writes the app; a running copy is renamed out of the way first.
 func copyApp(dir string, app []byte) error {
+	quitRunning()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -243,6 +273,11 @@ func register(dir string, size int) error {
 			return err
 		}
 	}
+	// ready in the background from sign-in, so the window opens instantly
+	if rk, _, err := registry.CreateKey(hk, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE); err == nil {
+		rk.SetStringValue("Lite Go", `"`+exe+`" --background`)
+		rk.Close()
+	}
 	procNotifyAssocs.Call(0x08000000 /*SHCNE_ASSOCCHANGED*/, 0, 0, 0)
 	return nil
 }
@@ -275,6 +310,11 @@ func uninstall(data bool) error {
 		k.DeleteValue("Lite Go")
 		k.Close()
 	}
+	if rk, err := registry.OpenKey(hk, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE); err == nil {
+		rk.DeleteValue("Lite Go")
+		rk.Close()
+	}
+	quitRunning()
 	procNotifyAssocs.Call(0x08000000, 0, 0, 0)
 	if err := os.Remove(filepath.Join(dir, exeName)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("close Lite Go and try again (%v)", err)

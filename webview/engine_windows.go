@@ -498,6 +498,27 @@ func (v *view) Eval(js string) {
 	}
 }
 
+func (v *view) Run(js string, done func(string)) {
+	if v.closed {
+		done("null")
+		return
+	}
+	var h uintptr
+	h = newHandler(iidICoreWebView2ExecuteScriptCompletedHandler, func(code, res uintptr) uintptr {
+		release(h)
+		out := "null"
+		if !failed(code) && res != 0 {
+			out = windows.UTF16PtrToString((*uint16)(unsafe.Pointer(res)))
+		}
+		done(out)
+		return sOK
+	})
+	if failed(call(v.core, slotICoreWebView2_ExecuteScript, uintptr(unsafe.Pointer(wstr(js))), h)) {
+		release(h)
+		done("null")
+	}
+}
+
 func (v *view) SetMuted(on bool) {
 	if v.core8 != 0 {
 		call(v.core8, slotICoreWebView2_8_SetIsMuted, boolArg(on))

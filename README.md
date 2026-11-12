@@ -9,10 +9,22 @@ Flowcode's Material 3 and liquid-glass look; pages are shown by the system web v
 
 Lite Go is the Go edition of Lite. It keeps Lite's rules (Google AI Mode first, the shield,
 HTTPS-only, clean YouTube) and adds tight control of the web engine's memory. There are no
-bookmarks: the new tab page, Most visited and the address bar get you there faster.
+bookmarks or shortcut tiles: the new tab page is just the search, and the address bar
+suggests from history.
 
 ## What it does
 
+- **Opens instantly.** Lite Go runs once and stays ready in the background (a small part
+  of it, with no pages), from Windows sign-in and after you close the window, so a click
+  shows the window at once. Clicking again opens a new tab in the same window. "Quit
+  Lite Go" in the menu ends it completely; the setting can be turned off.
+- **Lite results.** Google searches are shown on Lite Go's own page in your theme: the AI
+  Mode answer, the links, a gallery of pictures and the videos, with All, AI Mode, Images
+  and Videos views. A hidden page reads Google; "On Google" shows the original. Back
+  returns from a page to the results.
+- **Ask AI** on any page (Ctrl+J): a side panel that sends your question, the page's
+  address and its text (or your selection) to Google AI Mode and writes the answer as
+  text, with its sources. No API key needed.
 - **Opens Google and YouTube fast.** The new tab page is drawn by Lite Go itself, so it
   appears at once; while you type, a page is prepared in the background, so the first
   result opens without waiting for the engine. Addresses go straight to HTTPS.
@@ -30,12 +42,13 @@ bookmarks: the new tab page, Most visited and the address bar get you there fast
 - **HTTPS-only**, with an "Open anyway" choice when a site has no secure connection.
 - **Private, temporary and container tabs.** Private tabs share one session that is never
   written to disk; a temporary tab is a fresh session of its own, gone when it closes (a
-  second account, side by side); containers keep their own sign-ins.
+  second account, side by side); containers keep their own sign-ins, each with its own
+  icon and color (tuned to the theme), shown on its tabs and in the address bar.
 - **Tabs on top or at the side**, seven palettes from Flowcode (Crocus, Tulip, Spring Mix,
   Sakura, Meadow, Classic, Night), a custom title bar, full screen video, and shortcuts:
-  Ctrl+T, Ctrl+Shift+N, Ctrl+W, Ctrl+Shift+T, Ctrl+L, Ctrl+Tab, Ctrl+1...9, Alt+Left,
+  Ctrl+T, Ctrl+Shift+N, Ctrl+W, Ctrl+Shift+T, Ctrl+L, Ctrl+J, Ctrl+Tab, Ctrl+1...9, Alt+Left,
   Alt+Right, Ctrl+R / F5, Ctrl+M (mute), F11. They work while a page has the keyboard too.
-- **History** in SQLite (pure Go), for suggestions and Most visited. It is never kept for
+- **History** in SQLite (pure Go), for address suggestions. It is never kept for
   private or temporary tabs.
 - **Installer:** a small Gio window that installs for the current user (no administrator
   rights), adds Start menu and desktop shortcuts, offers Lite Go in Windows' default
@@ -52,6 +65,23 @@ bookmarks: the new tab page, Most visited and the address bar get you there fast
 The web engine is behind one small interface (`webview.Engine` and `webview.View`), so
 the rest of Lite Go is the same on every system.
 
+## Getting it onto other PCs without warnings
+
+Windows warns about programs that are not signed by a known publisher. For a free,
+noncommercial app the clean route is the **Microsoft Store**:
+
+1. Registration is free for individual developers: create an account in Partner Center.
+2. Reserve the name "Lite Go", then copy *Package/Identity/Name* and *Publisher* from
+   Product identity into `packaging/msix.json`.
+3. Build (below) and upload `dist\LiteGo.msixbundle`. The Store signs it with Microsoft's
+   certificate, so it installs on any Windows 10 or 11 PC without warnings and updates
+   itself.
+
+`packaging/test-install.ps1` signs a package with a certificate made on your own PC, to
+try the MSIX before submitting it. The setup `.exe` and the portable app stay unsigned:
+Windows SmartScreen shows "Windows protected your PC" (More info, Run anyway) until a
+code-signing certificate is used, which is a paid service.
+
 ## Build
 
 On Windows, double-click **build-litego.bat**. It installs Go with winget if needed, runs
@@ -59,6 +89,8 @@ the tests, and makes:
 
 - `dist\Lite Go Setup.exe`: the installer
 - `dist\Lite Go\Lite Go.exe`: the portable app (and `dist\LiteGo-portable.zip`)
+- `dist\LiteGo.msixbundle` (and `LiteGo_x64.msix`, `LiteGo_arm64.msix`): for the Store,
+  packed by `tools/msix.go` without the Windows SDK
 
 From macOS or Linux, `./build-litego.sh` cross-builds the same Windows files. Builds stay
 well under 2 GB of memory. No C compiler is needed.

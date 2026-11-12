@@ -76,6 +76,20 @@ const (
 	IImage
 	IVideo
 	IYouTube
+	IReload
+	IArrowLeft
+	IArrowRight
+	IBriefcase
+	IPerson
+	ICart
+	IDollar
+	IHeart
+	IStar
+	IGamepad
+	ISend
+	IExternal
+	IGrid
+	IHourglass
 	iconCount
 )
 
@@ -121,6 +135,14 @@ func DrawIcon(g Gfx, icon Icon, x, y, size float32, c Color) {
 	head := func(tx, ty, dx, dy, k float32) {
 		px, py := -dy, dx
 		stroke(tx-dx*k+px*k, ty-dy*k+py*k, tx, ty, tx-dx*k-px*k, ty-dy*k-py*k)
+	}
+	// tri: a solid arrowhead with its tip at (tx, ty) pointing along (dx, dy)
+	tri := func(tx, ty, dx, dy, l, hw float32) {
+		px, py := -dy, dx
+		bx, by := tx-dx*l, ty-dy*l
+		p := NewPath().MoveTo(X(tx), Y(ty)).LineTo(X(bx+px*hw), Y(by+py*hw)).LineTo(X(bx-px*hw), Y(by-py*hw)).Close()
+		g.FillPath(p, c)
+		g.StrokePath(p, w*0.5, c)
 	}
 	switch icon {
 	case IPlay:
@@ -337,12 +359,13 @@ func DrawIcon(g Gfx, icon Icon, x, y, size float32, c Color) {
 	case IShield:
 		shape(12, 3, 19.5, 6, 19.5, 11.5, 18.6, 15, 12, 21, 5.4, 15, 4.5, 11.5, 4.5, 6)
 		stroke(8.8, 12, 11.2, 14.4, 15.4, 9.6)
-	case IPrivate: // a calm mask: two lenses and a bridge
-		g.StrokePath(NewPath().Ellipse(Rect{X(3), Y(9), 7.5 * s, 6.5 * s}), w, c)
-		g.StrokePath(NewPath().Ellipse(Rect{X(13.5), Y(9), 7.5 * s, 6.5 * s}), w, c)
-		Pen(g, NewPath().MoveTo(X(10.5), Y(11.5)).QuadTo(X(12), Y(10.3), X(13.5), Y(11.5)), w, c)
-		stroke(4, 7, 7.5, 5)
-		stroke(20, 7, 16.5, 5)
+	case IPrivate: // a masquerade mask
+		m := NewPath().MoveTo(X(3), Y(9.5)).CubeTo(X(7), Y(7.2), X(17), Y(7.2), X(21), Y(9.5)).
+			LineTo(X(20.4), Y(13.4)).CubeTo(X(19.8), Y(16.8), X(16), Y(17.8), X(13.6), Y(15.4)).
+			QuadTo(X(12), Y(14), X(10.4), Y(15.4)).CubeTo(X(8), Y(17.8), X(4.2), Y(16.8), X(3.6), Y(13.4)).Close()
+		g.StrokePath(m, w, c)
+		g.FillPath(NewPath().Ellipse(Rect{X(6.3), Y(11), 4.2 * s, 2.6 * s}), c)
+		g.FillPath(NewPath().Ellipse(Rect{X(13.5), Y(11), 4.2 * s, 2.6 * s}), c)
 	case IContainer: // stacked layers
 		shape(12, 3.5, 20.5, 8, 12, 12.5, 3.5, 8)
 		stroke(3.5, 12, 12, 16.5, 20.5, 12)
@@ -374,7 +397,7 @@ func DrawIcon(g Gfx, icon Icon, x, y, size float32, c Color) {
 		stroke(3, 9.5, 21, 9.5)
 		stroke(9, 4.5, 9, 9.5)
 	case IVolume, IMute:
-		fill(4, 9.5, 8, 9.5, 12.5, 5.5, 12.5, 18.5, 8, 14.5, 4, 14.5)
+		shape(4, 9.5, 8, 9.5, 12.5, 5.5, 12.5, 18.5, 8, 14.5, 4, 14.5)
 		if icon == IVolume {
 			arc(13, 12, 3.6, -50, 50)
 			arc(13, 12, 7, -50, 50)
@@ -383,8 +406,9 @@ func DrawIcon(g Gfx, icon Icon, x, y, size float32, c Color) {
 			stroke(20.5, 9.5, 15.5, 14.5)
 		}
 	case IMemory2: // a chip
-		box(6.5, 6.5, 17.5, 17.5, 2)
-		for _, k := range []float32{9.5, 12, 14.5} {
+		box(6.5, 6.5, 17.5, 17.5, 2.2)
+		solid(10, 10, 14, 14, 1)
+		for _, k := range []float32{10, 14} {
 			stroke(k, 3.5, k, 6.5)
 			stroke(k, 17.5, k, 20.5)
 			stroke(3.5, k, 6.5, k)
@@ -400,6 +424,64 @@ func DrawIcon(g Gfx, icon Icon, x, y, size float32, c Color) {
 	case IYouTube:
 		StrokeRound(g, Rect{X(2.5), Y(5.5), 19 * s, 13 * s}, 4*s, w, c)
 		fill(10, 9, 15.5, 12, 10, 15)
+	case IReload: // a clockwise turn with a solid head, open at the top right
+		arc(12, 12.5, 7, 30, 292)
+		// the head continues the turn: its tip sits ahead of the arc's end along the tangent
+		tri(14.62+0.927*3.2, 6.01+0.375*3.2, 0.927, 0.375, 5.2, 3.2)
+	case IArrowLeft:
+		stroke(19, 12, 5.5, 12)
+		stroke(11, 6, 5, 12, 11, 18)
+	case IArrowRight:
+		stroke(5, 12, 18.5, 12)
+		stroke(13, 6, 19, 12, 13, 18)
+	case IBriefcase:
+		box(3.5, 7.5, 20.5, 19.5, 2.5)
+		stroke(9, 7.5, 9, 5.5, 15, 5.5, 15, 7.5)
+		stroke(3.5, 12.5, 20.5, 12.5)
+	case IPerson:
+		circle(12, 8.5, 3.8, false)
+		Pen(g, NewPath().MoveTo(X(4.5), Y(20)).CubeTo(X(5), Y(15), X(8.5), Y(13.6), X(12), Y(13.6)).CubeTo(X(15.5), Y(13.6), X(19), Y(15), X(19.5), Y(20)), w, c)
+	case ICart:
+		stroke(3, 4.5, 5.5, 4.5, 7.8, 15, 18, 15, 20, 7.5, 6.3, 7.5)
+		circle(9, 19, 1.5, true)
+		circle(17, 19, 1.5, true)
+	case IDollar:
+		circle(12, 12, 8.5, false)
+		Pen(g, NewPath().MoveTo(X(15), Y(9)).CubeTo(X(14.5), Y(7.6), X(13.4), Y(7.3), X(12), Y(7.3)).CubeTo(X(10), Y(7.3), X(9), Y(8.3), X(9), Y(9.6)).
+			CubeTo(X(9), Y(12.4), X(15), Y(11.4), X(15), Y(14.4)).CubeTo(X(15), Y(15.8), X(13.8), Y(16.7), X(12), Y(16.7)).CubeTo(X(10.4), Y(16.7), X(9.4), Y(16.2), X(9), Y(15)), w, c)
+		stroke(12, 5.5, 12, 7.3)
+		stroke(12, 16.7, 12, 18.5)
+	case IHeart:
+		g.StrokePath(NewPath().MoveTo(X(12), Y(19.5)).CubeTo(X(5), Y(15), X(3.5), Y(11.5), X(3.5), Y(9)).CubeTo(X(3.5), Y(6.2), X(5.6), Y(4.5), X(8), Y(4.5)).
+			CubeTo(X(9.8), Y(4.5), X(11.2), Y(5.5), X(12), Y(7)).CubeTo(X(12.8), Y(5.5), X(14.2), Y(4.5), X(16), Y(4.5)).
+			CubeTo(X(18.4), Y(4.5), X(20.5), Y(6.2), X(20.5), Y(9)).CubeTo(X(20.5), Y(11.5), X(19), Y(15), X(12), Y(19.5)).Close(), w, c)
+	case IStar:
+		shape(12, 3.5, 14.5, 9, 20.5, 9.6, 16, 13.6, 17.3, 19.6, 12, 16.5, 6.7, 19.6, 8, 13.6, 3.5, 9.6, 9.5, 9)
+	case IGamepad:
+		g.StrokePath(NewPath().RoundRect(Rect{X(2.5), Y(7.5), 19 * s, 10 * s}, 5*s), w, c)
+		stroke(7.5, 10.5, 7.5, 14.5)
+		stroke(5.5, 12.5, 9.5, 12.5)
+		circle(15.5, 11.2, 1.2, true)
+		circle(17.8, 13.6, 1.2, true)
+	case ISend: // a paper plane
+		shape(3.5, 11.5, 20.5, 4, 14, 20.5, 11, 13.5)
+		stroke(11, 13.5, 20.5, 4)
+	case IExternal:
+		Pen(g, NewPath().MoveTo(X(10.5), Y(5)).LineTo(X(7), Y(5)).QuadTo(X(5), Y(5), X(5), Y(7)).LineTo(X(5), Y(17)).QuadTo(X(5), Y(19), X(7), Y(19)).
+			LineTo(X(17), Y(19)).QuadTo(X(19), Y(19), X(19), Y(17)).LineTo(X(19), Y(13.5)), w, c)
+		stroke(13.5, 4.5, 19.5, 4.5, 19.5, 10.5)
+		stroke(19, 5, 11.5, 12.5)
+	case IGrid:
+		box(4, 4, 10.5, 10.5, 2)
+		box(13.5, 4, 20, 10.5, 2)
+		box(4, 13.5, 10.5, 20, 2)
+		box(13.5, 13.5, 20, 20, 2)
+	case IHourglass: // a temporary tab
+		stroke(6.5, 3.5, 17.5, 3.5)
+		stroke(6.5, 20.5, 17.5, 20.5)
+		Pen(g, NewPath().MoveTo(X(8), Y(3.5)).CubeTo(X(8), Y(8.5), X(12), Y(9.5), X(12), Y(12)).CubeTo(X(12), Y(14.5), X(8), Y(15.5), X(8), Y(20.5)), w, c)
+		Pen(g, NewPath().MoveTo(X(16), Y(3.5)).CubeTo(X(16), Y(8.5), X(12), Y(9.5), X(12), Y(12)).CubeTo(X(12), Y(14.5), X(16), Y(15.5), X(16), Y(20.5)), w, c)
+		fill(9.6, 19, 12, 16.6, 14.4, 19)
 	case IKeyboard:
 		box(2.5, 6, 21.5, 18, 2.5)
 		for _, kx := range []float32{6, 9.33, 12.66, 16} {

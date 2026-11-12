@@ -237,24 +237,25 @@ func (s *Setup) header(cx, y float32, title, sub string, w float32) float32 {
 func (s *Setup) welcome(cx, w, h float32) {
 	u, g, th := &s.u, s.u.G, s.th
 	y := s.header(cx, 36, "Lite Go", "A light, fast browser for Google and YouTube.", w)
-	card := ui.Rect{X: 40, Y: y + 18, W: w - 80, H: 132}
+	card := ui.Rect{X: 40, Y: y + 16, W: w - 80, H: 160}
 	ui.Glass(g, card, 20, th, true, true)
 	feats := []struct {
 		ic   ui.Icon
 		text string
 	}{
-		{ui.IMemory2, "Background tabs sleep and unload, so memory stays low"},
+		{ui.IMemory2, "Opens instantly; background tabs sleep, so memory stays low"},
+		{ui.ISparkle, "Google results and AI answers in its own look, and Ask AI on any page"},
 		{ui.IShield, "A built-in shield against ads and trackers"},
-		{ui.IPrivate, "Private, temporary and container tabs; no bookmarks to manage"},
+		{ui.IPrivate, "Private, temporary and container tabs"},
 	}
 	for i, f := range feats {
-		ry := card.Y + 16 + float32(i)*36
+		ry := card.Y + 14 + float32(i)*34
 		ib := ui.Rect{X: card.X + 18, Y: ry, W: 28, H: 28}
 		ui.FillRound(g, ib, 9, th.SecondaryContainer)
 		ui.DrawIcon(g, f.ic, ib.X+5, ib.Y+5, 18, th.OnSecondaryContainer)
 		ui.TextFit(g, f.text, ib.R()+12, ui.Mid(g, ry, 28, ui.FBody), ui.FBody, th.OnSurface, card.R()-ib.R()-28)
 	}
-	y = card.B() + 16
+	y = card.B() + 10
 	s.desktop = u.Checkbox(ui.Id("desk"), ui.Rect{X: 44, Y: y, W: 200, H: 34}, "Desktop shortcut", s.desktop)
 	s.openAfter = u.Checkbox(ui.Id("open"), ui.Rect{X: 250, Y: y, W: 220, H: 34}, "Open Lite Go when done", s.openAfter)
 	// footer
