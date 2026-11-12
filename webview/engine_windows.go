@@ -87,7 +87,9 @@ func browserArgs(low bool) string {
 		"--disable-component-update",
 	}
 	if low {
-		args = append(args, "--renderer-process-limit=3", "--enable-low-end-device-mode")
+		// fewer renderer processes; not Chromium's low-end mode, which draws
+		// with fewer colors and leaves pages grainy on large screens
+		args = append(args, "--renderer-process-limit=3")
 	} else {
 		args = append(args, "--renderer-process-limit=8")
 	}
