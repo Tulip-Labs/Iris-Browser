@@ -138,4 +138,3 @@ func dirs() (conf, web string) {
 	_ = os.MkdirAll(web, 0o755)
 	return
 }
-
