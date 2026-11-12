@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Lite's mark: a ring in motion and a spark (the tile is the background) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="6.3" android:strokeLineCap="round"
+        android:pathData="M38.83,66.73 A19.8,19.8 0 1,1 47.23,72.61"/>
+    <path android:fillColor="#FFFFAE00" android:pathData="M69.6,40.2m-6.9,0a6.9,6.9 0,1 1,13.8 0a6.9,6.9 0,1 1,-13.8 0"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M54,54m-4.8,0a4.8,4.8 0,1 1,9.6 0a4.8,4.8 0,1 1,-9.6 0"/>
+</vector>

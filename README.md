@@ -81,7 +81,7 @@ suggests from history.
 | Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Done, tested |
 | macOS 12+ | WKWebView (WebKit, built into macOS) | Written: `./build-litego.sh mac` on a Mac; first run pending |
 | Linux: native Wayland (GNOME, KDE, ...) and X11 | WebKitGTK 4.1, in a GTK window | Written: `./build-litego.sh linux`; first run pending |
-| Android 8+ (phones and tablets) | Android System WebView (Chromium, updated by the system) | Written: `build-android.bat` on Windows, `./build-litego.sh android` elsewhere; first run pending |
+| Android 8+ (phones and tablets) | Android System WebView (Chromium, updated by the system) | **Lite for Android**, in Kotlin (`android/`): `build-android.bat`; first run pending. An earlier Go and Gio version is kept (`build-android-go.bat`) |
 
 Every system's own web engine sits inside Lite Go's window, and Lite Go drives it the
 same way everywhere: tabs, Shields, results, the AI panel, the memory plan. No engine is
@@ -93,22 +93,23 @@ shadow, corners and resize edges), Gio's GPU renderer draws Lite Go's interface 
 GL area in it, and each page's WebKitWebView sits over that area. One window, one
 connection to the display, so it runs natively on Wayland and on X11 alike.
 
-On Android, Lite Go is the same Go program, built into an app by Gio's `gogio`: the
-same interface in a phone layout (the address bar on top, back, forward, new tab, tabs
-and menu at the bottom where the thumb is, tabs as a grid of cards, the menu and the AI
-panel as full-screen sheets, the system back button closing what is open before going
-back). The pages are Android's own WebView, placed over the Gio view; a small Java
-class (`webview/android/LiteWeb.java`, built into a jar by the build script) is the
-only part that is not Go, because Android only lets Java code drive its WebView. Lite
-Shields asks about every request, as on Windows. What differs for now: containers and
-private tabs share one cookie store (Android's WebView has one per app), and Lite Go
-registers as a browser for http and https links.
+**Lite for Android** (`android/`) is a Kotlin app built from Android's own views, with no
+Jetpack Compose and only one small AndroidX library (`androidx.webkit`, for scripts that
+run before a page's own). Pages are Android System WebView. It carries Lite Go's pieces
+over: the same palettes, Lite Shields (the same filter lists and the same matching
+design, ported to Kotlin: about 108,000 blocking and 24,000 hiding rules, loaded in under
+a second, about 15 microseconds per request), link cleaning, HTTPS-only, fingerprinting
+protection and YouTube without ads (the same page scripts, generated from the Go code by
+`go run tools/androidjs.go`). The phone layout: the address bar on top with Google's
+suggestions and history, back, forward, new tab, tabs and the menu at the bottom, tabs as
+a grid of cards, the menu as a bottom sheet. Pages in the background are put to sleep
+(their history is kept) so only two to five stay loaded, depending on the phone's memory.
+Lite can be the phone's browser.
 
-To build it on Windows, from the terminal only (no Android Studio): run
-`build-android.bat`. The first run gets what is missing by itself (Java 17 with
-winget; Google's Android command-line tools, an SDK platform, build-tools and the NDK
-with sdkmanager, see `tools/android-setup.ps1`; and gogio), about 2.5 GB. It makes
-`dist\LiteGo.apk`; `build-android.bat aab` also makes the Play Store bundle.
+To build it on Windows from the terminal only (no Android Studio): run
+`build-android.bat`. The first run gets Java 17 and Google's Android command-line tools
+(`tools/android-setup.ps1`, about 600 MB); Gradle downloads itself. It makes
+`dist\Lite.apk`.
 
 The web engine is behind one small interface (`webview.Engine` and `webview.View`), so
 the rest of Lite Go is the same on every system.

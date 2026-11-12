@@ -25,3 +25,9 @@ Microsoft's license terms for the runtime.
 
 No other third-party code is included. The interface toolkit, the WebView2 bindings, the
 browser core and the installer are Lite Go's own.
+
+## Lite for Android
+
+- **AndroidX WebKit** (`androidx.webkit:webkit`), Apache License 2.0, The Android Open Source Project.
+- **Material Design icons** (the outlined system icons drawn in `android/app/src/main/res/drawable`), Apache License 2.0, Google.
+- Android System WebView is part of Android and is not shipped with the app.

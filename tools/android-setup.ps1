@@ -8,9 +8,10 @@
 #
 # About 2.5 GB of disk, most of it the NDK (the C toolchain Go uses for Android).
 #
+# -NoNdk skips the NDK (the Kotlin app does not need it; the Go app does).
 # -EnvFile writes "set" lines for the calling .bat (JAVA_HOME, ANDROID_HOME).
 
-param([string]$EnvFile = '')
+param([string]$EnvFile = '', [switch]$NoNdk)
 
 # 'Continue': the Android tools write warnings to stderr, which Windows
 # PowerShell would otherwise treat as errors; failures are checked below.
@@ -92,7 +93,7 @@ $want = @()
 if (-not (Test-Path "$sdk\platform-tools\adb.exe")) { $want += 'platform-tools' }
 $haveBT = (Test-Path "$sdk\build-tools") -and (Get-ChildItem "$sdk\build-tools" -Directory -ErrorAction SilentlyContinue)
 $havePF = (Test-Path "$sdk\platforms") -and (Get-ChildItem "$sdk\platforms" -Directory -ErrorAction SilentlyContinue)
-$haveNDK = (Test-Path "$sdk\ndk") -and (Get-ChildItem "$sdk\ndk" -Directory -ErrorAction SilentlyContinue)
+$haveNDK = $NoNdk -or ((Test-Path "$sdk\ndk") -and (Get-ChildItem "$sdk\ndk" -Directory -ErrorAction SilentlyContinue))
 if (-not ($haveBT -and $havePF -and $haveNDK)) {
 	Say 'Looking up the newest Android packages...'
 	$list = & $sdkm --sdk_root="$sdk" --list 2>$null
@@ -111,6 +112,13 @@ if (-not ($haveBT -and $havePF -and $haveNDK)) {
 		if (-not $n) { $n = 'ndk;27.2.12479018' }
 		$want += $n
 	}
+}
+
+# the Kotlin app builds against exactly these (what its Gradle build asks for)
+if ($NoNdk) {
+	if (-not (Test-Path "$sdk\platforms\android-35\android.jar")) { $want += 'platforms;android-35' }
+	if (-not (Test-Path "$sdk\build-tools\34.0.0")) { $want += 'build-tools;34.0.0' }
+	$want = $want | Select-Object -Unique
 }
 
 if ($want.Count -gt 0) {
