@@ -1,8 +1,13 @@
 //go:build linux && webkit
 
-// The Linux side of Lite Go's web engine: WebKitGTK views in GtkPlug windows
-// placed inside the Gio window (X11). GTK runs on its own thread; every call
-// from Go is queued to it with g_main_context_invoke.
+// The Linux side of Lite Go's web engine: WebKitGTK views.
+//
+// Normally Lite Go's own window is a GTK window (cmd/litego/gtk_linux.c) and
+// the views are children of its GtkLayout, over the interface: one window,
+// native on Wayland and X11, on GTK's main thread. A Gio X11 window can still
+// host them instead, each in a GtkPlug, with GTK on a thread of its own.
+// Either way every call from Go goes through g_main_context_invoke, which runs
+// it at once on the GTK thread and queues it from any other.
 
 #include <gtk/gtk.h>
 #include <gtk/gtkx.h>
@@ -36,6 +41,7 @@ typedef struct {
 } LV;
 
 static unsigned long parentXID;
+static GtkLayout *host; // the window's layout when GTK owns the window
 static char *dataDir;
 static GHashTable *views;    // id -> LV*
 static GHashTable *contexts; // profile -> WebKitWebContext*
@@ -171,6 +177,14 @@ static void wire(LV *v) {
 	webkit_settings_set_enable_developer_extras(s, TRUE);
 	webkit_settings_set_hardware_acceleration_policy(s, WEBKIT_HARDWARE_ACCELERATION_POLICY_ALWAYS);
 	webkit_settings_set_javascript_can_open_windows_automatically(s, FALSE);
+	if (host) {
+		// the page sits in our window, over the interface, hidden until placed
+		gtk_widget_set_no_show_all(GTK_WIDGET(v->web), TRUE);
+		gtk_layout_put(host, GTK_WIDGET(v->web), 0, 0);
+		gtk_widget_set_size_request(GTK_WIDGET(v->web), 1, 1);
+		gtk_widget_realize(GTK_WIDGET(v->web));
+		return;
+	}
 	// the page lives in a plug window inside the Gio window
 	v->plug = gtk_plug_new((Window)parentXID);
 	gtk_container_add(GTK_CONTAINER(v->plug), GTK_WIDGET(v->web));
@@ -267,6 +281,15 @@ static gboolean runOp(gpointer data) {
 		case OP_RELOAD: webkit_web_view_reload(v->web); break;
 		case OP_STOP: webkit_web_view_stop_loading(v->web); break;
 		case OP_BOUNDS: {
+			if (host) {
+				// the bounds come in device pixels; the layout counts GTK units
+				int sf = gtk_widget_get_scale_factor(GTK_WIDGET(host));
+				if (sf < 1) sf = 1;
+				int w = op->c / sf, h = op->d / sf;
+				gtk_layout_move(host, GTK_WIDGET(v->web), op->a / sf, op->b / sf);
+				gtk_widget_set_size_request(GTK_WIDGET(v->web), w > 0 ? w : 1, h > 0 ? h : 1);
+				break;
+			}
 			GdkWindow *gw = gtk_widget_get_window(v->plug);
 			int w = op->c > 0 ? op->c : 1, h = op->d > 0 ? op->d : 1;
 			gtk_window_resize(GTK_WINDOW(v->plug), w, h);
@@ -275,6 +298,11 @@ static gboolean runOp(gpointer data) {
 			break;
 		}
 		case OP_SHOW:
+			if (host) {
+				if (op->a) gtk_widget_show(GTK_WIDGET(v->web));
+				else gtk_widget_hide(GTK_WIDGET(v->web));
+				break;
+			}
 			if (op->a) gtk_widget_show_all(v->plug);
 			else gtk_widget_hide(v->plug);
 			break;
@@ -282,7 +310,7 @@ static gboolean runOp(gpointer data) {
 		case OP_EVAL: webkit_web_view_run_javascript(v->web, op->s, NULL, evalDone, (gpointer)op->cb); op->cb = 0; break;
 		case OP_MUTE: webkit_web_view_set_is_muted(v->web, op->a); break;
 		case OP_CLOSE:
-			gtk_widget_destroy(v->plug);
+			gtk_widget_destroy(host ? GTK_WIDGET(v->web) : v->plug);
 			g_hash_table_remove(views, (gpointer)op->id);
 			g_free(v->profile);
 			g_free(v);
@@ -302,13 +330,24 @@ void lgxCall(int op, uintptr_t id, int a, int b, int c, int d, const char *s, ui
 	g_main_context_invoke(NULL, runOp, o);
 }
 
-void lgxMain(unsigned long parent, const char *dir) {
-	parentXID = parent;
+static void setup(const char *dir) {
 	dataDir = g_strdup(dir);
-	gdk_set_allowed_backends("x11");
-	gtk_init(NULL, NULL);
 	views = g_hash_table_new(g_direct_hash, g_direct_equal);
 	contexts = g_hash_table_new(g_str_hash, g_str_equal);
+}
+
+// lgxAttach starts the engine in Lite Go's GTK window (on GTK's thread).
+void lgxAttach(uintptr_t layout, const char *dir) {
+	if (!views) setup(dir);
+	host = GTK_LAYOUT((GtkWidget *)layout);
+	g_object_add_weak_pointer(G_OBJECT(host), (gpointer *)&host);
+}
+
+void lgxMain(unsigned long parent, const char *dir) {
+	parentXID = parent;
+	gdk_set_allowed_backends("x11");
+	gtk_init(NULL, NULL);
+	setup(dir);
 	g_main_context_acquire(g_main_context_default());
 	gtk_main();
 }

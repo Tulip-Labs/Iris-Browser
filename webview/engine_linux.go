@@ -10,6 +10,7 @@ package webview
 enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST };
 
 void lgxMain(unsigned long parent, const char *dataDir);
+void lgxAttach(uintptr_t layout, const char *dataDir);
 void lgxCall(int op, uintptr_t id, int a, int b, int c, int d, const char *s, uintptr_t cb);
 char *lgxVersion(void);
 */
@@ -25,7 +26,16 @@ import (
 	"unsafe"
 )
 
-// New returns the Linux engine: WebKitGTK inside the Gio window (X11).
+// hosted: Lite Go's window is a GTK window, and Start gets its GtkLayout.
+var hosted bool
+
+// HostGTK tells the engine that the program's window is made with GTK (on
+// the GTK thread): Start then takes that window's GtkLayout, and the pages go
+// in it directly, which works on Wayland as well as X11.
+func HostGTK() { hosted = true }
+
+// New returns the Linux engine: WebKitGTK views in Lite Go's GTK window (or,
+// when hosted by Gio, in GtkPlugs inside its X11 window).
 func New() Engine {
 	if wkEng == nil {
 		wkEng = &wkEngine{}
@@ -65,6 +75,14 @@ func call(op int, id uintptr, a, b, c, d int, s string, cb uintptr) {
 
 func (e *wkEngine) Start(window uintptr, dataDir string, low bool, ready func(error)) {
 	e.dataDir, e.low, e.started = dataDir, low, true
+	if hosted {
+		cs := C.CString(dataDir)
+		C.lgxAttach(C.uintptr_t(window), cs)
+		C.free(unsafe.Pointer(cs))
+		e.applyBlocklist()
+		ready(nil)
+		return
+	}
 	started := make(chan struct{})
 	go func() {
 		// GTK lives on its own thread for the whole program

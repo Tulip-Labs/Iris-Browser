@@ -80,11 +80,17 @@ suggests from history.
 |---|---|---|
 | Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Done, tested |
 | macOS 12+ | WKWebView (WebKit, built into macOS) | Written: `./build-litego.sh mac` on a Mac; first run pending |
-| Linux (X11, or XWayland) | WebKitGTK 4.1 | Written: `./build-litego.sh linux`; first run pending |
+| Linux: native Wayland (GNOME, KDE, ...) and X11 | WebKitGTK 4.1, in a GTK window | Written: `./build-litego.sh linux`; first run pending |
 
 Every system's own web engine sits inside Lite Go's window, and Lite Go drives it the
 same way everywhere: tabs, Shields, results, the AI panel, the memory plan. No engine is
 bundled: each comes with the system and is kept up to date by it.
+
+On Linux the window itself is a GTK window, because Wayland does not let one
+program's surface sit inside another's: GTK owns the window (with the desktop's own
+shadow, corners and resize edges), Gio's GPU renderer draws Lite Go's interface into a
+GL area in it, and each page's WebKitWebView sits over that area. One window, one
+connection to the display, so it runs natively on Wayland and on X11 alike.
 
 The web engine is behind one small interface (`webview.Engine` and `webview.View`), so
 the rest of Lite Go is the same on every system.

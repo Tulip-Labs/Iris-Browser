@@ -68,13 +68,15 @@ PLIST
 	echo "Done: $app"
 	;;
 linux)
-	# Debian/Ubuntu: sudo apt install gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
-	#   libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev libgles2-mesa-dev \
-	#   libegl1-mesa-dev libffi-dev libxcursor-dev libvulkan-dev
+	# The window is a GTK window, native on Wayland (GNOME, KDE, ...) and on X11;
+	# the interface is drawn by Gio's GPU renderer inside it.
+	#   Debian/Ubuntu: sudo apt install gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libepoxy-dev
+	#   Fedora:        sudo dnf install gcc pkgconf gtk3-devel webkit2gtk4.1-devel libepoxy-devel
+	#   Arch:          sudo pacman -S gcc pkgconf gtk3 webkit2gtk-4.1 libepoxy
 	export CGO_ENABLED=1
 	go test ./core ./shields
 	mkdir -p dist/linux
-	go build -tags webkit -trimpath -ldflags "-s -w" -o dist/linux/lite-go ./cmd/litego
+	go build -tags "webkit novulkan" -trimpath -ldflags "-s -w" -o dist/linux/lite-go ./cmd/litego
 	cp assets/icon.png dist/linux/lite-go.png
 	cat > dist/linux/lite-go.desktop <<DESK
 [Desktop Entry]
@@ -83,6 +85,7 @@ Name=Lite Go
 Comment=A light, fast browser
 Exec=lite-go %U
 Icon=lite-go
+StartupWMClass=lite-go
 Categories=Network;WebBrowser;
 MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
 DESK

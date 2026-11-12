@@ -31,7 +31,7 @@ func (a *App) content(r ui.Rect) {
 			msg = "The web engine did not start: " + a.engErr.Error()
 		}
 		if runtime.GOOS == "linux" {
-			msg = "Lite Go shows pages with WebKitGTK through XWayland (or X11). Install WebKitGTK 4.1 and make sure XWayland is on in your desktop, then open Lite Go again."
+			msg = "Lite Go shows pages with WebKitGTK. Install WebKitGTK 4.1 (webkit2gtk-4.1) and open Lite Go again."
 		}
 		a.message(r, ui.IGlobe, "The web engine is not available", msg, "", nil)
 	case t.view == nil:
