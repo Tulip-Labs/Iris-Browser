@@ -1,45 +1,56 @@
 @echo off
-rem Lite Go for Android, built on Windows. Double-click it.
-rem Makes dist\LiteGo.apk (install it on a phone) - with "aab" as the first
-rem argument it also makes dist\LiteGo.aab (for the Play Store).
+rem Lite Go for Android, built on Windows from the terminal. Double-click it,
+rem or run it in a terminal. No Android Studio needed.
+rem Makes dist\LiteGo.apk (install it on a phone). "build-android.bat aab"
+rem also makes dist\LiteGo.aab (for the Play Store); "all" builds for every
+rem kind of processor (phones, old phones, emulators).
 rem
-rem Needs, once:
-rem   - Go (installed for the Windows build)
-rem   - Android Studio's SDK: in Android Studio, SDK Manager, install an
-rem     "Android SDK Platform" (34 or newer), "Android SDK Build-Tools",
-rem     "NDK (Side by side)" and "Android SDK Command-line Tools".
-rem     Android Studio itself is only needed for that; Lite Go has no Android
-rem     Studio project.
-rem   - Java 17 (Android Studio brings one: its "jbr" folder).
+rem The first run installs what is missing (about 2.5 GB, mostly the NDK):
+rem Java 17 with winget, then Google's Android command-line tools, an SDK
+rem platform, build-tools and the NDK with sdkmanager (tools\android-setup.ps1),
+rem then gogio with go install.
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
-rem the Android SDK
+where go >nul 2>nul
+if errorlevel 1 (
+  echo Go is not installed. Installing it with winget...
+  winget install -e --id GoLang.Go --accept-source-agreements --accept-package-agreements
+  if errorlevel 1 ( echo Could not install Go. Get it from https://go.dev/dl and run this again. & pause & exit /b 1 )
+  set "PATH=%ProgramFiles%\Go\bin;!PATH!"
+)
+
 if "%ANDROID_HOME%"=="" if not "%ANDROID_SDK_ROOT%"=="" set "ANDROID_HOME=%ANDROID_SDK_ROOT%"
 if "%ANDROID_HOME%"=="" set "ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk"
-if not exist "%ANDROID_HOME%\platforms" ( echo The Android SDK is not in "%ANDROID_HOME%". Install it with Android Studio's SDK Manager, or set ANDROID_HOME. & pause & exit /b 1 )
 
-rem the newest NDK
-if "%ANDROID_NDK_HOME%"=="" for /f "delims=" %%d in ('dir /b /ad /on "%ANDROID_HOME%\ndk" 2^>nul') do set "ANDROID_NDK_HOME=%ANDROID_HOME%\ndk\%%d"
-if "%ANDROID_NDK_HOME%"=="" ( echo The Android NDK is missing. In Android Studio: SDK Manager, SDK Tools, "NDK (Side by side)". & pause & exit /b 1 )
-
-rem the newest platform (android.jar, to compile LiteWeb.java)
-set PLATFORM=
-for /f "delims=" %%p in ('dir /b /ad /on "%ANDROID_HOME%\platforms"') do set "PLATFORM=%ANDROID_HOME%\platforms\%%p"
-if not exist "%PLATFORM%\android.jar" ( echo No Android SDK Platform is installed. & pause & exit /b 1 )
-
-rem Java: Android Studio's own, if there is no other
-where javac >nul 2>nul
-if errorlevel 1 if exist "%ProgramFiles%\Android\Android Studio\jbr\bin\javac.exe" set "JAVA_HOME=%ProgramFiles%\Android\Android Studio\jbr"
+rem anything missing? then get it
+set NEED=
+if not exist "%ANDROID_HOME%\platforms\*" set NEED=1
+if not exist "%ANDROID_HOME%\build-tools\*" set NEED=1
+if not exist "%ANDROID_HOME%\ndk\*" set NEED=1
+if not exist "%ANDROID_HOME%\cmdline-tools\latest\bin\sdkmanager.bat" set NEED=1
+where javac >nul 2>nul || if "%JAVA_HOME%"=="" set NEED=1
+if defined NEED (
+  echo Getting the Android build tools ^(first time only^)...
+  powershell -NoProfile -ExecutionPolicy Bypass -File tools\android-setup.ps1 -EnvFile "%TEMP%\litego-android-env.bat"
+  if errorlevel 1 ( echo The setup did not finish. Run this again; it continues where it stopped. & pause & exit /b 1 )
+  if exist "%TEMP%\litego-android-env.bat" call "%TEMP%\litego-android-env.bat"
+)
 if not "%JAVA_HOME%"=="" set "PATH=%JAVA_HOME%\bin;%PATH%"
-where javac >nul 2>nul || ( echo Java is missing. Install Android Studio, or a JDK 17. & pause & exit /b 1 )
+where javac >nul 2>nul || ( echo Java was not found. Run tools\android-setup.ps1 again. & pause & exit /b 1 )
+
+rem the newest NDK and platform
+if "%ANDROID_NDK_HOME%"=="" for /f "delims=" %%d in ('dir /b /ad /on "%ANDROID_HOME%\ndk" 2^>nul') do set "ANDROID_NDK_HOME=%ANDROID_HOME%\ndk\%%d"
+set PLATFORM=
+for /f "delims=" %%p in ('dir /b /ad /on "%ANDROID_HOME%\platforms" 2^>nul') do set "PLATFORM=%ANDROID_HOME%\platforms\%%p"
+if not exist "%PLATFORM%\android.jar" ( echo No Android SDK platform was found in "%ANDROID_HOME%". & pause & exit /b 1 )
 
 rem gogio: Gio's tool that turns a Go program into an Android app
+for /f "delims=" %%g in ('go env GOPATH') do set "PATH=%%g\bin;!PATH!"
 where gogio >nul 2>nul
 if errorlevel 1 (
   echo Installing gogio...
   go install gioui.org/cmd/gogio@latest || ( echo Could not install gogio. & pause & exit /b 1 )
-  for /f "delims=" %%g in ('go env GOPATH') do set "PATH=%%g\bin;!PATH!"
 )
 
 rem keep the build small in memory (under 2 GB)

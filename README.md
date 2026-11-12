@@ -104,10 +104,11 @@ Shields asks about every request, as on Windows. What differs for now: container
 private tabs share one cookie store (Android's WebView has one per app), and Lite Go
 registers as a browser for http and https links.
 
-To build it on Windows: install Android Studio once (for its SDK Manager: an Android
-SDK Platform, Build-Tools, NDK and Command-line Tools), then double-click
-`build-android.bat`. It makes `dist\LiteGo.apk`; `build-android.bat aab` also makes
-the Play Store bundle.
+To build it on Windows, from the terminal only (no Android Studio): run
+`build-android.bat`. The first run gets what is missing by itself (Java 17 with
+winget; Google's Android command-line tools, an SDK platform, build-tools and the NDK
+with sdkmanager, see `tools/android-setup.ps1`; and gogio), about 2.5 GB. It makes
+`dist\LiteGo.apk`; `build-android.bat aab` also makes the Play Store bundle.
 
 The web engine is behind one small interface (`webview.Engine` and `webview.View`), so
 the rest of Lite Go is the same on every system.
