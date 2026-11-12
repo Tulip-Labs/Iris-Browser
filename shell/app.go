@@ -8,8 +8,15 @@
 package shell
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"runtime/debug"
+	"sync/atomic"
+
 	"context"
 	"image"
+	"litego/shields"
 	"sync"
 	"time"
 
@@ -60,6 +67,7 @@ type App struct {
 	MoveAreas []ui.Rect
 
 	set    *core.Settings
+	core   *Core
 	hist   *core.History
 	shield *core.Shield
 	plan   core.MemoryPlan
@@ -140,7 +148,8 @@ func New(h Host, cfg Config) *App {
 	if c == nil {
 		c = LoadCore(cfg.DataDir)
 	}
-	a.set, a.hist, a.shield = c.Settings, c.History, c.Shield
+	a.set, a.hist, a.shield, a.core = c.Settings, c.History, c.Shield, c
+	c.OnLists = func() { a.post(a.applyPolicy) } // WebKit needs the new list compiled
 	a.plan = core.Plan(cfg.TotalMB, a.set.Memory)
 	a.newTab(KNormal, "", "", true)
 	a.stop = make(chan struct{})
@@ -171,8 +180,45 @@ func (a *App) Policy() webview.Policy {
 	if a.set.YouTubeLight {
 		scripts = append(scripts, core.YouTubeLightScript)
 	}
+	if a.set.Farble {
+		scripts = append(scripts, shields.FarbleScript())
+	}
+	var rewrite func(string) string
+	if a.set.CleanLinks {
+		rewrite = shields.Clean
+	}
+	sh, c := a.shield, a.core
 	return webview.Policy{
-		Allow:     a.shield.Allow,
+		Rewrite: rewrite,
+		// WebKit (macOS, Linux) takes the shield as one compiled list
+		Blocklist: func() string {
+			if !sh.On {
+				return "[]"
+			}
+			f := c.Filters.Load()
+			var extra []string
+			if f == nil {
+				extra = sh.Domains(40000)
+			}
+			return f.SafariJSON(120000, extra)
+		},
+		// the built-in domain list and the filter lists together; exceptions
+		// in the lists (fixes for sites) lift blocks from both
+		Allow: func(u, page, kind string) bool {
+			if sh.Exempt(u, page) {
+				return true
+			}
+			dom := sh.Allow(u, page)
+			f := c.Filters.Load()
+			if f == nil {
+				return dom
+			}
+			q := shields.Request{URL: u, Page: page, Kind: kindOf(kind)}
+			if !dom {
+				return f.Excepted(q)
+			}
+			return !f.Blocked(q)
+		},
 		HTTPSOnly: a.set.HTTPSOnly,
 		AllowInsecure: func(u string) bool {
 			a.insecureMu.Lock()
@@ -339,16 +385,80 @@ type Core struct {
 	Settings *core.Settings
 	History  *core.History
 	Shield   *core.Shield
+	// Lite Shields' filter lists: loaded and refreshed in the background
+	Filters  atomic.Pointer[shields.Engine]
+	ListsAt  time.Time
+	ListsErr error
+	listsMu  sync.Mutex
+	loading  bool
+	dir      string
+	// OnLists runs when new filter lists are in place (any goroutine)
+	OnLists func()
 }
 
 // LoadCore loads them (the history and the shield finish in the background).
 func LoadCore(dir string) *Core {
-	c := &Core{Settings: core.LoadSettings(dir), History: core.OpenHistory(dir), Shield: core.NewShield()}
+	c := &Core{Settings: core.LoadSettings(dir), History: core.OpenHistory(dir), Shield: core.NewShield(), dir: dir}
 	c.Shield.On = c.Settings.Shield
 	for _, h := range c.Settings.ShieldOff {
 		c.Shield.SetSiteOff(h, true)
 	}
+	c.LoadLists(false, nil)
 	return c
+}
+
+// LoadLists (re)builds the filter engine from the saved lists, downloading
+// missing or old ones; force downloads them all again. done runs after.
+func (c *Core) LoadLists(force bool, done func()) {
+	c.listsMu.Lock()
+	if c.loading {
+		c.listsMu.Unlock()
+		return
+	}
+	c.loading = true
+	c.listsMu.Unlock()
+	set := c.Settings
+	wanted := map[string]bool{"easylist": set.Lists, "easyprivacy": set.Lists, "ublock": set.Lists, "cookies": set.Cookies}
+	dir := c.dir
+	go func() {
+		defer func() {
+			c.listsMu.Lock()
+			c.loading = false
+			c.listsMu.Unlock()
+			if done != nil {
+				done()
+			}
+		}()
+		if dir == "" {
+			return
+		}
+		ldir := filepath.Join(dir, "lists")
+		if force {
+			for _, l := range shields.Lists {
+				_ = os.Chtimes(filepath.Join(ldir, l.ID+".txt"), time.Time{}, time.Unix(0, 0))
+			}
+		}
+		// first what is saved (quick), then fresh copies where needed
+		if e, at, _ := shields.Load(context.Background(), ldir, wanted, false); e.Rules+e.Hiding > 0 {
+			c.Filters.Store(e)
+			c.ListsAt = at
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		e, at, err := shields.Load(ctx, ldir, wanted, true)
+		c.ListsErr = err
+		if e.Rules+e.Hiding > 0 {
+			c.Filters.Store(e)
+			c.ListsAt = at
+		} else if !set.Lists && !set.Cookies {
+			c.Filters.Store(nil)
+		}
+		if f := c.OnLists; f != nil {
+			f()
+		}
+		runtime.GC()
+		debug.FreeOSMemory()
+	}()
 }
 
 // Do runs f on the interface's loop (from any goroutine).
@@ -359,4 +469,20 @@ func (a *App) NewTab() { a.newTab(KNormal, "", "", true) }
 
 func ctxTimeout(sec int) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), time.Duration(sec)*time.Second)
+}
+
+func kindOf(k string) shields.Kind {
+	switch k {
+	case "script":
+		return shields.KindScript
+	case "image":
+		return shields.KindImage
+	case "media":
+		return shields.KindMedia
+	case "xmlhttprequest":
+		return shields.KindXHR
+	case "ping":
+		return shields.KindPing
+	}
+	return shields.KindOther
 }

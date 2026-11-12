@@ -30,6 +30,12 @@ type Settings struct {
 	SiteRanks map[string]int `json:"siteRanks"`
 	// GoogleSignIn is "" until the first-run sign-in is answered, then "done" or "later".
 	GoogleSignIn string `json:"googleSignIn"`
+	// Lite Shields: filter lists (EasyList, EasyPrivacy, uBlock), cookie
+	// notices, links without tracking, fingerprinting protection.
+	Lists      bool `json:"lists"`
+	Cookies    bool `json:"cookies"`
+	CleanLinks bool `json:"cleanLinks"`
+	Farble     bool `json:"farble"`
 	// Boost keeps Lite Go ready in the background so its window opens instantly.
 	Boost bool `json:"boost"`
 
@@ -42,6 +48,7 @@ type Settings struct {
 func LoadSettings(dir string) *Settings {
 	s := &Settings{Theme: "crocus", Shield: true, HTTPSOnly: true, YouTube: true, Strict: false, Memory: "balanced",
 		LiteResults: true, Boost: true, YouTubeLight: true,
+		Lists: true, Cookies: true, CleanLinks: true, Farble: true,
 		Containers: []Container{{"Work", "briefcase", "blue"}, {"Personal", "person", "orange"}}}
 	if dir == "" {
 		return s

@@ -102,6 +102,30 @@ func YTPlaybackCritical(u string) bool {
 }
 
 // Allow answers for one request made by a page.
+// Exempt says whether a request is never blocked: the shield is off (here),
+// or it is sign-in, messaging, a human check or YouTube playback.
+func (s *Shield) Exempt(reqURL, pageURL string) bool {
+	if !s.On {
+		return true
+	}
+	s.mu.RLock()
+	off := s.Off[Host(pageURL)]
+	s.mu.RUnlock()
+	if off {
+		return true
+	}
+	host := Host(reqURL)
+	if host == "" {
+		return true
+	}
+	for _, d := range neverBlock {
+		if under(host, d) {
+			return true
+		}
+	}
+	return YTPlaybackCritical(reqURL)
+}
+
 func (s *Shield) Allow(reqURL, pageURL string) bool {
 	if !s.On {
 		return true
@@ -157,3 +181,20 @@ func (s *Shield) SetSiteOff(host string, off bool) {
 
 // Wait blocks until the list is loaded (tests).
 func (s *Shield) Wait() { <-s.ready }
+
+// Domains returns up to n blocked domains (for engines that take a whole list).
+func (s *Shield) Domains(n int) []string {
+	select {
+	case <-s.ready:
+	default:
+		return nil
+	}
+	out := make([]string, 0, min(n, len(s.domains)))
+	for d := range s.domains {
+		if len(out) >= n {
+			break
+		}
+		out = append(out, d)
+	}
+	return out
+}

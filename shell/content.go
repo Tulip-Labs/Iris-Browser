@@ -2,6 +2,7 @@ package shell
 
 import (
 	"math"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -28,6 +29,9 @@ func (a *App) content(r ui.Rect) {
 		msg := "Lite Go shows pages with Microsoft Edge WebView2, which is not installed. Run the Lite Go installer again, or get the runtime from Microsoft."
 		if a.engErr != nil && !strings.Contains(a.engErr.Error(), "not available") {
 			msg = "The web engine did not start: " + a.engErr.Error()
+		}
+		if runtime.GOOS == "linux" {
+			msg = "Lite Go shows pages with WebKitGTK through XWayland (or X11). Install WebKitGTK 4.1 and make sure XWayland is on in your desktop, then open Lite Go again."
 		}
 		a.message(r, ui.IGlobe, "The web engine is not available", msg, "", nil)
 	case t.view == nil:

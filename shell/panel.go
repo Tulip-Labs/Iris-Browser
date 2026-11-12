@@ -3,6 +3,7 @@ package shell
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"litego/core"
 	"litego/ui"
@@ -272,8 +273,8 @@ func (a *App) drawPanel(r ui.Rect) {
 	divider()
 
 	// shield
-	section("Shield")
-	if v := check("shon", "Block ads and trackers", a.shield.On); v != a.shield.On {
+	section("Lite Shields")
+	if v := check("shon", "Shields on", a.shield.On); v != a.shield.On {
 		a.set.Shield = v
 		a.set.Save()
 		sh := a.shield
@@ -286,10 +287,31 @@ func (a *App) drawPanel(r ui.Rect) {
 	if host != "" && a.shield.On {
 		full := core.Host(t.URL)
 		off := a.siteOff(full)
-		if v := check("shsite", "Allow ads on "+host, off); v != off {
+		if v := check("shsite", "Shields off on "+host, off); v != off {
 			a.setSiteOff(full, v)
 			a.reload(t)
 		}
+	}
+	reloadLists := false
+	if v := check("lists", "Block ads and trackers (filter lists)", a.set.Lists); v != a.set.Lists {
+		a.set.Lists = v
+		a.set.Save()
+		reloadLists = true
+	}
+	if v := check("cookies", "Hide cookie notices", a.set.Cookies); v != a.set.Cookies {
+		a.set.Cookies = v
+		a.set.Save()
+		reloadLists = true
+	}
+	if v := check("clean", "Remove tracking from links", a.set.CleanLinks); v != a.set.CleanLinks {
+		a.set.CleanLinks = v
+		a.set.Save()
+		a.applyPolicy()
+	}
+	if v := check("farble", "Fingerprinting protection", a.set.Farble); v != a.set.Farble {
+		a.set.Farble = v
+		a.set.Save()
+		a.applyPolicy()
 	}
 	if v := check("https", "HTTPS only", a.set.HTTPSOnly); v != a.set.HTTPSOnly {
 		a.set.HTTPSOnly = v
@@ -311,11 +333,36 @@ func (a *App) drawPanel(r ui.Rect) {
 		a.set.Save()
 		a.applyPolicy()
 	}
+	if reloadLists {
+		h := a.h
+		a.core.LoadLists(false, h.Invalidate)
+	}
 	blocked := 0
 	if t != nil {
 		blocked = t.Blocked
 	}
-	note(comma(blocked) + " blocked on this page · " + comma(a.blockedTotal) + " this session · " + comma(a.shield.Size()) + " filter domains. YouTube, sign-in, messaging and human checks are never blocked.")
+	note(comma(blocked) + " blocked on this page · " + comma(a.blockedTotal) + " this session")
+	// the lists: how many rules and how fresh
+	lists := "Filter lists are loading…"
+	if f := a.core.Filters.Load(); f != nil {
+		lists = comma(f.Rules) + " blocking and " + comma(f.Hiding) + " hiding rules"
+		if !a.core.ListsAt.IsZero() {
+			lists += " · updated " + ago(a.core.ListsAt)
+		}
+	} else if !a.set.Lists && !a.set.Cookies {
+		lists = "Filter lists are off; the built-in list of " + comma(a.shield.Size()) + " tracker domains still works"
+	} else if a.core.ListsErr != nil {
+		lists = "Could not download the filter lists yet; the built-in list of " + comma(a.shield.Size()) + " domains works meanwhile"
+	}
+	note(lists)
+	y += 4
+	if u.Button(ID("updlists"), ui.Rect{X: x, Y: y, W: w, H: 36}, "Update filter lists", ui.ButtonOpt{Icon: ui.IReload, HasIcon: true, Tip: "EasyList, EasyPrivacy, uBlock filters and EasyList Cookie"}) {
+		h := a.h
+		a.core.LoadLists(true, func() { a.post(func() { a.notify("Filter lists updated.") }); h.Invalidate() })
+		a.notify("Updating the filter lists…")
+	}
+	y += 44
+	note("Sign-in, messaging, human checks and YouTube playback are never blocked. Style sheets and fonts always load, so pages keep their look.")
 	divider()
 
 	// memory
@@ -439,4 +486,20 @@ func (a *App) applyPolicy() {
 	}
 	eng, p := a.eng, a.Policy()
 	a.web(func() { eng.SetPolicy(p) })
+}
+
+// ago says how long ago t was, briefly.
+func ago(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Hour:
+		return "just now"
+	case d < 24*time.Hour:
+		return strconv.Itoa(int(d.Hours())) + " h ago"
+	}
+	n := int(d.Hours() / 24)
+	if n == 1 {
+		return "yesterday"
+	}
+	return strconv.Itoa(n) + " days ago"
 }

@@ -221,19 +221,20 @@ func (r *resident) loop(w *app.Window, urls []string) error {
 		case app.DestroyEvent:
 			a.Close() // keeps settings; the pages go with the window
 			return e.Err
-		case app.Win32ViewEvent:
-			if e.Valid() && !started {
+		case app.ViewEvent:
+			// the native window (HWND, NSView or X11 window): the system web
+			// view goes inside it, and lives on the window's thread
+			if win, ok := nativeWindow(e); ok && !started {
 				started = true
-				h.hwnd = e.HWND
+				h.hwnd = win
 				low := a.LowMemory()
-				// the engine lives on the window thread: start it there
-				w.Run(func() { eng.Start(e.HWND, webDir, low, a.Started) })
+				w.Run(func() { eng.Start(win, webDir, low, a.Started) })
 			}
 		case app.ConfigEvent:
 			maximized = e.Config.Mode == app.Maximized
 			a.Maximized = maximized
 		case app.FrameEvent:
-			if !started && runtime.GOOS != "windows" {
+			if !started && !engineOS() {
 				started = true
 				a.Started(webview.ErrUnavailable)
 			}

@@ -1,5 +1,6 @@
 // Package webview embeds the operating system's web engine under Lite Go's
-// own Gio interface: WebView2 (Chromium) on Windows. Every method must be
+// own Gio interface: WebView2 (Chromium) on Windows, WKWebView (WebKit) on
+// macOS and WebKitGTK on Linux. Every method must be
 // called on the window's UI thread; events arrive on that thread too.
 package webview
 
@@ -39,8 +40,16 @@ type Key struct {
 
 // Policy decides on requests; set by the browser core.
 type Policy struct {
-	// Allow says whether a subresource may load (the shield). nil = allow all.
-	Allow func(url, page string) bool
+	// Allow says whether a subresource may load (the shield). kind is what it
+	// loads: "script", "image", "media", "xmlhttprequest", "ping" or "other".
+	// nil = allow all.
+	Allow func(url, page, kind string) bool
+	// Blocklist returns the shield as a Safari content-blocker list, for the
+	// engines that cannot ask about each request (WebKit on macOS and Linux).
+	Blocklist func() string
+	// Rewrite may change the address of a page about to open (links cleaned of
+	// tracking); it returns the address unchanged when there is nothing to do.
+	Rewrite func(url string) string
 	// HTTPSOnly stops plain http:// pages unless AllowInsecure says yes.
 	HTTPSOnly     bool
 	AllowInsecure func(url string) bool

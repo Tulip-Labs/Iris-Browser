@@ -351,7 +351,20 @@ func (v *view) setup() {
 			}
 			uri := getString(req, slotICoreWebView2WebResourceRequest_Uri)
 			release(req)
-			if allow(uri, v.url) {
+			kind := "other"
+			switch getInt(args, slotICoreWebView2WebResourceRequestedEventArgs_ResourceContext) {
+			case 3:
+				kind = "image"
+			case 4:
+				kind = "media"
+			case 6:
+				kind = "script"
+			case 7, 8:
+				kind = "xmlhttprequest"
+			case 14:
+				kind = "ping"
+			}
+			if allow(uri, v.url, kind) {
 				return
 			}
 			var resp uintptr
@@ -367,6 +380,14 @@ func (v *view) setup() {
 	}
 	v.on(slotICoreWebView2_add_NavigationStarting, iidICoreWebView2NavigationStartingEventHandler, core, func(_, args uintptr) {
 		uri := getString(args, slotICoreWebView2NavigationStartingEventArgs_Uri)
+		if rw := e.policy.Rewrite; rw != nil {
+			if clean := rw(uri); clean != "" && clean != uri {
+				// open the clean address instead (links without tracking)
+				call(args, slotICoreWebView2NavigationStartingEventArgs_SetCancel, 1)
+				call(core, slotICoreWebView2_Navigate, uintptr(unsafe.Pointer(wstr(clean))))
+				return
+			}
+		}
 		if e.policy.HTTPSOnly && strings.HasPrefix(strings.ToLower(uri), "http://") && (e.policy.AllowInsecure == nil || !e.policy.AllowInsecure(uri)) {
 			call(args, slotICoreWebView2NavigationStartingEventArgs_SetCancel, 1)
 			if ev.Insecure != nil {

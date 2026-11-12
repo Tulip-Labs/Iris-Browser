@@ -44,9 +44,21 @@ suggests from history.
   follows the computer's RAM, with Saver, Balanced and Speed profiles, a live memory
   readout, and a Free memory now button. On computers with 4 GB or less the engine starts
   in its low-end mode with fewer renderer processes.
-- **Shield** against ads and trackers (about 100,000 domains, the same list as Lite
-  Desktop), per-site allow, a blocked counter, and YouTube ad clean-up. Sign-in,
-  messaging, human checks and YouTube playback are never blocked.
+- **Lite Shields**, what Brave calls Shields, written in Go:
+  - the filter lists real blockers use (EasyList, EasyPrivacy, uBlock filters), with
+    exceptions, first and third party, resource types and per-site rules; downloaded
+    and refreshed every few days, ~110,000 rules matched in microseconds
+  - hiding what ads leave behind (site rules at once, generic rules matched to each
+    page's own classes and ids), and cookie notices (EasyList Cookie)
+  - links without tracking (utm_, fbclid, gclid and more), tracking redirects skipped,
+    AMP pages opened at the source
+  - fingerprinting protection (canvas, audio and hardware details vary slightly per
+    site and session; sign-in and human-check pages left alone)
+  - plus the built-in list of 100,000 domains, per-site off, a blocked counter and
+    YouTube ad clean-up. Sign-in, messaging, human checks and YouTube playback are
+    never blocked, and style sheets and fonts always load, so pages keep their look.
+  - On macOS and Linux the request rules are compiled into WebKit's own content
+    blocker (Safari's format).
 - **HTTPS-only**, with an "Open anyway" choice when a site has no secure connection.
 - **Private, temporary and container tabs.** Private tabs share one session that is never
   written to disk; a temporary tab is a fresh session of its own, gone when it closes (a
@@ -66,9 +78,13 @@ suggests from history.
 
 | | Web engine | Status |
 |---|---|---|
-| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Done |
-| macOS | WKWebView | Next: the `webview` package is ready for it |
-| Linux | WebKitGTK | Next |
+| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Done, tested |
+| macOS 12+ | WKWebView (WebKit, built into macOS) | Written: `./build-litego.sh mac` on a Mac; first run pending |
+| Linux (X11, or XWayland) | WebKitGTK 4.1 | Written: `./build-litego.sh linux`; first run pending |
+
+Every system's own web engine sits inside Lite Go's window, and Lite Go drives it the
+same way everywhere: tabs, Shields, results, the AI panel, the memory plan. No engine is
+bundled: each comes with the system and is kept up to date by it.
 
 The web engine is behind one small interface (`webview.Engine` and `webview.View`), so
 the rest of Lite Go is the same on every system.

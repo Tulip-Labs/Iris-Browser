@@ -4,6 +4,7 @@ import (
 	"context"
 	"image"
 	"image/color"
+	"litego/shields"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ type fakeView struct {
 	bounds           [4]int
 	focused, reloads int
 	run              func(js string) string
+	evals            []string
 }
 
 func (v *fakeView) Navigate(u string) {
@@ -48,7 +50,7 @@ func (v *fakeView) SetVisible(on bool)       { v.visible = on }
 func (v *fakeView) Sleep()                   { v.asleep, v.visible = true, false }
 func (v *fakeView) Wake()                    { v.asleep = false }
 func (v *fakeView) Focus()                   { v.focused++ }
-func (v *fakeView) Eval(string)              {}
+func (v *fakeView) Eval(js string)           { v.evals = append(v.evals, js) }
 func (v *fakeView) Run(js string, done func(string)) {
 	if v.run != nil {
 		done(v.run(js))
@@ -566,5 +568,42 @@ func TestFirstRunSignIn(t *testing.T) {
 	d.frames(2)
 	if d.a.set.GoogleSignIn != "done" || tab.URL != "" {
 		t.Fatalf("sign-in not noticed: %q %q", d.a.set.GoogleSignIn, tab.URL)
+	}
+}
+
+func TestLiteShields(t *testing.T) {
+	d := newDriver(t, 1280, 800, true)
+	e := shields.New()
+	e.Add(strings.NewReader("||doubleclick.net^\n@@||doubleclick.net/ok/$script\nexample.com##.sponsored\n##.ad-slot\n"))
+	d.a.core.Filters.Store(e)
+	d.eng.run = func(js string) string {
+		if strings.Contains(js, "classList") {
+			return `{"c":["ad-slot","main"],"i":[]}`
+		}
+		return "null"
+	}
+	d.frames(2)
+	p := d.a.Policy()
+	if p.Allow("https://ad.doubleclick.net/x.js", "https://example.com/", "script") {
+		t.Fatal("a listed ad should be blocked")
+	}
+	if !p.Allow("https://ad.doubleclick.net/ok/x.js", "https://example.com/", "script") {
+		t.Fatal("an exception should let it load")
+	}
+	if !p.Allow("https://accounts.google.com/x.js", "https://example.com/", "script") {
+		t.Fatal("sign-in is never blocked")
+	}
+	if p.Rewrite == nil || p.Rewrite("https://a.com/?utm_source=x&id=1") != "https://a.com/?id=1" {
+		t.Fatal("links should be cleaned")
+	}
+	tab := d.a.newTab(KNormal, "", "https://www.example.com/news?fbclid=abc", true)
+	d.settle(4)
+	if tab.URL != "https://www.example.com/news" {
+		t.Fatalf("typed address not cleaned: %q", tab.URL)
+	}
+	v := tab.view.(*fakeView)
+	all := strings.Join(v.evals, "\n")
+	if !strings.Contains(all, ".sponsored{display:none") || !strings.Contains(all, ".ad-slot{display:none") {
+		t.Fatalf("hiding rules not applied: %q", all)
 	}
 }

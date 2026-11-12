@@ -22,7 +22,7 @@ set GOOS=windows
 if "%GOARCH%"=="" set GOARCH=amd64
 
 echo Running the tests...
-go test ./core ./shell ./setup || ( echo Tests failed. & pause & exit /b 1 )
+go test ./core ./shell ./setup ./shields || ( echo Tests failed. & pause & exit /b 1 )
 
 echo Building Lite Go...
 if not exist "dist\Lite Go" mkdir "dist\Lite Go"

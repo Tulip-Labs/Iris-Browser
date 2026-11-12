@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"litego/shields"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -197,6 +198,9 @@ func (a *App) navigate(t *Tab, url string) {
 	if url == "" {
 		return
 	}
+	if a.set.CleanLinks {
+		url = shields.Clean(url)
+	}
 	if up := core.HTTPSUpgrade(url); up != "" && a.set.HTTPSOnly && !a.allowedInsecure(url) {
 		url = up
 	}
@@ -344,6 +348,7 @@ func (a *App) events(b *binding) webview.Events {
 				if !t.private() {
 					a.hist.Add(url, "", true)
 				}
+				a.hideSite(t, url)
 				if t == a.tab() && a.st.Focus != ID("addr") {
 					a.addr.Set(url)
 				}
@@ -362,6 +367,9 @@ func (a *App) events(b *binding) webview.Events {
 		},
 		Loading: func(l bool) {
 			on(func(t *Tab) {
+				if t.Loading && !l {
+					a.hideGeneric(t, 0)
+				}
 				t.Loading = l
 				if l {
 					t.Blocked = 0

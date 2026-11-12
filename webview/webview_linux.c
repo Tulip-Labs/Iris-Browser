@@ -1,0 +1,321 @@
+//go:build linux && webkit
+
+// The Linux side of Lite Go's web engine: WebKitGTK views in GtkPlug windows
+// placed inside the Gio window (X11). GTK runs on its own thread; every call
+// from Go is queued to it with g_main_context_invoke.
+
+#include <gtk/gtk.h>
+#include <gtk/gtkx.h>
+#include <webkit2/webkit2.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+
+enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST };
+
+extern void lgxGoCreated(uintptr_t cb, int ok);
+extern void lgxGoURL(uintptr_t id, char *u);
+extern void lgxGoTitle(uintptr_t id, char *t);
+extern void lgxGoLoading(uintptr_t id, int on, int back, int fwd);
+extern char *lgxGoDecide(uintptr_t id, char *u);
+extern uintptr_t lgxGoPopup(uintptr_t id, char *u);
+extern void lgxGoFullscreen(uintptr_t id, int on);
+extern void lgxGoCrashed(uintptr_t id);
+extern void lgxGoAudio(uintptr_t id, int on);
+extern int lgxGoKey(uintptr_t id, int ch, int vk, int ctrl, int shift, int alt);
+extern void lgxGoResult(uintptr_t cb, char *res);
+
+typedef struct {
+	uintptr_t id;
+	WebKitWebView *web;
+	GtkWidget *plug;
+	WebKitUserContentManager *ucm;
+	GSList *scripts; // queued before the view exists
+	char *profile;
+	int priv;
+} LV;
+
+static unsigned long parentXID;
+static char *dataDir;
+static GHashTable *views;    // id -> LV*
+static GHashTable *contexts; // profile -> WebKitWebContext*
+static WebKitUserContentFilter *filter;
+
+static LV *lv(uintptr_t id, int make) {
+	LV *v = g_hash_table_lookup(views, (gpointer)id);
+	if (!v && make) {
+		v = g_new0(LV, 1);
+		v->id = id;
+		g_hash_table_insert(views, (gpointer)id, v);
+	}
+	return v;
+}
+
+static WebKitWebContext *contextFor(const char *profile, int priv) {
+	char key[512];
+	snprintf(key, sizeof key, "%s:%s", priv ? "private" : "disk", profile);
+	WebKitWebContext *c = g_hash_table_lookup(contexts, key);
+	if (c) return c;
+	WebKitWebsiteDataManager *m;
+	if (priv) {
+		m = webkit_website_data_manager_new_ephemeral();
+	} else {
+		char *base = g_build_filename(dataDir, *profile ? profile : "default", NULL);
+		char *cache = g_build_filename(dataDir, "cache", *profile ? profile : "default", NULL);
+		m = webkit_website_data_manager_new("base-data-directory", base, "base-cache-directory", cache, NULL);
+		g_free(base);
+		g_free(cache);
+	}
+	c = webkit_web_context_new_with_website_data_manager(m);
+	webkit_web_context_set_process_model(c, WEBKIT_PROCESS_MODEL_MULTIPLE_SECONDARY_PROCESSES);
+	webkit_web_context_set_cache_model(c, WEBKIT_CACHE_MODEL_WEB_BROWSER);
+	if (!priv) {
+		char *cookies = g_build_filename(dataDir, *profile ? profile : "default", "cookies.sqlite", NULL);
+		webkit_cookie_manager_set_persistent_storage(webkit_web_context_get_cookie_manager(c), cookies, WEBKIT_COOKIE_PERSISTENT_STORAGE_SQLITE);
+		g_free(cookies);
+	}
+	g_hash_table_insert(contexts, g_strdup(key), c);
+	return c;
+}
+
+static void historyOf(LV *v, int loading) {
+	lgxGoLoading(v->id, loading, webkit_web_view_can_go_back(v->web), webkit_web_view_can_go_forward(v->web));
+}
+
+static void onURI(WebKitWebView *w, GParamSpec *p, LV *v) {
+	const char *u = webkit_web_view_get_uri(w);
+	lgxGoURL(v->id, (char *)(u ? u : ""));
+}
+static void onTitle(WebKitWebView *w, GParamSpec *p, LV *v) {
+	const char *t = webkit_web_view_get_title(w);
+	lgxGoTitle(v->id, (char *)(t ? t : ""));
+}
+static void onLoad(WebKitWebView *w, WebKitLoadEvent e, LV *v) {
+	if (e == WEBKIT_LOAD_STARTED) historyOf(v, 1);
+	if (e == WEBKIT_LOAD_FINISHED) historyOf(v, 0);
+}
+static void onAudio(WebKitWebView *w, GParamSpec *p, LV *v) { lgxGoAudio(v->id, webkit_web_view_is_playing_audio(w)); }
+static gboolean onFull(WebKitWebView *w, LV *v) { lgxGoFullscreen(v->id, 1); return FALSE; }
+static gboolean onUnfull(WebKitWebView *w, LV *v) { lgxGoFullscreen(v->id, 0); return FALSE; }
+static void onCrash(WebKitWebView *w, WebKitWebProcessTerminationReason r, LV *v) { lgxGoCrashed(v->id); }
+
+static gboolean onDecide(WebKitWebView *w, WebKitPolicyDecision *d, WebKitPolicyDecisionType t, LV *v) {
+	if (t == WEBKIT_POLICY_DECISION_TYPE_RESPONSE) {
+		if (!webkit_response_policy_decision_is_mime_type_supported(WEBKIT_RESPONSE_POLICY_DECISION(d))) {
+			webkit_policy_decision_download(d);
+			return TRUE;
+		}
+		return FALSE;
+	}
+	if (t != WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION) return FALSE;
+	WebKitNavigationAction *a = webkit_navigation_policy_decision_get_navigation_action(WEBKIT_NAVIGATION_POLICY_DECISION(d));
+	const char *u = webkit_uri_request_get_uri(webkit_navigation_action_get_request(a));
+	char *r = lgxGoDecide(v->id, (char *)(u ? u : ""));
+	if (!r) return FALSE;
+	webkit_policy_decision_ignore(d);
+	if (strcmp(r, "-") != 0) webkit_web_view_load_uri(w, r);
+	free(r);
+	return TRUE;
+}
+
+static int vkFor(guint kv) {
+	switch (kv) {
+	case GDK_KEY_Left: return 0x25;
+	case GDK_KEY_Right: return 0x27;
+	case GDK_KEY_F5: return 0x74;
+	case GDK_KEY_F6: return 0x75;
+	case GDK_KEY_F11: return 0x7A;
+	case GDK_KEY_Tab: case GDK_KEY_ISO_Left_Tab: return 0x09;
+	case GDK_KEY_Page_Up: return 0x21;
+	case GDK_KEY_Page_Down: return 0x22;
+	case GDK_KEY_Back: return 0xA6;
+	case GDK_KEY_Forward: return 0xA7;
+	}
+	return 0;
+}
+
+static gboolean onKey(GtkWidget *w, GdkEventKey *e, LV *v) {
+	int ctrl = (e->state & GDK_CONTROL_MASK) != 0, shift = (e->state & GDK_SHIFT_MASK) != 0, alt = (e->state & GDK_MOD1_MASK) != 0;
+	int vk = vkFor(e->keyval);
+	gunichar ch = gdk_keyval_to_unicode(gdk_keyval_to_lower(e->keyval));
+	if (!ctrl && !alt && !vk) return FALSE;
+	return lgxGoKey(v->id, (int)ch, vk, ctrl, shift, alt) ? TRUE : FALSE;
+}
+
+static void wire(LV *v);
+
+static GtkWidget *onCreate(WebKitWebView *w, WebKitNavigationAction *a, LV *v) {
+	const char *u = webkit_uri_request_get_uri(webkit_navigation_action_get_request(a));
+	uintptr_t nid = lgxGoPopup(v->id, (char *)(u ? u : ""));
+	if (!nid) return NULL;
+	LV *n = lv(nid, 1);
+	n->ucm = v->ucm;
+	n->web = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW, "related-view", w, "user-content-manager", v->ucm, NULL));
+	wire(n);
+	return GTK_WIDGET(n->web);
+}
+
+static void wire(LV *v) {
+	g_signal_connect(v->web, "notify::uri", G_CALLBACK(onURI), v);
+	g_signal_connect(v->web, "notify::title", G_CALLBACK(onTitle), v);
+	g_signal_connect(v->web, "load-changed", G_CALLBACK(onLoad), v);
+	g_signal_connect(v->web, "notify::is-playing-audio", G_CALLBACK(onAudio), v);
+	g_signal_connect(v->web, "enter-fullscreen", G_CALLBACK(onFull), v);
+	g_signal_connect(v->web, "leave-fullscreen", G_CALLBACK(onUnfull), v);
+	g_signal_connect(v->web, "web-process-terminated", G_CALLBACK(onCrash), v);
+	g_signal_connect(v->web, "decide-policy", G_CALLBACK(onDecide), v);
+	g_signal_connect(v->web, "create", G_CALLBACK(onCreate), v);
+	g_signal_connect(v->web, "key-press-event", G_CALLBACK(onKey), v);
+	WebKitSettings *s = webkit_web_view_get_settings(v->web);
+	webkit_settings_set_enable_fullscreen(s, TRUE);
+	webkit_settings_set_enable_developer_extras(s, TRUE);
+	webkit_settings_set_hardware_acceleration_policy(s, WEBKIT_HARDWARE_ACCELERATION_POLICY_ALWAYS);
+	webkit_settings_set_javascript_can_open_windows_automatically(s, FALSE);
+	// the page lives in a plug window inside the Gio window
+	v->plug = gtk_plug_new((Window)parentXID);
+	gtk_container_add(GTK_CONTAINER(v->plug), GTK_WIDGET(v->web));
+	gtk_widget_realize(v->plug);
+}
+
+typedef struct {
+	int op;
+	uintptr_t id, cb;
+	int a, b, c, d;
+	char *s;
+} Op;
+
+static void evalDone(GObject *o, GAsyncResult *r, gpointer data) {
+	uintptr_t cb = (uintptr_t)data;
+	GError *err = NULL;
+	WebKitJavascriptResult *res = webkit_web_view_run_javascript_finish(WEBKIT_WEB_VIEW(o), r, &err);
+	char *json = NULL;
+	if (res) {
+		JSCValue *v = webkit_javascript_result_get_js_value(res);
+		json = jsc_value_to_json(v, 0);
+		webkit_javascript_result_unref(res);
+	}
+	if (err) g_error_free(err);
+	if (cb) lgxGoResult(cb, json ? json : "null");
+	g_free(json);
+}
+
+static void filterSaved(GObject *o, GAsyncResult *r, gpointer data) {
+	GError *err = NULL;
+	WebKitUserContentFilter *f = webkit_user_content_filter_store_save_finish(WEBKIT_USER_CONTENT_FILTER_STORE(o), r, &err);
+	if (!f) {
+		if (err) g_error_free(err);
+		return;
+	}
+	if (filter) webkit_user_content_filter_unref(filter);
+	filter = f;
+	GHashTableIter it;
+	gpointer k, val;
+	g_hash_table_iter_init(&it, views);
+	while (g_hash_table_iter_next(&it, &k, &val)) {
+		LV *v = val;
+		if (v->ucm) {
+			webkit_user_content_manager_remove_all_filters(v->ucm);
+			webkit_user_content_manager_add_filter(v->ucm, filter);
+		}
+	}
+}
+
+static gboolean runOp(gpointer data) {
+	Op *op = data;
+	LV *v = op->id ? lv(op->id, op->op == OP_SCRIPT || op->op == OP_PROFILE || op->op == OP_NEW) : NULL;
+	switch (op->op) {
+	case OP_SCRIPT:
+		v->scripts = g_slist_append(v->scripts, g_strdup(op->s));
+		break;
+	case OP_PROFILE:
+		g_free(v->profile);
+		v->profile = g_strdup(op->s ? op->s : "");
+		v->priv = op->a;
+		break;
+	case OP_NEW: {
+		if (!v->web) {
+			v->ucm = webkit_user_content_manager_new();
+			for (GSList *l = v->scripts; l; l = l->next)
+				webkit_user_content_manager_add_script(v->ucm, webkit_user_script_new(l->data, WEBKIT_USER_CONTENT_INJECT_ALL_FRAMES,
+				                                                                       WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START, NULL, NULL));
+			g_slist_free_full(v->scripts, g_free);
+			v->scripts = NULL;
+			if (filter) webkit_user_content_manager_add_filter(v->ucm, filter);
+			v->web = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW, "web-context", contextFor(v->profile ? v->profile : "", v->priv),
+			                                      "user-content-manager", v->ucm, NULL));
+			wire(v);
+		}
+		lgxGoCreated(op->cb, v->web != NULL);
+		break;
+	}
+	case OP_BLOCKLIST: {
+		char *path = g_build_filename(dataDir, "shields", NULL);
+		WebKitUserContentFilterStore *st = webkit_user_content_filter_store_new(path);
+		GBytes *b = g_bytes_new(op->s, strlen(op->s));
+		webkit_user_content_filter_store_save(st, "litego-shields", b, NULL, filterSaved, NULL);
+		g_bytes_unref(b);
+		g_object_unref(st);
+		g_free(path);
+		break;
+	}
+	default:
+		if (!v || !v->web) break;
+		switch (op->op) {
+		case OP_NAV: webkit_web_view_load_uri(v->web, op->s); break;
+		case OP_BACK: webkit_web_view_go_back(v->web); break;
+		case OP_FWD: webkit_web_view_go_forward(v->web); break;
+		case OP_RELOAD: webkit_web_view_reload(v->web); break;
+		case OP_STOP: webkit_web_view_stop_loading(v->web); break;
+		case OP_BOUNDS: {
+			GdkWindow *gw = gtk_widget_get_window(v->plug);
+			int w = op->c > 0 ? op->c : 1, h = op->d > 0 ? op->d : 1;
+			gtk_window_resize(GTK_WINDOW(v->plug), w, h);
+			if (gw) gdk_window_move_resize(gw, op->a, op->b, w, h);
+			gtk_widget_set_size_request(GTK_WIDGET(v->web), op->c, op->d);
+			break;
+		}
+		case OP_SHOW:
+			if (op->a) gtk_widget_show_all(v->plug);
+			else gtk_widget_hide(v->plug);
+			break;
+		case OP_FOCUS: gtk_widget_grab_focus(GTK_WIDGET(v->web)); break;
+		case OP_EVAL: webkit_web_view_run_javascript(v->web, op->s, NULL, evalDone, (gpointer)op->cb); op->cb = 0; break;
+		case OP_MUTE: webkit_web_view_set_is_muted(v->web, op->a); break;
+		case OP_CLOSE:
+			gtk_widget_destroy(v->plug);
+			g_hash_table_remove(views, (gpointer)op->id);
+			g_free(v->profile);
+			g_free(v);
+			break;
+		}
+	}
+	if (op->op == OP_EVAL && op->cb) lgxGoResult(op->cb, "null"); // no view to run it
+	g_free(op->s);
+	g_free(op);
+	return G_SOURCE_REMOVE;
+}
+
+void lgxCall(int op, uintptr_t id, int a, int b, int c, int d, const char *s, uintptr_t cb) {
+	Op *o = g_new0(Op, 1);
+	o->op = op, o->id = id, o->a = a, o->b = b, o->c = c, o->d = d, o->cb = cb;
+	o->s = s ? g_strdup(s) : NULL;
+	g_main_context_invoke(NULL, runOp, o);
+}
+
+void lgxMain(unsigned long parent, const char *dir) {
+	parentXID = parent;
+	dataDir = g_strdup(dir);
+	gdk_set_allowed_backends("x11");
+	gtk_init(NULL, NULL);
+	views = g_hash_table_new(g_direct_hash, g_direct_equal);
+	contexts = g_hash_table_new(g_str_hash, g_str_equal);
+	g_main_context_acquire(g_main_context_default());
+	gtk_main();
+}
+
+char *lgxVersion(void) {
+	char *s = g_strdup_printf("%u.%u.%u", webkit_get_major_version(), webkit_get_minor_version(), webkit_get_micro_version());
+	char *out = strdup(s);
+	g_free(s);
+	return out;
+}
