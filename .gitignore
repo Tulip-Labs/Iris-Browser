@@ -1,0 +1,5 @@
+dist/
+setup/payload/*
+!setup/payload/README.md
+go.local.mod
+go.local.sum
