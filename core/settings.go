@@ -26,6 +26,8 @@ type Settings struct {
 	LiteResults bool `json:"liteResults"`
 	// YouTubeLight asks YouTube for H.264 video and switches off its glow and previews.
 	YouTubeLight bool `json:"youtubeLight"`
+	// SiteRanks are the user's choices per site: 1 raise, -1 lower, -2 hide.
+	SiteRanks map[string]int `json:"siteRanks"`
 	// Boost keeps Lite Go ready in the background so its window opens instantly.
 	Boost bool `json:"boost"`
 

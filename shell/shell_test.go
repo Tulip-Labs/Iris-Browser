@@ -478,18 +478,20 @@ func TestLiteResults(t *testing.T) {
 	if strings.Contains(s.AI.Text, "Show more") || strings.HasPrefix(s.AI.Text, "red pandas") {
 		t.Fatalf("AI text not cleaned: %q", s.AI.Text)
 	}
+	if r := core.Rank(s.Web, s.Q, nil); r[0].Label != "Reference" {
+		t.Fatalf("the reference should lead: %+v", r[0])
+	}
 	d.frames(2)
 	d.shot("results")
-	s.section = secImages
-	d.frames(2)
-	d.shot("results-images")
-	s.section = secVideos
-	d.frames(2)
-	d.shot("results-videos")
-	s.section = secAI
+	s.scroll.Y = 900
+	s.vidTo = 2
+	d.settle(4)
+	d.shot("results-media")
+	s.scroll.Y = 0
+	s.aiOpen = true
 	d.frames(2)
 	d.shot("results-ai")
-	s.section = secAll
+	s.aiOpen = false
 	// a link opens the page; Back returns to the results
 	d.a.visitFromResults(s.Web[0].URL)
 	d.frames(3)

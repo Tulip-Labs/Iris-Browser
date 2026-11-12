@@ -222,7 +222,7 @@ func (a *App) reload(t *Tab) {
 	}
 	if s := t.search; s != nil {
 		n := a.startSearch(s.Q, s.Mode, s.URL, t.private())
-		n.section = s.section
+		n.aiOpen = s.aiOpen
 		t.search = n
 		return
 	}

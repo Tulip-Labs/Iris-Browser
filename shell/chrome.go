@@ -671,6 +671,10 @@ func (a *App) suggestKeys(id ui.ID, cancel func()) {
 // suggest fills the suggestion list for typed text.
 func (a *App) suggest(text string) {
 	q := strings.TrimSpace(text)
+	if q != "" && a.set.LiteResults {
+		t := a.tab()
+		a.warmAI(t != nil && t.private())
+	}
 	a.sugSel = 0
 	if q == "" {
 		a.sugg = nil

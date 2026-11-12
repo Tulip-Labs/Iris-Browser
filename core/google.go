@@ -80,6 +80,8 @@ const WebScript = `(() => {
   for (const h of root.querySelectorAll('a h3')) {
     const a = h.closest('a');
     if (!a || !a.href) continue;
+    // never ads or promoted units
+    if (a.closest('#tads,#tadsb,#bottomads,[data-text-ad],[aria-label="Ads"],[aria-label="Sponsored"],[data-pla]')) continue;
     let u = a.href;
     try { const x = new URL(u); if (/google\./.test(x.hostname) && x.pathname === '/url') u = x.searchParams.get('q') || x.searchParams.get('url') || u; } catch (e) {}
     if (/^https?:\/\/([a-z]+\.)?google\.[a-z.]+\//.test(u) || seen.has(u)) continue;
@@ -92,6 +94,7 @@ const WebScript = `(() => {
       const t = (el.innerText || '').trim();
       if (t.length > snip.length && t.length < 420) snip = t;
     }
+    if (/^(sponsored|ad|ads|patrocinado)\b/i.test((box.innerText || '').trim())) continue;
     const cite = box.querySelector('cite');
     out.push({t: h.innerText.trim(), u, s: snip.replace(/\s+/g, ' '), site: cite ? cite.innerText.split('›')[0].trim() : ''});
     if (out.length >= 12) break;
@@ -182,8 +185,10 @@ const AIScript = `(() => {
     blocks.push({k, t, c: cites.slice(0, 5)});
   }
   for (const a of root.querySelectorAll('a[href]')) cite(a);
-  return {blocks, src: sources.slice(0, 16), ai: (root.innerText || '').slice(0, 24000),
-    busy: !!q('[aria-busy="true"]'), captcha: location.pathname.startsWith('/sorry')};
+  // the feedback buttons appear once the answer is complete
+  const done = !!document.querySelector('[aria-label*="Good response" i],[aria-label*="thumbs up" i],[aria-label*="Positive feedback" i]');
+  return {blocks, src: sources.slice(0, 16), ai: (root.innerText || '').slice(0, 24000), done,
+    busy: !!q('[aria-busy="true"],[role="progressbar"]'), captcha: location.pathname.startsWith('/sorry')};
 })()`
 
 // PageScript reads the open page for the AI side panel.
@@ -243,6 +248,7 @@ type AIResult struct {
 	Blocks  []AIBlock
 	Sources []WebResult
 	Busy    bool
+	Done    bool // Google shows the answer as complete
 	Captcha bool
 }
 
@@ -253,6 +259,7 @@ func ParseAI(js, prompt string) AIResult {
 		AI      string      `json:"ai"`
 		Src     []WebResult `json:"src"`
 		Busy    bool        `json:"busy"`
+		Done    bool        `json:"done"`
 		Captcha bool        `json:"captcha"`
 	}
 	if json.Unmarshal([]byte(js), &r) != nil {
@@ -272,7 +279,7 @@ func ParseAI(js, prompt string) AIResult {
 	for _, b := range blocks {
 		lines = append(lines, Unbold(b.Text))
 	}
-	return AIResult{Text: strings.Join(lines, "\n"), Blocks: blocks, Sources: r.Src, Busy: r.Busy, Captcha: r.Captcha}
+	return AIResult{Text: strings.Join(lines, "\n"), Blocks: blocks, Sources: r.Src, Busy: r.Busy, Done: r.Done, Captcha: r.Captcha}
 }
 
 // Unbold removes the **bold** marks.

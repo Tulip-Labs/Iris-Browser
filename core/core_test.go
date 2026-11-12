@@ -172,3 +172,37 @@ func TestParseAIBlocks(t *testing.T) {
 		t.Fatalf("%q", r.Text)
 	}
 }
+
+func TestRank(t *testing.T) {
+	in := []WebResult{
+		{Title: "Top 10 best red panda plushies of 2026", URL: "https://www.toyreviews.example/plush"},
+		{Title: "Red panda plush", URL: "https://www.amazon.com/dp/1"},
+		{Title: "Red panda - Wikipedia", URL: "https://en.wikipedia.org/wiki/Red_panda"},
+		{Title: "Red panda facts", URL: "https://www.nationalgeographic.com/a"},
+		{Title: "Red panda page 2", URL: "https://en.wikipedia.org/wiki/Ailurus"},
+		{Title: "Red panda page 3", URL: "https://de.wikipedia.org/wiki/Katzenbär"},
+		{Title: "Blog", URL: "https://pandas.example/blog"},
+	}
+	r := Rank(in, "red pandas", map[string]int{"example": 0, "pandas.example": -2})
+	if r[0].Host() != "en.wikipedia.org" || r[0].Label != "Reference" {
+		t.Fatalf("reference first: %+v", r[0])
+	}
+	n := 0
+	for _, x := range r {
+		if strings.Contains(x.URL, "wikipedia") {
+			n++
+		}
+		if strings.Contains(x.URL, "pandas.example") {
+			t.Fatal("a hidden site must not show")
+		}
+	}
+	if n != 2 {
+		t.Fatalf("at most two per site, got %d", n)
+	}
+	if r[len(r)-1].Host() != "www.amazon.com" && r[len(r)-1].Host() != "www.toyreviews.example" {
+		t.Fatalf("shops and listicles sink: %+v", r)
+	}
+	if b := Rank(in, "buy red panda plush", nil); b[len(b)-1].Host() == "www.amazon.com" {
+		t.Fatal("shops are fine when buying")
+	}
+}
