@@ -1,6 +1,7 @@
 package shell
 
 import (
+	"runtime/debug"
 	"strconv"
 	"strings"
 
@@ -432,6 +433,12 @@ func (a *App) tick() {
 		return
 	}
 	a.lastTick = now
+	a.trimThumbs(45)
+	if now-a.lastFree > 30 {
+		// hand freed memory back to Windows (the heap is small; this is quick)
+		a.lastFree = now
+		go debug.FreeOSMemory()
+	}
 	cur := a.tab()
 	live := 0
 	for _, t := range a.tabs {
@@ -499,6 +506,15 @@ func (a *App) FreeMemory() {
 		a.web(v.Close)
 		a.spare = nil
 	}
+	for _, w := range a.workers {
+		if w != nil && w.view != nil && w.cur == nil && len(w.queue) == 0 {
+			v := w.view
+			a.web(v.Close)
+			w.view = nil
+		}
+	}
+	a.trimThumbs(0)
+	go debug.FreeOSMemory()
 	if n == 0 {
 		a.notify("Only the open tab holds a page right now.")
 	} else {

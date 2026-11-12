@@ -283,6 +283,11 @@ func (a *App) drawPanel(r ui.Rect) {
 		a.set.Save()
 		a.applyPolicy()
 	}
+	if v := check("ytlight", "Light YouTube (H.264, no glow or previews)", a.set.YouTubeLight); v != a.set.YouTubeLight {
+		a.set.YouTubeLight = v
+		a.set.Save()
+		a.applyPolicy()
+	}
 	if v := check("strict", "Strict tracking prevention", a.set.Strict); v != a.set.Strict {
 		a.set.Strict = v
 		a.set.Save()
@@ -346,7 +351,16 @@ func (a *App) drawPanel(r ui.Rect) {
 	if u.Button(ID("free"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Free memory now", ui.ButtonOpt{Icon: ui.IMemory2, HasIcon: true}) {
 		a.FreeMemory()
 	}
-	y += 48
+	y += 46
+	if u.Button(ID("memrep"), ui.Rect{X: x, Y: y, W: w, H: 36}, "Save a memory report", ui.ButtonOpt{Tip: "Writes memory-report.txt to the settings folder"}) {
+		if p, err := a.memoryReport(); err == nil {
+			a.notify("Saved " + p)
+			a.bar.until = a.now() + 8
+		} else {
+			a.notify("Could not save the report: " + err.Error())
+		}
+	}
+	y += 44
 	divider()
 
 	// data

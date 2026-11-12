@@ -3,6 +3,7 @@ package shell
 import (
 	"context"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -302,80 +303,124 @@ func (a *App) sideHeader(title string, ic ui.Icon, x, y, w float32, sec int, s *
 	return y + 32
 }
 
-// aiCard draws the AI answer; short keeps it to a preview with "Show more".
+// aiCard draws the AI answer; short keeps it to a preview that opens the AI view.
 func (a *App) aiCard(s *Search, r ui.Rect, short bool) float32 {
 	u, g, th := &a.u, a.u.G, a.u.Th
-	pad := float32(20)
+	pad := float32(22)
 	tw := r.W - 2*pad
-	lines := richLines(g, s.AI.Text, tw)
-	maxLines := len(lines)
-	if short && maxLines > 9 {
-		maxLines = 8
+	size := float32(15)
+	if short {
+		size = 14.5
 	}
-	h := float32(58)
+	lay := layoutAnswer(g, s.AI.Blocks, tw, size)
+	n := len(lay.lines)
+	cut := short && n > 9
+	if cut {
+		n = 8
+	}
+	textH := float32(0)
+	if n > 0 {
+		textH = lay.lines[n-1].y + size*1.6
+	}
+	cols := max(1, min(3, int(tw/250)))
+	srcH := float32(0)
+	if !short && len(s.AI.Sources) > 0 && s.aiSt != stLoading {
+		rows := (len(s.AI.Sources) + cols - 1) / cols
+		srcH = 26 + float32(rows)*62 + 10
+	}
+	h := float32(66)
 	switch {
-	case s.AI.Text == "" && s.aiSt == stLoading:
-		h += 4 * 24
-	case s.AI.Text == "":
-		h += 30
+	case len(s.AI.Blocks) == 0 && s.aiSt == stLoading:
+		h += 4*26 + 8
+	case len(s.AI.Blocks) == 0:
+		h += 34
 	default:
-		h += richHeight(lines[:maxLines])
-		if len(s.AI.Sources) > 0 && !short {
+		h += textH + 12 + srcH
+		if short {
 			h += 44
-		}
-		if maxLines < len(lines) || short {
-			h += 40
 		}
 	}
 	card := ui.Rect{X: r.X, Y: r.Y, W: r.W, H: h}
-	ui.Glass(g, card, 20, th, true, true)
-	ui.FillRound(g, card, 20, th.Primary.Alpha(0.04))
-	// header
-	ui.DrawIcon(g, ui.ISparkle, card.X+pad, card.Y+18, 20, th.Primary)
-	g.Text("AI Mode", card.X+pad+28, card.Y+34, ui.FBodyBold, th.OnSurface)
-	if s.aiSt == stLoading {
-		dots := strings.Repeat(".", 1+int(a.now()*3)%3)
-		g.Text("Writing"+dots, card.X+pad+28+g.Measure("AI Mode", ui.FBodyBold)+12, card.Y+34, ui.FSmall, th.OnSurfaceVariant)
-		a.u.Redraw = true
-	}
-	y := card.Y + 54
+	ui.Glass(g, card, 22, th, true, true)
+	ui.FillRound(g, card, 22, th.Primary.Alpha(0.035))
+
+	// header: badge, name, status, actions
+	aiBadge(g, th, ui.Rect{X: card.X + pad, Y: card.Y + 18, W: 28, H: 28})
+	g.Text("AI Mode", card.X+pad+38, card.Y+37, ui.FBodyBold, th.OnSurface)
+	sx := card.X + pad + 38 + g.Measure("AI Mode", ui.FBodyBold) + 14
 	switch {
-	case s.AI.Text == "" && s.aiSt == stLoading:
-		for i, f := range []float32{1, 0.92, 0.97, 0.6} {
-			shimmer(a, ui.Rect{X: card.X + pad, Y: y + float32(i)*24 + 4, W: tw * f, H: 12}, 6)
+	case s.aiSt == stLoading:
+		a.writing(sx, card.Y+32)
+	case len(s.AI.Sources) > 0:
+		g.Text(strconv.Itoa(len(s.AI.Sources))+" sources", sx, card.Y+37, ui.FSmall, th.OnSurfaceVariant)
+	}
+	ax := card.R() - pad + 6
+	act := func(id string, ic ui.Icon, tip string) bool {
+		ax -= 34
+		return u.IconButton(ui.Id(id), ui.Rect{X: ax, Y: card.Y + 15, W: 32, H: 32}, ic, tip, ui.IconOpt{})
+	}
+	if act("ai-open", ui.IExternal, "Continue in AI Mode") {
+		a.newTab(KNormal, "", core.ModeAI.URL(s.Q)+"&lite=0", true)
+	}
+	if s.aiSt != stLoading && act("ai-again", ui.IReload, "Ask again") {
+		a.regenAI(s)
+	}
+	if s.AI.Text != "" && act("ai-copy", ui.ICopy, "Copy the answer") {
+		a.u.Clip.Set(s.AI.Text)
+		a.notify("Answer copied.")
+	}
+	y := card.Y + 62
+	switch {
+	case len(s.AI.Blocks) == 0 && s.aiSt == stLoading:
+		for i, f := range []float32{1, 0.94, 0.98, 0.62} {
+			shimmer(a, ui.Rect{X: card.X + pad, Y: y + float32(i)*26 + 6, W: tw * f, H: 12}, 6)
 		}
-	case s.AI.Text == "":
-		g.Text("No AI answer for this search.", card.X+pad, y+16, ui.FBody, th.OnSurfaceVariant)
+	case len(s.AI.Blocks) == 0:
+		g.Text("No AI answer for this search.", card.X+pad, y+18, ui.FBody, th.OnSurfaceVariant)
 	default:
-		y = drawRich(g, th, lines[:maxLines], card.X+pad, y)
-		if !short && len(s.AI.Sources) > 0 {
-			y = a.sourceChips(s.AI.Sources, card.X+pad, y+8, tw, "src")
+		y = a.drawAnswer(lay, card.X+pad, y, s.AI.Sources, n, "aic")
+		if cut {
+			// the preview fades into the card
+			fr := ui.Rect{X: card.X + 1, Y: y - 46, W: card.W - 2, H: 46}
+			bg := ui.Mix(pageColor(th), th.Primary, 0.035)
+			g.FillPathGradient(ui.NewPath().RoundRect(fr, 0), bg.Alpha(0), bg, fr.Y, fr.B())
+		}
+		if s.aiSt == stLoading {
+			ui.FillRound(g, ui.Rect{X: card.X + pad, Y: y - 4, W: 9, H: 3}, 1.5, th.Primary.Alpha(0.5+0.5*float32(int(a.now()*2)%2)))
+			a.u.Redraw = true
+		}
+		y += 12
+		if srcH > 0 {
+			a.sourceCards(s.AI.Sources, card.X+pad, y, tw, cols, "aisrc")
 		}
 		if short {
+			by := card.B() - 46
 			lbl := "Show more"
-			if maxLines >= len(lines) {
-				lbl = "Go deeper in AI Mode"
+			if !cut {
+				lbl = "Open AI Mode view"
 			}
-			br := ui.Rect{X: card.X + pad - 8, Y: card.B() - 42, W: g.Measure(lbl, ui.FSmallBold) + 36, H: 30}
+			br := ui.Rect{X: card.X + pad - 8, Y: by, W: g.Measure(lbl, ui.FSmallBold) + 40, H: 32}
 			if u.Hover(br) {
-				ui.FillRound(g, br, 15, th.Ink.Alpha(0.06))
+				ui.FillRound(g, br, 16, th.Ink.Alpha(0.06))
 			}
-			g.Text(lbl, br.X+10, ui.Mid(g, br.Y, br.H, ui.FSmallBold), ui.FSmallBold, th.Primary)
-			ui.DrawIcon(g, ui.IChevronDown, br.R()-22, br.CY()-7, 14, th.Primary)
+			g.Text(lbl, br.X+12, ui.Mid(g, br.Y, br.H, ui.FSmallBold), ui.FSmallBold, th.Primary)
+			ui.DrawIcon(g, ui.IChevronDown, br.R()-24, br.CY()-7, 14, th.Primary)
 			if u.Clickable(ui.Id("aimore"), br) {
 				s.section, s.scroll.Y = secAI, 0
 			}
+			a.sourceStack(s.AI.Sources, br.R()+10, by+1, "aistack", func() { s.section, s.scroll.Y = secAI, 0 })
 		}
 	}
 	if !short && s.AI.Text != "" {
 		// keep the conversation going in the side panel
-		fr := ui.Rect{X: card.X, Y: card.B() + 14, W: card.W, H: 44}
-		ui.StrokeRound(g, fr, 22, 1, th.Outline)
+		fr := ui.Rect{X: card.X, Y: card.B() + 14, W: card.W, H: 48}
+		ui.FillRound(g, fr, 24, pageColor(th))
+		ui.StrokeRound(g, fr.Inset(0.5), 24, 1, th.Outline)
 		if u.Hover(fr) {
-			ui.FillRound(g, fr, 22, th.Ink.Alpha(0.04))
+			ui.FillRound(g, fr, 24, th.Primary.Alpha(0.05))
 		}
-		ui.DrawIcon(g, ui.ISparkle, fr.X+16, fr.CY()-9, 18, th.Primary)
-		g.Text("Ask a follow-up", fr.X+44, ui.Mid(g, fr.Y, fr.H, ui.FBody), ui.FBody, th.Ink3)
+		ui.DrawIcon(g, ui.ISparkle, fr.X+18, fr.CY()-9, 18, th.Primary)
+		g.Text("Ask a follow-up", fr.X+46, ui.Mid(g, fr.Y, fr.H, ui.FBody), ui.FBody, th.Ink3)
 		if u.Clickable(ui.Id("followup"), fr) {
 			a.openAI("")
 		}
@@ -384,33 +429,21 @@ func (a *App) aiCard(s *Search, r ui.Rect, short bool) float32 {
 	return card.B()
 }
 
-func (a *App) sourceChips(src []core.WebResult, x, y, w float32, id string) float32 {
-	u, g, th := &a.u, a.u.G, a.u.Th
-	cx := x
-	for i, sr := range src {
-		host := strings.TrimPrefix(core.Host(sr.URL), "www.")
-		lbl := host
-		cw := min(220, g.Measure(lbl, ui.FSmall)+40)
-		if cx+cw > x+w {
-			cx = x
-			y += 36
+// regenAI asks AI Mode again for the search.
+func (a *App) regenAI(s *Search) {
+	s.AI, s.aiSt = core.AIResult{}, stLoading
+	aw := a.workerFor(s.private, true)
+	a.askGoogleAI(aw, "search", s.Q, s.Q, 35, func(r core.AIResult, done bool) {
+		if r.Text != "" {
+			s.AI = r
 		}
-		cr := ui.Rect{X: cx, Y: y, W: cw, H: 30}
-		ui.FillRound(g, cr, 15, th.SurfaceHigh)
-		if u.Hover(cr) {
-			ui.FillRound(g, cr, 15, th.Ink.Alpha(0.06))
+		if done {
+			s.aiSt = stDone
+			if s.AI.Text == "" {
+				s.aiSt = stFailed
+			}
 		}
-		mr := ui.RectAround(cr.X+15, cr.CY(), 16, 16)
-		ui.FillOval(g, mr, siteColor(host))
-		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 9, Bold: true}, ui.White)
-		ui.TextFit(g, lbl, cr.X+28, ui.Mid(g, cr.Y, cr.H, ui.FSmall), ui.FSmall, th.OnSurface, cw-36)
-		u.Tooltip(sr.Title, cr)
-		if u.Clickable(ui.IdN(id, i), cr) {
-			a.visitFromResults(sr.URL)
-		}
-		cx += cw + 8
-	}
-	return y + 38
+	})
 }
 
 func (a *App) webList(s *Search, x, y, w float32) float32 {
@@ -647,78 +680,4 @@ func (a *App) videoGrid(s *Search, x, y, w float32, _ int) float32 {
 	}
 	rows := (len(s.Videos) + cols - 1) / cols
 	return y + float32(rows)*(ch+gap)
-}
-
-// ---- rich text: the AI answer's paragraphs, headings and bullets ----
-
-type richLine struct {
-	text   string
-	font   ui.Font
-	indent float32
-	bullet bool
-	gap    float32 // space before
-}
-
-func richLines(g ui.Gfx, text string, w float32) []richLine {
-	var out []richLine
-	paras := strings.Split(text, "\n")
-	for i, p := range paras {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		bullet := false
-		for _, b := range []string{"• ", "- ", "* ", "· "} {
-			if strings.HasPrefix(p, b) {
-				p, bullet = strings.TrimSpace(p[len(b):]), true
-				break
-			}
-		}
-		next := ""
-		if i+1 < len(paras) {
-			next = strings.TrimSpace(paras[i+1])
-		}
-		heading := !bullet && len(p) < 70 && next != "" && !strings.ContainsAny(p[len(p)-1:], ".,;!?)") && len(strings.Fields(p)) <= 9
-		f := ui.FBody
-		gap := float32(8)
-		indent := float32(0)
-		if heading {
-			f, gap = ui.Font{Size: 15, Bold: true}, 14
-		}
-		if bullet {
-			indent, gap = 18, 4
-		}
-		for j, ln := range wrap(g, p, f, w-indent) {
-			rl := richLine{text: ln, font: f, indent: indent, bullet: bullet && j == 0}
-			if j == 0 && len(out) > 0 {
-				rl.gap = gap
-			}
-			out = append(out, rl)
-		}
-	}
-	return out
-}
-
-func richHeight(ls []richLine) float32 {
-	h := float32(0)
-	for _, l := range ls {
-		h += l.gap + 22
-	}
-	return h
-}
-
-func drawRich(g ui.Gfx, th *ui.Theme, ls []richLine, x, y float32) float32 {
-	for _, l := range ls {
-		y += l.gap
-		if l.bullet {
-			ui.FillOval(g, ui.RectAround(x+6, y+11, 5, 5), th.Primary)
-		}
-		col := th.OnSurface
-		if !l.font.Bold {
-			col = ui.Mix(th.OnSurface, th.OnSurfaceVariant, 0.25)
-		}
-		g.Text(l.text, x+l.indent, y+16, l.font, col)
-		y += 22
-	}
-	return y
 }

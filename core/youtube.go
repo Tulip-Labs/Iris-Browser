@@ -40,3 +40,38 @@ const YouTubeScript = `(() => {
     return res;
   };
 })();`
+
+// YouTubeLightScript makes YouTube lighter: it asks for H.264 video (decoded by
+// the graphics chip, with smaller buffers than VP9 and AV1), switches off the
+// ambient glow drawn around the player and the video previews that play when
+// the pointer rests on a thumbnail, and skips the animated thumbnails.
+const YouTubeLightScript = `(() => {
+  if (!/(^|\.)youtube\.com$/.test(location.hostname) || window.__liteGoYTLight) return;
+  window.__liteGoYTLight = true;
+  const heavy = /vp0?9|av01/i;
+  try {
+    const ms = window.MediaSource;
+    if (ms && ms.isTypeSupported) {
+      const orig = ms.isTypeSupported.bind(ms);
+      ms.isTypeSupported = (t) => heavy.test(t) ? false : orig(t);
+    }
+    const mc = navigator.mediaCapabilities;
+    if (mc && mc.decodingInfo) {
+      const orig = mc.decodingInfo.bind(mc);
+      mc.decodingInfo = (c) => {
+        const t = (c && c.video && c.video.contentType) || '';
+        return heavy.test(t) ? Promise.resolve({supported: false, smooth: false, powerEfficient: false}) : orig(c);
+      };
+    }
+    const cp = HTMLMediaElement.prototype.canPlayType;
+    HTMLMediaElement.prototype.canPlayType = function (t) { return heavy.test(t) ? '' : cp.call(this, t); };
+  } catch (e) {}
+  const css = '#cinematics, #cinematics-container, ytd-video-preview, #video-preview, #mouseover-overlay,' +
+    ' ytd-moving-thumbnail-renderer { display: none !important; }';
+  const add = () => {
+    const s = document.createElement('style');
+    s.textContent = css;
+    (document.head || document.documentElement).appendChild(s);
+  };
+  if (document.documentElement) add(); else document.addEventListener('DOMContentLoaded', add);
+})();`

@@ -95,7 +95,7 @@ func (a *App) runWorker(w *worker, now float64) {
 	}
 	if w.cur == nil {
 		if len(w.queue) == 0 {
-			if w.view != nil && now-w.idle > 90 {
+			if w.view != nil && now-w.idle > 30 {
 				v := w.view
 				a.web(v.Close)
 				w.view = nil
@@ -207,8 +207,8 @@ func (a *App) thumbFor(src string) image.Image {
 	}
 	t := a.thumbs[src]
 	if t == nil {
-		if len(a.thumbs) > 240 {
-			a.trimThumbs()
+		if len(a.thumbs) > 80 {
+			a.trimThumbs(15)
 		}
 		t = &thumb{loading: true}
 		a.thumbs[src] = t
@@ -218,7 +218,7 @@ func (a *App) thumbFor(src string) image.Image {
 			defer func() { <-a.thumbSem }()
 			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 			defer cancel()
-			img, err := fetch(ctx, src, 400)
+			img, err := fetch(ctx, src, 320)
 			a.post(func() {
 				t.loading = false
 				t.img, t.failed = img, err != nil
@@ -229,8 +229,9 @@ func (a *App) thumbFor(src string) image.Image {
 	return t.img
 }
 
-func (a *App) trimThumbs() {
-	cut := a.now() - 60
+// trimThumbs lets go of pictures not drawn for the last age seconds.
+func (a *App) trimThumbs(age float64) {
+	cut := a.now() - age
 	for k, t := range a.thumbs {
 		if !t.loading && t.used < cut {
 			delete(a.thumbs, k)

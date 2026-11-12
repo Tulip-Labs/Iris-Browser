@@ -81,6 +81,10 @@ func browserArgs(low bool) string {
 	args := []string{
 		"--process-per-site",              // tabs of one site share a renderer
 		"--disable-background-networking", // no speculative background traffic
+		// Edge extras a browser shell does not need: SmartScreen reputation
+		// lookups, the out-of-process PDF and UI helpers
+		"--disable-features=msSmartScreenProtection,msWebOOUI,msPdfOOUI,msEdgeEnhanceSecurityMode",
+		"--disable-component-update",
 	}
 	if low {
 		args = append(args, "--renderer-process-limit=3", "--enable-low-end-device-mode")
@@ -300,6 +304,11 @@ func (v *view) setup() {
 			call(s4, slotICoreWebView2Settings4_SetIsPasswordAutosaveEnabled, 1)
 			call(s4, slotICoreWebView2Settings4_SetIsGeneralAutofillEnabled, 1)
 			release(s4)
+		}
+		if s8 := query(s, &iidICoreWebView2Settings8); s8 != 0 {
+			// no SmartScreen lookup for every page (the shield and HTTPS-only stay on)
+			call(s8, slotICoreWebView2Settings8_SetIsReputationCheckingRequired, 0)
+			release(s8)
 		}
 		release(s)
 	}

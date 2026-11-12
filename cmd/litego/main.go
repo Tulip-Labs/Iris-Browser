@@ -33,6 +33,10 @@ import (
 const version = "1.0.0"
 
 func main() {
+	// a small, steady footprint: collect garbage sooner and keep the Go heap
+	// under a soft ceiling (pages live in WebView2's own processes)
+	debug.SetGCPercent(50)
+	debug.SetMemoryLimit(128 << 20)
 	background := false
 	var urls []string
 	for _, a := range os.Args[1:] {

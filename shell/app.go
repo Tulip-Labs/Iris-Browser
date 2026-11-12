@@ -106,6 +106,7 @@ type App struct {
 	memMB, appMB float64
 	lastMem      float64
 	lastTick     float64
+	lastFree     float64
 	start        time.Time
 	stop         chan struct{}
 	stopped      bool
@@ -162,6 +163,9 @@ func (a *App) Policy() webview.Policy {
 	var scripts []string
 	if a.set.YouTube {
 		scripts = append(scripts, core.YouTubeScript)
+	}
+	if a.set.YouTubeLight {
+		scripts = append(scripts, core.YouTubeLightScript)
 	}
 	return webview.Policy{
 		Allow:     a.shield.Allow,

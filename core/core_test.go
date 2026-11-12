@@ -148,3 +148,27 @@ func TestParsers(t *testing.T) {
 		t.Fatal(len(p))
 	}
 }
+
+func TestParseAIBlocks(t *testing.T) {
+	js := `{"blocks":[
+ {"k":"p","t":"red pandas","c":[]},
+ {"k":"p","t":"**Red pandas** are small mammals of the **eastern Himalayas**.","c":[1,2]},
+ {"k":"p","t":"**What they eat**","c":[]},
+ {"k":"li","t":"Mostly bamboo","c":[2,9]},
+ {"k":"p","t":"Show more","c":[]}],
+ "src":[{"t":"Red panda - Wikipedia","u":"https://en.wikipedia.org/wiki/Red_panda"},{"t":"WWF","u":"https://www.worldwildlife.org/"}],
+ "ai":"Red pandas are small mammals of the eastern Himalayas.\nWhat they eat\nMostly bamboo"}`
+	r := ParseAI(js, "red pandas")
+	if len(r.Blocks) != 3 {
+		t.Fatalf("%+v", r.Blocks)
+	}
+	if r.Blocks[1].Kind != "h" || r.Blocks[1].Text != "What they eat" {
+		t.Fatalf("bold line should be a heading: %+v", r.Blocks[1])
+	}
+	if len(r.Blocks[2].Cites) != 1 || r.Blocks[0].Cites[1] != 2 {
+		t.Fatalf("cites: %+v", r.Blocks)
+	}
+	if !strings.HasPrefix(r.Text, "Red pandas are small") {
+		t.Fatalf("%q", r.Text)
+	}
+}

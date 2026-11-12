@@ -400,7 +400,17 @@ func fixtures(js string) string {
 		b.WriteString(`]}`)
 		return b.String()
 	case strings.Contains(js, "aimc"):
-		return `{"ai":"red pandas\nAI Mode\nRed pandas are small, tree-dwelling mammals of the eastern Himalayas and southwestern China, about the size of a house cat.\nWhat they eat\n• Mostly bamboo leaves and shoots, up to 30% of their body weight a day\n• Fruit, acorns, roots and eggs when they find them\nWhy they are endangered\nHabitat loss and poaching have cut their numbers to under 10,000 in the wild.\nShow more\n4 sites","src":[{"t":"Red panda - Wikipedia","u":"https://en.wikipedia.org/wiki/Red_panda"},{"t":"WWF","u":"https://www.worldwildlife.org/species/red-panda"},{"t":"Nat Geo","u":"https://www.nationalgeographic.com/"}],"busy":false}`
+		return `{"blocks":[
+ {"k":"p","t":"red pandas","c":[]},
+ {"k":"p","t":"**Red pandas** are small, tree-dwelling mammals of the **eastern Himalayas** and southwestern China, about the size of a house cat. Despite the name, they are not close relatives of giant pandas.","c":[1,2]},
+ {"k":"h","t":"What they eat","c":[]},
+ {"k":"li","t":"**Bamboo** leaves and shoots make up most of the diet, up to a third of their body weight a day.","c":[2,3]},
+ {"k":"li","t":"Fruit, acorns, roots and eggs when they find them.","c":[4]},
+ {"k":"h","t":"Why they are endangered","c":[]},
+ {"k":"p","t":"Habitat loss and poaching have cut their numbers to **under 10,000** in the wild; protected forests and zoo programs are helping.","c":[2,5]},
+ {"k":"p","t":"Show more","c":[]}],
+ "src":[{"t":"Red panda - Wikipedia","u":"https://en.wikipedia.org/wiki/Red_panda"},{"t":"Red Panda | Species | WWF","u":"https://www.worldwildlife.org/species/red-panda"},{"t":"Red panda facts | National Geographic","u":"https://www.nationalgeographic.com/animals/mammals/facts/red-panda"},{"t":"Red panda | Smithsonian's National Zoo","u":"https://nationalzoo.si.edu/animals/red-panda"},{"t":"Red Panda Network","u":"https://redpandanetwork.org/"}],
+ "ai":"Red pandas are small, tree-dwelling mammals.\nWhat they eat\nBamboo\nWhy they are endangered\nHabitat loss","busy":false}`
 	case strings.Contains(js, "getSelection"):
 		return `{"title":"Red panda - Wikipedia","url":"https://en.wikipedia.org/wiki/Red_panda","text":"The red panda is a small mammal.","sel":""}`
 	}
@@ -511,9 +521,10 @@ func TestAIPanel(t *testing.T) {
 	d.a.askAI("Summarize this page")
 	d.settle(10)
 	turn := d.a.ai.turns[0]
-	if turn.state != stDone || !strings.Contains(turn.ans.Text, "bamboo") {
+	if turn.state != stDone || !strings.Contains(turn.ans.Text, "Bamboo") {
 		t.Fatalf("no answer: %v %q", turn.state, turn.ans.Text)
 	}
+	turn.showSrc = true
 	d.frames(2)
 	d.shot("ai-answer")
 }

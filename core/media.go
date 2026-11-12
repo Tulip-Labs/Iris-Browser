@@ -66,12 +66,12 @@ func FetchImage(ctx context.Context, src string, maxW int) (image.Image, error) 
 	if err != nil {
 		return nil, err
 	}
+	// always one compact RGBA copy at display size: the drawing layer uses it
+	// as is (no second copy), and the decoded original is let go
 	bd := img.Bounds()
-	if bd.Dx() <= maxW {
-		return img, nil
-	}
-	h := bd.Dy() * maxW / bd.Dx()
-	dst := image.NewRGBA(image.Rect(0, 0, maxW, max(1, h)))
+	w := min(bd.Dx(), maxW)
+	h := max(1, bd.Dy()*w/max(1, bd.Dx()))
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
 	xdraw.ApproxBiLinear.Scale(dst, dst.Bounds(), img, bd, xdraw.Src, nil)
 	return dst, nil
 }

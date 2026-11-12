@@ -123,22 +123,67 @@ const ImagesScript = `(() => {
   return {images: out, captcha: location.pathname.startsWith('/sorry')};
 })()`
 
-// AIScript reads Google AI Mode's answer (udm=50) as it is written.
+// AIScript reads Google AI Mode's answer (udm=50) as it is written: its blocks
+// (headings, paragraphs, list items) with **bold** kept, the sources each block
+// cites, and the full list of sources. innerText comes along as a fallback.
 const AIScript = `(() => {
   const q = s => document.querySelector(s);
   const root = q('[data-subtree="aimc"]') || q('[data-container-id="main-col"]') || q('[role="main"]') || document.body;
-  const src = [], seen = new Set();
-  for (const a of root.querySelectorAll('a[href^="http"]')) {
-    let u = a.href, host = '';
-    try { host = new URL(u).hostname; } catch (e) { continue; }
-    if (/(^|\.)google\.|gstatic\.com$|youtube\.com$/.test(host) || seen.has(host)) continue;
-    seen.add(host);
-    const t = ((a.innerText || a.getAttribute('aria-label') || '').trim().split('\n')[0] || host).slice(0, 90);
-    src.push({t, u});
-    if (src.length >= 6) break;
+  const sources = [], byURL = new Map();
+  const isGoogle = h => /(^|\.)google\.|gstatic\.com$|googleusercontent\.com$/.test(h);
+  const cite = a => {
+    let u = a.href, h = '';
+    try {
+      const x = new URL(u);
+      if (isGoogle(x.hostname) && x.pathname === '/url') u = x.searchParams.get('q') || x.searchParams.get('url') || u;
+      h = new URL(u).hostname;
+    } catch (e) { return 0; }
+    if (!/^https?:/.test(u) || isGoogle(h)) return 0;
+    u = u.split('#:~:text=')[0];
+    if (byURL.has(u)) return byURL.get(u);
+    const t = ((a.getAttribute('aria-label') || a.innerText || a.title || '').trim().split('\n')[0] || h).slice(0, 140);
+    sources.push({t, u});
+    byURL.set(u, sources.length);
+    return sources.length;
+  };
+  const skip = el => el.closest('button,[role="button"],form,nav,header,footer,textarea,[contenteditable="true"]');
+  const inline = el => {
+    let out = '';
+    const walk = n => {
+      if (n.nodeType === 3) { out += n.nodeValue; return; }
+      if (n.nodeType !== 1) return;
+      const tag = n.tagName;
+      if (/^(A|BUTTON|SVG|STYLE|SCRIPT|IMG|SUP)$/.test(tag)) return;
+      const st = getComputedStyle(n);
+      if (st.display === 'none' || st.visibility === 'hidden') return;
+      const bold = tag === 'B' || tag === 'STRONG' || parseInt(st.fontWeight, 10) >= 600;
+      if (bold) out += '**';
+      for (const c of n.childNodes) walk(c);
+      if (bold) out += '**';
+      if (tag === 'BR') out += ' ';
+    };
+    walk(el);
+    return out.replace(/\*\*(\s*)\*\*/g, '$1').replace(/\s+/g, ' ').trim();
+  };
+  const blocks = [];
+  for (const el of root.querySelectorAll('h1,h2,h3,h4,h5,p,li,[role="heading"],[role="listitem"]')) {
+    if (skip(el) || el.querySelector('p,li,h1,h2,h3,h4,h5,[role="listitem"]')) continue;
+    const t = inline(el);
+    if (!t || t.length < 2) continue;
+    const k = /^H\d$/.test(el.tagName) || el.getAttribute('role') === 'heading' ? 'h'
+      : (el.tagName === 'LI' || el.getAttribute('role') === 'listitem') ? 'li' : 'p';
+    const cites = [], scope = [el];
+    const sib = el.nextElementSibling;
+    if (sib && !sib.matches('h1,h2,h3,h4,h5,p,li,ul,ol')) scope.push(sib);
+    for (const s of scope) for (const a of s.querySelectorAll('a[href]')) {
+      const i = cite(a);
+      if (i > 0 && !cites.includes(i)) cites.push(i);
+    }
+    blocks.push({k, t, c: cites.slice(0, 5)});
   }
-  return {ai: (root.innerText || '').slice(0, 24000), src, busy: !!q('[aria-busy="true"]'),
-    captcha: location.pathname.startsWith('/sorry')};
+  for (const a of root.querySelectorAll('a[href]')) cite(a);
+  return {blocks, src: sources.slice(0, 16), ai: (root.innerText || '').slice(0, 24000),
+    busy: !!q('[aria-busy="true"]'), captcha: location.pathname.startsWith('/sorry')};
 })()`
 
 // PageScript reads the open page for the AI side panel.
@@ -184,19 +229,27 @@ func ParseImages(js string) (out []ImageResult, captcha bool) {
 	return r.Images, r.Captcha
 }
 
+// AIBlock is one part of an answer: a heading ("h"), paragraph ("p") or list
+// item ("li"). Text may hold **bold** runs; Cites are 1-based source numbers.
+type AIBlock struct {
+	Kind  string `json:"k"`
+	Text  string `json:"t"`
+	Cites []int  `json:"c"`
+}
+
 // AIResult is AI Mode's answer as read so far.
 type AIResult struct {
-	Text    string
+	Text    string // plain text, for copying
+	Blocks  []AIBlock
 	Sources []WebResult
 	Busy    bool
 	Captcha bool
 }
 
-var aiChrome = regexp.MustCompile(`(?i)^(ai mode|all|images|videos|news|shopping|short videos|forums|web|books|maps|flights|finance|more|tools|search labs|labs|show (more|all|less)|thinking.*|searching.*|looking.*|ask (anything|a follow.?up|about).*|ai (responses|overviews?) (may|can) (include|make) mistakes.*|learn more|dive deeper.*|sources?|\d+ (sites?|sources?|links?)|feedback|share|copy|copied|good response|bad response|thanks?( you)?.*|delete|start (a )?new search|new( chat| search)?|sign in|ai overview|listen|more results|send|edit|undo|done|close|menu|\+\d+|·|•)$`)
-
 // ParseAI reads AIScript's result and keeps only the answer.
-func ParseAI(js, query string) AIResult {
+func ParseAI(js, prompt string) AIResult {
 	var r struct {
+		Blocks  []AIBlock   `json:"blocks"`
 		AI      string      `json:"ai"`
 		Src     []WebResult `json:"src"`
 		Busy    bool        `json:"busy"`
@@ -205,8 +258,82 @@ func ParseAI(js, query string) AIResult {
 	if json.Unmarshal([]byte(js), &r) != nil {
 		return AIResult{}
 	}
-	return AIResult{Text: CleanAI(r.AI, query), Sources: r.Src, Busy: r.Busy, Captcha: r.Captcha}
+	plain := CleanAI(r.AI, prompt)
+	blocks := cleanBlocks(r.Blocks, prompt, len(r.Src))
+	// the structured reading is used when it covers most of the answer
+	n := 0
+	for _, b := range blocks {
+		n += len(Unbold(b.Text))
+	}
+	if len(blocks) == 0 || n < len(plain)/2 {
+		blocks = blocksFromText(plain)
+	}
+	var lines []string
+	for _, b := range blocks {
+		lines = append(lines, Unbold(b.Text))
+	}
+	return AIResult{Text: strings.Join(lines, "\n"), Blocks: blocks, Sources: r.Src, Busy: r.Busy, Captcha: r.Captcha}
 }
+
+// Unbold removes the **bold** marks.
+func Unbold(s string) string { return strings.ReplaceAll(s, "**", "") }
+
+func cleanBlocks(in []AIBlock, prompt string, nsrc int) []AIBlock {
+	var out []AIBlock
+	q := strings.ToLower(strings.TrimSpace(prompt))
+	prev := ""
+	for _, b := range in {
+		t := strings.TrimSpace(b.Text)
+		plain := strings.TrimSpace(Unbold(t))
+		low := strings.ToLower(plain)
+		if plain == "" || aiChrome.MatchString(plain) || plain == prev || len([]rune(plain)) < 2 ||
+			q != "" && (low == q || len([]rune(low)) >= 12 && strings.Contains(q, low)) {
+			continue
+		}
+		if b.Kind == "h" || strings.HasPrefix(t, "**") && strings.HasSuffix(t, "**") && strings.Count(t, "**") == 2 && len(plain) < 80 && b.Kind == "p" {
+			b.Kind, t = "h", plain
+		}
+		var cites []int
+		for _, c := range b.Cites {
+			if c >= 1 && c <= nsrc {
+				cites = append(cites, c)
+			}
+		}
+		out = append(out, AIBlock{Kind: b.Kind, Text: t, Cites: cites})
+		prev = plain
+	}
+	return out
+}
+
+// blocksFromText guesses blocks from plain lines: bullets, short headings, paragraphs.
+func blocksFromText(text string) []AIBlock {
+	var out []AIBlock
+	lines := strings.Split(text, "\n")
+	for i, ln := range lines {
+		ln = strings.TrimSpace(ln)
+		if ln == "" {
+			continue
+		}
+		kind := "p"
+		for _, b := range []string{"• ", "- ", "* ", "· "} {
+			if strings.HasPrefix(ln, b) {
+				ln, kind = strings.TrimSpace(ln[len(b):]), "li"
+				break
+			}
+		}
+		next := ""
+		if i+1 < len(lines) {
+			next = strings.TrimSpace(lines[i+1])
+		}
+		if kind == "p" && len(ln) < 70 && next != "" && !strings.ContainsAny(ln[len(ln)-1:], ".,;!?)") && len(strings.Fields(ln)) <= 9 {
+			kind = "h"
+		}
+		out = append(out, AIBlock{Kind: kind, Text: ln})
+	}
+	return out
+}
+
+var aiChrome = regexp.MustCompile(`(?i)^(ai mode|all|images|videos|news|shopping|short videos|forums|web|books|maps|flights|finance|more|tools|search labs|labs|show (more|all|less)|thinking.*|searching.*|looking.*|ask (anything|a follow.?up|about).*|ai (responses|overviews?) (may|can) (include|make) mistakes.*|learn more|dive deeper.*|sources?|\d+ (sites?|sources?|links?)|feedback|share|copy|copied|good response|bad response|thanks?( you)?.*|delete|start (a )?new search|new( chat| search)?|sign in|ai overview|listen|more results|send|edit|undo|done|close|menu|\+\d+|·|•|[a-z0-9 .'-]{2,40} \+\d+)$`)
 
 // CleanAI removes the page's controls and the prompt (query) from AI Mode's text.
 func CleanAI(raw, query string) string {

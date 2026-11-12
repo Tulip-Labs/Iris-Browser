@@ -2,6 +2,7 @@ package shell
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"litego/core"
@@ -18,6 +19,7 @@ type aiTurn struct {
 	q, title, url string
 	ans           core.AIResult
 	state         loadState
+	showSrc       bool
 }
 
 type aiPanel struct {
@@ -180,15 +182,33 @@ func (a *App) drawAI(r ui.Rect) {
 			}
 			cy = a.resultNote(ui.Rect{X: x, Y: cy, W: w}, msg, "Open AI Mode", func() { a.newTab(KNormal, "", core.ModeAI.URL(turn.q)+"&lite=0", true) })
 		default:
-			ls := richLines(g, turn.ans.Text, w)
-			cy = drawRich(g, th, ls, x, cy)
+			// the answer with its citations, then copy, continue and the sources
+			aiBadge(g, th, ui.Rect{X: x, Y: cy, W: 22, H: 22})
+			g.Text("AI Mode", x+30, cy+16, ui.FSmallBold, th.OnSurface)
 			if turn.state == stLoading {
-				a.u.Redraw = true
-				ui.FillOval(g, ui.RectAround(x+5, cy+10, 7, 7), th.Primary.Alpha(0.4+0.4*float32((int(a.now()*3))%2)))
-				cy += 20
+				a.writing(x+30+g.Measure("AI Mode", ui.FSmallBold)+12, cy+11)
 			}
-			if len(turn.ans.Sources) > 0 && turn.state == stDone {
-				cy = a.sourceChips(turn.ans.Sources, x, cy+8, w, "aisrc"+string(rune('a'+i%26)))
+			cy += 32
+			lay := layoutAnswer(g, turn.ans.Blocks, w, 14)
+			cy = a.drawAnswer(lay, x, cy, turn.ans.Sources, 0, "aip"+strconv.Itoa(i))
+			if turn.state == stDone {
+				cy += 6
+				bx := x - 6
+				if u.IconButton(ui.IdN("aicopy", i), ui.Rect{X: bx, Y: cy, W: 32, H: 32}, ui.ICopy, "Copy the answer", ui.IconOpt{}) {
+					a.u.Clip.Set(turn.ans.Text)
+					a.notify("Answer copied.")
+				}
+				bx += 34
+				if u.IconButton(ui.IdN("aiopen", i), ui.Rect{X: bx, Y: cy, W: 32, H: 32}, ui.IExternal, "Continue in AI Mode", ui.IconOpt{}) {
+					a.newTab(KNormal, "", core.ModeAI.URL(turn.q)+"&lite=0", true)
+				}
+				bx += 42
+				t := turn
+				a.sourceStack(turn.ans.Sources, bx, cy+1, "aistk"+strconv.Itoa(i), func() { t.showSrc = !t.showSrc })
+				cy += 40
+				if turn.showSrc {
+					cy = a.sourceCards(turn.ans.Sources, x, cy, w, 1, "aisc"+strconv.Itoa(i))
+				}
 			}
 		}
 		cy += 18

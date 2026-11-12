@@ -24,6 +24,8 @@ type Settings struct {
 	Memory string `json:"memory"`
 	// LiteResults shows Google searches on Lite Go's own results page.
 	LiteResults bool `json:"liteResults"`
+	// YouTubeLight asks YouTube for H.264 video and switches off its glow and previews.
+	YouTubeLight bool `json:"youtubeLight"`
 	// Boost keeps Lite Go ready in the background so its window opens instantly.
 	Boost bool `json:"boost"`
 
@@ -35,7 +37,7 @@ type Settings struct {
 // LoadSettings reads settings.json from dir ("" = defaults in memory only).
 func LoadSettings(dir string) *Settings {
 	s := &Settings{Theme: "crocus", Shield: true, HTTPSOnly: true, YouTube: true, Strict: true, Memory: "balanced",
-		LiteResults: true, Boost: true,
+		LiteResults: true, Boost: true, YouTubeLight: true,
 		Containers: []Container{{"Work", "briefcase", "blue"}, {"Personal", "person", "orange"}}}
 	if dir == "" {
 		return s
