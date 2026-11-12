@@ -27,8 +27,9 @@ type Entry struct {
 type History struct {
 	mu    sync.Mutex
 	db    *sql.DB
-	mem   map[string]*Entry
-	ready chan struct{}
+	mem    map[string]*Entry
+	ready  chan struct{}
+	writes sync.WaitGroup // writes still going to the disk
 }
 
 // OpenHistory starts opening history.sqlite in dir ("" = memory only).
@@ -102,7 +103,8 @@ func (h *History) Add(url, title string, countVisit bool) {
 	db, ec := h.db, *e
 	h.mu.Unlock()
 	if db != nil {
-		go db.Exec(`INSERT INTO visits (url, title, visits, last) VALUES (?, ?, ?, ?)
+		h.writes.Add(1)
+		go h.write(db, `INSERT INTO visits (url, title, visits, last) VALUES (?, ?, ?, ?)
 			ON CONFLICT(url) DO UPDATE SET title = excluded.title, visits = excluded.visits, last = excluded.last`,
 			ec.URL, ec.Title, ec.Visits, ec.Last.Unix())
 	}
@@ -185,9 +187,34 @@ func (h *History) Clear() {
 	db := h.db
 	h.mu.Unlock()
 	if db != nil {
-		go db.Exec(`DELETE FROM visits`)
+		h.writes.Add(1)
+		go h.write(db, `DELETE FROM visits`)
 	}
+}
+
+func (h *History) write(db *sql.DB, q string, args ...any) {
+	defer h.writes.Done()
+	db.Exec(q, args...)
 }
 
 // Wait blocks until the database is open (tests).
 func (h *History) Wait() { <-h.ready }
+
+// Flush waits until every write so far is on the disk.
+func (h *History) Flush() {
+	<-h.ready
+	h.writes.Wait()
+}
+
+// Close writes what is pending and closes the database file (Windows cannot
+// delete a file that is still open). History keeps working in memory after.
+func (h *History) Close() {
+	h.Flush()
+	h.mu.Lock()
+	db := h.db
+	h.db = nil
+	h.mu.Unlock()
+	if db != nil {
+		db.Close()
+	}
+}

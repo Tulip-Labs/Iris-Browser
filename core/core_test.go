@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestResolve(t *testing.T) {
@@ -75,6 +74,7 @@ func BenchmarkShieldAllow(b *testing.B) {
 func TestHistory(t *testing.T) {
 	dir := t.TempDir()
 	h := OpenHistory(dir)
+	t.Cleanup(h.Close) // before the folder is removed: Windows keeps open files
 	h.Wait()
 	h.Add("https://www.youtube.com/watch?v=1", "Lo-fi", true)
 	h.Add("https://www.youtube.com/", "YouTube", true)
@@ -86,8 +86,9 @@ func TestHistory(t *testing.T) {
 	if top := h.Top(5); len(top) != 2 {
 		t.Fatalf("top per host: %+v", top)
 	}
-	time.Sleep(300 * time.Millisecond) // writes are asynchronous
+	h.Close() // writes are asynchronous: this waits for them
 	h2 := OpenHistory(dir)
+	t.Cleanup(h2.Close)
 	h2.Wait()
 	if len(h2.Suggest("go.dev", 5)) != 1 {
 		t.Fatal("history did not persist in SQLite")
