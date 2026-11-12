@@ -241,6 +241,24 @@ func (a *App) drawPanel(r ui.Rect) {
 	note("Google opens in English (US) and is shown on Lite Go's own page: the AI answer, links, pictures and videos, in your theme. \"On Google\" shows the original. Type \"yt \" before words to search YouTube.")
 	divider()
 
+	// Google account
+	signed := a.set.GoogleSignIn == "done"
+	status := "Not signed in: Google may ask to prove you are human"
+	if signed {
+		status = "Signed in: results and AI answers come without human checks"
+	}
+	note(status)
+	y += 4
+	lbl := "Sign in to Google"
+	if signed {
+		lbl = "Sign in again"
+	}
+	if u.Button(ID("psignin"), ui.Rect{X: x, Y: y, W: w, H: 38}, lbl, ui.ButtonOpt{Icon: ui.IPerson, HasIcon: true}) {
+		a.signIn(a.tab())
+	}
+	y += 46
+	divider()
+
 	// startup
 	section("Startup")
 	if v := check("boost", "Open instantly (stay ready in the background)", a.set.Boost); v != a.set.Boost {

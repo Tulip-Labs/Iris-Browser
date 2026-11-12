@@ -18,10 +18,14 @@ suggests from history.
   of it, with no pages), from Windows sign-in and after you close the window, so a click
   shows the window at once. Clicking again opens a new tab in the same window. "Quit
   Lite Go" in the menu ends it completely; the setting can be turned off.
-- **Lite results.** Google searches are shown on one calm page of Lite Go's own, in your
-  theme: the AI Mode answer with numbered citations and sources ("Answer by Google AI
-  Mode" links to the original), the best links, a picture carousel you drag or scroll
-  sideways, a stack of big video cards, then the rest. Ads, sponsored units and
+- **Lite results.** Google searches are shown on a page of Lite Go's own, in your theme.
+  At the left: a picture carousel you drag or scroll sideways, a stack of big video
+  cards, and the AI Mode answer with numbered citations and sources ("Answer by Google
+  AI Mode" links to the original). At the right: the websites. A picture or video you
+  open shows in that right column (the picture large, with its site; the video playing
+  on its YouTube page), and "More" shows them all there; back returns to the websites.
+- **Sign in to Google once**, on first launch, so Google trusts the background reading
+  and never stops results or AI answers with human checks ("Not now" is possible). Ads, sponsored units and
   promotions are removed; links are ranked by source quality (references, official
   sites, docs, research and real discussions rise; shops, coupon and download farms and
   listicles sink; at most two per site), and you can raise, lower or hide any site.

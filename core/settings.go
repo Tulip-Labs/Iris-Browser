@@ -28,6 +28,8 @@ type Settings struct {
 	YouTubeLight bool `json:"youtubeLight"`
 	// SiteRanks are the user's choices per site: 1 raise, -1 lower, -2 hide.
 	SiteRanks map[string]int `json:"siteRanks"`
+	// GoogleSignIn is "" until the first-run sign-in is answered, then "done" or "later".
+	GoogleSignIn string `json:"googleSignIn"`
 	// Boost keeps Lite Go ready in the background so its window opens instantly.
 	Boost bool `json:"boost"`
 

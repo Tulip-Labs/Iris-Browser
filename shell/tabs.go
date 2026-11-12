@@ -334,6 +334,9 @@ func (a *App) events(b *binding) webview.Events {
 				if t.search != nil {
 					return // the page behind the results moved; the results stay in front
 				}
+				if a.signedIn(t, url) {
+					return
+				}
 				t.URL = url
 				if t.awaitLanding {
 					t.landing, t.awaitLanding = url, false

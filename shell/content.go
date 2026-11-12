@@ -140,6 +140,11 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 	}
 	y += 22
 
+	if a.set.GoogleSignIn == "" && t.Kind == KNormal {
+		a.signInCard(ui.Rect{X: cx - colW/2, Y: y, W: colW}, t)
+		return
+	}
+
 	// the search pill
 	sr := ui.Rect{X: cx - colW/2, Y: y, W: colW, H: 56}
 	id := ID("ntp")
@@ -238,4 +243,40 @@ func comma(n int) string {
 		s = s[:i] + "," + s[i:]
 	}
 	return s
+}
+
+// signInCard is the first-run step: sign in to Google once, so the results and
+// the AI answers (read from Google in the background) never meet human checks.
+func (a *App) signInCard(r ui.Rect, t *Tab) {
+	u, g, th := &a.u, a.u.G, a.u.Th
+	r.H = 248
+	ui.Glass(g, r, 24, th, true, true)
+	ui.FillRound(g, r, 24, th.Primary.Alpha(0.04))
+	x, y := r.X+28, r.Y+28
+	ib := ui.Rect{X: x, Y: y, W: 44, H: 44}
+	ui.FillRoundAccent(g, ib, 14, th.Primary)
+	ui.DrawIcon(g, ui.IPerson, ib.CX()-12, ib.CY()-12, 24, ui.White)
+	g.Text("Sign in to Google once", x+60, y+20, ui.FTitle, th.OnSurface)
+	g.Text("Step 1 of 1 · takes a minute", x+60, y+40, ui.FSmall, th.OnSurfaceVariant)
+	y += 66
+	text := "Lite Go reads Google in the background to build your results and AI answers. When you are signed in, Google trusts these visits and does not stop them to ask whether you are human. Your password goes only to Google."
+	for _, ln := range wrap(g, text, ui.FBody, r.W-56) {
+		g.Text(ln, x, y+16, ui.FBody, th.OnSurfaceVariant)
+		y += 22
+	}
+	by := r.B() - 64
+	if u.Button(ID("signin"), ui.Rect{X: x, Y: by, W: 200, H: 42}, "Sign in to Google", ui.ButtonOpt{Primary: true, Icon: ui.IPerson, HasIcon: true}) {
+		a.signIn(t)
+	}
+	lr := ui.Rect{X: x + 212, Y: by, W: 150, H: 42}
+	if u.Hover(lr) {
+		ui.FillRound(g, lr, 21, th.Ink.Alpha(0.05))
+	}
+	ui.TextCenter(g, "Not now", lr, ui.FBodyBold, th.OnSurfaceVariant)
+	u.Tooltip("Searching still works; Google may sometimes ask you to prove you are human", lr)
+	if u.Clickable(ID("signlater"), lr) {
+		a.set.GoogleSignIn = "later"
+		a.set.Save()
+		a.st.Focus = ID("ntp")
+	}
 }

@@ -26,6 +26,7 @@ type ImageResult struct {
 	Src  string `json:"src"`
 	Page string `json:"page"`
 	Alt  string `json:"alt"`
+	Full string `json:"full"` // the full-size picture, when Google names it
 }
 
 // VideoResult is one YouTube video.
@@ -112,15 +113,23 @@ const ImagesScript = `(() => {
     if (!/^data:image\/(jpeg|png|webp)|^https:\/\/encrypted-tbn\d?\.gstatic\.com\//.test(src)) continue;
     const r = img.getBoundingClientRect();
     if ((img.naturalWidth || r.width) < 50) continue;
-    let page = '', p = img;
+    let page = '', full = '', p = img;
     for (let i = 0; i < 10 && p; i++, p = p.parentElement) {
-      if (p.dataset && p.dataset.lpage) { page = p.dataset.lpage; break; }
+      if (p.dataset && p.dataset.lpage) { page = page || p.dataset.lpage; }
+      if (p.dataset && p.dataset.ou) { full = full || p.dataset.ou; }
       if (p.tagName === 'A' && p.href) {
-        try { const x = new URL(p.href); const ref = x.searchParams.get('imgrefurl'); if (ref) { page = ref; break; } if (!/google\./.test(x.hostname)) { page = p.href; break; } } catch (e) {}
+        try {
+          const x = new URL(p.href);
+          const ref = x.searchParams.get('imgrefurl'), iu = x.searchParams.get('imgurl');
+          if (iu) full = full || iu;
+          if (ref) { page = page || ref; break; }
+          if (!/google\./.test(x.hostname)) { page = page || p.href; break; }
+        } catch (e) {}
       }
+      if (page && full) break;
     }
     seen.add(src);
-    out.push({src, page, alt: (img.alt || '').trim()});
+    out.push({src, page, full, alt: (img.alt || '').trim()});
     if (out.length >= 30) break;
   }
   return {images: out, captcha: location.pathname.startsWith('/sorry')};

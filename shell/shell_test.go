@@ -34,8 +34,10 @@ func (v *fakeView) Navigate(u string) {
 	if v.ev.URL != nil {
 		v.ev.URL(u)
 	}
-	v.ev.Loading(true)
-	v.ev.Loading(false)
+	if v.ev.Loading != nil {
+		v.ev.Loading(true)
+		v.ev.Loading(false)
+	}
 }
 func (v *fakeView) Back()                    {}
 func (v *fakeView) Forward()                 {}
@@ -109,6 +111,7 @@ func newDriver(t *testing.T, w, h float32, withEngine bool) *driver {
 		cfg.Engine = d.eng
 	}
 	d.a = New(&fakeHost{}, cfg)
+	d.a.set.GoogleSignIn = "later" // the first-run sign-in has its own test
 	if withEngine {
 		d.a.Started(nil)
 	}
@@ -492,6 +495,22 @@ func TestLiteResults(t *testing.T) {
 	d.frames(2)
 	d.shot("results-ai")
 	s.aiOpen = false
+	// a picture and a video open beside the results
+	s.scroll.Y = 0
+	s.viewer = viewer{kind: vImage, idx: 3}
+	d.settle(3)
+	d.shot("results-image-viewer")
+	s.viewer = viewer{kind: vVideo, idx: 1}
+	d.settle(3)
+	if d.a.side.view == nil || !d.a.side.shown || !strings.Contains(d.a.side.url, "watch?v=b") {
+		t.Fatalf("video should play beside the results: %+v", d.a.side)
+	}
+	d.shot("results-video-viewer")
+	s.viewer = viewer{}
+	d.frames(2)
+	if d.a.side.shown {
+		t.Fatal("closing the video must hide and quiet it")
+	}
 	// a link opens the page; Back returns to the results
 	d.a.visitFromResults(s.Web[0].URL)
 	d.frames(3)
@@ -529,4 +548,23 @@ func TestAIPanel(t *testing.T) {
 	turn.showSrc = true
 	d.frames(2)
 	d.shot("ai-answer")
+}
+
+func TestFirstRunSignIn(t *testing.T) {
+	d := newDriver(t, 1280, 800, true)
+	d.a.set.GoogleSignIn = ""
+	d.frames(2)
+	d.shot("signin")
+	tab := d.a.tab()
+	d.a.signIn(tab)
+	d.frames(3)
+	if !strings.HasPrefix(tab.URL, "https://accounts.google.com/") {
+		t.Fatalf("sign-in should open: %q", tab.URL)
+	}
+	v := tab.view.(*fakeView)
+	v.ev.URL("https://www.google.com/?hl=en&litego=signedin")
+	d.frames(2)
+	if d.a.set.GoogleSignIn != "done" || tab.URL != "" {
+		t.Fatalf("sign-in not noticed: %q %q", d.a.set.GoogleSignIn, tab.URL)
+	}
 }

@@ -34,6 +34,8 @@ type Search struct {
 	vidPos, vidTo   float32
 	lastT           float64
 	drag            string
+	scroll2         ui.Scroll
+	viewer          viewer
 	dragX, dragFrom float32
 	moved           bool
 	scroll          ui.Scroll
@@ -192,85 +194,132 @@ func shimmer(a *App, r ui.Rect, rad float32) {
 	ui.FillRound(a.u.G, r, rad, th.Ink.Alpha(0.05+0.04*k))
 }
 
-// results draws the results page in r: one calm page, like a good article
-// about the question. The AI answer comes first, then the best links (ranked
-// by source quality, without ads or promotions), the pictures as a carousel and
-// the videos as a stack of cards, and the rest of the links.
+// results draws the results page in r. On a wide window it has two columns:
+// at the left the pictures, the videos and the AI answer; at the right the
+// websites, or whatever picture or video you opened, shown in place. On a
+// narrow window they stack, and an opened picture or video takes the page.
 func (a *App) results(r ui.Rect, t *Tab) {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	s := t.search
 	now := a.now()
 	dt := float32(min(0.1, max(0, now-s.lastT)))
 	s.lastT = now
+	if a.sideFull {
+		a.sideRect = r // a video in full screen
+		return
+	}
+	if s.viewer.kind != vVideo && a.sideURL != "" && !a.sideFull {
+		a.sideURL = ""
+	}
 	ui.FillRound(g, r, 14, pageColor(th))
 	g.Save()
 	g.Clip(r)
 	defer g.Restore()
 
-	colW := min(780, r.W-56)
-	mediaW := min(r.W-56, colW+280)
-	cx := r.CX()
-	x0 := cx - colW/2
-	mx := cx - mediaW/2
+	ranked := core.Rank(s.Web, s.Q, a.set.SiteRanks)
+	wide := r.W >= 1060
+	pad := float32(28)
 
 	// header: the question, what Lite Go did, and the original
 	head := ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 86}
-	ui.TextFit(g, s.Q, x0, r.Y+44, ui.Font{Size: 24, Bold: true}, th.OnSurface, colW-150)
-	ranked := core.Rank(s.Web, s.Q, a.set.SiteRanks)
+	hx := r.X + pad
+	ui.TextFit(g, s.Q, hx, r.Y+44, ui.Font{Size: 24, Bold: true}, th.OnSurface, r.W-2*pad-160)
 	info := "Ads and promotions removed"
 	if len(ranked) > 0 {
-		info += " · " + strconv.Itoa(len(ranked)) + " links ranked by source quality"
+		info += " · " + strconv.Itoa(len(ranked)) + " websites ranked by source quality"
 	}
-	ui.DrawIcon(g, ui.IShield, x0, r.Y+56, 14, th.Primary)
-	ui.TextFit(g, info, x0+20, r.Y+68, ui.FSmall, th.OnSurfaceVariant, colW-170)
-	ob := ui.Rect{X: x0 + colW - 132, Y: r.Y + 22, W: 132, H: 34}
+	ui.DrawIcon(g, ui.IShield, hx, r.Y+56, 14, th.Primary)
+	ui.TextFit(g, info, hx+20, r.Y+68, ui.FSmall, th.OnSurfaceVariant, r.W-2*pad-180)
+	ob := ui.Rect{X: r.R() - pad - 132, Y: r.Y + 22, W: 132, H: 34}
 	if u.Button(ID("og"), ob, "On Google", ui.ButtonOpt{Icon: ui.IExternal, HasIcon: true, Tip: "Open Google's own page"}) {
 		a.openOriginal(t)
 		return
 	}
 	g.FillRect(ui.Rect{X: r.X + 20, Y: head.B() - 1, W: r.W - 40, H: 1}, th.Divider)
-
 	body := ui.Rect{X: r.X, Y: head.B(), W: r.W, H: r.H - head.H}
-	u.Scroll(ID("results"), body, &s.scroll)
-	g.Save()
-	g.Clip(body)
-	defer g.Restore()
-	y := body.Y + 22 - s.scroll.Y
+
 	if s.captcha && len(s.Web) == 0 && s.AI.Text == "" {
-		a.resultNote(ui.Rect{X: x0, Y: y, W: colW}, "Google asked to confirm you are human. Open the search on Google once, then results show here again.", "Open on Google", func() { a.openOriginal(t) })
+		y := body.Y + 22
+		y = a.resultNote(ui.Rect{X: hx, Y: y, W: min(640, r.W-2*pad)}, "Google asked to confirm you are human. Signing in to Google once stops this; or open the search on Google.", "Sign in to Google", func() { a.signIn(t) })
+		a.resultNote(ui.Rect{X: hx, Y: y, W: 400}, "", "Open on Google", func() { a.openOriginal(t) })
 		return
 	}
-	split := min(3, len(ranked))
-	parts := []func(){}
-	aiPart := func() { y = a.aiCard(s, ui.Rect{X: x0, Y: y, W: colW}) + 30 }
-	topPart := func() { y = a.webItems(s, ranked[:split], 0, x0, y, colW) + 8 }
-	imgPart := func() { y = a.imageCarousel(s, mx, y, mediaW, dt) + 30 }
-	vidPart := func() { y = a.videoStack(s, mx, y, mediaW, dt) + 30 }
-	restPart := func() { y = a.webItems(s, ranked[split:], split, x0, y, colW) }
-	switch s.Mode {
-	case core.ModeImages:
-		parts = append(parts, imgPart, aiPart, topPart, vidPart, restPart)
-	case core.ModeVideos:
-		parts = append(parts, vidPart, aiPart, topPart, imgPart, restPart)
+
+	if !wide {
+		if s.viewer.kind != vNone {
+			a.drawViewer(s, t, body.Inset(0), true)
+			return
+		}
+		u.Scroll(ID("results"), body, &s.scroll)
+		g.Save()
+		g.Clip(body)
+		y := body.Y + 22 - s.scroll.Y
+		x, w := r.X+pad, r.W-2*pad
+		y = a.mediaAndAnswer(s, x, y, w, dt)
+		y = sectionTitle(a, ui.IGlobe, "Websites", "", x, y, nil) + 6
+		y = a.websites(s, t, ranked, x, y, w)
+		s.scroll.Content = y - (body.Y - s.scroll.Y)
+		g.Restore()
+		return
+	}
+
+	// two columns, each scrolling on its own
+	gap := float32(32)
+	rw := min(560, max(400, (r.W-2*pad-gap)*0.42))
+	lw := r.W - 2*pad - gap - rw
+	left := ui.Rect{X: r.X, Y: body.Y, W: pad + lw + gap/2, H: body.H}
+	right := ui.Rect{X: left.R(), Y: body.Y, W: r.R() - left.R(), H: body.H}
+	g.FillRect(ui.Rect{X: right.X, Y: body.Y + 16, W: 1, H: body.H - 32}, th.Divider)
+
+	u.Scroll(ID("results"), left, &s.scroll)
+	g.Save()
+	g.Clip(left)
+	y := a.mediaAndAnswer(s, r.X+pad, body.Y+22-s.scroll.Y, lw, dt)
+	s.scroll.Content = y + 30 - (body.Y - s.scroll.Y)
+	g.Restore()
+
+	col := ui.Rect{X: right.X + gap/2, Y: body.Y, W: rw, H: body.H}
+	if s.viewer.kind != vNone {
+		a.drawViewer(s, t, col, false)
+		return
+	}
+	u.Scroll(ID("sites"), right, &s.scroll2)
+	g.Save()
+	g.Clip(right)
+	y = body.Y + 22 - s.scroll2.Y
+	y = sectionTitle(a, ui.IGlobe, "Websites", "", col.X, y, nil) + 6
+	y = a.websites(s, t, ranked, col.X, y, col.W)
+	s.scroll2.Content = y - (body.Y - s.scroll2.Y)
+	g.Restore()
+}
+
+// mediaAndAnswer is the left column: pictures, videos, then the AI answer.
+func (a *App) mediaAndAnswer(s *Search, x, y, w, dt float32) float32 {
+	if len(s.Images) > 0 || s.imgSt == stLoading {
+		y = a.imageCarousel(s, x, y, w, dt) + 28
+	}
+	if len(s.Videos) > 0 || s.vidSt == stLoading {
+		y = a.videoStack(s, x, y, w, dt) + 24
+	}
+	return a.aiCard(s, ui.Rect{X: x, Y: y, W: w})
+}
+
+// websites lists the ranked links and the way to more.
+func (a *App) websites(s *Search, t *Tab, ranked []core.Ranked, x, y, w float32) float32 {
+	u := &a.u
+	switch {
+	case s.webSt == stLoading && len(ranked) == 0:
+		y = a.webSkeleton(x, y, w)
+	case len(ranked) == 0:
+		y = a.resultNote(ui.Rect{X: x, Y: y, W: w}, "No websites came back for this search.", "Open on Google", func() { a.openOriginal(t) })
 	default:
-		parts = append(parts, aiPart, topPart, imgPart, vidPart, restPart)
+		y = a.webItems(s, ranked, 0, x, y, w)
 	}
-	for _, p := range parts {
-		p()
-	}
-	if s.webSt == stLoading && len(ranked) == 0 {
-		y = a.webSkeleton(x0, y, colW)
-	} else if len(ranked) == 0 {
-		y = a.resultNote(ui.Rect{X: x0, Y: y, W: colW}, "No links came back for this search.", "Open on Google", func() { a.openOriginal(t) })
-	}
-	// the end of the page
-	y += 12
-	mr := ui.Rect{X: cx - 110, Y: y, W: 220, H: 40}
+	mr := ui.Rect{X: x, Y: y + 6, W: 220, H: 40}
 	if u.Button(ID("moreog"), mr, "More results on Google", ui.ButtonOpt{Icon: ui.IExternal, HasIcon: true}) {
 		a.openOriginal(t)
 	}
-	y = mr.B() + 30
-	s.scroll.Content = y - (body.Y - s.scroll.Y)
+	return mr.B() + 30
 }
 
 func (a *App) openOriginal(t *Tab) {
@@ -297,12 +346,26 @@ func (a *App) resultNote(r ui.Rect, text, action string, do func()) float32 {
 	return y
 }
 
-func sectionTitle(a *App, ic ui.Icon, title, note string, x, y float32) float32 {
-	g, th := a.u.G, a.u.Th
+func sectionTitle(a *App, ic ui.Icon, title, note string, x, y float32, more func(), wOpt ...float32) float32 {
+	u, g, th := &a.u, a.u.G, a.u.Th
 	ui.DrawIcon(g, ic, x, y+1, 18, th.Primary)
 	g.Text(title, x+26, y+15, ui.FTitle, th.OnSurface)
 	if note != "" {
 		g.Text(note, x+34+g.Measure(title, ui.FTitle), y+15, ui.FSmall, th.OnSurfaceVariant)
+	}
+	if more != nil && len(wOpt) > 0 {
+		lbl := "More"
+		mw := g.Measure(lbl, ui.FSmallBold) + 34
+		mr := ui.Rect{X: x + wOpt[0] - mw, Y: y - 4, W: mw, H: 28}
+		if u.Hover(mr) {
+			ui.FillRound(g, mr, 14, th.Ink.Alpha(0.06))
+		}
+		g.Text(lbl, mr.X+10, ui.Mid(g, mr.Y, mr.H, ui.FSmallBold), ui.FSmallBold, th.Primary)
+		ui.DrawIcon(g, ui.IChevron, mr.R()-20, mr.CY()-6, 12, th.Primary)
+		u.Tooltip("See them all at the side", mr)
+		if u.Clickable(ui.Id("more/"+title), mr) {
+			more()
+		}
 	}
 	return y + 34
 }
@@ -486,7 +549,7 @@ func roundBtn(a *App, r ui.Rect, ic ui.Icon, tip string) bool {
 // imageCarousel shows the pictures in a row you can drag, scroll sideways or step through.
 func (a *App) imageCarousel(s *Search, x, y, w, dt float32) float32 {
 	u, g, th := &a.u, a.u.G, a.u.Th
-	y = sectionTitle(a, ui.IImage, "Images", imageNote(s), x, y)
+	y = sectionTitle(a, ui.IImage, "Images", imageNote(s), x, y, func() { s.viewer = viewer{kind: vImages} }, w)
 	const h, gap = 190, 12
 	view := ui.Rect{X: x, Y: y, W: w, H: h}
 	if len(s.Images) == 0 {
@@ -568,11 +631,7 @@ func (a *App) imageCarousel(s *Search, x, y, w, dt float32) float32 {
 			}
 		}
 		if a.tapped(s, tr) {
-			if im.Page != "" {
-				a.visitFromResults(im.Page)
-			} else if strings.HasPrefix(im.Src, "http") {
-				a.visitFromResults(im.Src)
-			}
+			s.viewer = viewer{kind: vImage, idx: i}
 		}
 	}
 	g.Restore()
@@ -593,7 +652,7 @@ func imageNote(s *Search) string {
 	if len(s.Images) == 0 {
 		return ""
 	}
-	return strconv.Itoa(len(s.Images)) + " pictures · drag or scroll sideways"
+	return strconv.Itoa(len(s.Images)) + " pictures · click one to see it at the side"
 }
 
 func (a *App) videoThumb(v core.VideoResult, r ui.Rect, rad float32) {
@@ -631,8 +690,8 @@ func (a *App) videoStack(s *Search, x, y, w, dt float32) float32 {
 	if n := len(s.Videos); n > 0 {
 		note = strconv.Itoa(int(s.vidTo)+1) + " of " + strconv.Itoa(n)
 	}
-	y = sectionTitle(a, ui.IVideo, "Videos", note, x, y)
-	cw := min(w*0.74, 620)
+	y = sectionTitle(a, ui.IVideo, "Videos", note, x, y, func() { s.viewer = viewer{kind: vVideos} }, w)
+	cw := min(w*0.72, 600)
 	thH := cw * 9 / 16
 	ch := thH + 76
 	area := ui.Rect{X: x, Y: y, W: w, H: ch + 24}
@@ -706,7 +765,7 @@ func (a *App) videoStack(s *Search, x, y, w, dt float32) float32 {
 			ui.DrawIcon(g, ui.IYouTube, r.X, ty+3, 16, ui.Hex("#e62117"))
 			ui.TextFit(g, videoMeta(v), r.X+22, ty+16, ui.FSmall, th.OnSurfaceVariant, tw-24)
 			if a.tapped(s, r) {
-				a.visitFromResults(v.URL())
+				s.viewer = viewer{kind: vVideo, idx: k}
 			}
 		} else if a.tapped(s, r) {
 			s.vidTo = float32(k)

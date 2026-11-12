@@ -103,6 +103,10 @@ type App struct {
 	fetchImage   func(ctx context.Context, src string, maxW int) (image.Image, error)
 	ytSearch     func(ctx context.Context, q string) ([]core.VideoResult, error)
 	ai           aiPanel
+	side         sideView
+	sideRect     ui.Rect
+	sideURL      string
+	sideFull     bool
 	memMB, appMB float64
 	lastMem      float64
 	lastTick     float64
@@ -244,6 +248,7 @@ func (a *App) Close() {
 			w.view = nil
 		}
 	}
+	a.closeSide()
 	for _, t := range a.tabs {
 		if t.view != nil {
 			v := t.view
@@ -292,11 +297,16 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 		g.FillRect(full, frameColor(th))
 		page = a.chrome(full)
 	}
+	a.sideRect, a.sideURL = ui.Rect{}, ""
+	if a.sideFull && a.side.url != "" {
+		a.sideURL = a.side.url
+	}
 	a.content(page)
 	if !a.Fullscreen() {
 		u.DrawTooltip()
 	}
 	a.sync(page)
+	a.syncSide()
 	a.In.EndFrame()
 	if u.Redraw {
 		a.h.Invalidate()
@@ -346,3 +356,7 @@ func (a *App) Do(f func()) { a.post(f) }
 
 // NewTab opens a new tab page.
 func (a *App) NewTab() { a.newTab(KNormal, "", "", true) }
+
+func ctxTimeout(sec int) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), time.Duration(sec)*time.Second)
+}
