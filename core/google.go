@@ -37,6 +37,9 @@ type VideoResult struct {
 // Thumb is the video's thumbnail address.
 func (v VideoResult) Thumb() string { return "https://i.ytimg.com/vi/" + v.ID + "/mqdefault.jpg" }
 
+// BigThumb is the sharp 1280x720 thumbnail (most videos have it).
+func (v VideoResult) BigThumb() string { return "https://i.ytimg.com/vi/" + v.ID + "/hq720.jpg" }
+
 // URL is the video's watch page.
 func (v VideoResult) URL() string { return "https://www.youtube.com/watch?v=" + v.ID }
 

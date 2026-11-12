@@ -2,6 +2,7 @@ package shell
 
 import (
 	"context"
+	"image"
 	"math"
 	"strconv"
 	"strings"
@@ -657,7 +658,13 @@ func imageNote(s *Search) string {
 
 func (a *App) videoThumb(v core.VideoResult, r ui.Rect, rad float32) {
 	g := a.u.G
-	if img := a.thumbFor(v.Thumb()); img != nil {
+	var img image.Image
+	if r.W > 300 {
+		img = a.bigVideoThumb(v, r.W)
+	} else {
+		img = a.thumbFor(v.Thumb())
+	}
+	if img != nil {
 		g.Image(img, r, rad)
 	} else {
 		shimmer(a, r, rad)

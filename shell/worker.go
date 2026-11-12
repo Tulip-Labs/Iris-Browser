@@ -213,12 +213,14 @@ func (a *App) thumbFor(src string) image.Image {
 		t = &thumb{loading: true}
 		a.thumbs[src] = t
 		fetch := a.fetchImage
+		// sharp on the screen's real pixels (125% and 150% scaling), never huge
+		maxW := int(min(720, max(320, 300*a.Scale)))
 		go func() {
 			a.thumbSem <- struct{}{}
 			defer func() { <-a.thumbSem }()
 			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 			defer cancel()
-			img, err := fetch(ctx, src, 320)
+			img, err := fetch(ctx, src, maxW)
 			a.post(func() {
 				t.loading = false
 				t.img, t.failed = img, err != nil

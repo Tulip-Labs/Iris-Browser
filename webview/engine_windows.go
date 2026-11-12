@@ -331,7 +331,9 @@ func (v *view) setup() {
 	}
 	// the shield: subresources only (scripts, images, requests, media, frames' content)
 	if allow := e.policy.Allow; allow != nil {
-		contexts := []uintptr{2, 3, 4, 5, 6, 7, 8, 14, 16}
+		// images, media, scripts, XHR, fetch, pings and others; never style
+		// sheets or fonts, so a blocked domain cannot break how a page looks
+		contexts := []uintptr{3, 4, 6, 7, 8, 14, 16}
 		if c22 := query(core, &iidICoreWebView2_22); c22 != 0 {
 			for _, c := range contexts {
 				call(c22, slotICoreWebView2_22_AddWebResourceRequestedFilterWithRequestSourceKinds, uintptr(unsafe.Pointer(wstr("*"))), c, 0xFFFFFFFF)

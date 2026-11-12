@@ -40,7 +40,7 @@ type Settings struct {
 
 // LoadSettings reads settings.json from dir ("" = defaults in memory only).
 func LoadSettings(dir string) *Settings {
-	s := &Settings{Theme: "crocus", Shield: true, HTTPSOnly: true, YouTube: true, Strict: true, Memory: "balanced",
+	s := &Settings{Theme: "crocus", Shield: true, HTTPSOnly: true, YouTube: true, Strict: false, Memory: "balanced",
 		LiteResults: true, Boost: true, YouTubeLight: true,
 		Containers: []Container{{"Work", "briefcase", "blue"}, {"Personal", "person", "orange"}}}
 	if dir == "" {

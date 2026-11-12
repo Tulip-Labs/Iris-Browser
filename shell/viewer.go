@@ -43,6 +43,7 @@ func (a *App) imageFor(src string, maxW int) image.Image {
 	if maxW <= 320 {
 		return a.thumbFor(src)
 	}
+	maxW = int(min(1600, float32(maxW)*max(1, a.Scale)/1.25))
 	key := "big:" + src
 	t := a.thumbs[key]
 	if t == nil {
@@ -423,4 +424,17 @@ func (a *App) signedIn(t *Tab, url string) bool {
 	}
 	a.notify("Signed in to Google. Results and AI answers come without human checks now.")
 	return true
+}
+
+// bigVideoThumb is a video's sharp thumbnail for the big cards, falling back to
+// the small one while it loads or when the video has none.
+func (a *App) bigVideoThumb(v core.VideoResult, w float32) image.Image {
+	src := v.BigThumb()
+	if t := a.thumbs["big:"+src]; t != nil && t.failed {
+		return a.thumbFor(v.Thumb())
+	}
+	if img := a.imageFor(src, int(w*1.25)); img != nil {
+		return img
+	}
+	return a.thumbFor(v.Thumb())
 }
