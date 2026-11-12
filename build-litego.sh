@@ -3,6 +3,7 @@
 #   ./build-litego.sh          Windows files (cross-built from macOS or Linux)
 #   ./build-litego.sh mac      Lite Go.app, on a Mac (Xcode command line tools)
 #   ./build-litego.sh linux    lite-go for Linux, on Linux (WebKitGTK development files)
+#   ./build-litego.sh android  LiteGo.apk (Android SDK, NDK, JDK 17, gogio)
 set -e
 cd "$(dirname "$0")"
 export GOGC=50 GOMAXPROCS=2 GOFLAGS=-mod=mod
@@ -92,8 +93,26 @@ DESK
 	cp LICENSE.md NOTICE THIRD_PARTY_NOTICES.md dist/linux/
 	echo "Done: dist/linux (install: copy lite-go to ~/.local/bin, the .desktop file to ~/.local/share/applications, the png to ~/.local/share/icons)"
 	;;
+android)
+	# Needs the Android SDK (ANDROID_HOME) with a platform, build-tools and the
+	# NDK, a JDK 17 and gogio (go install gioui.org/cmd/gogio@latest).
+	: "${ANDROID_HOME:=${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+	export ANDROID_HOME
+	if [ -z "$ANDROID_NDK_HOME" ]; then
+		ANDROID_NDK_HOME=$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1)
+		export ANDROID_NDK_HOME
+	fi
+	platform=$(ls -d "$ANDROID_HOME"/platforms/android-* | sort -V | tail -1)
+	go test ./core ./shell ./shields
+	rm -rf build/android && mkdir -p build/android/classes dist
+	javac --release 11 -nowarn -classpath "$platform/android.jar" -d build/android/classes webview/android/LiteWeb.java
+	jar cf webview/litego_android.jar -C build/android/classes .
+	gogio -target android -arch "${ARCH:-arm64}" -minsdk 26 -targetsdk 35 -appid org.tulipanlabs.litego \
+		-version 1.0.0.1 -icon assets/icon.png -schemes https,http -o dist/LiteGo.apk ./cmd/litego
+	echo "Done: dist/LiteGo.apk (adb install -r dist/LiteGo.apk)"
+	;;
 *)
-	echo "usage: $0 [windows|mac|linux]"
+	echo "usage: $0 [windows|mac|linux|android]"
 	exit 2
 	;;
 esac

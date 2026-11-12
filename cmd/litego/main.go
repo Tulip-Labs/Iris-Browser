@@ -124,6 +124,11 @@ func (c *pendingClip) Set(s string) { c.text = &s }
 
 // dirs: settings and history in the config folder, the web engine's cache in the local cache folder.
 func dirs() (conf, web string) {
+	if c, w, ok := appDirs(); ok {
+		_ = os.MkdirAll(c, 0o755)
+		_ = os.MkdirAll(w, 0o755)
+		return c, w
+	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		base = "."

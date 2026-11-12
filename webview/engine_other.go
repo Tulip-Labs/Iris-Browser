@@ -1,4 +1,4 @@
-//go:build !windows && !darwin && !(linux && webkit)
+//go:build !windows && !darwin && !android && !(linux && webkit)
 
 package webview
 

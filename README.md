@@ -81,6 +81,7 @@ suggests from history.
 | Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Done, tested |
 | macOS 12+ | WKWebView (WebKit, built into macOS) | Written: `./build-litego.sh mac` on a Mac; first run pending |
 | Linux: native Wayland (GNOME, KDE, ...) and X11 | WebKitGTK 4.1, in a GTK window | Written: `./build-litego.sh linux`; first run pending |
+| Android 8+ (phones and tablets) | Android System WebView (Chromium, updated by the system) | Written: `build-android.bat` on Windows, `./build-litego.sh android` elsewhere; first run pending |
 
 Every system's own web engine sits inside Lite Go's window, and Lite Go drives it the
 same way everywhere: tabs, Shields, results, the AI panel, the memory plan. No engine is
@@ -91,6 +92,22 @@ program's surface sit inside another's: GTK owns the window (with the desktop's 
 shadow, corners and resize edges), Gio's GPU renderer draws Lite Go's interface into a
 GL area in it, and each page's WebKitWebView sits over that area. One window, one
 connection to the display, so it runs natively on Wayland and on X11 alike.
+
+On Android, Lite Go is the same Go program, built into an app by Gio's `gogio`: the
+same interface in a phone layout (the address bar on top, back, forward, new tab, tabs
+and menu at the bottom where the thumb is, tabs as a grid of cards, the menu and the AI
+panel as full-screen sheets, the system back button closing what is open before going
+back). The pages are Android's own WebView, placed over the Gio view; a small Java
+class (`webview/android/LiteWeb.java`, built into a jar by the build script) is the
+only part that is not Go, because Android only lets Java code drive its WebView. Lite
+Shields asks about every request, as on Windows. What differs for now: containers and
+private tabs share one cookie store (Android's WebView has one per app), and Lite Go
+registers as a browser for http and https links.
+
+To build it on Windows: install Android Studio once (for its SDK Manager: an Android
+SDK Platform, Build-Tools, NDK and Command-line Tools), then double-click
+`build-android.bat`. It makes `dist\LiteGo.apk`; `build-android.bat aab` also makes
+the Play Store bundle.
 
 The web engine is behind one small interface (`webview.Engine` and `webview.View`), so
 the rest of Lite Go is the same on every system.

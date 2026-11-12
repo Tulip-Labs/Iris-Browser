@@ -157,6 +157,10 @@ func (a *App) shortcuts() {
 	rest := in.Keys[:0]
 	var acts []action
 	for _, k := range in.Keys {
+		if k.Key == ui.KBack {
+			a.mobileBack()
+			continue
+		}
 		if act := keyAction(k); act != actNone {
 			acts = append(acts, act)
 			continue

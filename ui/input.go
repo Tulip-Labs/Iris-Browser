@@ -66,7 +66,14 @@ const (
 	K8
 	K9
 	KComma
+	KBack // the system back button (Android)
 )
+
+// Edit replaces runes [Start, End) of the focused field with Text.
+type Edit struct {
+	Start, End int
+	Text       string
+}
 
 // KeyPress is one key event with its modifiers.
 type KeyPress struct {
@@ -90,8 +97,12 @@ type Input struct {
 	Keys              []KeyPress
 	Typed             string
 	Paste             string // clipboard text that arrived this frame (after Ctrl+V)
-	Ctrl, Shift, Alt  bool
-	Now               float64 // seconds, monotonic
+	// Edits are what an input method changed in the focused field this frame
+	// (Android keyboards rewrite words as they compose them), in runes of the
+	// field's text as it was published to the input method.
+	Edits            []Edit
+	Ctrl, Shift, Alt bool
+	Now              float64 // seconds, monotonic
 }
 
 func NewInput() *Input { return &Input{MX: -1, MY: -1, Pinch: 1} }
@@ -100,7 +111,7 @@ func NewInput() *Input { return &Input{MX: -1, MY: -1, Pinch: 1} }
 func (in *Input) EndFrame() {
 	in.Pressed, in.Released, in.RightPressed, in.DoubleClick = false, false, false, false
 	in.WheelX, in.WheelY, in.Pinch = 0, 0, 1
-	in.Keys, in.Typed, in.Paste = in.Keys[:0], "", ""
+	in.Keys, in.Typed, in.Paste, in.Edits = in.Keys[:0], "", "", in.Edits[:0]
 	if !in.Down {
 		in.Dragging = false
 	}

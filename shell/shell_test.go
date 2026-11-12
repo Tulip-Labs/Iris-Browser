@@ -27,6 +27,7 @@ type fakeView struct {
 	asleep           bool
 	bounds           [4]int
 	focused, reloads int
+	backs            int
 	run              func(js string) string
 	evals            []string
 }
@@ -41,7 +42,7 @@ func (v *fakeView) Navigate(u string) {
 		v.ev.Loading(false)
 	}
 }
-func (v *fakeView) Back()                    {}
+func (v *fakeView) Back()                    { v.backs++ }
 func (v *fakeView) Forward()                 {}
 func (v *fakeView) Reload()                  { v.reloads++ }
 func (v *fakeView) Stop()                    {}

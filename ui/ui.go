@@ -28,6 +28,9 @@ type State struct {
 	DragStartScroll          float32
 	SliderDrag               ID
 	CaretBlink               float64
+	// Editing is the focused field's text (set by TextField each frame), for
+	// hosts that tell the input method what is being edited.
+	Editing *TextEdit
 }
 
 // Clipboard writes text to the system clipboard; pasted text arrives in Input.Paste.
@@ -244,7 +247,18 @@ func (u *Ui) TextField(id ID, r Rect, t *TextEdit, o FieldOpt) bool {
 	}
 	changed := false
 	if focused && u.Live() {
-		changed = u.editKeys(t, o.OnEnter)
+		u.St.Editing = t
+		for _, e := range in.Edits {
+			a, b := max(0, min(e.Start, len(t.R))), max(0, min(e.End, len(t.R)))
+			if a > b {
+				a, b = b, a
+			}
+			t.Anchor, t.Caret = a, b
+			t.ReplaceSel(e.Text)
+			changed = true
+		}
+		in.Edits = in.Edits[:0]
+		changed = u.editKeys(t, o.OnEnter) || changed
 	}
 	g.Save()
 	g.Clip(r.Inset(2))

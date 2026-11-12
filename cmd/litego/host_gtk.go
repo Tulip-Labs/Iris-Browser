@@ -1,4 +1,4 @@
-//go:build linux && webkit
+//go:build linux && webkit && !android
 
 // The Linux window: GTK owns it (native on Wayland and on X11), Gio's GPU
 // renderer draws our interface into a GtkGLArea inside it, and the pages are
@@ -58,6 +58,8 @@ const (
 	gdkAlt     = 1 << 3
 	gdkButton1 = 1 << 8
 )
+
+func appDirs() (string, string, bool) { return "", "", false }
 
 func runMain() {
 	C.lgwInit()

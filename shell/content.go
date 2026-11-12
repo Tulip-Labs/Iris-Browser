@@ -30,7 +30,9 @@ func (a *App) content(r ui.Rect) {
 		if a.engErr != nil && !strings.Contains(a.engErr.Error(), "not available") {
 			msg = "The web engine did not start: " + a.engErr.Error()
 		}
-		if runtime.GOOS == "linux" {
+		if runtime.GOOS == "android" {
+			msg = "Lite Go shows pages with Android System WebView. Update it (and Chrome) from the Play Store, then open Lite Go again."
+		} else if runtime.GOOS == "linux" {
 			msg = "Lite Go shows pages with WebKitGTK. Install WebKitGTK 4.1 (webkit2gtk-4.1) and open Lite Go again."
 		}
 		a.message(r, ui.IGlobe, "The web engine is not available", msg, "", nil)
@@ -171,7 +173,7 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 	y = sr.B() + 16
 
 	// search modes as M3 filter chips
-	a.modeChips(cx, y, func() { a.st.Focus = id; a.suggest(a.ntpQ.Text()) })
+	y += a.modeChips(cx, y, r.W-32, func() { a.st.Focus = id; a.suggest(a.ntpQ.Text()) })
 
 	// footer: what the shield did and how much memory the pages use
 	fy := r.B() - 34
@@ -198,23 +200,45 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 	_ = u
 }
 
-// modeChips draws the search modes centered at cx; picked runs after a change.
-func (a *App) modeChips(cx, y float32, picked func()) {
+// modeChips draws the search modes centered at cx, in rows no wider than
+// maxW (a phone takes two); picked runs after a change. It returns the height.
+func (a *App) modeChips(cx, y, maxW float32, picked func()) float32 {
 	u, g, th := &a.u, a.u.G, a.u.Th
-	const chipH = 34
+	const chipH, gap = 34, 8
 	var widths []float32
-	total := float32(0)
-	for i, l := range modeLabels {
-		w := g.Measure(l, ui.FSmallBold) + 50
-		widths = append(widths, w)
-		total += w
-		if i > 0 {
-			total += 8
+	for _, l := range modeLabels {
+		widths = append(widths, g.Measure(l, ui.FSmallBold)+50)
+	}
+	// rows of chips that fit
+	type row struct {
+		from, to int
+		w        float32
+	}
+	var rows []row
+	cur := row{}
+	for i, w := range widths {
+		if cur.to > cur.from && cur.w+gap+w > maxW {
+			rows = append(rows, cur)
+			cur = row{from: i, to: i}
+		}
+		if cur.to > cur.from {
+			cur.w += gap
+		}
+		cur.w += w
+		cur.to = i + 1
+	}
+	rows = append(rows, cur)
+	xs := make([]float32, len(widths))
+	ys := make([]float32, len(widths))
+	for ri, rw := range rows {
+		x := cx - rw.w/2
+		for i := rw.from; i < rw.to; i++ {
+			xs[i], ys[i] = x, y+float32(ri)*(chipH+gap)
+			x += widths[i] + gap
 		}
 	}
-	x := cx - total/2
 	for i, l := range modeLabels {
-		cr := ui.Rect{X: x, Y: y, W: widths[i], H: chipH}
+		cr := ui.Rect{X: xs[i], Y: ys[i], W: widths[i], H: chipH}
 		sel := core.Mode(i) == a.set.Mode
 		if sel {
 			ui.FillRound(g, cr, 10, th.SecondaryContainer)
@@ -237,8 +261,8 @@ func (a *App) modeChips(cx, y float32, picked func()) {
 				picked()
 			}
 		}
-		x += widths[i] + 8
 	}
+	return float32(len(rows))*(chipH+gap) - gap
 }
 
 func comma(n int) string {

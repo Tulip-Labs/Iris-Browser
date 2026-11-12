@@ -33,6 +33,9 @@ func (a *App) vertical(w float32) bool { return a.set.VerticalTabs && w >= 720 }
 
 // chrome draws the window's frame and returns where the page goes.
 func (a *App) chrome(full ui.Rect) ui.Rect {
+	if a.cfg.Mobile {
+		return a.mobileChrome(full)
+	}
 	w := full.W
 	vert := a.vertical(w)
 	y := float32(0)

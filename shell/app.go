@@ -50,6 +50,8 @@ type Config struct {
 	SetBoost func(on bool)
 	// Core reuses preloaded settings, history and shield (the background mode).
 	Core *Core
+	// Mobile uses the phone layout (Android).
+	Mobile bool
 }
 
 // App is the browser window's interface.
@@ -65,6 +67,9 @@ type App struct {
 	Maximized bool    // set by the host
 	// MoveAreas are the parts of the window that drag it (set each frame).
 	MoveAreas []ui.Rect
+	// Insets keep the interface clear of the system bars and the camera cut-out
+	// (top, right, bottom, left; set by the host).
+	Insets [4]float32
 
 	set    *core.Settings
 	core   *Core
@@ -88,6 +93,8 @@ type App struct {
 	sugSel      int
 	panel       bool
 	panelScroll ui.Scroll
+	tabsOpen    bool // the phone's tab grid
+	tabScroll   ui.Scroll
 	railScroll  ui.Scroll
 	stripScroll float32
 	newCont     *ui.TextEdit
@@ -326,6 +333,7 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	u.G, u.In, u.Th, u.St, u.Clip = g, a.In, th, &a.st, a.h.Clipboard()
 	u.W, u.H, u.Layer, u.InputLayer, u.Redraw = w, h, 0, 0, false
 	a.MoveAreas = a.MoveAreas[:0]
+	a.st.Editing = nil
 
 	if a.wakeAt > 0 && a.now() >= a.wakeAt {
 		a.wakeAt = 0
@@ -348,7 +356,7 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 		a.sideURL = a.side.url
 	}
 	a.content(page)
-	if !a.Fullscreen() {
+	if !a.Fullscreen() && !a.cfg.Mobile { // no hover on a touch screen
 		u.DrawTooltip()
 	}
 	a.sync(page)

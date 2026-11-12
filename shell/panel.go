@@ -215,17 +215,19 @@ func (a *App) drawPanel(r ui.Rect) {
 		}
 	}
 	y += sw + 14
-	g.Text("Tabs", x, y+14, ui.FSmallBold, th.OnSurfaceVariant)
-	y += 22
-	sel := 0
-	if a.set.VerticalTabs {
-		sel = 1
+	if !a.cfg.Mobile { // a phone shows its tabs as a grid
+		g.Text("Tabs", x, y+14, ui.FSmallBold, th.OnSurfaceVariant)
+		y += 22
+		sel := 0
+		if a.set.VerticalTabs {
+			sel = 1
+		}
+		if n := u.Segmented(ID("tablayout"), ui.Rect{X: x, Y: y, W: w, H: 36}, []string{"On top", "At the side"}, sel); n != sel {
+			a.set.VerticalTabs = n == 1
+			a.set.Save()
+		}
+		y += 44
 	}
-	if n := u.Segmented(ID("tablayout"), ui.Rect{X: x, Y: y, W: w, H: 36}, []string{"On top", "At the side"}, sel); n != sel {
-		a.set.VerticalTabs = n == 1
-		a.set.Save()
-	}
-	y += 44
 	divider()
 
 	// search
@@ -260,17 +262,19 @@ func (a *App) drawPanel(r ui.Rect) {
 	y += 46
 	divider()
 
-	// startup
-	section("Startup")
-	if v := check("boost", "Open instantly (stay ready in the background)", a.set.Boost); v != a.set.Boost {
-		a.set.Boost = v
-		a.set.Save()
-		if a.cfg.SetBoost != nil {
-			a.cfg.SetBoost(v)
+	if !a.cfg.Mobile { // Android keeps apps ready by itself
+		// startup
+		section("Startup")
+		if v := check("boost", "Open instantly (stay ready in the background)", a.set.Boost); v != a.set.Boost {
+			a.set.Boost = v
+			a.set.Save()
+			if a.cfg.SetBoost != nil {
+				a.cfg.SetBoost(v)
+			}
 		}
+		note("Lite Go keeps a small, page-free part of itself running after you close the window and when Windows starts, so the window appears the moment you click it.")
+		divider()
 	}
-	note("Lite Go keeps a small, page-free part of itself running after you close the window and when Windows starts, so the window appears the moment you click it.")
-	divider()
 
 	// shield
 	section("Lite Shields")

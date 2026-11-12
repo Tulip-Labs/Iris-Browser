@@ -1,4 +1,4 @@
-//go:build linux && webkit
+//go:build linux && webkit && !android
 
 // The Linux window of Lite Go, made with GTK so that it runs natively on
 // Wayland (GNOME, KDE and the rest) as well as on X11.

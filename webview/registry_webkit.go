@@ -1,4 +1,4 @@
-//go:build darwin || (linux && webkit)
+//go:build darwin || (linux && webkit) || android
 
 package webview
 

@@ -23,7 +23,8 @@ var keyNames = map[key.Name]ui.Key{
 	key.NameTab: ui.KTab, key.NameEscape: ui.KEscape, key.NameSpace: ui.KSpace,
 	key.NameF5: ui.KF5, key.NameF6: ui.KF6, key.NameF11: ui.KF11, key.NameF12: ui.KF12,
 	"A": ui.KA, "C": ui.KC, "D": ui.KD, "K": ui.KK, "L": ui.KL, "M": ui.KM, "N": ui.KN, "R": ui.KR, "T": ui.KT, "V": ui.KV, "W": ui.KW, "X": ui.KX, "Z": ui.KZ, "Y": ui.KY, "J": ui.KJ,
-	"1": ui.K1, "2": ui.K2, "3": ui.K3, "4": ui.K4, "5": ui.K5, "6": ui.K6, "7": ui.K7, "8": ui.K8, "9": ui.K9, ",": ui.KComma,
+	key.NameBack: ui.KBack,
+	"1":          ui.K1, "2": ui.K2, "3": ui.K3, "4": ui.K4, "5": ui.K5, "6": ui.K6, "7": ui.K7, "8": ui.K8, "9": ui.K9, ",": ui.KComma,
 }
 
 func keyFilters(tag event.Tag) []event.Filter {
@@ -54,10 +55,41 @@ func keyFilters(tag event.Tag) []event.Filter {
 // Reader turns a window's Gio events into ui.Input. Tag must be the target of
 // an event.Op covering the window.
 type Reader struct {
-	Tag       event.Tag
+	Tag event.Tag
+	// IME has the input method edit the focused field's text (Android):
+	// Publish tells it the text, and its changes arrive as Input.Edits.
+	IME       bool
 	filters   []event.Filter
 	lastClick time.Time
 	lastPos   f32.Point
+	shown     *ui.TextEdit // the field the input method knows
+	text      string
+	sel       key.Range
+	keyboard  bool
+}
+
+// Publish tells the input method about the focused field (nil: none), and
+// shows or hides the on-screen keyboard to match. Call it after the frame.
+func (rd *Reader) Publish(gtx layout.Context, t *ui.TextEdit) {
+	if !rd.IME {
+		return
+	}
+	if (t != nil) != rd.keyboard {
+		rd.keyboard = t != nil
+		gtx.Execute(key.SoftKeyboardCmd{Show: rd.keyboard})
+	}
+	if t == nil {
+		rd.shown = nil
+		return
+	}
+	text := string(t.R)
+	sel := key.Range{Start: t.SelStart(), End: t.SelEnd()}
+	if t == rd.shown && text == rd.text && sel == rd.sel {
+		return
+	}
+	rd.shown, rd.text, rd.sel = t, text, sel
+	gtx.Execute(key.SnippetCmd{Tag: rd.Tag, Snippet: key.Snippet{Range: key.Range{Start: 0, End: len(t.R)}, Text: text}})
+	gtx.Execute(key.SelectionCmd{Tag: rd.Tag, Range: key.Range{Start: t.Anchor, End: t.Caret}})
 }
 
 // Read collects this frame's events.
@@ -128,7 +160,26 @@ func (rd *Reader) Read(gtx layout.Context, in *ui.Input, scale float32) {
 			}
 			in.Keys = append(in.Keys, ui.KeyPress{Key: k, Ctrl: ctrl, Shift: e.Modifiers.Contain(key.ModShift), Alt: e.Modifiers.Contain(key.ModAlt)})
 		case key.EditEvent:
+			if rd.IME {
+				in.Edits = append(in.Edits, ui.Edit{Start: e.Range.Start, End: e.Range.End, Text: e.Text})
+				// what the input method now believes the field holds
+				r := []rune(rd.text)
+				a, b := max(0, min(e.Range.Start, len(r))), max(0, min(e.Range.End, len(r)))
+				if a > b {
+					a, b = b, a
+				}
+				rd.text = string(r[:a]) + e.Text + string(r[b:])
+				n := a + len([]rune(e.Text))
+				rd.sel = key.Range{Start: n, End: n}
+				continue
+			}
 			in.Typed += e.Text
+		case key.SelectionEvent:
+			if rd.IME && rd.shown != nil {
+				t := rd.shown
+				t.Anchor, t.Caret = max(0, min(e.Start, len(t.R))), max(0, min(e.End, len(t.R)))
+				rd.sel = key.Range{Start: min(t.Anchor, t.Caret), End: max(t.Anchor, t.Caret)}
+			}
 		case transfer.DataEvent:
 			if r := e.Open(); r != nil {
 				b, _ := io.ReadAll(io.LimitReader(r, 4<<20))
