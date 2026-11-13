@@ -250,11 +250,5 @@ cmd/litego          the program: window, resident process, system hooks
 The web engine sits behind `webview.Engine` and `webview.View`, so everything above it is
 the same on both systems, and the whole interface can be tested with a stand-in engine.
 
-## License
-
-[PolyForm Noncommercial 1.0.0](LICENSE.md). See also [NOTICE](NOTICE) and
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-<p align="center">
   <sub>Tulipan Labs · Cesar Jose Luis Torrecilla Gelvez</sub>
 </p>
