@@ -1,0 +1,260 @@
+<p align="center">
+  <img src="assets/icon.png" width="112" alt="Lite Go">
+</p>
+
+<h1 align="center">Lite Go</h1>
+
+<p align="center">
+  <b>A light, fast browser written in Go.</b><br>
+  The interface is drawn with Gio. Pages are shown by the web view your system already has.
+</p>
+
+<p align="center">
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.24-00ADD8?style=flat-square&logo=go&logoColor=white">
+  <img alt="Interface: Gio" src="https://img.shields.io/badge/interface-Gio-8A3FA0?style=flat-square">
+  <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square">
+  <img alt="Linux: Wayland and X11" src="https://img.shields.io/badge/Linux-Wayland%20%7C%20X11-333333?style=flat-square&logo=linux&logoColor=white">
+  <img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-6B7280?style=flat-square">
+</p>
+
+<p align="center">
+  <a href="#what-it-does">Features</a> ·
+  <a href="#shortcuts">Shortcuts</a> ·
+  <a href="#platforms">Platforms</a> ·
+  <a href="#build">Build</a> ·
+  <a href="#how-it-is-made">How it is made</a>
+</p>
+
+<p align="center">
+  <img src="assets/screens/results.png" width="860" alt="Lite results: pictures, videos and ranked websites on one page">
+</p>
+
+---
+
+## Why Lite Go
+
+Most browsers ship a whole web engine and then spend your memory on it. Lite Go ships none.
+It uses the engine the system keeps up to date (WebView2 on Windows, WebKitGTK on Linux) and
+puts a small Go program around it that decides what each page may cost.
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+**Light**
+
+Background tabs give memory back at once, sleep, then unload. Each page has a memory cap.
+A balancer keeps the computer's resources on what you are using.
+
+</td>
+<td width="33%" valign="top">
+
+**Fast**
+
+It stays ready in the background, so the window opens on click. The new tab page is drawn
+by Lite Go itself, and a page is prepared while you type.
+
+</td>
+<td width="33%" valign="top">
+
+**Clean**
+
+Ads, trackers, cookie notices and tracking links are removed. Google searches are shown on
+a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
+
+</td>
+</tr>
+</table>
+
+## A look
+
+<table>
+<tr>
+<td width="50%"><img src="assets/screens/new-tab.png" alt="The new tab page"></td>
+<td width="50%"><img src="assets/screens/split-view.png" alt="Split view"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>New tab.</b> Search, and what kind of tab this is.</sub></td>
+<td align="center"><sub><b>Split view.</b> Two pages, one divider to drag.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="assets/screens/downloads.png" alt="The downloads list"></td>
+<td width="50%"><img src="assets/screens/sandbox.png" alt="A page stopped, with the sandbox offered"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Downloads.</b> A ring on the icon, a list at the side.</sub></td>
+<td align="center"><sub><b>Sandbox.</b> Unsafe addresses are stopped first.</sub></td>
+</tr>
+<tr>
+<td colspan="2"><img src="assets/screens/night.png" alt="Lite results in the Night palette"></td>
+</tr>
+<tr>
+<td colspan="2" align="center"><sub><b>Night.</b> One of seven palettes.</sub></td>
+</tr>
+</table>
+
+<sub>The pictures are drawn by the test suite with Lite Go's software renderer; page areas
+and thumbnails are placeholders.</sub>
+
+## What it does
+
+### Browsing
+
+| | |
+|---|---|
+| **Lite results** | Google searches on Lite Go's own page: a picture carousel, a stack of video cards, the AI Mode answer with its sources, and the websites ranked by source quality (references, official sites and docs rise; shops, coupon farms and listicles sink). "On Google" shows the original. |
+| **Search modes** | AI Mode (default), Web, Images, Videos and YouTube. Type `yt ` before words to search YouTube from any mode. |
+| **Ask AI** | On any page, a side panel sends your question and the page's text (or your selection) to Google AI Mode and writes the answer with its sources. No API key. |
+| **Split view** | Two pages side by side. The pane you click takes the keyboard and the address bar. |
+| **Downloads** | A toolbar icon with a progress ring; a list with speed, time left, pause, resume, cancel, open and show in folder. |
+| **The usual** | Find in page, zoom, print, a searchable history by day, reopen a closed tab, and the last tabs brought back at start (unloaded until you open them). |
+| **Tabs** | On top or at the side. Normal, private, temporary, sandbox and container tabs, chosen on the new tab page. Containers keep their own sign-ins, each with its own icon and color. |
+
+### Memory
+
+| | |
+|---|---|
+| **The plan** | Background tabs are hidden at once, put to sleep after a while and unloaded later, keeping their address and title. Tabs playing sound stay awake. Saver, Balanced and Speed profiles follow the computer's RAM. |
+| **The balancer** | The tab in front (both, in split view) has priority. Every other page is told at once that nobody is looking, so the engine gives memory back. When the pages pass the budget, or the computer runs short, background pages sleep and then unload, oldest first. |
+| **A cap for each page** | A page that takes more than its share (1 to 3 GB on Balanced) is ended alone, with a Reload button, instead of slowing everything. A job object per page process on Windows; WebKit's own limit on Linux. |
+| **Loads what you are near** | Pictures and frames further down a page wait until you scroll close. What the engine has already started fetching is not stopped, so the saving is largest on long pages. |
+
+### Lite Shields
+
+| | |
+|---|---|
+| **Filter lists** | EasyList, EasyPrivacy and uBlock filters, about 110,000 rules matched in microseconds, refreshed every few days, plus a built-in list of 100,000 domains. |
+| **Adaptive** | A site is scanned on its first visits. Where three scans find nothing, the shield stands by and the site's requests go straight to the network; where something is found, it stays on. Clean sites are scanned again every 15 visits or three days. |
+| **What ads leave behind** | Empty boxes and cookie notices are hidden. Tracking parameters are cut from links, tracking redirects skipped, AMP pages opened at the source. |
+| **Fingerprinting** | Canvas, audio and hardware details vary slightly per site and session. Sign-in and human-check pages are left alone. |
+| **Never broken** | Sign-in, messaging, human checks and YouTube playback are never blocked; style sheets and fonts always load. |
+
+### Safety
+
+| | |
+|---|---|
+| **HTTPS-only** | Addresses go straight to HTTPS. A site without it is stopped before it loads. |
+| **Sandbox** | A site without HTTPS, or an address that looks dangerous (a known name on someone else's site, a real site hidden behind an `@`, a bare network address, look-alike letters), can be opened in a throwaway session: no downloads, no camera, microphone, location, notifications or clipboard, nothing saved, wiped when the tab closes. The check reads the address only; it is not a malware scanner. |
+| **Checks itself** | At every start Lite Go compares its program file with the SHA-256 recorded at install and warns if they differ. This catches accidents and careless changes. The Store package is stronger: Windows keeps it read-only and verifies it. |
+| **Private by kind** | Private tabs share one session never written to disk. A temporary tab is a fresh session of its own. History is never kept for either. |
+
+## Shortcuts
+
+| Keys | Action | Keys | Action |
+|---|---|---|---|
+| `Ctrl` `T` | New tab | `Ctrl` `F` | Find in page |
+| `Ctrl` `Shift` `N` | Private tab | `Ctrl` `H` | History |
+| `Ctrl` `W` | Close tab | `Ctrl` `P` | Print |
+| `Ctrl` `Shift` `T` | Reopen closed tab | `Ctrl` `Shift` `S` | Split view |
+| `Ctrl` `L` | Address bar | `Ctrl` `Shift` `D` | Downloads |
+| `Ctrl` `J` | Ask AI | `Ctrl` `+` `-` `0` | Zoom |
+| `Ctrl` `Tab` | Next tab | `Ctrl` `M` | Mute tab |
+| `Ctrl` `1`...`9` | Go to tab | `Alt` `Left` / `Right` | Back, forward |
+| `Ctrl` `R` / `F5` | Reload | `F11` | Full screen |
+
+They work while a page has the keyboard too.
+
+## Platforms
+
+| System | Web engine | Status |
+|---|---|---|
+| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, memory cap, sandbox) are covered by tests with a stand-in engine and still need a pass on a real PC. |
+| Linux: native Wayland and X11 (GNOME, KDE, niri and others) | WebKitGTK 4.1, in a GTK window | Written; first run pending. |
+
+No engine is bundled: each comes with the system and is kept up to date by it.
+
+On Linux the window is a GTK window, because Wayland does not let one program's surface sit
+inside another's. GTK owns the window, Gio's GPU renderer draws the interface into a GL area
+in it, and each page's WebKitWebView sits over that area. One window, one connection to the
+display.
+
+## Build
+
+**Windows.** Double-click `build-litego.bat`. It installs Go with winget if needed, runs the
+tests and makes:
+
+| File | What it is |
+|---|---|
+| `dist\Lite Go Setup.exe` | The installer: current user only, no administrator rights |
+| `dist\Lite Go\Lite Go.exe` | The portable app (also `dist\LiteGo-portable.zip`) |
+| `dist\LiteGo.msixbundle` | For the Microsoft Store, packed without the Windows SDK |
+
+No C compiler is needed, and builds stay well under 2 GB of memory.
+
+**Linux.**
+
+```sh
+# Debian, Ubuntu
+sudo apt install gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libepoxy-dev
+# Fedora
+sudo dnf install gcc pkgconf gtk3-devel webkit2gtk4.1-devel libepoxy-devel
+# Arch
+sudo pacman -S gcc pkgconf gtk3 webkit2gtk-4.1 libepoxy
+
+./build-litego.sh linux     # makes dist/linux/lite-go
+./build-litego.sh           # cross-builds the Windows files from Linux
+```
+
+**Tests.**
+
+```sh
+go test ./core ./shell ./shields ./ui
+SHOTS=shots go test ./shell   # also writes screenshots of every screen
+```
+
+<details>
+<summary><b>Getting it onto other PCs without warnings</b></summary>
+
+<br>
+
+Windows warns about programs not signed by a known publisher. For a free, noncommercial app
+the clean route is the Microsoft Store:
+
+1. Registration is free for individual developers: create an account in Partner Center.
+2. Reserve the name "Lite Go", then copy *Package/Identity/Name* and *Publisher* from
+   Product identity into `packaging/msix.json`.
+3. Build and upload `dist\LiteGo.msixbundle`. The Store signs it, so it installs without
+   warnings and updates itself.
+
+`packaging/test-install.ps1` signs a package with a certificate made on your own PC, to try
+the MSIX first. The setup `.exe` and the portable app stay unsigned: SmartScreen shows
+"Windows protected your PC" (More info, Run anyway) until a code-signing certificate is
+used, which is a paid service.
+
+</details>
+
+## How it is made
+
+```
+cmd/litego          the program: window, resident process, system hooks
+    |
+  shell             the interface: tabs, split view, address bar, new tab page,
+    |               results, downloads, history, the balancer, the side panel
+    |
+    +-- ui, giox    the interface toolkit (Material 3, liquid glass) and its Gio backend
+    +-- core        rules with no window: search, shields, adaptive scans, unsafe
+    |               addresses, HTTPS, the memory plan, history, settings
+    +-- shields     filter lists, hiding rules, link cleaning, fingerprinting
+    +-- webview     one small interface over two engines:
+                      WebView2 from pure Go (COM vtables, profiles, sandbox, suspend,
+                      memory caps, request filtering, downloads)
+                      WebKitGTK through cgo
+```
+
+| Folder | What it is |
+|---|---|
+| `setup`, `cmd/litego-setup` | The installer: its screens, install, update and removal |
+| `raster` | A software renderer, for tests and screenshots |
+| `packaging`, `tools` | MSIX packing and build helpers |
+
+The web engine sits behind `webview.Engine` and `webview.View`, so everything above it is
+the same on both systems, and the whole interface can be tested with a stand-in engine.
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE.md). See also [NOTICE](NOTICE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+<p align="center">
+  <sub>Tulipan Labs · Cesar Jose Luis Torrecilla Gelvez</sub>
+</p>
