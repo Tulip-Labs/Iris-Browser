@@ -1,9 +1,15 @@
 Tulipan Labs: Lite Go
-Copyright 2026 Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez)
+Copyright (C) 2026 Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez)
 
-Required Notice: Copyright 2026 Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez)
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, version 3 of the License.
 
-This software is licensed under the PolyForm Noncommercial License 1.0.0
-(https://polyformproject.org/licenses/noncommercial/1.0.0). Anyone who
-receives a copy of any part of this software, modified or not, must also
-receive the license terms (LICENSE.md) and this notice.
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+(LICENSE) for more details.
+
+Copies and modified versions must keep this notice and the copyright line
+above (sections 4 and 5 of the License), and modified versions must say
+that they were changed.

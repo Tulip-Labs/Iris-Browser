@@ -149,7 +149,7 @@ func copyApp(dir string, app []byte) error {
 			_ = os.WriteFile(filepath.Join(dir, uninstName), b, 0o755)
 		}
 	}
-	for _, n := range []string{"LICENSE.md", "NOTICE", "THIRD_PARTY_NOTICES.md"} {
+	for _, n := range []string{"LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"} {
 		if b, err := payload.ReadFile("payload/" + n); err == nil {
 			_ = os.WriteFile(filepath.Join(dir, n), b, 0o644)
 		}

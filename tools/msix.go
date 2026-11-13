@@ -223,7 +223,7 @@ func pack(exe, arch, out string) {
 	m := strings.NewReplacer("{{name}}", xmlEsc(id.Name), "{{publisher}}", xmlEsc(id.Publisher), "{{version}}", id.Version,
 		"{{arch}}", arch, "{{publisherName}}", xmlEsc(id.PublisherDisplayName)).Replace(manifest)
 	parts := []part{{"LiteGo.exe", app}}
-	for _, n := range []string{"LICENSE.md", "NOTICE", "THIRD_PARTY_NOTICES.md"} {
+	for _, n := range []string{"LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"} {
 		if b, err := os.ReadFile(n); err == nil {
 			parts = append(parts, part{n, b})
 		}

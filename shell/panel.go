@@ -445,7 +445,7 @@ func (a *App) drawPanel(r ui.Rect) {
 	case IntegrityChanged:
 		note("Warning: the program file is not the one that was installed. Install Lite Go again from a source you trust.")
 	}
-	note("Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · PolyForm Noncommercial 1.0.0")
+	note("Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · GPL 3.0")
 	y += 8
 	if u.Button(ID("quit"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Quit Lite Go", ui.ButtonOpt{Icon: ui.IClose, HasIcon: true, Tip: "Closes the window and the part that keeps it ready"}) {
 		a.h.Quit()

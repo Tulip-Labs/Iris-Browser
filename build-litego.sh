@@ -15,9 +15,9 @@ windows)
 	mkdir -p "dist/Lite Go"
 	GOOS=windows GOARCH=$ARCH go build -trimpath -ldflags "-H windowsgui -s -w" -o "dist/Lite Go/Lite Go.exe" ./cmd/litego
 	go run tools/sum.go "dist/Lite Go/Lite Go.exe" # the record Lite Go checks itself against
-	cp LICENSE.md NOTICE THIRD_PARTY_NOTICES.md "dist/Lite Go/"
+	cp LICENSE NOTICE THIRD_PARTY_NOTICES.md "dist/Lite Go/"
 	go run tools/gz.go "dist/Lite Go/Lite Go.exe" setup/payload/LiteGo.exe.gz
-	cp LICENSE.md NOTICE THIRD_PARTY_NOTICES.md setup/payload/
+	cp LICENSE NOTICE THIRD_PARTY_NOTICES.md setup/payload/
 	GOOS=windows GOARCH=$ARCH go build -trimpath -ldflags "-H windowsgui -s -w" -o "dist/Lite Go Setup.exe" ./cmd/litego-setup
 	(cd dist && rm -f LiteGo-portable.zip && zip -qr LiteGo-portable.zip "Lite Go")
 	go run tools/msix.go -exe "dist/Lite Go/Lite Go.exe" -arch x64 -out dist/LiteGo_x64.msix
@@ -50,7 +50,7 @@ StartupWMClass=lite-go
 Categories=Network;WebBrowser;
 MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
 DESK
-	cp LICENSE.md NOTICE THIRD_PARTY_NOTICES.md dist/linux/
+	cp LICENSE NOTICE THIRD_PARTY_NOTICES.md dist/linux/
 	echo "Done: dist/linux (install: copy lite-go and lite-go.sha256 to ~/.local/bin, the .desktop file to ~/.local/share/applications, the png to ~/.local/share/icons)"
 	;;
 *)

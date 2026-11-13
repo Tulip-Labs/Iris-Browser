@@ -28,13 +28,13 @@ echo Building Lite Go...
 if not exist "dist\Lite Go" mkdir "dist\Lite Go"
 go build -trimpath -ldflags "-H windowsgui -s -w" -o "dist\Lite Go\Lite Go.exe" .\cmd\litego || ( echo Build failed. & pause & exit /b 1 )
 go run tools\sum.go "dist\Lite Go\Lite Go.exe" || ( pause & exit /b 1 )
-copy /y LICENSE.md "dist\Lite Go\" >nul
+copy /y LICENSE "dist\Lite Go\" >nul
 copy /y NOTICE "dist\Lite Go\" >nul
 copy /y THIRD_PARTY_NOTICES.md "dist\Lite Go\" >nul
 
 echo Packing the setup...
 go run tools\gz.go "dist\Lite Go\Lite Go.exe" setup\payload\LiteGo.exe.gz || ( pause & exit /b 1 )
-copy /y LICENSE.md setup\payload\ >nul
+copy /y LICENSE setup\payload\ >nul
 copy /y NOTICE setup\payload\ >nul
 copy /y THIRD_PARTY_NOTICES.md setup\payload\ >nul
 go build -trimpath -ldflags "-H windowsgui -s -w" -o "dist\Lite Go Setup.exe" .\cmd\litego-setup || ( echo Setup build failed. & pause & exit /b 1 )

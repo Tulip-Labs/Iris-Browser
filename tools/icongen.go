@@ -56,7 +56,7 @@ func main() {
 		v.Set(0, version.ProductName, "Lite Go")
 		v.Set(0, version.FileDescription, t.desc)
 		v.Set(0, version.CompanyName, "Tulipan Labs")
-		v.Set(0, version.LegalCopyright, "Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez). PolyForm Noncommercial 1.0.0")
+		v.Set(0, version.LegalCopyright, "Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez). GNU GPL 3.0")
 		v.Set(0, version.OriginalFilename, t.name+".exe")
 		rs.SetVersionInfo(v)
 		rs.SetManifest(winres.AppManifest{DPIAwareness: winres.DPIPerMonitorV2, UseCommonControlsV6: true, ExecutionLevel: winres.AsInvoker})
