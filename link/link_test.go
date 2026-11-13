@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -126,5 +127,69 @@ func TestSafeName(t *testing.T) {
 	}
 	if n := SafeName(strings.Repeat("ñ", 300) + ".jpg"); len(n) > 190 || !strings.HasSuffix(n, ".jpg") {
 		t.Errorf("long name: %d bytes", len(n))
+	}
+}
+
+func TestSync(t *testing.T) {
+	key := NewKey()
+	sealed, err := Seal(key, []byte("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, err := Open(key, sealed); err != nil || string(p) != "hello" {
+		t.Fatalf("round trip: %q %v", p, err)
+	}
+	if _, err := Open(NewKey(), sealed); err == nil {
+		t.Fatal("another key must not open it")
+	}
+	sealed[len(sealed)-1] ^= 1
+	if _, err := Open(key, sealed); err == nil {
+		t.Fatal("a changed message must not open")
+	}
+	var got State
+	s, err := StartSync(key, "pc-1", func(in State) State {
+		got = in
+		return State{Device: "pc-1", Tabs: []Tab{{URL: "https://example.com/"}}, Theme: "mint", ThemeAt: 5}
+	})
+	if err != nil {
+		t.Skip("no network here: ", err)
+	}
+	defer s.Stop()
+	base := "http://127.0.0.1:" + strconv.Itoa(s.Port())
+	r, err := http.Get(base + "/sync/hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+	if !strings.Contains(string(b), `"app":"litego"`) || strings.Contains(string(b), key) {
+		t.Fatalf("hello: %s", b)
+	}
+	post := func(k string) (int, []byte) {
+		in, _ := json.Marshal(State{Device: "phone-1", Name: "Pixel", History: []Visit{{URL: "https://go.dev/", Visits: 2, Last: 100}}})
+		body, _ := Seal(k, in)
+		r, err := http.Post(base+"/sync/x", "application/octet-stream", bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Body.Close()
+		out, _ := io.ReadAll(r.Body)
+		return r.StatusCode, out
+	}
+	if code, _ := post(NewKey()); code != 403 || got.Device != "" {
+		t.Fatalf("a device with another key must be refused: %d", code)
+	}
+	code, out := post(key)
+	plain, err := Open(key, out)
+	var reply State
+	if code != 200 || err != nil || json.Unmarshal(plain, &reply) != nil || reply.Theme != "mint" || len(reply.Tabs) != 1 {
+		t.Fatalf("exchange: %d %v %s", code, err, plain)
+	}
+	if got.Name != "Pixel" || len(got.History) != 1 {
+		t.Fatalf("the computer did not get the phone's state: %+v", got)
+	}
+	u := PairURL(s.Port(), key, "pc-1")
+	if !strings.HasPrefix(u, "litego://pair?") || !strings.Contains(u, "k="+key) {
+		t.Fatalf("pair url %s", u)
 	}
 }

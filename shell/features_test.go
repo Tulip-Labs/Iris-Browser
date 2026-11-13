@@ -3,6 +3,7 @@ package shell
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"litego/core"
 	"litego/link"
@@ -520,4 +521,94 @@ func TestPastelThemes(t *testing.T) {
 		d.settle(14)
 		d.shot("theme-" + id + "-results")
 	}
+}
+
+func TestSideApps(t *testing.T) {
+	d := newDriver(t, 1440, 900, true)
+	d.frames(2)
+	tab := d.open("https://example.com/")
+	before := len(d.eng.views)
+	d.a.do(actMuse)
+	d.frames(4)
+	if !d.a.panel || d.a.panelMode != panelApp || d.a.apps[0].view == nil {
+		t.Fatal("Ctrl+Shift+M should open Muse in the side panel")
+	}
+	mv := d.a.apps[0].view.(*fakeView)
+	if mv.url != "https://www.meta.ai/" || !mv.visible || len(d.eng.views) != before+1 {
+		t.Fatalf("Muse view: %q visible %v", mv.url, mv.visible)
+	}
+	pv := lastView(t, tab)
+	if !pv.visible || pv.bounds[0]+pv.bounds[2] > mv.bounds[0] || mv.bounds[2] < 380 {
+		t.Fatalf("the page and the side app must sit side by side: %v %v", pv.bounds, mv.bounds)
+	}
+	d.shot("side-app")
+	// the other app takes its place; Muse is kept, hidden
+	d.a.do(actPass)
+	d.frames(4)
+	if mv.visible || mv.closed || d.a.apps[1].view == nil || d.a.apps[1].view.(*fakeView).url != "https://pass.proton.me/" {
+		t.Fatal("Proton Pass should replace Muse in the panel, and Muse stay signed in behind")
+	}
+	// closing the panel hides it; reopening does not load it again
+	d.a.do(actPass)
+	d.frames(2)
+	if d.a.panel || d.a.apps[1].view.(*fakeView).visible {
+		t.Fatal("closing the panel must hide the app")
+	}
+	d.a.do(actMuse)
+	d.frames(3)
+	if d.a.apps[0].view != mv || !mv.visible || len(d.eng.views) != before+2 {
+		t.Fatal("coming back to Muse should show the same page")
+	}
+	// long out of sight: its memory is given back
+	d.a.panel = false
+	d.frames(2)
+	d.advance(1000)
+	d.frames(2)
+	if d.a.apps[0].view != nil || !mv.closed {
+		t.Fatal("a side app hidden for a long while should be closed")
+	}
+}
+
+func TestSyncExchange(t *testing.T) {
+	d := newDriver(t, 1280, 860, true)
+	d.frames(2)
+	d.open("https://example.com/desk")
+	d.a.newTab(KPrivate, "", "https://private.example.com/", true)
+	d.frames(2)
+	d.a.set.Sync.Device = "pc"
+	old := time.Now().Add(-time.Hour).Unix()
+	out := d.a.exchange(link.State{Device: "phone", Name: "Pixel 8", Theme: "mint", ThemeAt: time.Now().Unix() + 5,
+		Tabs:    []link.Tab{{URL: "https://news.example.org/", Title: "News"}},
+		History: []link.Visit{{URL: "https://go.dev/doc", Title: "Go docs", Visits: 4, Last: old}}})
+	if d.a.set.Theme != "mint" {
+		t.Fatal("the newer palette choice should win")
+	}
+	if p := d.a.set.Sync.Peers; len(p) != 1 || p[0].Name != "Pixel 8" || len(p[0].Tabs) != 1 {
+		t.Fatalf("peer %+v", p)
+	}
+	found := false
+	for _, e := range d.a.hist.Recent(50, "go.dev") {
+		found = found || e.URL == "https://go.dev/doc" && e.Visits == 4
+	}
+	if !found {
+		t.Fatal("the phone's history was not merged")
+	}
+	if len(out.Tabs) != 1 || out.Tabs[0].URL != "https://example.com/desk" {
+		t.Fatalf("the computer tells its ordinary tabs, never private ones: %+v", out.Tabs)
+	}
+	for _, v := range out.History {
+		if strings.Contains(v.URL, "private.example.com") {
+			t.Fatal("private history left the computer")
+		}
+	}
+	// an older palette choice from the phone does not undo a newer one here
+	d.a.set.Theme, d.a.set.ThemeAt = "peach", time.Now().Unix()+100
+	d.a.exchange(link.State{Device: "phone", Name: "Pixel 8", Theme: "night", ThemeAt: 1})
+	if d.a.set.Theme != "peach" {
+		t.Fatal("an older choice must not win")
+	}
+	d.a.set.Sync.On = true
+	d.a.togglePanel(panelPhone)
+	d.frames(2)
+	d.shot("sync")
 }

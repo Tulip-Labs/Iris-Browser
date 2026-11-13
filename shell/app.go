@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"litego/core"
+	"litego/link"
 	"litego/ui"
 	"litego/webview"
 )
@@ -112,6 +113,11 @@ type App struct {
 	kindEdit  bool // the container editor on the new tab page
 	balance   balancer
 	phone     phoneLink
+	apps      []*sideApp
+	syncSrv   *link.SyncServer
+	syncErr   string
+	appCur    int
+	appRect   ui.Rect
 	integrity Integrity
 
 	tabs    []*Tab
@@ -192,6 +198,7 @@ func New(h Host, cfg Config) *App {
 	a.ai.input = ui.NewTextEdit("", false)
 	a.histQ, a.find.q = ui.NewTextEdit("", false), ui.NewTextEdit("", false)
 	a.split.ratio = 0.5
+	a.apps = defaultSideApps()
 	c := cfg.Core
 	if c == nil {
 		c = LoadCore(cfg.DataDir)
@@ -201,6 +208,7 @@ func New(h Host, cfg Config) *App {
 	a.plan = core.Plan(cfg.TotalMB, a.set.Memory)
 	a.newTab(KNormal, "", "", true)
 	a.restoreSession()
+	a.startSync()
 	if f := cfg.Sys.Integrity; f != nil {
 		go func() {
 			r := f()
@@ -349,6 +357,10 @@ func (a *App) Fullscreen() bool { return a.full || a.winFull }
 // Close flushes settings and closes every page (call before the window goes).
 func (a *App) Close() {
 	a.stopLink()
+	if a.syncSrv != nil {
+		a.syncSrv.Stop()
+		a.syncSrv = nil
+	}
 	a.saveSession()
 	for _, t := range a.tabs {
 		a.finishScan(t)
@@ -366,6 +378,7 @@ func (a *App) Close() {
 		}
 	}
 	a.closeSide()
+	a.closeApps()
 	for _, t := range a.tabs {
 		if t.view != nil {
 			v := t.view
@@ -434,6 +447,7 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	}
 	a.sync(page, beside, other)
 	a.syncSide()
+	a.syncApps()
 	a.In.EndFrame()
 	if u.Redraw {
 		a.h.Invalidate()

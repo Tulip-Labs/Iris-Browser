@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+// SPDX-License-Identifier: GPL-3.0-only
 package org.tulipanlabs.lite
 
 import android.content.ContentValues
@@ -57,6 +57,37 @@ class Settings(ctx: Context) {
     var sessionIndex: Int
         get() = p.getInt("sessionIndex", 0)
         set(v) = p.edit().putInt("sessionIndex", v).apply()
+
+    // ---- sync with Lite Go on a computer (see Sync.kt) ----
+
+    private fun str(key: String) = p.getString(key, "") ?: ""
+    private fun setStr(key: String, v: String) = p.edit().putString(key, v).apply()
+
+    var syncKey: String get() = str("syncKey"); set(v) = setStr("syncKey", v)
+    var syncHost: String get() = str("syncHost"); set(v) = setStr("syncHost", v)
+    var syncPc: String get() = str("syncPc"); set(v) = setStr("syncPc", v)
+    var syncName: String get() = str("syncName"); set(v) = setStr("syncName", v)
+    var pcTabs: String get() = str("pcTabs"); set(v) = setStr("pcTabs", v)
+    var syncPort: Int
+        get() = p.getInt("syncPort", 47600)
+        set(v) = p.edit().putInt("syncPort", v).apply()
+    var syncAt: Long
+        get() = p.getLong("syncAt", 0)
+        set(v) = p.edit().putLong("syncAt", v).apply()
+    /** when the palette was last chosen, in seconds (the newest choice wins) */
+    var themeAt: Long
+        get() = p.getLong("themeAt", 0)
+        set(v) = p.edit().putLong("themeAt", v).apply()
+    /** this phone's id for the computer */
+    val device: String
+        get() {
+            var d = str("device")
+            if (d.isEmpty()) {
+                d = java.util.UUID.randomUUID().toString().replace("-", "").take(16)
+                setStr("device", d)
+            }
+            return d
+        }
 }
 
 class Entry(val url: String, val title: String, val visits: Int, val last: Long)
@@ -116,5 +147,42 @@ class History(ctx: Context) : SQLiteOpenHelper(ctx, "history.db", null, 1) {
 
     fun clear() {
         io.execute { try { writableDatabase.execSQL("DELETE FROM visits") } catch (e: Exception) {} }
+    }
+
+    /** the pages visited last, newest first (call off the UI thread) */
+    fun recent(n: Int): List<Entry> {
+        val out = ArrayList<Entry>()
+        try {
+            readableDatabase.rawQuery("SELECT url, title, visits, last FROM visits ORDER BY last DESC LIMIT ?", arrayOf(n.toString())).use { c ->
+                while (c.moveToNext()) out.add(Entry(c.getString(0), c.getString(1), c.getInt(2), c.getLong(3)))
+            }
+        } catch (e: Exception) {
+        }
+        return out
+    }
+
+    /** visits known to another device: the later date and the larger count win */
+    fun merge(list: List<Entry>) {
+        io.execute {
+            try {
+                val db = writableDatabase
+                db.beginTransaction()
+                try {
+                    for (e in list) {
+                        if (!e.url.startsWith("http")) continue
+                        db.execSQL(
+                            "INSERT INTO visits (url, title, visits, last) VALUES (?, ?, ?, ?) ON CONFLICT(url) DO UPDATE SET " +
+                                "visits = MAX(visits, excluded.visits), last = MAX(last, excluded.last), " +
+                                "title = CASE WHEN title = '' THEN excluded.title ELSE title END",
+                            arrayOf<Any>(e.url, e.title, maxOf(1, e.visits), e.last),
+                        )
+                    }
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
+                }
+            } catch (e: Exception) {
+            }
+        }
     }
 }

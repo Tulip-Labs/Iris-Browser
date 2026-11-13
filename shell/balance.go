@@ -14,6 +14,7 @@ const (
 	panelDownloads
 	panelHistory
 	panelPhone
+	panelApp // a side app: Muse, Proton Pass
 )
 
 // togglePanel opens the side panel on a mode, or closes it when it shows that mode.

@@ -93,11 +93,11 @@ a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
 <td align="center"><sub><b>Sorbet.</b> One of four pastel palettes that merge three colors.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="assets/screens/lagoon.png" alt="The new tab page in the Lagoon palette"></td>
+<td width="50%"><img src="assets/screens/side-app.png" alt="Muse in the side panel beside a page"></td>
 <td width="50%"><img src="assets/screens/night.png" alt="Lite results in the Night palette"></td>
 </tr>
 <tr>
-<td align="center"><sub><b>Lagoon.</b></sub></td>
+<td align="center"><sub><b>Side apps.</b> Muse or Proton Pass beside the page.</sub></td>
 <td align="center"><sub><b>Night.</b> Eleven palettes in all.</sub></td>
 </tr>
 </table>
@@ -117,6 +117,8 @@ and thumbnails are placeholders.</sub>
 | **Split view** | Two pages side by side. The pane you click takes the keyboard and the address bar. |
 | **Downloads** | A toolbar icon with a progress ring; a list with speed, time left, pause, resume, cancel, open and show in folder. |
 | **Phone link** | Move photos and files between the computer and a phone with nothing to install on the phone: Lite Go shows a QR code, the phone scans it and uses its own browser to send files (they land in Downloads) or take the ones you offer, or the page you are on. Same Wi-Fi only; the address carries a random key and works only while the link is on. The connection is not encrypted, so it is for networks you trust. |
+| **Side apps** | Muse (Meta's AI agent; US only for now) and Proton Pass (passwords) open in the side panel, beside the page you are on, and stay signed in. They are the sites themselves; Lite Go reads nothing from them. |
+| **Sync with Android** | History, open tabs and the palette stay the same on the computer and Lite for Android, with no account and no server: the two trade directly when they are on the same Wi-Fi, sealed with AES-256 under a key only they share. Pair from Menu, Phone. |
 | **The usual** | Find in page, zoom, print, a searchable history by day, reopen a closed tab, and the last tabs brought back at start (unloaded until you open them). |
 | **Tabs** | On top or at the side. Normal, private, temporary, sandbox and container tabs, chosen on the new tab page. Containers keep their own sign-ins, each with its own icon and color. |
 
@@ -159,7 +161,7 @@ and thumbnails are placeholders.</sub>
 | `Ctrl` `Tab` | Next tab | `Ctrl` `M` | Mute tab |
 | `Ctrl` `1`...`9` | Go to tab | `Alt` `Left` / `Right` | Back, forward |
 | `Ctrl` `R` / `F5` | Reload | `F11` | Full screen |
-| `Ctrl` `Shift` `L` | Phone link | `Ctrl` `,` | Menu |
+| `Ctrl` `Shift` `L` | Phone link | `Ctrl` `Shift` `M` | Muse |
 
 They work while a page has the keyboard too.
 
@@ -169,6 +171,7 @@ They work while a page has the keyboard too.
 |---|---|---|
 | Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, phone link) are covered by tests with a stand-in engine and still need a pass on a real PC. |
 | Linux: native Wayland and X11 (GNOME, KDE, niri and others) | WebKitGTK 4.1, in a GTK window | Written; first run pending. |
+| Android 8 and newer | Android System WebView | **Lite for Android**, a separate app in Kotlin (`android/`): shields, Lite results, tabs, palettes and sync with the computer. `Lite-android.apk` is in each release. |
 
 No engine is bundled: each comes with the system and is kept up to date by it.
 

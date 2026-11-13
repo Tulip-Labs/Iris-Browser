@@ -81,7 +81,11 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 	}
 	right := w - 8
 	if a.panel {
-		pr := ui.Rect{X: w - panelW - 8, Y: sugTop, W: panelW, H: full.H - sugTop - 8}
+		pw := float32(panelW)
+		if a.panelMode == panelApp { // a site needs more room than a list
+			pw = max(panelW, min(440, w*0.36))
+		}
+		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - 8}
 		a.drawPanel(pr)
 		right = pr.X - 8
 	} else if a.ai.open {

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+// SPDX-License-Identifier: GPL-3.0-only
 package org.tulipanlabs.lite
 
 import android.content.Context

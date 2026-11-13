@@ -38,6 +38,12 @@ footer{color:var(--soft);font-size:12.5px;text-align:center;margin-top:18px}
 </style></head><body><main>
 <h1>Lite Go link</h1>
 <p class="sub">Connected to <b>{{PC}}</b> over this network.</p>
+<section id="pairbox" style="display:none">
+<h2>Lite for Android</h2>
+<p class="empty" style="margin:0 0 12px">Keep history, open tabs and the palette the same on this phone and the computer. They sync by themselves whenever both are on this network.</p>
+<a class="btn" id="pair" href="#">Pair with Lite</a>
+<p class="empty" style="margin-top:12px">Lite for Android must be installed first: <a href="https://github.com/Tulip-Labs/Lite-Go-Browser/releases/latest" rel="noopener noreferrer" target="_blank" style="color:var(--pri)">get it here</a>.</p>
+</section>
 <section>
 <h2>Send to the computer</h2>
 <label class="pick"><input id="pick" type="file" multiple>Choose photos or files</label>
@@ -52,6 +58,8 @@ footer{color:var(--soft);font-size:12.5px;text-align:center;margin-top:18px}
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
+const pairURL = "{{PAIR}}";
+if (/^litego:\/\/pair\?/.test(pairURL)) { $('pair').href = pairURL; $('pairbox').style.display = ''; }
 const size = (n) => n < 0 ? '' : n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(2) + ' GB';
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 

@@ -43,7 +43,11 @@ type Settings struct {
 	// Restore reopens the tabs of the last window; Session is what they were.
 	// Window is how the reader left the window. Until they change it, Lite Go
 	// opens filling the screen.
-	Window  WindowState  `json:"window"`
+	Window WindowState `json:"window"`
+	// ThemeAt is when the palette was last chosen (sync keeps the newest choice).
+	ThemeAt int64 `json:"themeAt,omitempty"`
+	// Sync keeps history, open tabs and the palette the same as on a paired phone.
+	Sync    SyncSettings `json:"sync"`
 	Restore bool         `json:"restore"`
 	Session []SessionTab `json:"session,omitempty"`
 
@@ -128,6 +132,22 @@ func (s *Settings) SetWindow(windowed bool, w, h int) bool {
 	s.Window = n
 	s.Save()
 	return true
+}
+
+// SyncSettings is this computer's side of the sync with Lite for Android.
+type SyncSettings struct {
+	On     bool   `json:"on"`
+	Key    string `json:"key,omitempty"`    // shared with the paired devices; never leaves the local network
+	Device string `json:"device,omitempty"` // this computer's id
+	Peers  []Peer `json:"peers,omitempty"`
+}
+
+// Peer is a paired device, as it was at the last sync.
+type Peer struct {
+	ID   string       `json:"id"`
+	Name string       `json:"name"`
+	Seen int64        `json:"seen"`
+	Tabs []SessionTab `json:"tabs,omitempty"`
 }
 
 // SessionTab is a tab kept for the next window.

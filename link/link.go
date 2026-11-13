@@ -72,6 +72,7 @@ type Server struct {
 	inID   int
 	seen   time.Time
 	phones map[string]bool
+	pair   string // litego://pair?... when sync is on
 }
 
 // Start opens the link. Files from the phone are saved in dir; notify is
@@ -201,7 +202,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		h.Set("Content-Type", "text/html; charset=utf-8")
 		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'none'; base-uri 'none'")
 		name, _ := os.Hostname()
-		io.WriteString(w, strings.Replace(page, "{{PC}}", htmlEscape(name), 1))
+		s.mu.Lock()
+		pair := s.pair
+		s.mu.Unlock()
+		out := strings.Replace(page, "{{PC}}", htmlEscape(name), 1)
+		js, _ := json.Marshal(pair) // a JavaScript string, with < > & escaped
+		io.WriteString(w, strings.Replace(out, `"{{PAIR}}"`, string(js), 1))
 	case rest == "list" && r.Method == http.MethodGet:
 		h.Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(s.Items())

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0
+// SPDX-License-Identifier: GPL-3.0-only
 package org.tulipanlabs.lite
 
 import android.app.Activity
@@ -119,6 +119,37 @@ class MainActivity : Activity(), PageEvents {
     override fun onResume() {
         super.onResume()
         tab()?.web?.onResume()
+        if (System.currentTimeMillis() - lastSyncTry > 120_000) sync(quiet = true)
+    }
+
+    // ---- sync with the computer ----
+
+    private var lastSyncTry = 0L
+    private var syncing = false
+
+    /** trades history, tabs and the palette with the paired computer, if it is on this network */
+    private fun sync(quiet: Boolean) {
+        if (!Sync.paired(set) || syncing) return
+        syncing = true
+        lastSyncTry = System.currentTimeMillis()
+        val mine = tabs.filter { !it.private && it.url.isNotEmpty() }.map { PcTab(it.url, it.title) }
+        net.execute {
+            val changed = Sync.run(set, hist, mine)
+            ui.post {
+                syncing = false
+                if (isFinishing || isDestroyed) return@post
+                when {
+                    changed == null -> if (!quiet) Toast.makeText(this, set.syncName + " is not on this network", Toast.LENGTH_SHORT).show()
+                    else -> {
+                        if (!quiet) Toast.makeText(this, "In sync with " + set.syncName, Toast.LENGTH_SHORT).show()
+                        if (changed && sheet == null && grid == null) {
+                            pal = Palette.byId(set.theme)
+                            buildUi()
+                        }
+                    }
+                }
+            }
+        }
     }
 
     override fun onTrimMemory(level: Int) {
@@ -858,6 +889,7 @@ class MainActivity : Activity(), PageEvents {
             v.contentDescription = p.label
             v.setOnClickListener {
                 set.theme = p.id
+                set.themeAt = System.currentTimeMillis() / 1000
                 pal = p
                 closeSheet()
                 buildUi()
@@ -901,6 +933,34 @@ class MainActivity : Activity(), PageEvents {
             Toast.makeText(this, "Updating the filter lists", Toast.LENGTH_SHORT).show()
         }, lp(WRAP, dp(40)).also { it.topMargin = dp(8) })
 
+        // sync
+        col.addView(section("Sync with your computer"))
+        if (Sync.paired(set)) {
+            col.addView(note("Paired with " + set.syncName + (if (set.syncAt > 0) ", in sync " + ago(set.syncAt) else ", not synced yet") +
+                ". History, open tabs and the palette are traded directly whenever both are on the same Wi-Fi."))
+            col.addView(button(pal, "Sync now", false) { sync(quiet = false) }, lp(WRAP, dp(40)).also { it.topMargin = dp(8) })
+            val theirs = Sync.pcTabs(set)
+            if (theirs.isNotEmpty()) {
+                col.addView(note("Open on " + set.syncName + ":"))
+                for (pt in theirs.take(12)) {
+                    val r = text(if (pt.title.isNotEmpty()) pt.title else pt.url, 14f, pal.onSurface)
+                    r.setSingleLine(true)
+                    r.ellipsize = TextUtils.TruncateAt.END
+                    r.setPadding(0, dp(10), 0, dp(10))
+                    r.setOnClickListener { closeSheet(); newTab(pt.url, false) }
+                    col.addView(r)
+                }
+            }
+            col.addView(button(pal, "Stop syncing", false) {
+                Sync.unpair(set)
+                closeSheet()
+                Toast.makeText(this, "This phone no longer syncs", Toast.LENGTH_SHORT).show()
+            }, lp(WRAP, dp(40)).also { it.topMargin = dp(8) })
+        } else {
+            col.addView(note("Lite Go on your computer can keep history, open tabs and the palette the same as here, with no account and no server. " +
+                "On the computer open Menu, Phone, turn sync on and scan its code with this phone's camera; then tap \"Pair with Lite\" on the page that opens."))
+        }
+
         // data
         col.addView(section("Data"))
         col.addView(button(pal, "Clear history", false) { hist.clear(); Toast.makeText(this, "History cleared", Toast.LENGTH_SHORT).show() }, lp(WRAP, dp(40)))
@@ -917,7 +977,7 @@ class MainActivity : Activity(), PageEvents {
         // about
         col.addView(section("About"))
         val wv = WebView.getCurrentWebViewPackage()?.versionName ?: ""
-        col.addView(note("Lite 1.0 for Android · pages by Android System WebView $wv\nTulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · PolyForm Noncommercial 1.0.0"))
+        col.addView(note("Lite 1.0.2 for Android · pages by Android System WebView $wv\nTulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · GPL 3.0"))
         return col
     }
 
@@ -1114,6 +1174,12 @@ class MainActivity : Activity(), PageEvents {
         when (i.action) {
             Intent.ACTION_VIEW -> {
                 val u = i.dataString ?: return false
+                if (u.startsWith("litego://")) { // the "Pair with Lite" button on the computer's page
+                    val ok = Sync.pair(set, Uri.parse(u))
+                    Toast.makeText(this, if (ok) "Paired with " + set.syncName else "That pairing link is not valid", Toast.LENGTH_LONG).show()
+                    if (ok) sync(quiet = false)
+                    return false
+                }
                 newTab(Links.clean(u), false)
                 return true
             }

@@ -42,6 +42,7 @@ func (a *App) startLink() {
 		return
 	}
 	p.srv, p.err, p.qr, p.sent = srv, "", core.QR(srv.URL()), 0
+	a.pairing()
 }
 
 func (a *App) stopLink() {
@@ -138,6 +139,7 @@ func (a *App) drawPhone(body ui.Rect) {
 			y += 6
 		}
 		note("Both must be on the same Wi-Fi (or the phone's hotspot). Files travel inside that network only, not over the internet; the connection is not encrypted, so use a network you trust.", th.OnSurfaceVariant)
+		y = a.drawSync(x, y+14, w)
 		sc.Content = y + sc.Y - body.Y + 12
 		return
 	}
@@ -230,6 +232,7 @@ func (a *App) drawPhone(body ui.Rect) {
 		a.togglePanel(panelDownloads)
 	}
 	y += 50
+	y = a.drawSync(x, y, w)
 	note("Both must be on the same Wi-Fi (or the phone's hotspot). The first time, Windows may ask whether Lite Go may be reached on the network: allow private networks. Files stay inside your network; the connection is not encrypted.", th.OnSurfaceVariant)
 	y += 10
 	if u.Button(ID("phstop"), ui.Rect{X: x, Y: y, W: w, H: 38}, "Close the link", ui.ButtonOpt{Icon: ui.IClose, HasIcon: true}) {

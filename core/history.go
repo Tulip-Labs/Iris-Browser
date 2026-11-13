@@ -110,6 +110,40 @@ func (h *History) Add(url, title string, countVisit bool) {
 	}
 }
 
+// Merge takes a visit known to another device: the later date and the larger
+// count win, and a missing title is filled in.
+func (h *History) Merge(url, title string, visits int, last time.Time) {
+	if !strings.HasPrefix(url, "http") || last.After(time.Now().Add(24*time.Hour)) {
+		return
+	}
+	h.mu.Lock()
+	e := h.mem[url]
+	changed := false
+	if e == nil {
+		e = &Entry{URL: url, Title: title, Visits: max(1, visits), Last: last}
+		h.mem[url] = e
+		changed = true
+	} else {
+		if last.After(e.Last) {
+			e.Last, changed = last, true
+		}
+		if visits > e.Visits {
+			e.Visits, changed = visits, true
+		}
+		if e.Title == "" && title != "" {
+			e.Title, changed = title, true
+		}
+	}
+	db, ec := h.db, *e
+	h.mu.Unlock()
+	if db != nil && changed {
+		h.writes.Add(1)
+		go h.write(db, `INSERT INTO visits (url, title, visits, last) VALUES (?, ?, ?, ?)
+			ON CONFLICT(url) DO UPDATE SET title = excluded.title, visits = excluded.visits, last = excluded.last`,
+			ec.URL, ec.Title, ec.Visits, ec.Last.Unix())
+	}
+}
+
 func score(e *Entry) float64 {
 	age := time.Since(e.Last).Hours() / 24
 	return float64(e.Visits) / (1 + age/7)

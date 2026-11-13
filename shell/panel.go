@@ -28,6 +28,9 @@ func (a *App) drawPanel(r ui.Rect) {
 	case panelPhone:
 		title = "Phone link"
 		ui.DrawIcon(g, ui.IPhone, hr.X+19, hr.CY()-11, 22, th.Primary)
+	case panelApp:
+		title = a.apps[a.appCur].name
+		ui.DrawIcon(g, a.apps[a.appCur].icon, hr.X+19, hr.CY()-11, 22, th.Primary)
 	default:
 		logo(g, ui.RectAround(hr.X+30, hr.CY(), 26, 26), th, th.Primary)
 	}
@@ -45,6 +48,9 @@ func (a *App) drawPanel(r ui.Rect) {
 		return
 	case panelPhone:
 		a.drawPhone(body)
+		return
+	case panelApp:
+		a.drawSideApp(body, hr)
 		return
 	}
 	sc := &a.panelScroll
@@ -94,6 +100,9 @@ func (a *App) drawPanel(r ui.Rect) {
 			{ui.ISearch, "Find", "Find in this page  Ctrl+F", actFind},
 			{ui.IPrint, "Print", "Print, or save as PDF  Ctrl+P", actPrint},
 			{ui.IPhone, "Phone", "Move files to and from your phone with a QR code  Ctrl+Shift+L", actPhone},
+			{ui.IStar, "Muse", "Muse, Meta's AI agent, beside the page  Ctrl+Shift+M", actMuse},
+			{ui.ILock, "Proton Pass", "Your passwords, beside the page", actPass},
+			{ui.IUndo, "Reopen", "Reopen the last closed tab  Ctrl+Shift+T", actReopen},
 		}
 		bw := (w - 16) / 3
 		for i, tl := range tools {
@@ -109,7 +118,7 @@ func (a *App) drawPanel(r ui.Rect) {
 				a.do(tl.act)
 			}
 		}
-		y += 66*2 + 4
+		y += 66*3 + 4
 		// zoom
 		g.Text("Zoom", x, ui.Mid(g, y, 36, ui.FBody), ui.FBody, th.OnSurface)
 		zr := ui.Rect{X: x + w - 148, Y: y, W: 148, H: 36}
@@ -150,7 +159,7 @@ func (a *App) drawPanel(r ui.Rect) {
 		}
 		u.Tooltip(tm.Label, cr)
 		if u.Clickable(ui.IdN("theme", i), cr) {
-			a.set.Theme = tm.ID
+			a.set.Theme, a.set.ThemeAt = tm.ID, time.Now().Unix()
 			a.set.Save()
 		}
 	}

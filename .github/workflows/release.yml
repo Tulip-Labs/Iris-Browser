@@ -49,3 +49,27 @@ jobs:
             gh release create "$TAG" out/* --target "$GITHUB_SHA" \
               --title "Lite Go ${TAG#v}" --notes-file packaging/release-notes.md
           fi
+
+  android:
+    needs: windows
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Build Lite for Android
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/*.apk Lite-android.apk
+          sha256sum Lite-android.apk
+          gh release upload "$TAG" Lite-android.apk --clobber
