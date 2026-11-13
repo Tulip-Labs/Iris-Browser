@@ -33,7 +33,15 @@ func runMain() { app.Main() }
 func (r *resident) window(urls []string) {
 	go func() {
 		w := new(app.Window)
-		w.Option(app.Title("Lite Go"), app.Size(unit.Dp(1280), unit.Dp(820)), app.MinSize(unit.Dp(480), unit.Dp(420)), app.Decorated(false))
+		// the size the reader left, and maximized unless they chose otherwise
+		ws := r.core.Settings.Window
+		if ws.W < 480 || ws.H < 420 {
+			ws.W, ws.H = 1280, 820
+		}
+		w.Option(app.Title("Lite Go"), app.Size(unit.Dp(ws.W), unit.Dp(ws.H)), app.MinSize(unit.Dp(480), unit.Dp(420)), app.Decorated(false))
+		if !ws.Windowed {
+			w.Option(app.Maximized.Option())
+		}
 		if err := r.loop(w, urls); err != nil {
 			log.Println(err)
 		}
@@ -135,6 +143,16 @@ func (r *resident) loop(w *app.Window, urls []string) error {
 		case app.ConfigEvent:
 			maximized = e.Config.Mode == app.Maximized
 			a.Maximized = maximized
+			// remember how the reader leaves the window (never a video's full
+			// screen or the minimized state)
+			switch e.Config.Mode {
+			case app.Maximized:
+				r.core.Settings.SetWindow(false, 0, 0)
+			case app.Windowed:
+				if s := a.Scale; s > 0 && frames >= 3 {
+					r.core.Settings.SetWindow(true, int(float32(e.Config.Size.X)/s), int(float32(e.Config.Size.Y)/s))
+				}
+			}
 		case app.FrameEvent:
 			if !started && !engineOS() {
 				started = true

@@ -41,6 +41,9 @@ type Settings struct {
 	// Adaptive shields scan a site first and stand by where nothing needs blocking.
 	Adaptive bool `json:"adaptive"`
 	// Restore reopens the tabs of the last window; Session is what they were.
+	// Window is how the reader left the window. Until they change it, Lite Go
+	// opens filling the screen.
+	Window  WindowState  `json:"window"`
 	Restore bool         `json:"restore"`
 	Session []SessionTab `json:"session,omitempty"`
 
@@ -103,6 +106,28 @@ func (s *Settings) Flush() {
 	}
 	s.mu.Unlock()
 	s.write()
+}
+
+// WindowState is the window's size (in the interface's units) and whether
+// the reader took it out of the maximized state.
+type WindowState struct {
+	W, H     int
+	Windowed bool
+}
+
+// SetWindow records how the window is now, and reports whether that is news.
+func (s *Settings) SetWindow(windowed bool, w, h int) bool {
+	n := s.Window
+	n.Windowed = windowed
+	if windowed && w >= 480 && h >= 420 {
+		n.W, n.H = w, h
+	}
+	if n == s.Window {
+		return false
+	}
+	s.Window = n
+	s.Save()
+	return true
 }
 
 // SessionTab is a tab kept for the next window.

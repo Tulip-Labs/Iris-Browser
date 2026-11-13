@@ -13,7 +13,7 @@ package main
 
 void lgwInit(void);
 void lgwMain(void);
-uintptr_t lgwOpen(int w, int h);
+uintptr_t lgwOpen(int w, int h, int maximized);
 void lgwInvalidate(void);
 void lgwAfterFrame(void);
 void lgwSetClipboard(const char *s);
@@ -147,7 +147,16 @@ func (r *resident) window(urls []string) {
 func (r *resident) makeWindow(urls []string) {
 	h := &host{r: r, start: time.Now(), sf: 1, text: 1, pinch: 1}
 	win = h
-	layout := C.lgwOpen(1280, 820)
+	// the size the reader left, and maximized unless they chose otherwise
+	ws := r.core.Settings.Window
+	if ws.W < 480 || ws.H < 420 {
+		ws.W, ws.H = 1280, 820
+	}
+	max := C.int(1)
+	if ws.Windowed {
+		max = 0
+	}
+	layout := C.lgwOpen(C.int(ws.W), C.int(ws.H), max)
 	h.eng = webview.New()
 	h.a = shell.New(h, shell.Config{Engine: h.eng, DataDir: r.conf, TotalMB: totalMB(), Version: version, SelfMB: webview.SelfMB,
 		Core: r.core, SetBoost: setStartup, Sys: sysHooks()})
@@ -274,10 +283,13 @@ func lgwGoClose() {
 }
 
 //export lgwGoState
-func lgwGoState(maximized, fullscreen C.int) {
-	if h := win; h != nil {
-		h.a.Maximized = maximized != 0
-		h.Invalidate()
+func lgwGoState(maximized, fullscreen, w, h C.int) {
+	if hst := win; hst != nil {
+		hst.a.Maximized = maximized != 0
+		if fullscreen == 0 { // a video's full screen is not how the reader left the window
+			hst.r.core.Settings.SetWindow(maximized == 0, int(w), int(h))
+		}
+		hst.Invalidate()
 	}
 }
 

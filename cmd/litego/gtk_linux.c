@@ -32,7 +32,7 @@ extern void lgwGoPinch(int phase, double scale, double x, double y);
 extern int lgwGoKey(unsigned int keyval, unsigned int state);
 extern void lgwGoText(char *s);
 extern void lgwGoPaste(char *s);
-extern void lgwGoState(int maximized, int fullscreen);
+extern void lgwGoState(int maximized, int fullscreen, int w, int h);
 extern void lgwGoDestroy(void);
 extern void lgwGoClose(void);
 extern void lgwGoDo(uintptr_t h);
@@ -175,7 +175,21 @@ static void onEventsRealize(GtkWidget *w, gpointer d) { gtk_im_context_set_clien
 
 static gboolean onState(GtkWidget *w, GdkEventWindowState *e, gpointer d) {
 	GdkWindowState s = e->new_window_state;
-	lgwGoState((s & GDK_WINDOW_STATE_MAXIMIZED) != 0, (s & GDK_WINDOW_STATE_FULLSCREEN) != 0);
+	int ww = 0, wh = 0;
+	gtk_window_get_size(GTK_WINDOW(win), &ww, &wh);
+	lgwGoState((s & GDK_WINDOW_STATE_MAXIMIZED) != 0, (s & GDK_WINDOW_STATE_FULLSCREEN) != 0, ww, wh);
+	return FALSE;
+}
+
+// The reader resized the window: the size is kept for next time.
+static gboolean onConfigure(GtkWidget *w, GdkEvent *e, gpointer d) {
+	GdkWindow *gw = gtk_widget_get_window(win);
+	if (!gw) return FALSE;
+	GdkWindowState s = gdk_window_get_state(gw);
+	if (s & (GDK_WINDOW_STATE_MAXIMIZED | GDK_WINDOW_STATE_FULLSCREEN | GDK_WINDOW_STATE_TILED | GDK_WINDOW_STATE_ICONIFIED)) return FALSE;
+	int ww = 0, wh = 0;
+	gtk_window_get_size(GTK_WINDOW(win), &ww, &wh);
+	lgwGoState(0, 0, ww, wh);
 	return FALSE;
 }
 
@@ -249,7 +263,7 @@ void lgwInit(void) {
 void lgwMain(void) { gtk_main(); }
 
 // lgwOpen makes the window and returns the layout the pages go in.
-uintptr_t lgwOpen(int w, int h) {
+uintptr_t lgwOpen(int w, int h, int maximized) {
 	win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_window_set_title(GTK_WINDOW(win), "Lite Go");
 	gtk_window_set_icon_name(GTK_WINDOW(win), "lite-go");
@@ -305,11 +319,13 @@ uintptr_t lgwOpen(int w, int h) {
 
 	gtk_container_add(GTK_CONTAINER(win), layout);
 	g_signal_connect(win, "window-state-event", G_CALLBACK(onState), NULL);
+	g_signal_connect(win, "configure-event", G_CALLBACK(onConfigure), NULL);
 	g_signal_connect(win, "delete-event", G_CALLBACK(onDelete), NULL);
 	g_signal_connect(win, "destroy", G_CALLBACK(onDestroy), NULL);
 	g_signal_connect(win, "notify::scale-factor", G_CALLBACK(onScale), NULL);
 	g_signal_connect(gtk_settings_get_default(), "notify::gtk-xft-dpi", G_CALLBACK(onScale), NULL);
 	readScale();
+	if (maximized) gtk_window_maximize(GTK_WINDOW(win));
 	gtk_widget_show_all(win);
 	gtk_widget_grab_focus(events);
 	return (uintptr_t)layout;
