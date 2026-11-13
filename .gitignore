@@ -1,0 +1,7 @@
+dist/
+setup/payload/*
+!setup/payload/README.md
+go.local.mod
+go.local.sum
+webview/litego_android.jar
+build/

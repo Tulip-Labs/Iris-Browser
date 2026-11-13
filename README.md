@@ -14,7 +14,7 @@
   <img alt="Interface: Gio" src="https://img.shields.io/badge/interface-Gio-8A3FA0?style=flat-square">
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4?style=flat-square">
   <img alt="Linux: Wayland and X11" src="https://img.shields.io/badge/Linux-Wayland%20%7C%20X11-333333?style=flat-square&logo=linux&logoColor=white">
-  <img alt="License: PolyForm Noncommercial 1.0.0" src="https://img.shields.io/badge/license-PolyForm%20Noncommercial-6B7280?style=flat-square">
+  <img alt="License: GPL 3.0" src="https://img.shields.io/badge/license-GPL%203.0-6B7280?style=flat-square">
 </p>
 
 <p align="center">
@@ -207,7 +207,7 @@ SHOTS=shots go test ./shell   # also writes screenshots of every screen
 
 <br>
 
-Windows warns about programs not signed by a known publisher. For a free, noncommercial app
+Windows warns about programs not signed by a known publisher. For a free app
 the clean route is the Microsoft Store:
 
 1. Registration is free for individual developers: create an account in Partner Center.
@@ -250,5 +250,13 @@ cmd/litego          the program: window, resident process, system hooks
 The web engine sits behind `webview.Engine` and `webview.View`, so everything above it is
 the same on both systems, and the whole interface can be tested with a stand-in engine.
 
+## License
+
+[GNU General Public License 3.0](LICENSE). You may use, share and change Lite Go, and sell
+copies; copies and changed versions must keep the copyright notice, stay under the GPL and
+come with their source. See also [NOTICE](NOTICE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+<p align="center">
   <sub>Tulipan Labs · Cesar Jose Luis Torrecilla Gelvez</sub>
 </p>
