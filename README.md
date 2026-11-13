@@ -43,8 +43,7 @@ puts a small Go program around it that decides what each page may cost.
 
 **Light**
 
-Background tabs give memory back at once, sleep, then unload. Each page has a memory cap.
-A balancer keeps the computer's resources on what you are using.
+Background tabs give memory back at once, sleep, then unload. A balancer keeps the computer's resources on what you are using.
 
 </td>
 <td width="33%" valign="top">
@@ -86,10 +85,20 @@ a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
 <td align="center"><sub><b>Sandbox.</b> Unsafe addresses are stopped first.</sub></td>
 </tr>
 <tr>
-<td colspan="2"><img src="assets/screens/night.png" alt="Lite results in the Night palette"></td>
+<td width="50%"><img src="assets/screens/phone-link.png" alt="The phone link with its QR code"></td>
+<td width="50%"><img src="assets/screens/sorbet.png" alt="Lite results in the Sorbet palette"></td>
 </tr>
 <tr>
-<td colspan="2" align="center"><sub><b>Night.</b> One of seven palettes.</sub></td>
+<td align="center"><sub><b>Phone link.</b> Scan the code, move files both ways.</sub></td>
+<td align="center"><sub><b>Sorbet.</b> One of four pastel palettes that merge three colors.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="assets/screens/lagoon.png" alt="The new tab page in the Lagoon palette"></td>
+<td width="50%"><img src="assets/screens/night.png" alt="Lite results in the Night palette"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Lagoon.</b></sub></td>
+<td align="center"><sub><b>Night.</b> Eleven palettes in all.</sub></td>
 </tr>
 </table>
 
@@ -107,6 +116,7 @@ and thumbnails are placeholders.</sub>
 | **Ask AI** | On any page, a side panel sends your question and the page's text (or your selection) to Google AI Mode and writes the answer with its sources. No API key. |
 | **Split view** | Two pages side by side. The pane you click takes the keyboard and the address bar. |
 | **Downloads** | A toolbar icon with a progress ring; a list with speed, time left, pause, resume, cancel, open and show in folder. |
+| **Phone link** | Move photos and files between the computer and a phone with nothing to install on the phone: Lite Go shows a QR code, the phone scans it and uses its own browser to send files (they land in Downloads) or take the ones you offer, or the page you are on. Same Wi-Fi only; the address carries a random key and works only while the link is on. The connection is not encrypted, so it is for networks you trust. |
 | **The usual** | Find in page, zoom, print, a searchable history by day, reopen a closed tab, and the last tabs brought back at start (unloaded until you open them). |
 | **Tabs** | On top or at the side. Normal, private, temporary, sandbox and container tabs, chosen on the new tab page. Containers keep their own sign-ins, each with its own icon and color. |
 
@@ -116,8 +126,6 @@ and thumbnails are placeholders.</sub>
 |---|---|
 | **The plan** | Background tabs are hidden at once, put to sleep after a while and unloaded later, keeping their address and title. Tabs playing sound stay awake. Saver, Balanced and Speed profiles follow the computer's RAM. |
 | **The balancer** | The tab in front (both, in split view) has priority. Every other page is told at once that nobody is looking, so the engine gives memory back. When the pages pass the budget, or the computer runs short, background pages sleep and then unload, oldest first. |
-| **A cap for each page** | A page that takes more than its share (1 to 3 GB on Balanced) is ended alone, with a Reload button, instead of slowing everything. A job object per page process on Windows; WebKit's own limit on Linux. |
-| **Loads what you are near** | Pictures and frames further down a page wait until you scroll close. What the engine has already started fetching is not stopped, so the saving is largest on long pages. |
 
 ### Lite Shields
 
@@ -127,7 +135,7 @@ and thumbnails are placeholders.</sub>
 | **Adaptive** | A site is scanned on its first visits. Where three scans find nothing, the shield stands by and the site's requests go straight to the network; where something is found, it stays on. Clean sites are scanned again every 15 visits or three days. |
 | **What ads leave behind** | Empty boxes and cookie notices are hidden. Tracking parameters are cut from links, tracking redirects skipped, AMP pages opened at the source. |
 | **Fingerprinting** | Canvas, audio and hardware details vary slightly per site and session. Sign-in and human-check pages are left alone. |
-| **Never broken** | Sign-in, messaging, human checks and YouTube playback are never blocked; style sheets and fonts always load. |
+| **Never broken** | Sign-in, messaging, human checks and YouTube playback are never blocked. Pictures, video, style sheets and fonts always load: the shield checks scripts and data requests, where ads and trackers start, and never blocks a whole hosting network. |
 
 ### Safety
 
@@ -151,6 +159,7 @@ and thumbnails are placeholders.</sub>
 | `Ctrl` `Tab` | Next tab | `Ctrl` `M` | Mute tab |
 | `Ctrl` `1`...`9` | Go to tab | `Alt` `Left` / `Right` | Back, forward |
 | `Ctrl` `R` / `F5` | Reload | `F11` | Full screen |
+| `Ctrl` `Shift` `L` | Phone link | `Ctrl` `,` | Menu |
 
 They work while a page has the keyboard too.
 
@@ -158,7 +167,7 @@ They work while a page has the keyboard too.
 
 | System | Web engine | Status |
 |---|---|---|
-| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, memory cap, sandbox) are covered by tests with a stand-in engine and still need a pass on a real PC. |
+| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, phone link) are covered by tests with a stand-in engine and still need a pass on a real PC. |
 | Linux: native Wayland and X11 (GNOME, KDE, niri and others) | WebKitGTK 4.1, in a GTK window | Written; first run pending. |
 
 No engine is bundled: each comes with the system and is kept up to date by it.
@@ -216,6 +225,8 @@ the clean route is the Microsoft Store:
 3. Build and upload `dist\LiteGo.msixbundle`. The Store signs it, so it installs without
    warnings and updates itself.
 
+The whole submission, with the listing texts, is in [packaging/STORE.md](packaging/STORE.md).
+
 `packaging/test-install.ps1` signs a package with a certificate made on your own PC, to try
 the MSIX first. The setup `.exe` and the portable app stay unsigned: SmartScreen shows
 "Windows protected your PC" (More info, Run anyway) until a code-signing certificate is
@@ -235,9 +246,10 @@ cmd/litego          the program: window, resident process, system hooks
     +-- core        rules with no window: search, shields, adaptive scans, unsafe
     |               addresses, HTTPS, the memory plan, history, settings
     +-- shields     filter lists, hiding rules, link cleaning, fingerprinting
+    +-- link        the phone link: a small server on the local network
     +-- webview     one small interface over two engines:
                       WebView2 from pure Go (COM vtables, profiles, sandbox, suspend,
-                      memory caps, request filtering, downloads)
+                      request filtering, downloads)
                       WebKitGTK through cgo
 ```
 
@@ -255,7 +267,7 @@ the same on both systems, and the whole interface can be tested with a stand-in 
 [GNU General Public License 3.0](LICENSE). You may use, share and change Lite Go, and sell
 copies; copies and changed versions must keep the copyright notice, stay under the GPL and
 come with their source. See also [NOTICE](NOTICE) and
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). What Lite Go does with data: [PRIVACY.md](PRIVACY.md).
 
 <p align="center">
   <sub>Tulipan Labs · Cesar Jose Luis Torrecilla Gelvez</sub>

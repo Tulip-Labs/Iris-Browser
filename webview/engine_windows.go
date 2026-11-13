@@ -37,8 +37,6 @@ type engine struct {
 	version string
 	memMB   float64
 	memAt   time.Time
-	jobs    map[uint32]windows.Handle // page process -> the job that caps its memory
-	jobMB   int
 }
 
 var downloadID int
@@ -48,10 +46,7 @@ func New() Engine { return &engine{} }
 
 func (e *engine) Version() string { return e.version }
 
-func (e *engine) SetPolicy(p Policy) {
-	e.policy = p
-	e.memAt = time.Time{} // apply a changed memory cap at the next reading
-}
+func (e *engine) SetPolicy(p Policy) { e.policy = p }
 
 // runtimeDLL finds the installed WebView2 runtime (stable channel first), per machine or per user.
 func runtimeDLL() (string, error) {
@@ -227,74 +222,17 @@ func (e *engine) MemoryMB() float64 {
 	var n uint32
 	call(coll, slotICoreWebView2ProcessInfoCollection_Count, uintptr(unsafe.Pointer(&n)))
 	total := 0.0
-	var pages []uint32
 	for i := uint32(0); i < n; i++ {
 		var info uintptr
 		if failed(call(coll, slotICoreWebView2ProcessInfoCollection_GetValueAtIndex, uintptr(i), uintptr(unsafe.Pointer(&info)))) || info == 0 {
 			continue
 		}
 		pid := getInt(info, slotICoreWebView2ProcessInfo_ProcessId)
-		if getInt(info, slotICoreWebView2ProcessInfo_Kind) == 1 { // a renderer: the process of a page
-			pages = append(pages, uint32(pid))
-		}
 		release(info)
 		total += privateMB(uint32(pid))
 	}
-	e.capPages(pages)
 	e.memMB = total
 	return total
-}
-
-// capPages puts every page process in a job of its own with a memory limit
-// (Policy.ProcessLimitMB). Windows then refuses that process memory past the
-// limit: the page ends alone, and the rest of the system keeps its memory.
-// Each process needs its own job, because Chromium already keeps each one in
-// a sandbox job and Windows only nests a job under it while ours is empty.
-func (e *engine) capPages(pids []uint32) {
-	limit := e.policy.ProcessLimitMB
-	if e.jobs == nil {
-		e.jobs = map[uint32]windows.Handle{}
-	}
-	alive := map[uint32]bool{}
-	for _, pid := range pids {
-		alive[pid] = true
-		if _, ok := e.jobs[pid]; ok || limit <= 0 {
-			continue
-		}
-		job, err := windows.CreateJobObject(nil, nil)
-		if err != nil {
-			continue
-		}
-		e.jobs[pid] = job // kept even when the process refuses, so it is asked once
-		if !setJobLimit(job, limit) {
-			continue
-		}
-		h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, pid)
-		if err != nil {
-			continue
-		}
-		_ = windows.AssignProcessToJobObject(job, h)
-		windows.CloseHandle(h)
-	}
-	for pid, job := range e.jobs {
-		if !alive[pid] {
-			windows.CloseHandle(job)
-			delete(e.jobs, pid)
-		} else if limit != e.jobMB {
-			setJobLimit(job, limit) // 0 lifts the cap
-		}
-	}
-	e.jobMB = limit
-}
-
-func setJobLimit(job windows.Handle, mb int) bool {
-	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-	if mb > 0 {
-		info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_PROCESS_MEMORY
-		info.ProcessMemoryLimit = uintptr(mb) << 20
-	}
-	_, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)))
-	return err == nil
 }
 
 type memCounters struct {
@@ -340,10 +278,14 @@ type view struct {
 	held     []uintptr // interfaces released when the view closes
 }
 
-// the kinds of request the shield checks: images, media, scripts, XHR, fetch,
-// pings and others; never style sheets or fonts, so a blocked domain cannot
-// break how a page looks
-var shieldContexts = []uintptr{3, 4, 6, 7, 8, 14, 16}
+// the kinds of request the shield checks: scripts, XHR, fetch, pings and
+// others. That is where ads and trackers start. Pictures, video, style
+// sheets and fonts are never sent to the shield: they are most of what a
+// page asks for, each check costs a trip between two processes, and a page
+// must not lose its pictures to a list's mistake. The boxes ads leave are
+// hidden by the hiding rules, and the engine's own tracking prevention
+// still covers tracking pictures.
+var shieldContexts = []uintptr{6, 7, 8, 14, 16}
 
 // setFilters starts or stops sending this view's requests to the shield.
 // Without the filters the requests never leave the engine, which is as fast

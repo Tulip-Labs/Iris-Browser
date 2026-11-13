@@ -16,7 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST, OP_ZOOM, OP_LIMIT, OP_DLCANCEL };
+enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST, OP_ZOOM, OP_DLCANCEL };
 
 extern void lgxGoCreated(uintptr_t cb, int ok);
 extern void lgxGoURL(uintptr_t id, char *u);
@@ -51,7 +51,6 @@ static char *dataDir;
 static GHashTable *views;    // id -> LV*
 static GHashTable *contexts; // profile -> WebKitWebContext*
 static WebKitUserContentFilter *filter;
-static int memLimitMB;        // the cap of each page process (0 = none)
 static GHashTable *downloads; // id -> WebKitDownload*
 static uintptr_t lastDownload;
 
@@ -154,15 +153,7 @@ static WebKitWebContext *contextFor(const char *profile, int priv, int sandbox) 
 		g_free(base);
 		g_free(cache);
 	}
-	if (memLimitMB > 0) {
-		// WebKit ends a page process that goes over the limit, alone
-		WebKitMemoryPressureSettings *mp = webkit_memory_pressure_settings_new();
-		webkit_memory_pressure_settings_set_memory_limit(mp, (guint)memLimitMB);
-		c = WEBKIT_WEB_CONTEXT(g_object_new(WEBKIT_TYPE_WEB_CONTEXT, "website-data-manager", m, "memory-pressure-settings", mp, NULL));
-		webkit_memory_pressure_settings_free(mp);
-	} else {
-		c = webkit_web_context_new_with_website_data_manager(m);
-	}
+	c = webkit_web_context_new_with_website_data_manager(m);
 	if (sandbox) g_object_set_data(G_OBJECT(c), "lgx-sandbox", GINT_TO_POINTER(1));
 	g_signal_connect(c, "download-started", G_CALLBACK(onDownload), NULL);
 	webkit_web_context_set_process_model(c, WEBKIT_PROCESS_MODEL_MULTIPLE_SECONDARY_PROCESSES);
@@ -352,9 +343,6 @@ static gboolean runOp(gpointer data) {
 		v->profile = g_strdup(op->s ? op->s : "");
 		v->priv = op->a;
 		v->sandbox = op->b;
-		break;
-	case OP_LIMIT:
-		memLimitMB = op->a; // for the storage sessions made from now on
 		break;
 	case OP_DLCANCEL: {
 		WebKitDownload *d = g_hash_table_lookup(downloads, (gpointer)op->id);

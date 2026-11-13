@@ -212,7 +212,7 @@ func (a *App) results(r ui.Rect, t *Tab) {
 	if s.viewer.kind != vVideo && a.sideURL != "" && !a.sideFull {
 		a.sideURL = ""
 	}
-	ui.FillRound(g, r, 14, pageColor(th))
+	fillPage(g, r, 14, th)
 	g.Save()
 	g.Clip(r)
 	defer g.Restore()

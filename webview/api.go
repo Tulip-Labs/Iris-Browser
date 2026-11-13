@@ -91,9 +91,6 @@ type Policy struct {
 	// Unsafe stops a page that looks dangerous before it loads; the view
 	// reports it through Insecure. Sandbox views are not asked.
 	Unsafe func(url string) bool
-	// ProcessLimitMB caps the memory of each page process; a page that goes
-	// over it is ended alone and reported as crashed. 0 = no cap.
-	ProcessLimitMB int
 	// Download reports every download as it starts and as it changes.
 	Download func(d Download)
 }

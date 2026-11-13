@@ -51,8 +51,8 @@ func main() {
 		rs := &winres.ResourceSet{}
 		rs.SetIcon(winres.ID(1), ic)
 		v := version.Info{}
-		v.SetFileVersion("1.0.0.0")
-		v.SetProductVersion("1.0.0.0")
+		v.SetFileVersion("1.0.1.0")
+		v.SetProductVersion("1.0.1.0")
 		v.Set(0, version.ProductName, "Lite Go")
 		v.Set(0, version.FileDescription, t.desc)
 		v.Set(0, version.CompanyName, "Tulipan Labs")

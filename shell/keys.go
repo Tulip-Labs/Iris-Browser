@@ -29,6 +29,7 @@ const (
 	actHistory
 	actDownloads
 	actSplit
+	actPhone
 	actZoomIn
 	actZoomOut
 	actZoomReset
@@ -51,6 +52,8 @@ func vkAction(k webview.Key) action {
 			return actPrivate
 		case vk == 'W', vk == 0x73: // Ctrl+F4
 			return actClose
+		case vk == 'L' && k.Shift:
+			return actPhone
 		case vk == 'L', vk == 'K':
 			return actAddress
 		case vk == 0x09 && k.Shift, vk == 0x21: // Ctrl+Shift+Tab, Ctrl+PageUp
@@ -129,6 +132,9 @@ func keyAction(k ui.KeyPress) action {
 		case ui.KW:
 			return actClose
 		case ui.KL, ui.KK:
+			if k.Shift && k.Key == ui.KL {
+				return actPhone
+			}
 			return actAddress
 		case ui.KTab:
 			if k.Shift {
@@ -242,6 +248,8 @@ func (a *App) do(act action) {
 		a.togglePanel(panelHistory)
 	case act == actDownloads:
 		a.togglePanel(panelDownloads)
+	case act == actPhone:
+		a.togglePanel(panelPhone)
 	case act == actSplit:
 		a.toggleSplit()
 	case act == actFind:

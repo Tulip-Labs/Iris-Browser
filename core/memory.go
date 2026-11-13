@@ -12,8 +12,6 @@ type MemoryPlan struct {
 	// BudgetMB is how much memory all the pages together may hold before the
 	// balancer puts background tabs to sleep and then unloads them (0 = no budget).
 	BudgetMB int
-	// LimitMB caps each page process; a page over it is ended alone.
-	LimitMB int
 	// ReserveMB is the free system memory the balancer keeps (0 = not watched).
 	ReserveMB int
 }
@@ -37,20 +35,17 @@ func Plan(totalMB int, profile string) MemoryPlan {
 		p.Live *= 2
 		p.SleepAfter, p.UnloadAfter = 600, 3600
 	}
-	// the share of memory the pages may take, and the cap of a single page
-	share, part, lo, hi := 0.35, 4, 1024, 3072
+	// the share of memory the pages may take together
+	share := 0.35
 	switch profile {
 	case "saver":
-		share, part, lo, hi = 0.22, 8, 768, 1536
+		share = 0.22
 	case "speed":
-		share, part, lo, hi = 0.55, 2, 2048, 6144
+		share = 0.55
 	}
 	if totalMB > 0 {
 		p.BudgetMB = int(float64(totalMB) * share)
-		p.LimitMB = min(hi, max(lo, totalMB/part))
 		p.ReserveMB = max(400, totalMB/12)
-	} else {
-		p.LimitMB = (lo + hi) / 2
 	}
 	return p
 }

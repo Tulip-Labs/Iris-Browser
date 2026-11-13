@@ -521,6 +521,7 @@ func (a *App) tick() {
 	other, _ := a.splitWith()
 	a.settleScans()
 	a.rebalance()
+	a.linkTick()
 	live := 0
 	for _, t := range a.tabs {
 		if t.view == nil || t == cur || t == other {

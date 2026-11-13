@@ -48,7 +48,9 @@ func (s *Shield) load() {
 		}
 		m := make(map[string]struct{}, len(list))
 		for _, d := range list {
-			m[d] = struct{}{}
+			if !sharedHosts[d] {
+				m[d] = struct{}{}
+			}
 		}
 		s.domains = m
 	})
@@ -68,6 +70,27 @@ func (s *Shield) Size() int {
 var neverBlock = []string{"whatsapp.com", "whatsapp.net", "web.whatsapp.com", "accounts.google.com",
 	"login.microsoftonline.com", "login.live.com", "teams.microsoft.com", "meet.google.com",
 	"challenges.cloudflare.com", "hcaptcha.com", "recaptcha.net", "appleid.apple.com"}
+
+// sharedHosts are hosting and delivery networks that carry the pictures,
+// scripts and files of countless ordinary sites. A list that names one of
+// them whole would break those sites (courses without pictures, shops
+// without photos), so such an entry is dropped; the single ad servers that
+// live under them are listed by their full name and stay blocked.
+var sharedHosts = map[string]bool{}
+
+func init() {
+	for _, d := range []string{"cloudfront.net", "amazonaws.com", "s3.amazonaws.com", "akamaihd.net", "akamaized.net",
+		"akamai.net", "edgekey.net", "edgesuite.net", "fastly.net", "fastlylb.net", "azureedge.net", "azurefd.net",
+		"azurewebsites.net", "windows.net", "blob.core.windows.net", "msecnd.net", "googleusercontent.com",
+		"googleapis.com", "storage.googleapis.com", "gstatic.com", "cloudflare.com", "cloudflare.net", "jsdelivr.net",
+		"unpkg.com", "github.io", "githubusercontent.com", "netlify.app", "vercel.app", "herokuapp.com",
+		"firebaseapp.com", "web.app", "appspot.com", "b-cdn.net", "cdn77.org", "kxcdn.com", "digitaloceanspaces.com",
+		"r2.dev", "pages.dev", "workers.dev", "wp.com", "cloudinary.com", "imgix.net", "ctfassets.net",
+		"backblazeb2.com", "rackcdn.com", "llnwd.net", "hwcdn.net", "edgecastcdn.net", "wixstatic.com",
+		"squarespace-cdn.com", "shopifycdn.com", "myshopify.com"} {
+		sharedHosts[d] = true
+	}
+}
 
 func under(host, domain string) bool { return host == domain || strings.HasSuffix(host, "."+domain) }
 

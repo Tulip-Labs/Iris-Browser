@@ -121,7 +121,7 @@ func (a *App) panes(page ui.Rect) (ui.Rect, ui.Rect, *Tab) {
 // clicked, and then draws in full as the current tab.
 func (a *App) otherPane(r ui.Rect, t *Tab) {
 	u, g, th := &a.u, a.u.G, a.u.Th
-	ui.FillRound(g, r, 14, pageColor(th))
+	fillPage(g, r, 14, th)
 	if t.URL != "" && t.search == nil && !t.Crashed {
 		if t.view == nil || !t.shown {
 			spinner(u, r.CX(), r.CY(), 13)

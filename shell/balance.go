@@ -13,6 +13,7 @@ const (
 	panelSettings panelMode = iota
 	panelDownloads
 	panelHistory
+	panelPhone
 )
 
 // togglePanel opens the side panel on a mode, or closes it when it shows that mode.

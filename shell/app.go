@@ -58,6 +58,9 @@ type Config struct {
 type Sys struct {
 	// Open opens a file with its program; Reveal shows it in its folder.
 	Open, Reveal func(path string)
+	// PickFiles shows the system's file box and returns what was chosen
+	// (it waits for the reader; called off the loop).
+	PickFiles func() []string
 	// FreeMB is the system memory still free (0 = unknown).
 	FreeMB func() int
 	// Integrity checks Lite Go's own program file against the record made
@@ -108,6 +111,7 @@ type App struct {
 	dlSc      ui.Scroll
 	kindEdit  bool // the container editor on the new tab page
 	balance   balancer
+	phone     phoneLink
 	integrity Integrity
 
 	tabs    []*Tab
@@ -234,13 +238,6 @@ func (a *App) Policy() webview.Policy {
 	if a.set.Farble {
 		scripts = append(scripts, shields.FarbleScript())
 	}
-	if a.set.Lazy {
-		scripts = append(scripts, core.LazyScript)
-	}
-	limit := 0
-	if a.set.MemoryCap {
-		limit = a.plan.LimitMB
-	}
 	adaptive, scan := a.set.Adaptive, a.scan
 	var rewrite func(string) string
 	if a.set.CleanLinks {
@@ -293,9 +290,8 @@ func (a *App) Policy() webview.Policy {
 			}
 			return !adaptive || scan.Need(u)
 		},
-		Unsafe:         func(u string) bool { return core.Risk(u) != "" && !a.allowedInsecure(u) },
-		ProcessLimitMB: limit,
-		Download:       func(d webview.Download) { a.post(func() { a.onDownload(d) }) },
+		Unsafe:   func(u string) bool { return core.Risk(u) != "" && !a.allowedInsecure(u) },
+		Download: func(d webview.Download) { a.post(func() { a.onDownload(d) }) },
 	}
 }
 
@@ -352,6 +348,7 @@ func (a *App) Fullscreen() bool { return a.full || a.winFull }
 
 // Close flushes settings and closes every page (call before the window goes).
 func (a *App) Close() {
+	a.stopLink()
 	a.saveSession()
 	for _, t := range a.tabs {
 		a.finishScan(t)
@@ -416,7 +413,11 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 		g.FillRect(full, ui.Black)
 		page = full
 	} else {
-		g.FillRect(full, frameColor(th))
+		if th.Grad != nil {
+			ui.FillGradient3(g, full, 0, th.Grad)
+		} else {
+			g.FillRect(full, frameColor(th))
+		}
 		page = a.chrome(full)
 	}
 	a.sideRect, a.sideURL = ui.Rect{}, ""

@@ -1,4 +1,11 @@
-The first public build of Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11.
+Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11.
+
+## New in 1.0.1
+
+- **Phone link:** scan a QR code with your phone and move files both ways, with nothing to install on the phone (same Wi-Fi).
+- **Four pastel palettes** that merge three colors: Peach Sky, Mint Lilac, Sorbet and Lagoon.
+- **Pictures always load.** The shield no longer blocks whole hosting networks (this broke pictures on Coursera and others) and no longer checks pictures and video at all, which also makes pages load faster.
+- **Removed:** the memory limit for each page and the loader that delayed pictures.
 
 ## Downloads
 
@@ -13,11 +20,11 @@ The first public build of Lite Go: a light, fast browser in Go and Gio for Windo
 
 - The files are not signed, so Windows SmartScreen shows "Windows protected your PC". Choose **More info**, then **Run anyway**.
 - Pages are shown by Microsoft Edge WebView2, which Windows 11 already has; the installer gets it if it is missing.
-- Downloads, split view, the per-page memory limit and the sandbox are new and have been tested with a stand-in engine, not yet on many real PCs. If pages close unexpectedly, turn off the limit under Memory in the menu and open an issue.
+- Downloads, split view, the sandbox and the phone link are new and have been tested with a stand-in engine, not yet on many real PCs. If something misbehaves, open an issue.
 - Linux: build from source with `./build-litego.sh linux` (first run pending).
 
 ## What is in it
 
-Lite results for Google searches, Ask AI, Lite Shields with adaptive scanning, HTTPS-only with a sandbox for unsafe addresses, split view, a download manager, find, zoom, print, history, private, temporary and container tabs, and a memory plan with a balancer and a cap for each page. See the README for the full list.
+Lite results for Google searches, Ask AI, Lite Shields with adaptive scanning, HTTPS-only with a sandbox for unsafe addresses, split view, a download manager, the phone link, find, zoom, print, history, private, temporary and container tabs, and a memory plan with a balancer. See the README for the full list.
 
 Licensed under GPL 3.0.

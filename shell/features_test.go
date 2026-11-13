@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"litego/core"
+	"litego/link"
 	"litego/ui"
 	"litego/webview"
 )
@@ -366,9 +367,8 @@ func TestBalancer(t *testing.T) {
 	if d.a.balance.pressure {
 		t.Fatal("pressure should end when memory is back")
 	}
-	// the plan carries a budget and a per-page cap, passed to the engine
-	if p := d.a.plan; p.BudgetMB <= 0 || p.LimitMB < 768 || d.eng.policy.ProcessLimitMB != p.LimitMB {
-		t.Fatalf("plan %+v, engine cap %d", p, d.eng.policy.ProcessLimitMB)
+	if p := d.a.plan; p.BudgetMB <= 0 {
+		t.Fatalf("plan %+v", p)
 	}
 }
 
@@ -462,5 +462,62 @@ func TestKindPickerAndSession(t *testing.T) {
 	}
 	if a2.tab().URL != "" {
 		t.Fatal("the window should still open on a new tab")
+	}
+}
+
+func TestPhoneLink(t *testing.T) {
+	d := newDriver(t, 1280, 860, true)
+	d.frames(2)
+	tab := d.open("https://example.com/article")
+	tab.Title = "An article"
+	d.a.do(actPhone)
+	d.frames(2)
+	if !d.a.panel || d.a.panelMode != panelPhone {
+		t.Fatal("Ctrl+Shift+L should open the phone link")
+	}
+	d.shot("phone-off")
+	d.a.startLink()
+	if d.a.phone.srv == nil {
+		t.Skip("no network here: " + d.a.phone.err)
+	}
+	defer d.a.stopLink()
+	if len(d.a.phone.qr) < 21 || !strings.HasPrefix(d.a.phone.srv.URL(), "http://") {
+		t.Fatalf("no code for %q", d.a.phone.srv.URL())
+	}
+	d.a.phone.srv.ShareText(tab.Title, tab.URL)
+	d.frames(2)
+	d.shot("phone")
+	// a file from the phone lands in the downloads list
+	d.a.linkEvent(d.a.phone.seq, link.Event{Kind: link.Receiving, ID: 1, Name: "IMG_0042.jpg", Path: "/home/u/Downloads/IMG_0042.jpg", Size: 4000, Got: 1000})
+	d.a.linkEvent(d.a.phone.seq, link.Event{Kind: link.Received, ID: 1, Name: "IMG_0042.jpg", Path: "/home/u/Downloads/IMG_0042.jpg", Size: 4000, Got: 4000})
+	if len(d.a.downloads) != 1 || d.a.downloads[0].name != "IMG_0042.jpg" || d.a.downloads[0].State != webview.DownloadDone {
+		t.Fatalf("received file not listed: %+v", d.a.downloads)
+	}
+	d.a.stopLink()
+	d.frames(2)
+	if d.a.phone.srv != nil || d.a.phone.qr != nil {
+		t.Fatal("closing the link must take the code away")
+	}
+}
+
+// The pastel palettes: every screen drawn in each, for the eye.
+func TestPastelThemes(t *testing.T) {
+	for _, id := range []string{"peach", "mint", "sorbet", "lagoon"} {
+		th := ui.ThemeByID(id)
+		if th.ID != id || len(th.Grad) != 3 {
+			t.Fatalf("palette %s is missing its gradient", id)
+		}
+		d := newResultsDriver(t, 1280, 800)
+		d.a.set.Theme = id
+		d.frames(2)
+		d.shot("theme-" + id)
+		d.a.togglePanel(panelSettings)
+		d.frames(2)
+		d.shot("theme-" + id + "-menu")
+		d.a.panel = false
+		d.typeText("red pandas")
+		d.key(ui.KEnter, false, false)
+		d.settle(14)
+		d.shot("theme-" + id + "-results")
 	}
 }

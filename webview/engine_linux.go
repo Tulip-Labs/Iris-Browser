@@ -7,7 +7,7 @@ package webview
 #include <stdlib.h>
 #include <stdint.h>
 
-enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST, OP_ZOOM, OP_LIMIT, OP_DLCANCEL };
+enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST, OP_ZOOM, OP_DLCANCEL };
 
 void lgxMain(unsigned long parent, const char *dataDir);
 void lgxAttach(uintptr_t layout, const char *dataDir);
@@ -79,7 +79,6 @@ func (e *wkEngine) Start(window uintptr, dataDir string, low bool, ready func(er
 		cs := C.CString(dataDir)
 		C.lgxAttach(C.uintptr_t(window), cs)
 		C.free(unsafe.Pointer(cs))
-		e.applyLimit()
 		e.applyBlocklist()
 		ready(nil)
 		return
@@ -93,7 +92,6 @@ func (e *wkEngine) Start(window uintptr, dataDir string, low bool, ready func(er
 		C.lgxMain(C.ulong(window), cs)
 	}()
 	<-started
-	e.applyLimit()
 	e.applyBlocklist()
 	ready(nil)
 }
@@ -111,19 +109,7 @@ func (e *wkEngine) SetPolicy(p Policy) {
 	e.mu.Lock()
 	e.policy = p
 	e.mu.Unlock()
-	e.applyLimit()
 	e.applyBlocklist()
-}
-
-// applyLimit sets the memory cap of page processes; storage sessions made
-// later take it (pages already open keep the cap they started with).
-func (e *wkEngine) applyLimit() {
-	e.mu.Lock()
-	mb := e.policy.ProcessLimitMB
-	e.mu.Unlock()
-	if e.started {
-		call(C.OP_LIMIT, 0, mb, 0, 0, 0, "", 0)
-	}
 }
 
 func (e *wkEngine) MemoryMB() float64 { return 0 }

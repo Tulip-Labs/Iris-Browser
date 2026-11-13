@@ -25,6 +25,9 @@ func (a *App) drawPanel(r ui.Rect) {
 	case panelHistory:
 		title = "History"
 		ui.DrawIcon(g, ui.IHistory, hr.X+19, hr.CY()-11, 22, th.Primary)
+	case panelPhone:
+		title = "Phone link"
+		ui.DrawIcon(g, ui.IPhone, hr.X+19, hr.CY()-11, 22, th.Primary)
 	default:
 		logo(g, ui.RectAround(hr.X+30, hr.CY(), 26, 26), th, th.Primary)
 	}
@@ -39,6 +42,9 @@ func (a *App) drawPanel(r ui.Rect) {
 		return
 	case panelHistory:
 		a.drawHistory(body)
+		return
+	case panelPhone:
+		a.drawPhone(body)
 		return
 	}
 	sc := &a.panelScroll
@@ -87,7 +93,7 @@ func (a *App) drawPanel(r ui.Rect) {
 			{ui.ISplit, "Split view", "Ctrl+Shift+S", actSplit},
 			{ui.ISearch, "Find", "Find in this page  Ctrl+F", actFind},
 			{ui.IPrint, "Print", "Print, or save as PDF  Ctrl+P", actPrint},
-			{ui.IUndo, "Reopen", "Reopen the last closed tab  Ctrl+Shift+T", actReopen},
+			{ui.IPhone, "Phone", "Move files to and from your phone with a QR code  Ctrl+Shift+L", actPhone},
 		}
 		bw := (w - 16) / 3
 		for i, tl := range tools {
@@ -127,14 +133,17 @@ func (a *App) drawPanel(r ui.Rect) {
 	// look
 	section("Look")
 	sw := float32(34)
+	perRow := max(1, int((w+8)/(sw+8)))
 	for i, tm := range ui.Themes {
-		cr := ui.Rect{X: x + float32(i)*(sw+8), Y: y, W: sw, H: sw}
-		if cr.R() > x+w {
-			break
+		cr := ui.Rect{X: x + float32(i%perRow)*(sw+8), Y: y + float32(i/perRow)*(sw+10), W: sw, H: sw}
+		if tm.Grad != nil {
+			// the three pastels as they merge, with a dot of the accent
+			ui.FillGradient3(g, cr, sw/2, tm.Grad)
+			ui.FillOval(g, ui.RectAround(cr.CX(), cr.CY(), 10, 10), tm.Deep)
+		} else {
+			ui.FillOval(g, cr, tm.G5)
+			ui.FillPathClip(g, ui.NewPath().Ellipse(cr), ui.Rect{X: cr.X, Y: cr.CY(), W: cr.W, H: cr.H / 2}, tm.Deep)
 		}
-		base := tm.G5
-		ui.FillOval(g, cr, base)
-		ui.FillPathClip(g, ui.NewPath().Ellipse(cr), ui.Rect{X: cr.X, Y: cr.CY(), W: cr.W, H: cr.H / 2}, tm.Deep)
 		ui.StrokeOval(g, cr.Inset(0.5), 1, th.Outline)
 		if tm.ID == a.set.Theme {
 			ui.StrokeOval(g, cr.Inset(-3), 2, th.Primary)
@@ -145,7 +154,7 @@ func (a *App) drawPanel(r ui.Rect) {
 			a.set.Save()
 		}
 	}
-	y += sw + 14
+	y += float32((len(ui.Themes)+perRow-1)/perRow)*(sw+10) + 4
 	{
 		g.Text("Tabs", x, y+14, ui.FSmallBold, th.OnSurfaceVariant)
 		y += 22
@@ -372,20 +381,8 @@ func (a *App) drawPanel(r ui.Rect) {
 		a.set.Save()
 		a.plan = core.Plan(a.cfg.TotalMB, a.set.Memory)
 		a.lastTick = 0
-		a.applyPolicy() // the cap of one page follows the profile
 	}
 	y += 42
-	if v := check("memcap", "Limit each page to "+mb(float64(a.plan.LimitMB)), a.set.MemoryCap); v != a.set.MemoryCap {
-		a.set.MemoryCap = v
-		a.set.Save()
-		a.applyPolicy()
-	}
-	if v := check("lazy", "Load pictures and frames only when reached", a.set.Lazy); v != a.set.Lazy {
-		a.set.Lazy = v
-		a.set.Save()
-		a.applyPolicy()
-		a.notify("Applies to pages opened from now on.")
-	}
 	if b := a.balance; a.plan.BudgetMB > 0 {
 		s := "Balancer: pages may hold " + mb(float64(a.plan.BudgetMB)) + " together"
 		if b.freeMB > 0 {

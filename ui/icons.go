@@ -93,6 +93,7 @@ const (
 	IDownload
 	IFolder
 	IPrint
+	IPhone
 	iconCount
 )
 
@@ -154,6 +155,9 @@ func DrawIcon(g Gfx, icon Icon, x, y, size float32, c Color) {
 		stroke(5, 19.5, 19, 19.5)
 	case IFolder:
 		shape(3.5, 6, 9.5, 6, 11.5, 8.5, 20.5, 8.5, 20.5, 18.5, 3.5, 18.5)
+	case IPhone:
+		box(7, 3, 17, 21, 2.5)
+		stroke(10.5, 17.8, 13.5, 17.8)
 	case IPrint:
 		stroke(7.5, 8.5, 7.5, 4.5, 16.5, 4.5, 16.5, 8.5)
 		box(4, 8.5, 20, 16.5, 2)

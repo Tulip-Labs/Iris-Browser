@@ -148,7 +148,7 @@ func logo(w, h int) []byte {
 }
 
 func readID() identity {
-	id := identity{Name: "TulipanLabs.LiteGo", Publisher: "CN=Tulipan Labs", PublisherDisplayName: "Tulipan Labs", Version: "1.0.0.0"}
+	id := identity{Name: "TulipanLabs.LiteGo", Publisher: "CN=Tulipan Labs", PublisherDisplayName: "Tulipan Labs", Version: "1.0.1.0"}
 	if b, err := os.ReadFile("packaging/msix.json"); err == nil {
 		var f map[string]string
 		if json.Unmarshal(b, &f) == nil {

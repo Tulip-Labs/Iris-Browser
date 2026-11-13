@@ -15,6 +15,9 @@ type Theme struct {
 	Shadow                             Color
 	Swatch                             []Color
 	Fields                             bool
+	// Grad, when set, is the window's backdrop: three pastel colors that
+	// merge from top to bottom (the page surfaces take a paler version).
+	Grad []Color
 
 	Card, CardStrong, Rim, Hover, Pressed, Divider, OnDeep, Field, FieldRim, Selection, OK Color
 
@@ -152,6 +155,22 @@ var Themes = []*Theme{
 		[]string{"#fff1a8", "#d4f0ff", "#d5efc9", "#bfe6d0", "#fbfdf6", "#e8f6c8"},
 		[]string{"#e2f1fb", "#def2e2", "#fff3c4", "#fbe6ea", "#e9e8f8"}, "#1e462d",
 		[]string{"#2f7d4f", "#5aa86f", "#f5c518", "#d4f0ff", "#bfe6d0"}),
+	pastel(spring("peach", "Peach Sky", "#33172b", "#5f3d55", "#8a6880", "#cbaec2", "#a8487f", "#d47fae", "#f2a65a", "#c63d3d",
+		[]string{"#ffe9c9", "#fbd5e6", "#dcefe0", "#e3d3f5", "#fdf3f4", "#ffe0d2"},
+		[]string{"#e4e6fb", "#e0f2e2", "#fff0cf", "#fde1ec", "#efe0f7"}, "#5a2447",
+		[]string{"#ffe3d3", "#fbdcec", "#dfe3fb", "#a8487f", "#f2a65a"}), "#ffe3d3", "#fbdcec", "#dfe3fb"),
+	pastel(spring("mint", "Mint Lilac", "#1c2340", "#424a6b", "#6c7494", "#aab1cc", "#5a63b8", "#8b93dc", "#f0b35a", "#c8424f",
+		[]string{"#fff1c4", "#e6dcf8", "#d5f1e2", "#cfe4f8", "#f4f8fc", "#e9defa"},
+		[]string{"#dde8fc", "#d9f3e6", "#fdf1cd", "#f6e2f1", "#e9e0fb"}, "#27305c",
+		[]string{"#d9f3e6", "#dcecf9", "#e9defa", "#5a63b8", "#f0b35a"}), "#d9f3e6", "#dcecf9", "#e9defa"),
+	pastel(spring("sorbet", "Sorbet", "#33161f", "#623f49", "#8d6a74", "#d1b0b8", "#c4517a", "#e68aa6", "#f09a3e", "#c0392b",
+		[]string{"#fff0c9", "#fbd3e4", "#e2f1d6", "#f7cfdc", "#fff6f1", "#ffdcd2"},
+		[]string{"#ece4f7", "#e3f2dc", "#fff0cc", "#fde0e8", "#f5e0ee"}, "#6a2a40",
+		[]string{"#fff0c9", "#ffdcd2", "#f9d3e6", "#c4517a", "#f09a3e"}), "#fff0c9", "#ffdcd2", "#f9d3e6"),
+	pastel(spring("lagoon", "Lagoon", "#10283a", "#38566a", "#647f90", "#a6bdc9", "#2f7f97", "#63aebf", "#f3b24c", "#c4453a",
+		[]string{"#fff2c2", "#f2e3f5", "#d2f0e4", "#cfe9f3", "#f3f9fb", "#dfeaf9"},
+		[]string{"#dbeafb", "#d6f2e6", "#fdf1cb", "#f8e3ee", "#e8e3f8"}, "#17405a",
+		[]string{"#d6f1f5", "#dfeaf9", "#f2e3f5", "#2f7f97", "#f3b24c"}), "#d6f1f5", "#dfeaf9", "#f2e3f5"),
 	(&Theme{ID: "classic", Label: "Classic", Ink: Hex("#1d1d24"), Body: Hex("#3c3c48"), Ink2: Hex("#6b6b78"), Ink3: Hex("#a8a8b4"),
 		Deep: Hex("#3a5bc7"), Deep2: Hex("#6f86d6"), Hl: Hex("#f0a500"), Danger: Hex("#c62828"),
 		G1: White, G2: White, G3: White, G4: White, G5: Hex("#f7f7f9"), G6: White,
@@ -162,6 +181,23 @@ var Themes = []*Theme{
 		G1: Hex("#3a2a14"), G2: Hex("#3d1f44"), G3: Hex("#1f3324"), G4: Hex("#2f2140"), G5: Hex("#17111c"), G6: Hex("#2e1b2a"),
 		TBlue: Hex("#3a3357"), TGreen: Hex("#2b4430"), THoney: Hex("#4a3d17"), TPink: Hex("#4a2a43"), TLav: Hex("#3c2c4f"),
 		Shadow: Black, Swatch: hexes("#17111c", "#c07ad0", "#9d60ab", "#ffae00", "#ff6b4a"), Fields: true}).derive(),
+}
+
+// pastel gives a palette a backdrop of three colors merging top to bottom.
+func pastel(t *Theme, top, mid, bottom string) *Theme {
+	t.Grad = hexes(top, mid, bottom)
+	return t
+}
+
+// FillGradient3 fills the rounded rectangle r with three colors merging
+// from top to bottom.
+func FillGradient3(g Gfx, r Rect, rad float32, c []Color) {
+	p := NewPath().RoundRect(r, rad)
+	g.FillPathGradient(p, c[0], c[1], r.Y, r.CY())
+	g.Save()
+	g.Clip(Rect{r.X, r.CY(), r.W, r.H/2 + 1})
+	g.FillPathGradient(p, c[1], c[2], r.CY(), r.B())
+	g.Restore()
 }
 
 // ThemeByID returns the palette with id, or Crocus.

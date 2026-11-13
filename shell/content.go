@@ -24,9 +24,6 @@ func (a *App) content(r ui.Rect) {
 		a.results(r, t)
 	case t.Crashed:
 		why := "Its process ended (it may have run out of memory). Reload to open it again."
-		if a.set.MemoryCap && a.plan.LimitMB > 0 {
-			why = "Its process ended. If it went past the " + mb(float64(a.plan.LimitMB)) + " limit for one page, reload it, or turn the limit off under Memory in the menu if this page needs more."
-		}
 		a.message(r, ui.IWarning, "This page stopped working", why, "Reload", func() { a.reload(t) })
 	case a.engErr != nil || a.eng == nil:
 		msg := "Lite Go shows pages with Microsoft Edge WebView2, which is not installed. Run the Lite Go installer again, or get the runtime from Microsoft."
@@ -49,6 +46,17 @@ func (a *App) content(r ui.Rect) {
 	}
 }
 
+// fillPage paints the surface of Lite Go's own pages (new tab, results): the
+// page color, or a pale version of the palette's merging pastels.
+func fillPage(g ui.Gfx, r ui.Rect, rad float32, th *ui.Theme) {
+	if th.Grad == nil {
+		ui.FillRound(g, r, rad, pageColor(th))
+		return
+	}
+	c := []ui.Color{ui.Mix(th.Grad[0], ui.White, 0.62), ui.Mix(th.Grad[1], ui.White, 0.7), ui.Mix(th.Grad[2], ui.White, 0.62)}
+	ui.FillGradient3(g, r, rad, c)
+}
+
 func pageColor(th *ui.Theme) ui.Color {
 	if th.Dark {
 		return th.G5
@@ -58,7 +66,7 @@ func pageColor(th *ui.Theme) ui.Color {
 
 func (a *App) message(r ui.Rect, ic ui.Icon, title, text, action string, do func()) {
 	u, g, th := &a.u, a.u.G, a.u.Th
-	ui.FillRound(g, r, 12, pageColor(th))
+	fillPage(g, r, 12, th)
 	w := min(520, r.W-48)
 	x := r.CX() - w/2
 	y := r.Y + r.H*0.3
@@ -106,7 +114,7 @@ func wrap(g ui.Gfx, text string, f ui.Font, w float32) []string {
 // mark, the search and its modes, nothing else.
 func (a *App) ntp(r ui.Rect, t *Tab) {
 	u, g, th := &a.u, a.u.G, a.u.Th
-	ui.FillRound(g, r, 14, pageColor(th))
+	fillPage(g, r, 14, th)
 	g.Save()
 	g.Clip(r)
 	defer g.Restore()

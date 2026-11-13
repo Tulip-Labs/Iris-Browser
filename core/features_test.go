@@ -44,6 +44,27 @@ func TestRisk(t *testing.T) {
 	}
 }
 
+// Whole hosting networks must never be blocked: Coursera's pictures come
+// from CloudFront and S3, and a list once named both.
+func TestSharedHostsStayOpen(t *testing.T) {
+	s := NewShield()
+	s.Wait()
+	page := "https://www.coursera.org/learn/machine-learning"
+	for _, u := range []string{
+		"https://d3njjcbhbojbot.cloudfront.net/api/utilities/v1/imageproxy/https://coursera-course-photos.s3.amazonaws.com/fb/logo.png",
+		"https://coursera-university-assets.s3.amazonaws.com/7a/e2/logo.png",
+		"https://s3.amazonaws.com/coursera_assets/meta_images/x.jpeg",
+		"https://static.akamaihd.net/site/picture.jpg",
+	} {
+		if !s.Allow(u, page) {
+			t.Errorf("blocked a picture on a shared host: %s", u)
+		}
+	}
+	if s.Allow("https://securepubads.g.doubleclick.net/tag/js/gpt.js", page) {
+		t.Error("ad servers must stay blocked")
+	}
+}
+
 func TestSiteScan(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	dir := t.TempDir()
@@ -107,14 +128,11 @@ func TestPlanBudget(t *testing.T) {
 		profile string
 	}{{4096, "balanced"}, {8192, "balanced"}, {8192, "saver"}, {16384, "speed"}, {0, "balanced"}} {
 		p := Plan(c.mb, c.profile)
-		if p.LimitMB < 768 || p.LimitMB > 6144 {
-			t.Errorf("%+v: page cap %d", c, p.LimitMB)
-		}
 		if c.mb > 0 && (p.BudgetMB <= 0 || p.BudgetMB >= c.mb || p.ReserveMB <= 0) {
 			t.Errorf("%+v: budget %d reserve %d", c, p.BudgetMB, p.ReserveMB)
 		}
 	}
-	if Plan(8192, "saver").LimitMB >= Plan(8192, "speed").LimitMB {
-		t.Error("saver must cap a page lower than speed")
+	if Plan(8192, "saver").BudgetMB >= Plan(8192, "speed").BudgetMB {
+		t.Error("saver must give the pages less than speed")
 	}
 }
