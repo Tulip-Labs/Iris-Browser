@@ -38,6 +38,15 @@ type Settings struct {
 	Farble     bool `json:"farble"`
 	// Boost keeps Lite Go ready in the background so its window opens instantly.
 	Boost bool `json:"boost"`
+	// Adaptive shields scan a site first and stand by where nothing needs blocking.
+	Adaptive bool `json:"adaptive"`
+	// Lazy loads pictures, frames and videos only when the reader gets near them.
+	Lazy bool `json:"lazy"`
+	// MemoryCap ends a page that takes more memory than the plan allows one page.
+	MemoryCap bool `json:"memoryCap"`
+	// Restore reopens the tabs of the last window; Session is what they were.
+	Restore bool         `json:"restore"`
+	Session []SessionTab `json:"session,omitempty"`
 
 	path  string
 	mu    sync.Mutex
@@ -49,6 +58,7 @@ func LoadSettings(dir string) *Settings {
 	s := &Settings{Theme: "crocus", Shield: true, HTTPSOnly: true, YouTube: true, Strict: false, Memory: "balanced",
 		LiteResults: true, Boost: true, YouTubeLight: true,
 		Lists: true, Cookies: true, CleanLinks: true, Farble: true,
+		Adaptive: true, Lazy: true, MemoryCap: true, Restore: true,
 		Containers: []Container{{"Work", "briefcase", "blue"}, {"Personal", "person", "orange"}}}
 	if dir == "" {
 		return s
@@ -97,6 +107,14 @@ func (s *Settings) Flush() {
 	}
 	s.mu.Unlock()
 	s.write()
+}
+
+// SessionTab is a tab kept for the next window.
+type SessionTab struct {
+	URL       string `json:"url"`
+	Title     string `json:"title,omitempty"`
+	Container string `json:"container,omitempty"`
+	Active    bool   `json:"active,omitempty"`
 }
 
 // Container is a named set of sign-ins with its own icon and color.

@@ -30,15 +30,19 @@ type fakeView struct {
 	backs            int
 	run              func(js string) string
 	evals            []string
+	zoom             float64
+	background       bool
 }
 
 func (v *fakeView) Navigate(u string) {
 	v.url = u
+	if v.ev.Loading != nil {
+		v.ev.Loading(true)
+	}
 	if v.ev.URL != nil {
 		v.ev.URL(u)
 	}
 	if v.ev.Loading != nil {
-		v.ev.Loading(true)
 		v.ev.Loading(false)
 	}
 }
@@ -59,13 +63,16 @@ func (v *fakeView) Run(js string, done func(string)) {
 	}
 	done("null")
 }
-func (v *fakeView) SetMuted(bool) {}
-func (v *fakeView) Close()        { v.closed = true }
+func (v *fakeView) SetMuted(bool)         {}
+func (v *fakeView) SetZoom(f float64)     { v.zoom = f }
+func (v *fakeView) SetBackground(on bool) { v.background = on }
+func (v *fakeView) Close()                { v.closed = true }
 
 type fakeEngine struct {
-	run   func(js string) string
-	views []*fakeView
-	opts  []webview.Options
+	run    func(js string) string
+	views  []*fakeView
+	opts   []webview.Options
+	policy webview.Policy
 }
 
 func (e *fakeEngine) Start(uintptr, string, bool, func(error)) {}
@@ -75,9 +82,9 @@ func (e *fakeEngine) NewView(o webview.Options, ev webview.Events, done func(web
 	e.opts = append(e.opts, o)
 	done(v, nil)
 }
-func (e *fakeEngine) SetPolicy(webview.Policy) {}
-func (e *fakeEngine) MemoryMB() float64        { return 412 }
-func (e *fakeEngine) Version() string          { return "142.0" }
+func (e *fakeEngine) SetPolicy(p webview.Policy) { e.policy = p }
+func (e *fakeEngine) MemoryMB() float64          { return 412 }
+func (e *fakeEngine) Version() string            { return "142.0" }
 
 type fakeHost struct{ full bool }
 
@@ -116,6 +123,7 @@ func newDriver(t *testing.T, w, h float32, withEngine bool) *driver {
 	d.a = New(&fakeHost{}, cfg)
 	d.a.set.GoogleSignIn = "later" // the first-run sign-in has its own test
 	if withEngine {
+		d.eng.SetPolicy(d.a.Policy()) // as the host does before starting the engine
 		d.a.Started(nil)
 	}
 	d.a.In.Now = 1

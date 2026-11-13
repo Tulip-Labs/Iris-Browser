@@ -66,7 +66,6 @@ const (
 	K8
 	K9
 	KComma
-	KBack // the system back button (Android)
 )
 
 // Edit replaces runes [Start, End) of the focused field with Text.

@@ -138,6 +138,7 @@ func (a *App) drawAI(r ui.Rect) {
 	u.Scroll(ID("aiscroll"), body, sc)
 	g.Save()
 	g.Clip(body)
+	a.u.PushHit(body)
 	cy := body.Y + 6 - sc.Y
 	if len(a.ai.turns) == 0 {
 		g.Text("Try", x, cy+16, ui.FSmallBold, th.OnSurfaceVariant)
@@ -217,6 +218,7 @@ func (a *App) drawAI(r ui.Rect) {
 	if sc.Y > max(0, sc.Content-body.H) {
 		sc.Y = max(0, sc.Content-body.H)
 	}
+	a.u.PopHit()
 	g.Restore()
 
 	// the question field

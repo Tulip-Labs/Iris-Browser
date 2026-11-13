@@ -33,9 +33,6 @@ func (a *App) vertical(w float32) bool { return a.set.VerticalTabs && w >= 720 }
 
 // chrome draws the window's frame and returns where the page goes.
 func (a *App) chrome(full ui.Rect) ui.Rect {
-	if a.cfg.Mobile {
-		return a.mobileChrome(full)
-	}
 	w := full.W
 	vert := a.vertical(w)
 	y := float32(0)
@@ -61,6 +58,10 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 	}
 	sugTop := y
 	y += sugH
+	if a.find.open {
+		a.findBar(ui.Rect{X: 8, Y: y, W: w - 16, H: 40})
+		y += 46
+	}
 	if a.bar.text != "" {
 		if a.bar.until > 0 && a.now() > a.bar.until {
 			a.bar = infobar{}
@@ -275,6 +276,7 @@ func (a *App) tabStrip(r ui.Rect) {
 	a.stripScroll = max(0, min(a.stripScroll, total-avail))
 	g.Save()
 	g.Clip(ui.Rect{X: area.X, Y: area.Y, W: min(total, avail) + 4, H: area.H})
+	a.u.PushHit(ui.Rect{X: area.X, Y: area.Y, W: min(total, avail) + 4, H: area.H})
 	x := area.X - a.stripScroll
 	for i, t := range a.tabs {
 		tr := ui.Rect{X: x + 2, Y: r.Y + 5, W: tw - 4, H: r.H - 7}
@@ -283,6 +285,7 @@ func (a *App) tabStrip(r ui.Rect) {
 		}
 		x += tw
 	}
+	a.u.PopHit()
 	g.Restore()
 	px := area.X + min(total, avail) + 2
 	if u.IconButton(ID("newtab"), ui.Rect{X: px, Y: r.Y + 4, W: 36, H: 34}, ui.IPlus, "New tab  Ctrl+T", ui.IconOpt{}) {
@@ -314,6 +317,7 @@ func (a *App) rail(r ui.Rect) {
 	u.Scroll(ID("rail"), list, sc)
 	g.Save()
 	g.Clip(list)
+	a.u.PushHit(list)
 	for i, t := range a.tabs {
 		tr := ui.Rect{X: r.X + 8, Y: list.Y + float32(i)*(rowH+2) - sc.Y, W: r.W - 16, H: rowH}
 		if tr.B() < list.Y || tr.Y > list.B() {
@@ -321,6 +325,7 @@ func (a *App) rail(r ui.Rect) {
 		}
 		a.drawTab(i, t, tr)
 	}
+	a.u.PopHit()
 	g.Restore()
 	by := r.B() - 48
 	g.FillRect(ui.Rect{X: r.X + 12, Y: by - 4, W: r.W - 24, H: 1}, th.Divider)
@@ -411,9 +416,8 @@ func (a *App) toolbar(r ui.Rect, vert bool) ui.Rect {
 	// right side: shield, memory, panel
 	rx := r.R() - 6
 	rx -= 40
-	if u.IconButton(ID("panel"), ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40}, ui.IMore, "Lite Go menu  Ctrl+,", ui.IconOpt{Toggled: a.panel}) {
-		a.panel = !a.panel
-		a.ai.open = a.ai.open && !a.panel
+	if u.IconButton(ID("panel"), ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40}, ui.IMore, "Lite Go menu  Ctrl+,", ui.IconOpt{Toggled: a.panel && a.panelMode == panelSettings}) {
+		a.togglePanel(panelSettings)
 	}
 	rx -= 44
 	if u.IconButton(ID("ai"), ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40}, ui.ISparkle, "Ask AI about this page  Ctrl+J", ui.IconOpt{Toggled: a.ai.open, Accent: th.Primary}) {
@@ -431,6 +435,17 @@ func (a *App) toolbar(r ui.Rect, vert bool) ui.Rect {
 	}
 	rx -= 44
 	a.shieldButton(ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40}, t)
+	if r.W >= 620 {
+		rx -= 44
+		other, _ := a.splitWith()
+		if u.IconButton(ID("split"), ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40}, ui.ISplit, "Split view: two pages side by side  Ctrl+Shift+S", ui.IconOpt{Toggled: other != nil}) {
+			a.toggleSplit()
+		}
+	}
+	if len(a.downloads) > 0 {
+		rx -= 44
+		a.downloadButton(ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40})
+	}
 	rx -= 8
 
 	aw := rx - x
@@ -471,7 +486,7 @@ func (a *App) shieldButton(r ui.Rect, t *Tab) {
 		tip = "Shield blocks ads and trackers"
 	}
 	if u.IconButton(ID("shield"), r, ui.IShield, tip, ui.IconOpt{Accent: col}) {
-		a.panel = true
+		a.panel, a.panelMode = true, panelSettings
 		a.panelScroll.Y = 0
 	}
 	if on && t != nil && t.Blocked > 0 {
@@ -525,7 +540,7 @@ func (a *App) memoryPill(r ui.Rect) {
 	live, asleep, unloaded := a.Counts()
 	u.Tooltip("Pages "+mb(a.memMB)+" · "+strconv.Itoa(live)+" awake, "+strconv.Itoa(asleep)+" asleep, "+strconv.Itoa(unloaded)+" unloaded", r)
 	if u.Clickable(id, r) {
-		a.panel = true
+		a.panel, a.panelMode = true, panelSettings
 	}
 }
 
@@ -781,6 +796,19 @@ func (a *App) infobar(r ui.Rect) {
 		br := ui.Rect{X: right - bw, Y: r.CY() - 15, W: bw, H: 30}
 		if u.Button(ID("bara"), br, a.bar.action, ui.ButtonOpt{Primary: a.bar.warn}) {
 			do := a.bar.do
+			a.bar = infobar{}
+			if do != nil {
+				do()
+			}
+			return
+		}
+		right = br.X - 8
+	}
+	if a.bar.action2 != "" {
+		bw := g.Measure(a.bar.action2, ui.FBodyBold) + 28
+		br := ui.Rect{X: right - bw, Y: r.CY() - 15, W: bw, H: 30}
+		if u.Button(ID("barb"), br, a.bar.action2, ui.ButtonOpt{}) {
+			do := a.bar.do2
 			a.bar = infobar{}
 			if do != nil {
 				do()

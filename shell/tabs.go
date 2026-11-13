@@ -19,6 +19,7 @@ const (
 	KContainer             // a named container with its own sign-ins
 	KPrivate               // all private tabs share one session, never written to disk
 	KTemp                  // a fresh session for this tab alone, gone when it closes
+	KSandbox               // a page that may be unsafe: its own throwaway session, no downloads, no permissions
 )
 
 // Tab is one tab; its page may be live, asleep or unloaded.
@@ -49,6 +50,13 @@ type Tab struct {
 	pageURL      string
 	last         float64 // when it was last the current tab
 	closed       bool
+	zoom         float64 // 0 or 1 = the page's normal size
+	background   bool    // the engine was told nobody is looking at it
+	// adaptive shields: whether this page is being scanned, and what was found
+	scanning bool
+	scanURL  string
+	hidden   int     // what the hiding rules matched
+	loadedAt float64 // when the page finished loading (0 = not yet)
 }
 
 // binding routes a view's events to its tab (a spare view gets its tab later).
@@ -61,7 +69,7 @@ type spare struct {
 	making bool
 }
 
-func (t *Tab) private() bool { return t.Kind == KPrivate || t.Kind == KTemp }
+func (t *Tab) private() bool { return t.Kind == KPrivate || t.Kind == KTemp || t.Kind == KSandbox }
 
 // Live says whether the tab holds a page in memory.
 func (t *Tab) Live() bool { return t.view != nil }
@@ -81,6 +89,8 @@ func (a *App) options(t *Tab) webview.Options {
 		return webview.Options{Profile: "private", Private: true}
 	case KTemp:
 		return webview.Options{Profile: "temp-" + strconv.Itoa(t.ID), Private: true}
+	case KSandbox:
+		return webview.Options{Profile: "sandbox-" + strconv.Itoa(t.ID), Private: true, Sandbox: true}
 	}
 	return webview.Options{}
 }
@@ -122,12 +132,16 @@ func (a *App) selectTab(i int) {
 	if i < 0 || i >= len(a.tabs) {
 		return
 	}
-	if old := a.tab(); old != nil {
+	old := a.tab()
+	if old != nil {
 		old.last = a.now()
 	}
 	a.cur = i
 	t := a.tabs[i]
 	t.last = a.now()
+	if old != t {
+		a.closeFind()
+	}
 	if a.st.Focus == ID("addr") || a.st.Focus == ID("ntp") {
 		a.st.Focus = ui.ID{}
 	}
@@ -148,6 +162,7 @@ func (a *App) selectTab(i int) {
 	if v := t.view; v != nil && t.URL != "" {
 		a.web(v.Focus) // the keyboard follows the page
 	}
+	a.prioritize()
 	if a.full {
 		a.full = false
 		a.h.SetFullscreen(a.winFull)
@@ -165,11 +180,15 @@ func (a *App) closeTab(i int) {
 			a.closed = a.closed[1:]
 		}
 	}
+	a.finishScan(t)
 	t.closed = true
 	if t.view != nil {
 		v := t.view
 		a.web(v.Close)
 		t.view = nil
+	}
+	if t == a.split.a || t == a.split.b {
+		a.split.a, a.split.b = nil, nil
 	}
 	a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
 	if len(a.tabs) == 0 {
@@ -201,8 +220,14 @@ func (a *App) navigate(t *Tab, url string) {
 	if a.set.CleanLinks {
 		url = shields.Clean(url)
 	}
-	if up := core.HTTPSUpgrade(url); up != "" && a.set.HTTPSOnly && !a.allowedInsecure(url) {
-		url = up
+	if t.Kind != KSandbox {
+		if up := core.HTTPSUpgrade(url); up != "" && a.set.HTTPSOnly && !a.allowedInsecure(url) {
+			url = up
+		}
+		if core.Risk(url) != "" && !a.allowedInsecure(url) {
+			a.insecure(t, url) // stopped before it loads; a sandbox can open it
+			return
+		}
 	}
 	if q, m, ok := core.GoogleQuery(url); ok && a.set.LiteResults && !strings.Contains(url, "lite=0") {
 		if t.search != nil && t.view != nil {
@@ -275,9 +300,12 @@ func (a *App) ensureView(t *Tab) {
 }
 
 func (a *App) attach(t *Tab, v webview.View) {
-	t.view, t.shown, t.asleep, t.bounds = v, false, false, [4]int{}
+	t.view, t.shown, t.asleep, t.bounds, t.background = v, false, false, [4]int{}, false
 	if t.Muted {
 		a.web(func() { v.SetMuted(true) })
+	}
+	if z := t.zoom; z != 0 && z != 1 {
+		a.web(func() { v.SetZoom(z) })
 	}
 	if p := t.pending; p != "" {
 		t.pending = ""
@@ -348,6 +376,7 @@ func (a *App) events(b *binding) webview.Events {
 				if !t.private() {
 					a.hist.Add(url, "", true)
 				}
+				a.startScan(t, url)
 				a.hideSite(t, url)
 				if t == a.tab() && a.st.Focus != ID("addr") {
 					a.addr.Set(url)
@@ -368,18 +397,25 @@ func (a *App) events(b *binding) webview.Events {
 		Loading: func(l bool) {
 			on(func(t *Tab) {
 				if t.Loading && !l {
+					t.loadedAt = a.now()
+					a.startScan(t, t.URL) // when the address arrived before the load began
 					a.hideGeneric(t, 0)
+					if z, v := t.zoom, t.view; z != 0 && z != 1 && v != nil {
+						a.web(func() { v.SetZoom(z) })
+					}
 				}
 				t.Loading = l
 				if l {
-					t.Blocked = 0
+					a.finishScan(t)
+					t.Blocked, t.hidden, t.loadedAt = 0, 0, 0
 				}
 			})
 		},
 		History:  func(b, f bool) { on(func(t *Tab) { t.CanBack, t.CanFwd = b, f }) },
 		Audio:    func(p bool) { on(func(t *Tab) { t.Audio = p }) },
 		Blocked:  func(string) { on(func(t *Tab) { t.Blocked++; a.blockedTotal++ }) },
-		Crashed:  func() { on(func(t *Tab) { t.Crashed = true; t.Loading = false }) },
+		Crashed:  func() { on(func(t *Tab) { t.Crashed = true; t.Loading = false; t.scanning = false }) },
+		Focus:    func() { on(func(t *Tab) { a.pageFocused(t) }) },
 		Failed:   func(string, int) { on(func(t *Tab) { t.Loading = false }) },
 		Insecure: func(url string) { on(func(t *Tab) { a.insecure(t, url) }) },
 		Fullscreen: func(f bool) {
@@ -415,16 +451,44 @@ func (a *App) allowedInsecure(url string) bool {
 	return a.insecureOK[core.Host(url)]
 }
 
+// insecure tells the reader a page was stopped (no secure connection, or an
+// address that looks unsafe) and offers to open it in a sandbox: a throwaway
+// session that can download nothing, is given no permission and keeps nothing.
 func (a *App) insecure(t *Tab, url string) {
 	host := core.Host(url)
 	t.Loading = false
-	a.bar = infobar{warn: true, text: host + " does not offer a secure connection. HTTPS-only stopped it.", action: "Open anyway",
-		do: func() {
+	text := host + " has no secure connection: what you send and read there can be seen and changed on the way."
+	if why := core.Risk(url); why != "" {
+		text = host + " looks unsafe: " + why + "."
+	}
+	a.bar = infobar{warn: true, text: text, action: "Open in a sandbox",
+		do:      func() { a.openSandbox(t, url) },
+		action2: "Trust it",
+		do2: func() {
 			a.insecureMu.Lock()
 			a.insecureOK[host] = true
 			a.insecureMu.Unlock()
-			a.navigate(t, url)
+			if !t.closed {
+				a.navigate(t, url)
+			}
 		}}
+}
+
+// openSandbox opens url in a sandbox tab: tab t itself when it holds nothing
+// else, or a new tab beside it.
+func (a *App) openSandbox(t *Tab, url string) {
+	if t.closed || t.view != nil && t.URL != url && t.URL != "" {
+		a.newTab(KSandbox, "", url, true)
+		return
+	}
+	a.unload(t)
+	t.Kind, t.Container, t.search, t.lastSearch = KSandbox, "", nil, nil
+	t.URL, t.Title = "", ""
+	a.navigate(t, url)
+	if t == a.tab() {
+		a.addr.Set(url)
+		a.st.Focus = ui.ID{}
+	}
 }
 
 // tick applies the memory plan to background tabs and refreshes the memory readout.
@@ -432,11 +496,14 @@ func (a *App) tick() {
 	now := a.now()
 	if now-a.lastMem >= 2 && a.ready && a.eng != nil {
 		a.lastMem = now
-		eng, self := a.eng, a.cfg.SelfMB
+		eng, self, free := a.eng, a.cfg.SelfMB, a.cfg.Sys.FreeMB
 		a.web(func() { // runs on the window thread while the loop waits
 			a.memMB = eng.MemoryMB()
 			if self != nil {
 				a.appMB = self()
+			}
+			if free != nil {
+				a.balance.freeMB = free()
 			}
 		})
 	}
@@ -451,9 +518,12 @@ func (a *App) tick() {
 		go debug.FreeOSMemory()
 	}
 	cur := a.tab()
+	other, _ := a.splitWith()
+	a.settleScans()
+	a.rebalance()
 	live := 0
 	for _, t := range a.tabs {
-		if t.view == nil || t == cur {
+		if t.view == nil || t == cur || t == other {
 			continue
 		}
 		live++
@@ -471,7 +541,7 @@ func (a *App) tick() {
 	for live+1 > a.plan.Live {
 		var lru *Tab
 		for _, t := range a.tabs {
-			if t.view != nil && t != cur && !t.Audio && !t.private() && (lru == nil || t.last < lru.last) {
+			if t.view != nil && t != cur && t != other && !t.Audio && !t.private() && (lru == nil || t.last < lru.last) {
 				lru = t
 			}
 		}
@@ -488,17 +558,19 @@ func (a *App) unload(t *Tab) {
 	if t.view == nil {
 		return
 	}
+	a.finishScan(t)
 	v := t.view
 	a.web(v.Close)
-	t.view, t.asleep, t.shown, t.Loading = nil, false, false, false
+	t.view, t.asleep, t.shown, t.Loading, t.background = nil, false, false, false, false
 }
 
 // FreeMemory puts every background tab to sleep now and unloads the ones that can be reopened.
 func (a *App) FreeMemory() {
 	cur := a.tab()
+	other, _ := a.splitWith()
 	n := 0
 	for _, t := range a.tabs {
-		if t.view == nil || t == cur || t.Audio {
+		if t.view == nil || t == cur || t == other || t.Audio {
 			continue
 		}
 		if t.private() {
@@ -540,14 +612,19 @@ func plural(n int) string {
 	return "s"
 }
 
-// sync shows the current page in rect r and hides the others.
-func (a *App) sync(r ui.Rect) {
+// sync shows the current page in rect page (and, in split view, the page of
+// other in rect beside) and hides the rest.
+func (a *App) sync(page, beside ui.Rect, other *Tab) {
 	cur := a.tab()
 	for _, t := range a.tabs {
 		if t.view == nil {
 			continue
 		}
-		want := t == cur && t.URL != "" && !t.Crashed && t.search == nil && !r.Empty()
+		r := page
+		if t == other {
+			r = beside
+		}
+		want := (t == cur || t == other) && t.URL != "" && !t.Crashed && t.search == nil && !r.Empty()
 		if want {
 			s := a.Scale
 			b := [4]int{int(r.X*s + 0.5), int(r.Y*s + 0.5), int(r.W*s + 0.5), int(r.H*s + 0.5)}

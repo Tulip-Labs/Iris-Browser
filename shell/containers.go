@@ -60,6 +60,8 @@ func (a *App) kindIcon(t *Tab) (ui.Icon, ui.Color) {
 		return ui.IHourglass, ui.Mix(th.Hl, th.Ink, 0.25)
 	case KContainer:
 		return a.contStyle(t.Container)
+	case KSandbox:
+		return ui.IShield, sandboxColor(th)
 	}
 	return ui.IHome, th.Primary
 }

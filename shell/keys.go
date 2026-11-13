@@ -24,6 +24,14 @@ const (
 	actSettings
 	actMute
 	actAI
+	actFind
+	actPrint
+	actHistory
+	actDownloads
+	actSplit
+	actZoomIn
+	actZoomOut
+	actZoomReset
 	actTab1 // actTab1+n selects tab n+1; the last one is actTab9 (last tab)
 )
 
@@ -51,6 +59,22 @@ func vkAction(k webview.Key) action {
 			return actNext
 		case vk == 'R':
 			return actReload
+		case vk == 'F':
+			return actFind
+		case vk == 'P':
+			return actPrint
+		case vk == 'H':
+			return actHistory
+		case vk == 'S' && k.Shift:
+			return actSplit
+		case vk == 'D' && k.Shift:
+			return actDownloads
+		case vk == 0xBB, vk == 0x6B: // Ctrl+plus
+			return actZoomIn
+		case vk == 0xBD, vk == 0x6D:
+			return actZoomOut
+		case vk == '0', vk == 0x60:
+			return actZoomReset
 		case vk >= '1' && vk <= '9':
 			return actTab1 + action(vk-'1')
 		case vk == 0xBC: // Ctrl+,
@@ -117,6 +141,26 @@ func keyAction(k ui.KeyPress) action {
 			return actNext
 		case ui.KR:
 			return actReload
+		case ui.KF:
+			return actFind
+		case ui.KP:
+			return actPrint
+		case ui.KH:
+			return actHistory
+		case ui.KS:
+			if k.Shift {
+				return actSplit
+			}
+		case ui.KD:
+			if k.Shift {
+				return actDownloads
+			}
+		case ui.KPlus:
+			return actZoomIn
+		case ui.KMinus:
+			return actZoomOut
+		case ui.KZero:
+			return actZoomReset
 		case ui.KComma:
 			return actSettings
 		case ui.KM:
@@ -157,10 +201,6 @@ func (a *App) shortcuts() {
 	rest := in.Keys[:0]
 	var acts []action
 	for _, k := range in.Keys {
-		if k.Key == ui.KBack {
-			a.mobileBack()
-			continue
-		}
 		if act := keyAction(k); act != actNone {
 			acts = append(acts, act)
 			continue
@@ -197,8 +237,28 @@ func (a *App) do(act action) {
 	case act >= actTab1 && act < actTab9:
 		a.selectTab(int(act - actTab1))
 	case act == actSettings:
-		a.panel = !a.panel
-		a.ai.open = a.ai.open && !a.panel
+		a.togglePanel(panelSettings)
+	case act == actHistory:
+		a.togglePanel(panelHistory)
+	case act == actDownloads:
+		a.togglePanel(panelDownloads)
+	case act == actSplit:
+		a.toggleSplit()
+	case act == actFind:
+		a.openFind()
+	case act == actPrint:
+		if t != nil && t.view != nil && t.search == nil && t.URL != "" {
+			v := t.view
+			a.web(func() { v.Eval("window.print()") })
+		} else {
+			a.notify("Open a page to print it.")
+		}
+	case act == actZoomIn:
+		a.zoomBy(t, 1)
+	case act == actZoomOut:
+		a.zoomBy(t, -1)
+	case act == actZoomReset:
+		a.zoomBy(t, 0)
 	case act == actAI:
 		if a.ai.open {
 			a.ai.open = false

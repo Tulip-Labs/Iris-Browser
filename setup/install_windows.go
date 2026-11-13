@@ -3,6 +3,8 @@
 package setup
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -130,6 +132,15 @@ func copyApp(dir string, app []byte) error {
 	if err := os.WriteFile(exe, app, 0o755); err != nil {
 		return err
 	}
+	// the record Lite Go checks itself against at every start, and both files
+	// read-only so nothing changes them by accident
+	sum := sha256.Sum256(app)
+	rec := exe + ".sha256"
+	_ = os.Chmod(rec, 0o644)
+	if os.WriteFile(rec, []byte(hex.EncodeToString(sum[:])+"\n"), 0o644) == nil {
+		_ = os.Chmod(rec, 0o444)
+	}
+	_ = os.Chmod(exe, 0o555)
 	os.Remove(old) // fails while the old copy runs; removed next time
 	// the setup itself stays as the uninstaller
 	self, err := os.Executable()
@@ -316,6 +327,7 @@ func uninstall(data bool) error {
 	}
 	quitRunning()
 	procNotifyAssocs.Call(0x08000000, 0, 0, 0)
+	os.Remove(filepath.Join(dir, exeName) + ".sha256")
 	if err := os.Remove(filepath.Join(dir, exeName)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("close Lite Go and try again (%v)", err)
 	}

@@ -9,23 +9,43 @@ import (
 	"litego/ui"
 )
 
-// drawPanel is the side panel: new tabs and containers, look, search, shield and memory.
+// drawPanel is the side panel: the menu (page tools, look, search, shield and
+// memory), the downloads list or the history.
 // It sits beside the page (never over it), so the page stays usable.
 func (a *App) drawPanel(r ui.Rect) {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	ui.Glass(g, r, 20, th, true, true)
 	// header
 	hr := ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 56}
-	logo(g, ui.RectAround(hr.X+30, hr.CY(), 26, 26), th, th.Primary)
-	g.Text("Lite Go", hr.X+52, ui.Mid(g, hr.Y, hr.H, ui.FTitle), ui.FTitle, th.OnSurface)
-	if u.IconButton(ID("pclose"), ui.Rect{X: hr.R() - 48, Y: hr.CY() - 20, W: 40, H: 40}, ui.IClose, "Close  Ctrl+,", ui.IconOpt{}) {
+	title := "Lite Go"
+	switch a.panelMode {
+	case panelDownloads:
+		title = "Downloads"
+		ui.DrawIcon(g, ui.IDownload, hr.X+19, hr.CY()-11, 22, th.Primary)
+	case panelHistory:
+		title = "History"
+		ui.DrawIcon(g, ui.IHistory, hr.X+19, hr.CY()-11, 22, th.Primary)
+	default:
+		logo(g, ui.RectAround(hr.X+30, hr.CY(), 26, 26), th, th.Primary)
+	}
+	g.Text(title, hr.X+52, ui.Mid(g, hr.Y, hr.H, ui.FTitle), ui.FTitle, th.OnSurface)
+	if u.IconButton(ID("pclose"), ui.Rect{X: hr.R() - 48, Y: hr.CY() - 20, W: 40, H: 40}, ui.IClose, "Close", ui.IconOpt{}) {
 		a.panel = false
 	}
 	body := ui.Rect{X: r.X, Y: hr.B(), W: r.W, H: r.H - hr.H - 8}
+	switch a.panelMode {
+	case panelDownloads:
+		a.drawDownloads(body)
+		return
+	case panelHistory:
+		a.drawHistory(body)
+		return
+	}
 	sc := &a.panelScroll
 	u.Scroll(ID("pscroll"), body, sc)
 	g.Save()
 	g.Clip(body)
+	a.u.PushHit(body)
 	x, w := body.X+18, body.W-36
 	y := body.Y + 4 - sc.Y
 	t := a.tab()
@@ -52,145 +72,56 @@ func (a *App) drawPanel(r ui.Rect) {
 		return nv
 	}
 
-	// new tabs
-	section("New tab")
-	bw := (w - 16) / 3
-	kinds := []Kind{KNormal, KPrivate, KTemp}
-	labels := []string{"Tab", "Private", "Temporary"}
-	for i, k := range kinds {
-		br := ui.Rect{X: x + float32(i)*(bw+8), Y: y, W: bw, H: 64}
-		ic, col := a.kindIcon(&Tab{Kind: k})
-		if k == KNormal {
-			ic = ui.IPlus
+	// what every browser has, one click away
+	section("This page")
+	{
+		type tool struct {
+			icon  ui.Icon
+			label string
+			tip   string
+			act   action
 		}
-		ui.FillRound(g, br, 16, col.Alpha(0.12))
-		if u.Hover(br) {
-			ui.FillRound(g, br, 16, th.Ink.Alpha(0.06))
+		tools := []tool{
+			{ui.IHistory, "History", "Ctrl+H", actHistory},
+			{ui.IDownload, "Downloads", "Ctrl+Shift+D", actDownloads},
+			{ui.ISplit, "Split view", "Ctrl+Shift+S", actSplit},
+			{ui.ISearch, "Find", "Find in this page  Ctrl+F", actFind},
+			{ui.IPrint, "Print", "Print, or save as PDF  Ctrl+P", actPrint},
+			{ui.IUndo, "Reopen", "Reopen the last closed tab  Ctrl+Shift+T", actReopen},
 		}
-		ui.DrawIcon(g, ic, br.CX()-10, br.Y+12, 20, col)
-		ui.TextCenter(g, ui.Fit(g, labels[i], ui.FSmallBold, bw-8), ui.Rect{X: br.X, Y: br.Y + 36, W: br.W, H: 20}, ui.FSmallBold, th.OnSurface)
-		if u.Clickable(ui.IdN("pnew", i), br) {
-			a.newTab(k, "", "", true)
+		bw := (w - 16) / 3
+		for i, tl := range tools {
+			br := ui.Rect{X: x + float32(i%3)*(bw+8), Y: y + float32(i/3)*66, W: bw, H: 58}
+			ui.FillRound(g, br, 16, th.Primary.Alpha(0.09))
+			if u.Hover(br) {
+				ui.FillRound(g, br, 16, th.Ink.Alpha(0.06))
+			}
+			u.Tooltip(tl.tip, br)
+			ui.DrawIcon(g, tl.icon, br.CX()-10, br.Y+9, 20, th.Primary)
+			ui.TextCenter(g, ui.Fit(g, tl.label, ui.FSmallBold, bw-8), ui.Rect{X: br.X, Y: br.Y + 33, W: br.W, H: 20}, ui.FSmallBold, th.OnSurface)
+			if u.Clickable(ui.IdN("ptool", i), br) {
+				a.do(tl.act)
+			}
 		}
+		y += 66*2 + 4
+		// zoom
+		g.Text("Zoom", x, ui.Mid(g, y, 36, ui.FBody), ui.FBody, th.OnSurface)
+		zr := ui.Rect{X: x + w - 148, Y: y, W: 148, H: 36}
+		ui.FillRound(g, zr, 18, th.SurfaceHigh)
+		if u.IconButton(ID("zout"), ui.Rect{X: zr.X + 2, Y: zr.Y + 2, W: 32, H: 32}, ui.IZoomOut, "Smaller  Ctrl+-", ui.IconOpt{Disabled: !a.livePage(t)}) {
+			a.zoomBy(t, -1)
+		}
+		if u.IconButton(ID("zin"), ui.Rect{X: zr.R() - 34, Y: zr.Y + 2, W: 32, H: 32}, ui.IZoomIn, "Larger  Ctrl++", ui.IconOpt{Disabled: !a.livePage(t)}) {
+			a.zoomBy(t, 1)
+		}
+		mid := ui.Rect{X: zr.X + 36, Y: zr.Y, W: zr.W - 72, H: zr.H}
+		ui.TextCenter(g, zoomLabel(t), mid, ui.FBodyBold, th.OnSurface)
+		u.Tooltip("Back to 100%  Ctrl+0", mid)
+		if u.Clickable(ID("zreset"), mid) {
+			a.zoomBy(t, 0)
+		}
+		y += 44
 	}
-	y += 72
-	g.Text("Containers", x, y+14, ui.FSmallBold, th.OnSurfaceVariant)
-	y += 26
-	for i := 0; i < len(a.set.Containers); i++ {
-		c := a.set.Containers[i]
-		row := ui.Rect{X: x - 6, Y: y, W: w + 12, H: 44}
-		col := tone(th, c.Color)
-		if u.Hover(row) {
-			ui.FillRound(g, row, 14, th.Ink.Alpha(0.05))
-		}
-		ib := ui.RectAround(x+16, row.CY(), 32, 32)
-		ui.FillRoundAccent(g, ib, 10, col)
-		ui.DrawIcon(g, iconOf(c), ib.CX()-9, ib.CY()-9, 18, ui.White)
-		ui.TextFit(g, c.Name, x+42, ui.Mid(g, row.Y, row.H, ui.FBodyBold), ui.FBodyBold, th.OnSurface, w-130)
-		eb := ui.Rect{X: row.R() - 44, Y: row.CY() - 18, W: 36, H: 36}
-		if u.IconButton(ui.IdN("cedit", i), eb, ui.IEdit, "Edit "+c.Name, ui.IconOpt{Toggled: a.editCont == i}) {
-			if a.editCont == i {
-				a.editCont = -1
-			} else {
-				a.editCont = i
-				a.contName.Set(c.Name)
-			}
-		}
-		ob := ui.Rect{X: eb.X - 40, Y: eb.Y, W: 36, H: 36}
-		if u.IconButton(ui.IdN("copen", i), ob, ui.IPlus, "New "+c.Name+" tab", ui.IconOpt{Accent: col}) {
-			a.newTab(KContainer, c.Name, "", true)
-		}
-		if u.Clickable(ui.IdN("crow", i), ui.Rect{X: row.X, Y: row.Y, W: ob.X - row.X, H: row.H}) {
-			a.newTab(KContainer, c.Name, "", true)
-		}
-		y += 46
-		if a.editCont != i {
-			continue
-		}
-		// the editor: name, icon and color
-		card := ui.Rect{X: x - 6, Y: y, W: w + 12, H: 0}
-		ey := y + 10
-		nr := ui.Rect{X: x + 4, Y: ey, W: w - 8, H: 38}
-		rename := func() {
-			n := strings.TrimSpace(a.contName.Text())
-			if n == "" || strings.EqualFold(n, c.Name) {
-				return
-			}
-			if _, taken := a.set.FindContainer(n); taken {
-				return
-			}
-			for _, t := range a.tabs {
-				if t.Kind == KContainer && t.Container == c.Name {
-					t.Container = n
-				}
-			}
-			a.set.Containers[i].Name = n
-			a.set.Save()
-		}
-		ey += 46
-		ic := float32(30)
-		per := int((w - 8 + 6) / (ic + 6))
-		for j, name := range core.ContainerIcons {
-			cr := ui.Rect{X: x + 4 + float32(j%per)*(ic+6), Y: ey + float32(j/per)*(ic+6), W: ic, H: ic}
-			sel := name == c.Icon
-			if sel {
-				ui.FillRound(g, cr, 9, col)
-			} else if u.Hover(cr) {
-				ui.FillRound(g, cr, 9, th.Ink.Alpha(0.07))
-			}
-			icol := th.OnSurfaceVariant
-			if sel {
-				icol = ui.White
-			}
-			ui.DrawIcon(g, contIcons[name], cr.CX()-9, cr.CY()-9, 18, icol)
-			if u.Clickable(ui.Id("cicon/"+name), cr) {
-				a.set.Containers[i].Icon = name
-				a.set.Save()
-			}
-		}
-		ey += float32((len(core.ContainerIcons)+per-1)/per)*(ic+6) + 6
-		for j, name := range core.ContainerColors {
-			cr := ui.Rect{X: x + 4 + float32(j)*(ic+6), Y: ey, W: ic, H: ic}
-			cc := tone(th, name)
-			ui.FillOval(g, cr.Inset(3), cc)
-			if name == c.Color {
-				ui.StrokeOval(g, cr.Inset(0.5), 2, cc)
-			}
-			u.Tooltip(strings.ToUpper(name[:1])+name[1:], cr)
-			if u.Clickable(ui.Id("ccol/"+name), cr) {
-				a.set.Containers[i].Color = name
-				a.set.Save()
-			}
-		}
-		ey += ic + 10
-		del := ui.Rect{X: x + 4, Y: ey, W: 150, H: 36}
-		removed := u.Button(ui.Id("cdel"), del, "Remove", ui.ButtonOpt{Icon: ui.ITrash, HasIcon: true, Tip: "Its tabs keep their sign-ins until they close"})
-		ey += 46
-		card.H = ey - card.Y
-		ui.StrokeRound(g, card, 14, 1, th.OutlineVariant)
-		u.TextField(ID("cname"), nr, a.contName, ui.FieldOpt{Placeholder: "Name", OnEnter: rename})
-		if a.st.Focus != ID("cname") {
-			rename()
-		}
-		y = ey + 8
-		if removed {
-			a.set.Containers = append(a.set.Containers[:i], a.set.Containers[i+1:]...)
-			a.set.Save()
-			a.editCont = -1
-			break
-		}
-	}
-	fr := ui.Rect{X: x, Y: y + 2, W: w - 52, H: 38}
-	add := func() {
-		if a.addContainer(a.newCont.Text()) {
-			a.newCont.Set("")
-		}
-	}
-	u.TextField(ID("contname"), fr, a.newCont, ui.FieldOpt{Placeholder: "New container name", OnEnter: add})
-	if u.IconButton(ID("contadd"), ui.Rect{X: fr.R() + 8, Y: y + 1, W: 40, H: 40}, ui.IPlus, "Add container", ui.IconOpt{}) {
-		add()
-	}
-	y += 48
 	divider()
 
 	// look
@@ -215,7 +146,7 @@ func (a *App) drawPanel(r ui.Rect) {
 		}
 	}
 	y += sw + 14
-	if !a.cfg.Mobile { // a phone shows its tabs as a grid
+	{
 		g.Text("Tabs", x, y+14, ui.FSmallBold, th.OnSurfaceVariant)
 		y += 22
 		sel := 0
@@ -262,7 +193,7 @@ func (a *App) drawPanel(r ui.Rect) {
 	y += 46
 	divider()
 
-	if !a.cfg.Mobile { // Android keeps apps ready by itself
+	{
 		// startup
 		section("Startup")
 		if v := check("boost", "Open instantly (stay ready in the background)", a.set.Boost); v != a.set.Boost {
@@ -294,6 +225,34 @@ func (a *App) drawPanel(r ui.Rect) {
 		if v := check("shsite", "Shields off on "+host, off); v != off {
 			a.setSiteOff(full, v)
 			a.reload(t)
+		}
+	}
+	if v := check("shadapt", "Adaptive: scan a site, block where needed", a.set.Adaptive); v != a.set.Adaptive {
+		a.set.Adaptive = v
+		a.set.Save()
+		a.applyPolicy()
+	}
+	if a.set.Adaptive && a.shield.On && a.livePage(t) && host != "" {
+		st, found := a.scan.State(t.URL)
+		msg := ""
+		switch {
+		case t.scanning:
+			msg = "Scanning " + host + " now: every request is checked."
+		case st == core.ScanStandby && !a.scan.Need(t.URL):
+			msg = host + " was scanned and has nothing to block: the shield stands by here, and the page loads straight from the network."
+		case st == core.ScanActive:
+			msg = host + " has ads or trackers (" + comma(found) + " at the last scan): the shield stays on here."
+		case st == core.ScanLearning:
+			msg = host + " looked clean so far; a few more visits decide."
+		}
+		if msg != "" {
+			note(msg)
+			y += 4
+			if u.Button(ID("rescan"), ui.Rect{X: x, Y: y, W: w, H: 34}, "Scan this site again", ui.ButtonOpt{Icon: ui.IReload, HasIcon: true}) {
+				a.scan.Forget(t.URL)
+				a.reload(t)
+			}
+			y += 42
 		}
 	}
 	reloadLists := false
@@ -413,8 +372,33 @@ func (a *App) drawPanel(r ui.Rect) {
 		a.set.Save()
 		a.plan = core.Plan(a.cfg.TotalMB, a.set.Memory)
 		a.lastTick = 0
+		a.applyPolicy() // the cap of one page follows the profile
 	}
 	y += 42
+	if v := check("memcap", "Limit each page to "+mb(float64(a.plan.LimitMB)), a.set.MemoryCap); v != a.set.MemoryCap {
+		a.set.MemoryCap = v
+		a.set.Save()
+		a.applyPolicy()
+	}
+	if v := check("lazy", "Load pictures and frames only when reached", a.set.Lazy); v != a.set.Lazy {
+		a.set.Lazy = v
+		a.set.Save()
+		a.applyPolicy()
+		a.notify("Applies to pages opened from now on.")
+	}
+	if b := a.balance; a.plan.BudgetMB > 0 {
+		s := "Balancer: pages may hold " + mb(float64(a.plan.BudgetMB)) + " together"
+		if b.freeMB > 0 {
+			s += " · " + mb(float64(b.freeMB)) + " free on this computer"
+		}
+		if b.pressure {
+			s += " · making room now"
+		}
+		if b.slept+b.freed > 0 {
+			s += " · put " + strconv.Itoa(b.slept) + " to sleep and unloaded " + strconv.Itoa(b.freed) + " under pressure"
+		}
+		note(s + ".")
+	}
 	note("Background tabs sleep after " + dur(a.plan.SleepAfter) + " and unload after " + dur(a.plan.UnloadAfter) + "; at most " + strconv.Itoa(a.plan.Live) + " tabs stay awake. Tabs playing sound stay awake.")
 	y += 8
 	if u.Button(ID("free"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Free memory now", ui.ButtonOpt{Icon: ui.IMemory2, HasIcon: true}) {
@@ -434,6 +418,10 @@ func (a *App) drawPanel(r ui.Rect) {
 
 	// data
 	section("Data")
+	if v := check("restore", "Reopen the last tabs when Lite Go starts", a.set.Restore); v != a.set.Restore {
+		a.set.Restore = v
+		a.set.Save()
+	}
 	if u.Button(ID("clearh"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Clear history", ui.ButtonOpt{}) {
 		a.hist.Clear()
 		a.notify("History cleared.")
@@ -449,15 +437,24 @@ func (a *App) drawPanel(r ui.Rect) {
 		ver += " · WebView2 " + a.eng.Version()
 	}
 	note(ver)
+	switch a.integrity {
+	case IntegrityVerified:
+		note("Program file verified: it is the one that was installed.")
+	case IntegrityProtected:
+		note("Installed as a Windows package: Windows keeps the program read-only and verifies it.")
+	case IntegrityChanged:
+		note("Warning: the program file is not the one that was installed. Install Lite Go again from a source you trust.")
+	}
 	note("Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · PolyForm Noncommercial 1.0.0")
 	y += 8
 	if u.Button(ID("quit"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Quit Lite Go", ui.ButtonOpt{Icon: ui.IClose, HasIcon: true, Tip: "Closes the window and the part that keeps it ready"}) {
 		a.h.Quit()
 	}
 	y += 48
-	note("Shortcuts: Ctrl+T new tab, Ctrl+Shift+N private, Ctrl+W close, Ctrl+Shift+T reopen, Ctrl+L address, Ctrl+Tab next, Alt+Left back, F11 full screen.")
+	note("Shortcuts: Ctrl+T new tab, Ctrl+Shift+N private, Ctrl+W close, Ctrl+Shift+T reopen, Ctrl+L address, Ctrl+Tab next, Alt+Left back, Ctrl+F find, Ctrl+P print, Ctrl+H history, Ctrl+Shift+D downloads, Ctrl+Shift+S split view, Ctrl+plus and Ctrl+minus zoom, F11 full screen.")
 	y += 16
 	sc.Content = y + sc.Y - body.Y
+	a.u.PopHit()
 	g.Restore()
 }
 

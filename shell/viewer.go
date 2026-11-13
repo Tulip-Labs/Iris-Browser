@@ -243,6 +243,7 @@ func (a *App) viewAllImages(s *Search, r ui.Rect) {
 	u.Scroll(ID("vall"), r, &v.scroll)
 	g.Save()
 	g.Clip(r)
+	a.u.PushHit(r)
 	cols := max(2, int(r.W/170))
 	const gap = 8
 	cw := (r.W - float32(cols-1)*gap) / float32(cols)
@@ -265,6 +266,7 @@ func (a *App) viewAllImages(s *Search, r ui.Rect) {
 		}
 	}
 	v.scroll.Content = float32((len(s.Images)+cols-1)/cols) * (ch + gap)
+	a.u.PopHit()
 	g.Restore()
 }
 
@@ -274,6 +276,7 @@ func (a *App) viewAllVideos(s *Search, r ui.Rect) {
 	u.Scroll(ID("vallv"), r, &v.scroll)
 	g.Save()
 	g.Clip(r)
+	a.u.PushHit(r)
 	tw := min(200, r.W*0.42)
 	rowH := tw*9/16 + 14
 	for i, vd := range s.Videos {
@@ -302,6 +305,7 @@ func (a *App) viewAllVideos(s *Search, r ui.Rect) {
 		}
 	}
 	v.scroll.Content = float32(len(s.Videos)) * rowH
+	a.u.PopHit()
 	g.Restore()
 }
 

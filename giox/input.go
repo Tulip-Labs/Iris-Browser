@@ -23,8 +23,8 @@ var keyNames = map[key.Name]ui.Key{
 	key.NameTab: ui.KTab, key.NameEscape: ui.KEscape, key.NameSpace: ui.KSpace,
 	key.NameF5: ui.KF5, key.NameF6: ui.KF6, key.NameF11: ui.KF11, key.NameF12: ui.KF12,
 	"A": ui.KA, "C": ui.KC, "D": ui.KD, "K": ui.KK, "L": ui.KL, "M": ui.KM, "N": ui.KN, "R": ui.KR, "T": ui.KT, "V": ui.KV, "W": ui.KW, "X": ui.KX, "Z": ui.KZ, "Y": ui.KY, "J": ui.KJ,
-	key.NameBack: ui.KBack,
-	"1":          ui.K1, "2": ui.K2, "3": ui.K3, "4": ui.K4, "5": ui.K5, "6": ui.K6, "7": ui.K7, "8": ui.K8, "9": ui.K9, ",": ui.KComma,
+	"F": ui.KF, "P": ui.KP, "H": ui.KH, "S": ui.KS, "0": ui.KZero, "+": ui.KPlus, "=": ui.KPlus, "-": ui.KMinus,
+	"1": ui.K1, "2": ui.K2, "3": ui.K3, "4": ui.K4, "5": ui.K5, "6": ui.K6, "7": ui.K7, "8": ui.K8, "9": ui.K9, ",": ui.KComma,
 }
 
 func keyFilters(tag event.Tag) []event.Filter {

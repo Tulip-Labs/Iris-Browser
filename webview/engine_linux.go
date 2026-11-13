@@ -1,4 +1,4 @@
-//go:build linux && webkit && !android
+//go:build linux && webkit
 
 package webview
 
@@ -7,7 +7,7 @@ package webview
 #include <stdlib.h>
 #include <stdint.h>
 
-enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST };
+enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST, OP_ZOOM, OP_LIMIT, OP_DLCANCEL };
 
 void lgxMain(unsigned long parent, const char *dataDir);
 void lgxAttach(uintptr_t layout, const char *dataDir);
@@ -79,6 +79,7 @@ func (e *wkEngine) Start(window uintptr, dataDir string, low bool, ready func(er
 		cs := C.CString(dataDir)
 		C.lgxAttach(C.uintptr_t(window), cs)
 		C.free(unsafe.Pointer(cs))
+		e.applyLimit()
 		e.applyBlocklist()
 		ready(nil)
 		return
@@ -92,6 +93,7 @@ func (e *wkEngine) Start(window uintptr, dataDir string, low bool, ready func(er
 		C.lgxMain(C.ulong(window), cs)
 	}()
 	<-started
+	e.applyLimit()
 	e.applyBlocklist()
 	ready(nil)
 }
@@ -109,7 +111,19 @@ func (e *wkEngine) SetPolicy(p Policy) {
 	e.mu.Lock()
 	e.policy = p
 	e.mu.Unlock()
+	e.applyLimit()
 	e.applyBlocklist()
+}
+
+// applyLimit sets the memory cap of page processes; storage sessions made
+// later take it (pages already open keep the cap they started with).
+func (e *wkEngine) applyLimit() {
+	e.mu.Lock()
+	mb := e.policy.ProcessLimitMB
+	e.mu.Unlock()
+	if e.started {
+		call(C.OP_LIMIT, 0, mb, 0, 0, 0, "", 0)
+	}
 }
 
 func (e *wkEngine) MemoryMB() float64 { return 0 }
@@ -128,7 +142,7 @@ func (e *wkEngine) NewView(o Options, ev Events, done func(View, error)) {
 			return
 		}
 	}
-	v := &wkView{ev: ev, private: o.Private}
+	v := &wkView{ev: ev, private: o.Private, sandbox: o.Sandbox}
 	id := wkAdd(v)
 	v.native = id
 	e.mu.Lock()
@@ -142,7 +156,11 @@ func (e *wkEngine) NewView(o Options, ev Events, done func(View, error)) {
 	if o.Private {
 		priv = 1
 	}
-	call(C.OP_PROFILE, id, priv, 0, 0, 0, o.Profile, 0)
+	sandbox := 0
+	if o.Sandbox {
+		sandbox = 1
+	}
+	call(C.OP_PROFILE, id, priv, sandbox, 0, 0, o.Profile, 0)
 	h := cgo.NewHandle(func() { done(v, nil) })
 	call(C.OP_NEW, id, 0, 0, 0, 0, "", uintptr(h))
 }
@@ -185,6 +203,11 @@ func (v *wkView) SetMuted(on bool) {
 	}
 	v.op(C.OP_MUTE, m, 0, 0, 0, "", 0)
 }
+func (v *wkView) SetZoom(f float64) { v.op(C.OP_ZOOM, int(f*100+0.5), 0, 0, 0, "", 0) }
+
+// SetBackground: WebKit lowers a hidden page's memory by itself.
+func (v *wkView) SetBackground(bool) {}
+
 func (v *wkView) Close() {
 	if v.closed {
 		return
@@ -253,7 +276,7 @@ func lgxGoPopup(id C.uintptr_t, u *C.char) C.uintptr_t {
 	if v == nil || v.ev.NewTab == nil {
 		return 0
 	}
-	nv := &wkView{private: v.private}
+	nv := &wkView{private: v.private, sandbox: v.sandbox}
 	nid := wkAdd(nv)
 	nv.native = nid
 	v.ev.NewTab(C.GoString(u), &Popup{URL: C.GoString(u), impl: popupImpl{native: nid, id: nid}})
@@ -295,6 +318,34 @@ func lgxGoKey(id C.uintptr_t, ch C.int, vk C.int, ctrl, shift, alt C.int) C.int 
 		return 1
 	}
 	return 0
+}
+
+//export lgxGoFocus
+func lgxGoFocus(id C.uintptr_t) {
+	if v := wkGet(uintptr(id)); v != nil && v.ev.Focus != nil {
+		v.ev.Focus()
+	}
+}
+
+//export lgxGoDownload
+func lgxGoDownload(id C.uintptr_t, state C.int, u, path *C.char, total, got C.longlong) {
+	if wkEng == nil {
+		return
+	}
+	wkEng.mu.Lock()
+	report := wkEng.policy.Download
+	wkEng.mu.Unlock()
+	if report == nil {
+		return
+	}
+	d := Download{ID: int(id), URL: C.GoString(u), Path: C.GoString(path), Total: int64(total), Received: int64(got), State: DownloadState(state)}
+	if d.State == DownloadActive {
+		n := uintptr(id)
+		d.Cancel = func() { call(C.OP_DLCANCEL, n, 0, 0, 0, 0, "", 0) }
+	} else if d.State == DownloadDone && d.Total < 0 {
+		d.Total = d.Received
+	}
+	report(d)
 }
 
 //export lgxGoResult

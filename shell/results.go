@@ -254,12 +254,14 @@ func (a *App) results(r ui.Rect, t *Tab) {
 		u.Scroll(ID("results"), body, &s.scroll)
 		g.Save()
 		g.Clip(body)
+		a.u.PushHit(body)
 		y := body.Y + 22 - s.scroll.Y
 		x, w := r.X+pad, r.W-2*pad
 		y = a.mediaAndAnswer(s, x, y, w, dt)
 		y = sectionTitle(a, ui.IGlobe, "Websites", "", x, y, nil) + 6
 		y = a.websites(s, t, ranked, x, y, w)
 		s.scroll.Content = y - (body.Y - s.scroll.Y)
+		a.u.PopHit()
 		g.Restore()
 		return
 	}
@@ -275,8 +277,10 @@ func (a *App) results(r ui.Rect, t *Tab) {
 	u.Scroll(ID("results"), left, &s.scroll)
 	g.Save()
 	g.Clip(left)
+	a.u.PushHit(left)
 	y := a.mediaAndAnswer(s, r.X+pad, body.Y+22-s.scroll.Y, lw, dt)
 	s.scroll.Content = y + 30 - (body.Y - s.scroll.Y)
+	a.u.PopHit()
 	g.Restore()
 
 	col := ui.Rect{X: right.X + gap/2, Y: body.Y, W: rw, H: body.H}
@@ -287,10 +291,12 @@ func (a *App) results(r ui.Rect, t *Tab) {
 	u.Scroll(ID("sites"), right, &s.scroll2)
 	g.Save()
 	g.Clip(right)
+	a.u.PushHit(right)
 	y = body.Y + 22 - s.scroll2.Y
 	y = sectionTitle(a, ui.IGlobe, "Websites", "", col.X, y, nil) + 6
 	y = a.websites(s, t, ranked, col.X, y, col.W)
 	s.scroll2.Content = y - (body.Y - s.scroll2.Y)
+	a.u.PopHit()
 	g.Restore()
 }
 
@@ -510,7 +516,7 @@ func ease(pos *float32, to, dt float32) bool {
 // movement since the press while it lasts.
 func (a *App) dragOn(s *Search, id string, r ui.Rect, from float32) (dx float32, active bool) {
 	in := a.In
-	if in.Pressed && r.Contains(in.MX, in.MY) && a.u.Live() {
+	if in.Pressed && a.u.Over(r) && a.u.Live() {
 		s.drag, s.dragX, s.dragFrom, s.moved = id, in.MX, from, false
 	}
 	if s.drag != id {
@@ -530,7 +536,7 @@ func (a *App) dragOn(s *Search, id string, r ui.Rect, from float32) (dx float32,
 // tapped reports a click on r that was not the end of a drag.
 func (a *App) tapped(s *Search, r ui.Rect) bool {
 	in := a.In
-	return in.Released && !s.moved && r.Contains(in.MX, in.MY) && r.Contains(in.PressX, in.PressY) && a.u.Live()
+	return in.Released && !s.moved && a.u.Over(r) && r.Contains(in.PressX, in.PressY) && a.u.Live()
 }
 
 func roundBtn(a *App, r ui.Rect, ic ui.Icon, tip string) bool {
@@ -598,6 +604,7 @@ func (a *App) imageCarousel(s *Search, x, y, w, dt float32) float32 {
 	}
 	g.Save()
 	g.Clip(ui.Rect{X: view.X - 6, Y: view.Y - 6, W: view.W + 12, H: view.H + 12}) // room for the lift on hover
+	a.u.PushHit(ui.Rect{X: view.X - 6, Y: view.Y - 6, W: view.W + 12, H: view.H + 12})
 	tx := x - s.imgPos
 	for i, im := range s.Images {
 		tr := ui.Rect{X: tx, Y: y, W: widths[i], H: h}
@@ -635,6 +642,7 @@ func (a *App) imageCarousel(s *Search, x, y, w, dt float32) float32 {
 			s.viewer = viewer{kind: vImage, idx: i}
 		}
 	}
+	a.u.PopHit()
 	g.Restore()
 	if u.Hover(view) {
 		if s.imgPos > 1 && roundBtn(a, ui.RectAround(x+24, y+h/2, 40, 40), ui.IChevronLeft, "Previous pictures") {

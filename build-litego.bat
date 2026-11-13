@@ -27,6 +27,7 @@ go test ./core ./shell ./setup ./shields || ( echo Tests failed. & pause & exit 
 echo Building Lite Go...
 if not exist "dist\Lite Go" mkdir "dist\Lite Go"
 go build -trimpath -ldflags "-H windowsgui -s -w" -o "dist\Lite Go\Lite Go.exe" .\cmd\litego || ( echo Build failed. & pause & exit /b 1 )
+go run tools\sum.go "dist\Lite Go\Lite Go.exe" || ( pause & exit /b 1 )
 copy /y LICENSE.md "dist\Lite Go\" >nul
 copy /y NOTICE "dist\Lite Go\" >nul
 copy /y THIRD_PARTY_NOTICES.md "dist\Lite Go\" >nul

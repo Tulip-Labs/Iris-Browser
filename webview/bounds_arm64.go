@@ -8,3 +8,7 @@ func setBounds(ctrl uintptr, r rect) {
 	hi := uint64(uint32(r.right)) | uint64(uint32(r.bottom))<<32
 	call(ctrl, slotICoreWebView2Controller_SetBounds, uintptr(lo), uintptr(hi))
 }
+
+// A double travels in a floating-point register on ARM64, which a system
+// call from Go cannot fill: the page's CSS zoom is used instead.
+func setZoom(uintptr, float64) bool { return false }

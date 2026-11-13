@@ -49,6 +49,37 @@ type Ui struct {
 	InputLayer int
 	W, H       float32
 	Redraw     bool // something animates: ask for another frame
+	hit        []Rect
+}
+
+// PushHit limits the pointer to r (and to the limits already in place) until
+// PopHit: what a scrolled list draws outside its clip must not take clicks.
+func (u *Ui) PushHit(r Rect) {
+	if n := len(u.hit); n > 0 {
+		o := u.hit[n-1]
+		x, y := max(r.X, o.X), max(r.Y, o.Y)
+		r = Rect{x, y, max(0, min(r.R(), o.R())-x), max(0, min(r.B(), o.B())-y)}
+	}
+	u.hit = append(u.hit, r)
+}
+
+func (u *Ui) PopHit() {
+	if n := len(u.hit); n > 0 {
+		u.hit = u.hit[:n-1]
+	}
+}
+
+// ResetHit drops every limit (call at the start of a frame).
+func (u *Ui) ResetHit() { u.hit = u.hit[:0] }
+
+// Over says whether the pointer is in r and inside the current limits.
+func (u *Ui) Over(r Rect) bool { return u.at(r, u.In.MX, u.In.MY) }
+
+func (u *Ui) at(r Rect, x, y float32) bool {
+	if n := len(u.hit); n > 0 && !u.hit[n-1].Contains(x, y) {
+		return false
+	}
+	return r.Contains(x, y)
 }
 
 func (u *Ui) Live() bool  { return u.Layer == u.InputLayer }
@@ -63,21 +94,21 @@ func (u *Ui) RowH() float32 {
 }
 
 func (u *Ui) Hover(r Rect) bool {
-	return u.Live() && r.Contains(u.In.MX, u.In.MY) && !(u.In.Touch && !u.In.Down && !u.In.Released)
+	return u.Live() && u.Over(r) && !(u.In.Touch && !u.In.Down && !u.In.Released)
 }
-func (u *Ui) PressedIn(r Rect) bool { return u.Live() && u.In.Pressed && r.Contains(u.In.MX, u.In.MY) }
+func (u *Ui) PressedIn(r Rect) bool { return u.Live() && u.In.Pressed && u.Over(r) }
 
 // Clickable arms on press and fires on release over the same target.
 func (u *Ui) Clickable(id ID, r Rect) bool {
 	if !u.Live() {
 		return false
 	}
-	if u.In.Pressed && r.Contains(u.In.MX, u.In.MY) {
+	if u.In.Pressed && u.Over(r) {
 		u.St.Active = id
 	}
 	if u.In.Released && u.St.Active == id {
 		u.St.Active = ID{}
-		return r.Contains(u.In.MX, u.In.MY) && !u.In.Dragging
+		return u.Over(r) && !u.In.Dragging
 	}
 	return false
 }
@@ -229,7 +260,7 @@ func (u *Ui) TextField(id ID, r Rect, t *TextEdit, o FieldOpt) bool {
 		padY = 8
 	}
 	inner := r.Inset2(10, padY)
-	if u.Live() && in.Pressed && r.Contains(in.MX, in.MY) {
+	if u.Live() && in.Pressed && u.Over(r) {
 		u.St.Focus, u.St.LastFocus = id, id
 		pos := u.hitText(t, inner, f, lineH, in.MX, in.MY)
 		t.Caret = pos

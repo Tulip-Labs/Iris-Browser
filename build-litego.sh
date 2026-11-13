@@ -1,9 +1,7 @@
 #!/bin/sh
 # Lite Go builds.
-#   ./build-litego.sh          Windows files (cross-built from macOS or Linux)
-#   ./build-litego.sh mac      Lite Go.app, on a Mac (Xcode command line tools)
+#   ./build-litego.sh          Windows files (cross-built from Linux)
 #   ./build-litego.sh linux    lite-go for Linux, on Linux (WebKitGTK development files)
-#   ./build-litego.sh android  LiteGo.apk (Android SDK, NDK, JDK 17, gogio)
 set -e
 cd "$(dirname "$0")"
 export GOGC=50 GOMAXPROCS=2 GOFLAGS=-mod=mod
@@ -16,6 +14,7 @@ windows)
 	go test ./core ./shell ./setup ./shields
 	mkdir -p "dist/Lite Go"
 	GOOS=windows GOARCH=$ARCH go build -trimpath -ldflags "-H windowsgui -s -w" -o "dist/Lite Go/Lite Go.exe" ./cmd/litego
+	go run tools/sum.go "dist/Lite Go/Lite Go.exe" # the record Lite Go checks itself against
 	cp LICENSE.md NOTICE THIRD_PARTY_NOTICES.md "dist/Lite Go/"
 	go run tools/gz.go "dist/Lite Go/Lite Go.exe" setup/payload/LiteGo.exe.gz
 	cp LICENSE.md NOTICE THIRD_PARTY_NOTICES.md setup/payload/
@@ -28,46 +27,6 @@ windows)
 	rm -f dist/LiteGo-arm64.exe
 	echo "Done: dist/Lite Go Setup.exe, dist/Lite Go/Lite Go.exe and dist/LiteGo.msixbundle"
 	;;
-mac)
-	# WebKit comes with macOS; this needs only Go and the Xcode command line tools
-	export CGO_ENABLED=1
-	go test ./core ./shields
-	app="dist/Lite Go.app"
-	rm -rf "$app"
-	mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-	go build -trimpath -ldflags "-s -w" -o "$app/Contents/MacOS/Lite Go" ./cmd/litego
-	# the icon, from assets/icon.png
-	set=dist/LiteGo.iconset
-	mkdir -p "$set"
-	for s in 16 32 128 256 512; do
-		sips -z $s $s assets/icon.png --out "$set/icon_${s}x${s}.png" >/dev/null
-		sips -z $((s * 2)) $((s * 2)) assets/icon.png --out "$set/icon_${s}x${s}@2x.png" >/dev/null
-	done
-	iconutil -c icns "$set" -o "$app/Contents/Resources/LiteGo.icns" && rm -rf "$set"
-	cat > "$app/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-	<key>CFBundleName</key><string>Lite Go</string>
-	<key>CFBundleDisplayName</key><string>Lite Go</string>
-	<key>CFBundleIdentifier</key><string>com.tulipanlabs.litego</string>
-	<key>CFBundleVersion</key><string>1.0.0</string>
-	<key>CFBundleShortVersionString</key><string>1.0.0</string>
-	<key>CFBundleExecutable</key><string>Lite Go</string>
-	<key>CFBundleIconFile</key><string>LiteGo</string>
-	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>LSMinimumSystemVersion</key><string>12.0</string>
-	<key>NSHighResolutionCapable</key><true/>
-	<key>CFBundleURLTypes</key><array><dict>
-		<key>CFBundleURLName</key><string>Web site URL</string>
-		<key>CFBundleURLSchemes</key><array><string>http</string><string>https</string></array>
-	</dict></array>
-</dict></plist>
-PLIST
-	cp LICENSE.md NOTICE THIRD_PARTY_NOTICES.md "$app/Contents/Resources/"
-	codesign --force --deep -s - "$app" 2>/dev/null || true # ad-hoc signature: runs on this Mac
-	echo "Done: $app"
-	;;
 linux)
 	# The window is a GTK window, native on Wayland (GNOME, KDE, ...) and on X11;
 	# the interface is drawn by Gio's GPU renderer inside it.
@@ -75,9 +34,10 @@ linux)
 	#   Fedora:        sudo dnf install gcc pkgconf gtk3-devel webkit2gtk4.1-devel libepoxy-devel
 	#   Arch:          sudo pacman -S gcc pkgconf gtk3 webkit2gtk-4.1 libepoxy
 	export CGO_ENABLED=1
-	go test ./core ./shields
+	go test ./core ./shields ./shell
 	mkdir -p dist/linux
 	go build -tags "webkit novulkan" -trimpath -ldflags "-s -w" -o dist/linux/lite-go ./cmd/litego
+	go run tools/sum.go dist/linux/lite-go # the record Lite Go checks itself against
 	cp assets/icon.png dist/linux/lite-go.png
 	cat > dist/linux/lite-go.desktop <<DESK
 [Desktop Entry]
@@ -91,28 +51,10 @@ Categories=Network;WebBrowser;
 MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
 DESK
 	cp LICENSE.md NOTICE THIRD_PARTY_NOTICES.md dist/linux/
-	echo "Done: dist/linux (install: copy lite-go to ~/.local/bin, the .desktop file to ~/.local/share/applications, the png to ~/.local/share/icons)"
-	;;
-android)
-	# Needs the Android SDK (ANDROID_HOME) with a platform, build-tools and the
-	# NDK, a JDK 17 and gogio (go install gioui.org/cmd/gogio@latest).
-	: "${ANDROID_HOME:=${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
-	export ANDROID_HOME
-	if [ -z "$ANDROID_NDK_HOME" ]; then
-		ANDROID_NDK_HOME=$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1)
-		export ANDROID_NDK_HOME
-	fi
-	platform=$(ls -d "$ANDROID_HOME"/platforms/android-* | sort -V | tail -1)
-	go test ./core ./shell ./shields
-	rm -rf build/android && mkdir -p build/android/classes dist
-	javac --release 11 -nowarn -classpath "$platform/android.jar" -d build/android/classes webview/android/LiteWeb.java
-	jar cf webview/litego_android.jar -C build/android/classes .
-	gogio -target android -arch "${ARCH:-arm64}" -minsdk 26 -targetsdk 35 -appid org.tulipanlabs.litego \
-		-version 1.0.0.1 -icon assets/icon.png -schemes https,http -o dist/LiteGo.apk ./cmd/litego
-	echo "Done: dist/LiteGo.apk (adb install -r dist/LiteGo.apk)"
+	echo "Done: dist/linux (install: copy lite-go and lite-go.sha256 to ~/.local/bin, the .desktop file to ~/.local/share/applications, the png to ~/.local/share/icons)"
 	;;
 *)
-	echo "usage: $0 [windows|mac|linux|android]"
+	echo "usage: $0 [windows|linux]"
 	exit 2
 	;;
 esac

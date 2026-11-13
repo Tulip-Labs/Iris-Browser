@@ -1,4 +1,4 @@
-//go:build linux && webkit && !android
+//go:build linux && webkit
 
 // The Linux side of Lite Go's web engine: WebKitGTK views.
 //
@@ -16,7 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST };
+enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST, OP_ZOOM, OP_LIMIT, OP_DLCANCEL };
 
 extern void lgxGoCreated(uintptr_t cb, int ok);
 extern void lgxGoURL(uintptr_t id, char *u);
@@ -29,6 +29,10 @@ extern void lgxGoCrashed(uintptr_t id);
 extern void lgxGoAudio(uintptr_t id, int on);
 extern int lgxGoKey(uintptr_t id, int ch, int vk, int ctrl, int shift, int alt);
 extern void lgxGoResult(uintptr_t cb, char *res);
+extern void lgxGoFocus(uintptr_t id);
+extern void lgxGoDownload(uintptr_t id, int state, char *url, char *path, long long total, long long got);
+
+enum { DL_ACTIVE = 0, DL_DONE = 2, DL_FAILED = 3, DL_CANCELED = 4 };
 
 typedef struct {
 	uintptr_t id;
@@ -38,6 +42,7 @@ typedef struct {
 	GSList *scripts; // queued before the view exists
 	char *profile;
 	int priv;
+	int sandbox; // a page that may be unsafe: no downloads, no permissions
 } LV;
 
 static unsigned long parentXID;
@@ -46,6 +51,83 @@ static char *dataDir;
 static GHashTable *views;    // id -> LV*
 static GHashTable *contexts; // profile -> WebKitWebContext*
 static WebKitUserContentFilter *filter;
+static int memLimitMB;        // the cap of each page process (0 = none)
+static GHashTable *downloads; // id -> WebKitDownload*
+static uintptr_t lastDownload;
+
+// ---- downloads ----
+
+static void dlReport(WebKitDownload *d, int state) {
+	uintptr_t id = (uintptr_t)g_object_get_data(G_OBJECT(d), "lgx-id");
+	WebKitURIRequest *rq = webkit_download_get_request(d);
+	const char *u = rq ? webkit_uri_request_get_uri(rq) : NULL;
+	const char *dest = webkit_download_get_destination(d); // a file:// address
+	char *path = dest ? g_filename_from_uri(dest, NULL, NULL) : NULL;
+	WebKitURIResponse *rs = webkit_download_get_response(d);
+	long long total = rs ? (long long)webkit_uri_response_get_content_length(rs) : 0;
+	lgxGoDownload(id, state, (char *)(u ? u : ""), path ? path : "", total > 0 ? total : -1, (long long)webkit_download_get_received_data_length(d));
+	g_free(path);
+}
+
+static gboolean dlDestination(WebKitDownload *d, gchar *suggested, gpointer data) {
+	const char *dir = g_get_user_special_dir(G_USER_DIRECTORY_DOWNLOAD);
+	char *home = NULL;
+	if (!dir) dir = home = g_build_filename(g_get_home_dir(), "Downloads", NULL);
+	g_mkdir_with_parents(dir, 0755);
+	char *name = g_path_get_basename(suggested && *suggested ? suggested : "download");
+	char *path = g_build_filename(dir, name, NULL);
+	for (int n = 1; g_file_test(path, G_FILE_TEST_EXISTS) && n < 1000; n++) {
+		// "name (2).ext" beside what is already there
+		char *dot = strrchr(name, '.');
+		char *stem = dot && dot != name ? g_strndup(name, dot - name) : g_strdup(name);
+		char *next = g_strdup_printf("%s (%d)%s", stem, n + 1, dot && dot != name ? dot : "");
+		g_free(path);
+		path = g_build_filename(dir, next, NULL);
+		g_free(stem);
+		g_free(next);
+	}
+	char *uri = g_filename_to_uri(path, NULL, NULL);
+	if (uri) webkit_download_set_destination(d, uri);
+	g_free(uri);
+	g_free(path);
+	g_free(name);
+	g_free(home);
+	dlReport(d, DL_ACTIVE);
+	return TRUE;
+}
+
+static void dlData(WebKitDownload *d, guint64 n, gpointer data) {
+	gint64 now = g_get_monotonic_time();
+	gint64 last = (gint64)(gintptr)g_object_get_data(G_OBJECT(d), "lgx-at");
+	if (now / 200000 == last) return; // five reports a second are plenty
+	g_object_set_data(G_OBJECT(d), "lgx-at", (gpointer)(gintptr)(now / 200000));
+	dlReport(d, DL_ACTIVE);
+}
+
+static void dlFailed(WebKitDownload *d, GError *err, gpointer data) {
+	int canceled = err && g_error_matches(err, WEBKIT_DOWNLOAD_ERROR, WEBKIT_DOWNLOAD_ERROR_CANCELLED_BY_USER);
+	g_object_set_data(G_OBJECT(d), "lgx-failed", GINT_TO_POINTER(1));
+	dlReport(d, canceled ? DL_CANCELED : DL_FAILED);
+}
+
+static void dlFinished(WebKitDownload *d, gpointer data) {
+	if (!g_object_get_data(G_OBJECT(d), "lgx-failed")) dlReport(d, DL_DONE);
+	g_hash_table_remove(downloads, g_object_get_data(G_OBJECT(d), "lgx-id"));
+}
+
+static void onDownload(WebKitWebContext *c, WebKitDownload *d, gpointer data) {
+	if (g_object_get_data(G_OBJECT(c), "lgx-sandbox")) {
+		webkit_download_cancel(d); // nothing from a sandbox reaches the disk
+		return;
+	}
+	uintptr_t id = ++lastDownload;
+	g_object_set_data(G_OBJECT(d), "lgx-id", (gpointer)id);
+	g_hash_table_insert(downloads, (gpointer)id, g_object_ref(d));
+	g_signal_connect(d, "decide-destination", G_CALLBACK(dlDestination), NULL);
+	g_signal_connect(d, "received-data", G_CALLBACK(dlData), NULL);
+	g_signal_connect(d, "failed", G_CALLBACK(dlFailed), NULL);
+	g_signal_connect(d, "finished", G_CALLBACK(dlFinished), NULL);
+}
 
 static LV *lv(uintptr_t id, int make) {
 	LV *v = g_hash_table_lookup(views, (gpointer)id);
@@ -57,9 +139,9 @@ static LV *lv(uintptr_t id, int make) {
 	return v;
 }
 
-static WebKitWebContext *contextFor(const char *profile, int priv) {
+static WebKitWebContext *contextFor(const char *profile, int priv, int sandbox) {
 	char key[512];
-	snprintf(key, sizeof key, "%s:%s", priv ? "private" : "disk", profile);
+	snprintf(key, sizeof key, "%s%s:%s", priv ? "private" : "disk", sandbox ? "+sandbox" : "", profile);
 	WebKitWebContext *c = g_hash_table_lookup(contexts, key);
 	if (c) return c;
 	WebKitWebsiteDataManager *m;
@@ -72,7 +154,17 @@ static WebKitWebContext *contextFor(const char *profile, int priv) {
 		g_free(base);
 		g_free(cache);
 	}
-	c = webkit_web_context_new_with_website_data_manager(m);
+	if (memLimitMB > 0) {
+		// WebKit ends a page process that goes over the limit, alone
+		WebKitMemoryPressureSettings *mp = webkit_memory_pressure_settings_new();
+		webkit_memory_pressure_settings_set_memory_limit(mp, (guint)memLimitMB);
+		c = WEBKIT_WEB_CONTEXT(g_object_new(WEBKIT_TYPE_WEB_CONTEXT, "website-data-manager", m, "memory-pressure-settings", mp, NULL));
+		webkit_memory_pressure_settings_free(mp);
+	} else {
+		c = webkit_web_context_new_with_website_data_manager(m);
+	}
+	if (sandbox) g_object_set_data(G_OBJECT(c), "lgx-sandbox", GINT_TO_POINTER(1));
+	g_signal_connect(c, "download-started", G_CALLBACK(onDownload), NULL);
 	webkit_web_context_set_process_model(c, WEBKIT_PROCESS_MODEL_MULTIPLE_SECONDARY_PROCESSES);
 	webkit_web_context_set_cache_model(c, WEBKIT_CACHE_MODEL_WEB_BROWSER);
 	if (!priv) {
@@ -124,6 +216,17 @@ static gboolean onDecide(WebKitWebView *w, WebKitPolicyDecision *d, WebKitPolicy
 	return TRUE;
 }
 
+static gboolean onFocusIn(GtkWidget *w, GdkEvent *e, LV *v) {
+	lgxGoFocus(v->id);
+	return FALSE;
+}
+
+static gboolean onPermission(WebKitWebView *w, WebKitPermissionRequest *r, LV *v) {
+	if (!v->sandbox) return FALSE; // the engine asks as usual
+	webkit_permission_request_deny(r);
+	return TRUE;
+}
+
 static int vkFor(guint kv) {
 	switch (kv) {
 	case GDK_KEY_Left: return 0x25;
@@ -156,6 +259,7 @@ static GtkWidget *onCreate(WebKitWebView *w, WebKitNavigationAction *a, LV *v) {
 	if (!nid) return NULL;
 	LV *n = lv(nid, 1);
 	n->ucm = v->ucm;
+	n->sandbox = v->sandbox;
 	n->web = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW, "related-view", w, "user-content-manager", v->ucm, NULL));
 	wire(n);
 	return GTK_WIDGET(n->web);
@@ -172,6 +276,8 @@ static void wire(LV *v) {
 	g_signal_connect(v->web, "decide-policy", G_CALLBACK(onDecide), v);
 	g_signal_connect(v->web, "create", G_CALLBACK(onCreate), v);
 	g_signal_connect(v->web, "key-press-event", G_CALLBACK(onKey), v);
+	g_signal_connect(v->web, "focus-in-event", G_CALLBACK(onFocusIn), v);
+	g_signal_connect(v->web, "permission-request", G_CALLBACK(onPermission), v);
 	WebKitSettings *s = webkit_web_view_get_settings(v->web);
 	webkit_settings_set_enable_fullscreen(s, TRUE);
 	webkit_settings_set_enable_developer_extras(s, TRUE);
@@ -236,7 +342,7 @@ static void filterSaved(GObject *o, GAsyncResult *r, gpointer data) {
 
 static gboolean runOp(gpointer data) {
 	Op *op = data;
-	LV *v = op->id ? lv(op->id, op->op == OP_SCRIPT || op->op == OP_PROFILE || op->op == OP_NEW) : NULL;
+	LV *v = op->id && op->op != OP_DLCANCEL ? lv(op->id, op->op == OP_SCRIPT || op->op == OP_PROFILE || op->op == OP_NEW) : NULL;
 	switch (op->op) {
 	case OP_SCRIPT:
 		v->scripts = g_slist_append(v->scripts, g_strdup(op->s));
@@ -245,7 +351,16 @@ static gboolean runOp(gpointer data) {
 		g_free(v->profile);
 		v->profile = g_strdup(op->s ? op->s : "");
 		v->priv = op->a;
+		v->sandbox = op->b;
 		break;
+	case OP_LIMIT:
+		memLimitMB = op->a; // for the storage sessions made from now on
+		break;
+	case OP_DLCANCEL: {
+		WebKitDownload *d = g_hash_table_lookup(downloads, (gpointer)op->id);
+		if (d) webkit_download_cancel(d);
+		break;
+	}
 	case OP_NEW: {
 		if (!v->web) {
 			v->ucm = webkit_user_content_manager_new();
@@ -255,7 +370,7 @@ static gboolean runOp(gpointer data) {
 			g_slist_free_full(v->scripts, g_free);
 			v->scripts = NULL;
 			if (filter) webkit_user_content_manager_add_filter(v->ucm, filter);
-			v->web = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW, "web-context", contextFor(v->profile ? v->profile : "", v->priv),
+			v->web = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW, "web-context", contextFor(v->profile ? v->profile : "", v->priv, v->sandbox),
 			                                      "user-content-manager", v->ucm, NULL));
 			wire(v);
 		}
@@ -309,6 +424,7 @@ static gboolean runOp(gpointer data) {
 		case OP_FOCUS: gtk_widget_grab_focus(GTK_WIDGET(v->web)); break;
 		case OP_EVAL: webkit_web_view_run_javascript(v->web, op->s, NULL, evalDone, (gpointer)op->cb); op->cb = 0; break;
 		case OP_MUTE: webkit_web_view_set_is_muted(v->web, op->a); break;
+		case OP_ZOOM: webkit_web_view_set_zoom_level(v->web, op->a / 100.0); break;
 		case OP_CLOSE:
 			gtk_widget_destroy(host ? GTK_WIDGET(v->web) : v->plug);
 			g_hash_table_remove(views, (gpointer)op->id);
@@ -334,6 +450,7 @@ static void setup(const char *dir) {
 	dataDir = g_strdup(dir);
 	views = g_hash_table_new(g_direct_hash, g_direct_equal);
 	contexts = g_hash_table_new(g_str_hash, g_str_equal);
+	downloads = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, g_object_unref);
 }
 
 // lgxAttach starts the engine in Lite Go's GTK window (on GTK's thread).

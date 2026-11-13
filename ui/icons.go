@@ -90,6 +90,9 @@ const (
 	IExternal
 	IGrid
 	IHourglass
+	IDownload
+	IFolder
+	IPrint
 	iconCount
 )
 
@@ -145,6 +148,16 @@ func DrawIcon(g Gfx, icon Icon, x, y, size float32, c Color) {
 		g.StrokePath(p, w*0.5, c)
 	}
 	switch icon {
+	case IDownload: // an arrow coming down onto a tray
+		stroke(12, 4, 12, 14.5)
+		head(12, 15.2, 0, 1, 4.2)
+		stroke(5, 19.5, 19, 19.5)
+	case IFolder:
+		shape(3.5, 6, 9.5, 6, 11.5, 8.5, 20.5, 8.5, 20.5, 18.5, 3.5, 18.5)
+	case IPrint:
+		stroke(7.5, 8.5, 7.5, 4.5, 16.5, 4.5, 16.5, 8.5)
+		box(4, 8.5, 20, 16.5, 2)
+		box(7.5, 13.5, 16.5, 19.5, 1)
 	case IPlay:
 		fill(7.5, 5, 18.5, 12, 7.5, 19)
 	case IPause:

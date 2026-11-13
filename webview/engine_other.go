@@ -1,10 +1,10 @@
-//go:build !windows && !darwin && !android && !(linux && webkit)
+//go:build !windows && !(linux && webkit)
 
 package webview
 
 type unsupported struct{}
 
-// New returns an engine that reports it is unavailable (macOS and Linux come next).
+// New returns an engine that reports it is unavailable (Linux needs the webkit build tag).
 func New() Engine { return unsupported{} }
 
 func (unsupported) Start(_ uintptr, _ string, _ bool, ready func(error)) { ready(ErrUnavailable) }

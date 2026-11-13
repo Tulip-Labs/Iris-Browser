@@ -24,6 +24,7 @@ func (a *App) hideSite(t *Tab, url string) {
 		return
 	}
 	if sels := f.SiteSelectors(url); len(sels) > 0 {
+		t.hidden += len(sels)
 		js := shields.InjectCSS(shields.HideCSS(sels))
 		a.web(func() { v.Eval(js) })
 	}
@@ -37,6 +38,9 @@ func (a *App) hideGeneric(t *Tab, round int) {
 	if f == nil || v == nil || !a.shieldsOn(url) {
 		return
 	}
+	if !t.scanning && a.set.Adaptive && !a.scan.Need(url) {
+		return // adaptive shields: this site was scanned and has nothing to hide
+	}
 	a.web(func() {
 		v.Run(shields.CollectScript, func(js string) {
 			var got struct{ C, I []string }
@@ -49,6 +53,7 @@ func (a *App) hideGeneric(t *Tab, round int) {
 					return
 				}
 				if len(sels) > 0 {
+					t.hidden += len(sels)
 					css := shields.InjectCSS(shields.HideCSS(sels))
 					a.web(func() { v.Eval(css) })
 				}

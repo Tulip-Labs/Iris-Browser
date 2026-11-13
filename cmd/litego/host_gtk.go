@@ -1,4 +1,4 @@
-//go:build linux && webkit && !android
+//go:build linux && webkit
 
 // The Linux window: GTK owns it (native on Wayland and on X11), Gio's GPU
 // renderer draws our interface into a GtkGLArea inside it, and the pages are
@@ -58,8 +58,6 @@ const (
 	gdkAlt     = 1 << 3
 	gdkButton1 = 1 << 8
 )
-
-func appDirs() (string, string, bool) { return "", "", false }
 
 func runMain() {
 	C.lgwInit()
@@ -152,7 +150,7 @@ func (r *resident) makeWindow(urls []string) {
 	layout := C.lgwOpen(1280, 820)
 	h.eng = webview.New()
 	h.a = shell.New(h, shell.Config{Engine: h.eng, DataDir: r.conf, TotalMB: totalMB(), Version: version, SelfMB: webview.SelfMB,
-		Core: r.core, SetBoost: setStartup})
+		Core: r.core, SetBoost: setStartup, Sys: sysHooks()})
 	h.in = h.a.In
 	h.eng.SetPolicy(h.a.Policy())
 	for _, u := range urls {
@@ -423,6 +421,7 @@ var gdkKeys = map[uint]ui.Key{
 var gdkChars = map[byte]ui.Key{
 	'A': ui.KA, 'C': ui.KC, 'D': ui.KD, 'K': ui.KK, 'L': ui.KL, 'M': ui.KM, 'N': ui.KN, 'R': ui.KR, 'T': ui.KT, 'V': ui.KV,
 	'W': ui.KW, 'X': ui.KX, 'Z': ui.KZ, 'Y': ui.KY, 'J': ui.KJ,
+	'F': ui.KF, 'P': ui.KP, 'H': ui.KH, 'S': ui.KS, '0': ui.KZero, '+': ui.KPlus, '=': ui.KPlus, '-': ui.KMinus,
 	'1': ui.K1, '2': ui.K2, '3': ui.K3, '4': ui.K4, '5': ui.K5, '6': ui.K6, '7': ui.K7, '8': ui.K8, '9': ui.K9, ',': ui.KComma,
 }
 

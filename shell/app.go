@@ -50,9 +50,30 @@ type Config struct {
 	SetBoost func(on bool)
 	// Core reuses preloaded settings, history and shield (the background mode).
 	Core *Core
-	// Mobile uses the phone layout (Android).
-	Mobile bool
+	// Sys is what the operating system does for the interface.
+	Sys Sys
 }
+
+// Sys is what the operating system does for the interface; any may be nil.
+type Sys struct {
+	// Open opens a file with its program; Reveal shows it in its folder.
+	Open, Reveal func(path string)
+	// FreeMB is the system memory still free (0 = unknown).
+	FreeMB func() int
+	// Integrity checks Lite Go's own program file against the record made
+	// when it was installed (it may take a moment; called off the loop).
+	Integrity func() Integrity
+}
+
+// Integrity is the result of checking Lite Go's own program file.
+type Integrity uint8
+
+const (
+	IntegrityUnknown   Integrity = iota // no record to check against
+	IntegrityVerified                   // the file is the one that was installed
+	IntegrityProtected                  // installed as a Windows package: Windows keeps it read-only and verified
+	IntegrityChanged                    // the file is not the one that was installed
+)
 
 // App is the browser window's interface.
 type App struct {
@@ -67,15 +88,27 @@ type App struct {
 	Maximized bool    // set by the host
 	// MoveAreas are the parts of the window that drag it (set each frame).
 	MoveAreas []ui.Rect
-	// Insets keep the interface clear of the system bars and the camera cut-out
-	// (top, right, bottom, left; set by the host).
-	Insets [4]float32
 
 	set    *core.Settings
 	core   *Core
 	hist   *core.History
 	shield *core.Shield
+	scan   *core.SiteScan
 	plan   core.MemoryPlan
+
+	split     splitView
+	find      findBar
+	downloads []*download
+	panelMode panelMode
+	histQ     *ui.TextEdit
+	histList  []core.Entry
+	histFor   string
+	histAt    float64
+	histSc    ui.Scroll
+	dlSc      ui.Scroll
+	kindEdit  bool // the container editor on the new tab page
+	balance   balancer
+	integrity Integrity
 
 	tabs    []*Tab
 	cur     int
@@ -93,7 +126,6 @@ type App struct {
 	sugSel      int
 	panel       bool
 	panelScroll ui.Scroll
-	tabsOpen    bool // the phone's tab grid
 	tabScroll   ui.Scroll
 	railScroll  ui.Scroll
 	stripScroll float32
@@ -140,8 +172,11 @@ type closedTab struct {
 type infobar struct {
 	text, action string
 	do           func()
-	until        float64 // 0 = until dismissed
-	warn         bool
+	// a second, quieter choice
+	action2 string
+	do2     func()
+	until   float64 // 0 = until dismissed
+	warn    bool
 }
 
 // New makes the interface; call Started once the engine is running.
@@ -151,14 +186,23 @@ func New(h Host, cfg Config) *App {
 		insecureOK: map[string]bool{}, start: time.Now(), lastMem: -10,
 		thumbs: map[string]*thumb{}, thumbSem: make(chan struct{}, 6), fetchImage: core.FetchImage, ytSearch: core.YouTubeSearch}
 	a.ai.input = ui.NewTextEdit("", false)
+	a.histQ, a.find.q = ui.NewTextEdit("", false), ui.NewTextEdit("", false)
+	a.split.ratio = 0.5
 	c := cfg.Core
 	if c == nil {
 		c = LoadCore(cfg.DataDir)
 	}
-	a.set, a.hist, a.shield, a.core = c.Settings, c.History, c.Shield, c
+	a.set, a.hist, a.shield, a.scan, a.core = c.Settings, c.History, c.Shield, c.Scan, c
 	c.OnLists = func() { a.post(a.applyPolicy) } // WebKit needs the new list compiled
 	a.plan = core.Plan(cfg.TotalMB, a.set.Memory)
 	a.newTab(KNormal, "", "", true)
+	a.restoreSession()
+	if f := cfg.Sys.Integrity; f != nil {
+		go func() {
+			r := f()
+			a.post(func() { a.setIntegrity(r) })
+		}()
+	}
 	a.stop = make(chan struct{})
 	go func() { // the sleep policy and the memory readout need a frame now and then
 		tk := time.NewTicker(2 * time.Second)
@@ -190,6 +234,14 @@ func (a *App) Policy() webview.Policy {
 	if a.set.Farble {
 		scripts = append(scripts, shields.FarbleScript())
 	}
+	if a.set.Lazy {
+		scripts = append(scripts, core.LazyScript)
+	}
+	limit := 0
+	if a.set.MemoryCap {
+		limit = a.plan.LimitMB
+	}
+	adaptive, scan := a.set.Adaptive, a.scan
 	var rewrite func(string) string
 	if a.set.CleanLinks {
 		rewrite = shields.Clean
@@ -234,6 +286,16 @@ func (a *App) Policy() webview.Policy {
 		},
 		Scripts: scripts,
 		Strict:  a.set.Strict,
+		// adaptive shields: a site found clean is not checked request by request
+		Scan: func(u string) bool {
+			if !sh.On {
+				return false // nothing to check with the shield off
+			}
+			return !adaptive || scan.Need(u)
+		},
+		Unsafe:         func(u string) bool { return core.Risk(u) != "" && !a.allowedInsecure(u) },
+		ProcessLimitMB: limit,
+		Download:       func(d webview.Download) { a.post(func() { a.onDownload(d) }) },
 	}
 }
 
@@ -290,6 +352,11 @@ func (a *App) Fullscreen() bool { return a.full || a.winFull }
 
 // Close flushes settings and closes every page (call before the window goes).
 func (a *App) Close() {
+	a.saveSession()
+	for _, t := range a.tabs {
+		a.finishScan(t)
+	}
+	a.scan.Flush()
 	a.set.Flush()
 	if !a.stopped {
 		a.stopped = true
@@ -334,6 +401,7 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	u.W, u.H, u.Layer, u.InputLayer, u.Redraw = w, h, 0, 0, false
 	a.MoveAreas = a.MoveAreas[:0]
 	a.st.Editing = nil
+	u.ResetHit()
 
 	if a.wakeAt > 0 && a.now() >= a.wakeAt {
 		a.wakeAt = 0
@@ -355,11 +423,15 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	if a.sideFull && a.side.url != "" {
 		a.sideURL = a.side.url
 	}
+	page, beside, other := a.panes(page)
 	a.content(page)
-	if !a.Fullscreen() && !a.cfg.Mobile { // no hover on a touch screen
+	if other != nil {
+		a.otherPane(beside, other)
+	}
+	if !a.Fullscreen() {
 		u.DrawTooltip()
 	}
-	a.sync(page)
+	a.sync(page, beside, other)
 	a.syncSide()
 	a.In.EndFrame()
 	if u.Redraw {
@@ -393,6 +465,7 @@ type Core struct {
 	Settings *core.Settings
 	History  *core.History
 	Shield   *core.Shield
+	Scan     *core.SiteScan
 	// Lite Shields' filter lists: loaded and refreshed in the background
 	Filters  atomic.Pointer[shields.Engine]
 	ListsAt  time.Time
@@ -406,7 +479,7 @@ type Core struct {
 
 // LoadCore loads them (the history and the shield finish in the background).
 func LoadCore(dir string) *Core {
-	c := &Core{Settings: core.LoadSettings(dir), History: core.OpenHistory(dir), Shield: core.NewShield(), dir: dir}
+	c := &Core{Settings: core.LoadSettings(dir), History: core.OpenHistory(dir), Shield: core.NewShield(), Scan: core.OpenSiteScan(dir), dir: dir}
 	c.Shield.On = c.Settings.Shield
 	for _, h := range c.Settings.ShieldOff {
 		c.Shield.SetSiteOff(h, true)

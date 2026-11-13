@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 	"unsafe"
@@ -36,14 +37,21 @@ type engine struct {
 	version string
 	memMB   float64
 	memAt   time.Time
+	jobs    map[uint32]windows.Handle // page process -> the job that caps its memory
+	jobMB   int
 }
+
+var downloadID int
 
 // New returns the Windows engine (WebView2).
 func New() Engine { return &engine{} }
 
 func (e *engine) Version() string { return e.version }
 
-func (e *engine) SetPolicy(p Policy) { e.policy = p }
+func (e *engine) SetPolicy(p Policy) {
+	e.policy = p
+	e.memAt = time.Time{} // apply a changed memory cap at the next reading
+}
 
 // runtimeDLL finds the installed WebView2 runtime (stable channel first), per machine or per user.
 func runtimeDLL() (string, error) {
@@ -156,7 +164,7 @@ func (e *engine) NewView(o Options, ev Events, done func(View, error)) {
 			return sOK
 		}
 		addRef(ctrl)
-		v := &view{e: e, ctrl: ctrl, ev: ev}
+		v := &view{e: e, ctrl: ctrl, ev: ev, sandbox: o.Sandbox}
 		v.core = getPtr(ctrl, slotICoreWebView2Controller_CoreWebView2)
 		v.setup()
 		if o.Popup != nil {
@@ -219,17 +227,74 @@ func (e *engine) MemoryMB() float64 {
 	var n uint32
 	call(coll, slotICoreWebView2ProcessInfoCollection_Count, uintptr(unsafe.Pointer(&n)))
 	total := 0.0
+	var pages []uint32
 	for i := uint32(0); i < n; i++ {
 		var info uintptr
 		if failed(call(coll, slotICoreWebView2ProcessInfoCollection_GetValueAtIndex, uintptr(i), uintptr(unsafe.Pointer(&info)))) || info == 0 {
 			continue
 		}
 		pid := getInt(info, slotICoreWebView2ProcessInfo_ProcessId)
+		if getInt(info, slotICoreWebView2ProcessInfo_Kind) == 1 { // a renderer: the process of a page
+			pages = append(pages, uint32(pid))
+		}
 		release(info)
 		total += privateMB(uint32(pid))
 	}
+	e.capPages(pages)
 	e.memMB = total
 	return total
+}
+
+// capPages puts every page process in a job of its own with a memory limit
+// (Policy.ProcessLimitMB). Windows then refuses that process memory past the
+// limit: the page ends alone, and the rest of the system keeps its memory.
+// Each process needs its own job, because Chromium already keeps each one in
+// a sandbox job and Windows only nests a job under it while ours is empty.
+func (e *engine) capPages(pids []uint32) {
+	limit := e.policy.ProcessLimitMB
+	if e.jobs == nil {
+		e.jobs = map[uint32]windows.Handle{}
+	}
+	alive := map[uint32]bool{}
+	for _, pid := range pids {
+		alive[pid] = true
+		if _, ok := e.jobs[pid]; ok || limit <= 0 {
+			continue
+		}
+		job, err := windows.CreateJobObject(nil, nil)
+		if err != nil {
+			continue
+		}
+		e.jobs[pid] = job // kept even when the process refuses, so it is asked once
+		if !setJobLimit(job, limit) {
+			continue
+		}
+		h, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE, false, pid)
+		if err != nil {
+			continue
+		}
+		_ = windows.AssignProcessToJobObject(job, h)
+		windows.CloseHandle(h)
+	}
+	for pid, job := range e.jobs {
+		if !alive[pid] {
+			windows.CloseHandle(job)
+			delete(e.jobs, pid)
+		} else if limit != e.jobMB {
+			setJobLimit(job, limit) // 0 lifts the cap
+		}
+	}
+	e.jobMB = limit
+}
+
+func setJobLimit(job windows.Handle, mb int) bool {
+	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+	if mb > 0 {
+		info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_PROCESS_MEMORY
+		info.ProcessMemoryLimit = uintptr(mb) << 20
+	}
+	_, err := windows.SetInformationJobObject(job, windows.JobObjectExtendedLimitInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)))
+	return err == nil
 }
 
 type memCounters struct {
@@ -270,6 +335,47 @@ type view struct {
 	url      string
 	handlers []uintptr
 	closed   bool
+	sandbox  bool
+	filters  bool      // the shield is listening to this view's requests
+	held     []uintptr // interfaces released when the view closes
+}
+
+// the kinds of request the shield checks: images, media, scripts, XHR, fetch,
+// pings and others; never style sheets or fonts, so a blocked domain cannot
+// break how a page looks
+var shieldContexts = []uintptr{3, 4, 6, 7, 8, 14, 16}
+
+// setFilters starts or stops sending this view's requests to the shield.
+// Without the filters the requests never leave the engine, which is as fast
+// as a page can load (adaptive shields use this for sites found clean).
+func (v *view) setFilters(on bool) {
+	if v.filters == on || v.closed {
+		return
+	}
+	v.filters = on
+	star := wstr("*")
+	defer runtime.KeepAlive(star)
+	all := uintptr(unsafe.Pointer(star))
+	c22 := query(v.core, &iidICoreWebView2_22)
+	for _, c := range shieldContexts {
+		switch {
+		case c22 != 0 && on:
+			call(c22, slotICoreWebView2_22_AddWebResourceRequestedFilterWithRequestSourceKinds, all, c, 0xFFFFFFFF)
+		case c22 != 0:
+			call(c22, slotICoreWebView2_22_RemoveWebResourceRequestedFilterWithRequestSourceKinds, all, c, 0xFFFFFFFF)
+		case on:
+			call(v.core, slotICoreWebView2_AddWebResourceRequestedFilter, all, c)
+		default:
+			call(v.core, slotICoreWebView2_RemoveWebResourceRequestedFilter, all, c)
+		}
+	}
+	release(c22)
+}
+
+// scan asks adaptive shields whether the page at url needs the shield.
+func (v *view) scan(url string) bool {
+	s := v.e.policy.Scan
+	return s == nil || url == "" || s(url)
 }
 
 func (v *view) on(slot int, iid guid, obj uintptr, fn func(sender, args uintptr)) {
@@ -303,9 +409,13 @@ func (v *view) setup() {
 			release(s3)
 		}
 		if s4 := query(s, &iidICoreWebView2Settings4); s4 != 0 {
-			call(s4, slotICoreWebView2Settings4_SetIsPasswordAutosaveEnabled, 1)
-			call(s4, slotICoreWebView2Settings4_SetIsGeneralAutofillEnabled, 1)
+			call(s4, slotICoreWebView2Settings4_SetIsPasswordAutosaveEnabled, boolArg(!v.sandbox))
+			call(s4, slotICoreWebView2Settings4_SetIsGeneralAutofillEnabled, boolArg(!v.sandbox))
 			release(s4)
+		}
+		if v.sandbox {
+			call(s, slotICoreWebView2Settings_SetAreHostObjectsAllowed, 0)
+			call(s, slotICoreWebView2Settings_SetIsWebMessageEnabled, 0)
 		}
 		if s8 := query(s, &iidICoreWebView2Settings8); s8 != 0 {
 			// no SmartScreen lookup for every page (the shield and HTTPS-only stay on)
@@ -333,19 +443,7 @@ func (v *view) setup() {
 	}
 	// the shield: subresources only (scripts, images, requests, media, frames' content)
 	if allow := e.policy.Allow; allow != nil {
-		// images, media, scripts, XHR, fetch, pings and others; never style
-		// sheets or fonts, so a blocked domain cannot break how a page looks
-		contexts := []uintptr{3, 4, 6, 7, 8, 14, 16}
-		if c22 := query(core, &iidICoreWebView2_22); c22 != 0 {
-			for _, c := range contexts {
-				call(c22, slotICoreWebView2_22_AddWebResourceRequestedFilterWithRequestSourceKinds, uintptr(unsafe.Pointer(wstr("*"))), c, 0xFFFFFFFF)
-			}
-			release(c22)
-		} else {
-			for _, c := range contexts {
-				call(core, slotICoreWebView2_AddWebResourceRequestedFilter, uintptr(unsafe.Pointer(wstr("*"))), c)
-			}
-		}
+		v.setFilters(true)
 		v.on(slotICoreWebView2_add_WebResourceRequested, iidICoreWebView2WebResourceRequestedEventHandler, core, func(_, args uintptr) {
 			req := getPtr(args, slotICoreWebView2WebResourceRequestedEventArgs_Request)
 			if req == 0 {
@@ -390,12 +488,20 @@ func (v *view) setup() {
 				return
 			}
 		}
-		if e.policy.HTTPSOnly && strings.HasPrefix(strings.ToLower(uri), "http://") && (e.policy.AllowInsecure == nil || !e.policy.AllowInsecure(uri)) {
+		stop := e.policy.HTTPSOnly && strings.HasPrefix(strings.ToLower(uri), "http://") && (e.policy.AllowInsecure == nil || !e.policy.AllowInsecure(uri))
+		if !stop && e.policy.Unsafe != nil {
+			stop = e.policy.Unsafe(uri)
+		}
+		if stop && !v.sandbox { // a sandbox is where such a page may open
 			call(args, slotICoreWebView2NavigationStartingEventArgs_SetCancel, 1)
 			if ev.Insecure != nil {
 				ev.Insecure(uri)
 			}
 			return
+		}
+		if e.policy.Allow != nil {
+			// between two pages both may still ask for things
+			v.setFilters(v.scan(v.url) || v.scan(uri))
 		}
 		if ev.Loading != nil {
 			ev.Loading(true)
@@ -403,6 +509,9 @@ func (v *view) setup() {
 	})
 	v.on(slotICoreWebView2_add_SourceChanged, iidICoreWebView2SourceChangedEventHandler, core, func(_, _ uintptr) {
 		v.url = getString(core, slotICoreWebView2_Source)
+		if e.policy.Allow != nil {
+			v.setFilters(v.scan(v.url))
+		}
 		if ev.URL != nil {
 			ev.URL(v.url)
 		}
@@ -450,6 +559,34 @@ func (v *view) setup() {
 			ev.Crashed()
 		}
 	})
+	if ev.Focus != nil {
+		v.on(slotICoreWebView2Controller_add_GotFocus, iidICoreWebView2FocusChangedEventHandler, v.ctrl, func(_, _ uintptr) { ev.Focus() })
+	}
+	if v.sandbox {
+		// no camera, microphone, location, notifications or clipboard
+		v.on(slotICoreWebView2_add_PermissionRequested, iidICoreWebView2PermissionRequestedEventHandler, core, func(_, args uintptr) {
+			call(args, slotICoreWebView2PermissionRequestedEventArgs_SetState, 2) // deny
+		})
+	}
+	if c4 := query(core, &iidICoreWebView2_4); c4 != 0 {
+		v.held = append(v.held, c4)
+		v.on(slotICoreWebView2_4_add_DownloadStarting, iidICoreWebView2DownloadStartingEventHandler, c4, func(_, args uintptr) {
+			if v.sandbox {
+				call(args, slotICoreWebView2DownloadStartingEventArgs_SetCancel, 1)
+				return
+			}
+			report := e.policy.Download
+			if report == nil {
+				return // the engine shows its own download box
+			}
+			op := getPtr(args, slotICoreWebView2DownloadStartingEventArgs_DownloadOperation)
+			if op == 0 {
+				return
+			}
+			call(args, slotICoreWebView2DownloadStartingEventArgs_SetHandled, 1) // Lite Go lists it itself
+			trackDownload(op, getString(args, slotICoreWebView2DownloadStartingEventArgs_ResultFilePath), report)
+		})
+	}
 	if v.core8 != 0 && ev.Audio != nil {
 		c8 := v.core8
 		v.on(slotICoreWebView2_8_add_IsDocumentPlayingAudioChanged, iidICoreWebView2IsDocumentPlayingAudioChangedEventHandler, c8, func(_, _ uintptr) {
@@ -553,6 +690,124 @@ func (v *view) Run(js string, done func(string)) {
 	}
 }
 
+// trackDownload follows one download (op is owned here) and reports its changes.
+func trackDownload(op uintptr, path string, report func(Download)) {
+	downloadID++
+	d := Download{ID: downloadID, URL: getString(op, slotICoreWebView2DownloadOperation_Uri), Path: path, Total: -1}
+	paused, canceled, ended := false, false, false
+	var last time.Time
+	var hBytes, hState uintptr
+	read := func() {
+		var total, got int64
+		if !failed(call(op, slotICoreWebView2DownloadOperation_TotalBytesToReceive, uintptr(unsafe.Pointer(&total)))) && total > 0 {
+			d.Total = total
+		}
+		if !failed(call(op, slotICoreWebView2DownloadOperation_BytesReceived, uintptr(unsafe.Pointer(&got)))) {
+			d.Received = got
+		}
+		if p := getString(op, slotICoreWebView2DownloadOperation_ResultFilePath); p != "" {
+			d.Path = p
+		}
+	}
+	finish := func() {
+		if ended {
+			return
+		}
+		ended = true
+		d.Cancel, d.Pause, d.Resume = nil, nil, nil
+		release(hBytes)
+		release(hState)
+		release(op)
+	}
+	d.Cancel = func() {
+		if !ended {
+			canceled = true
+			call(op, slotICoreWebView2DownloadOperation_Cancel)
+		}
+	}
+	d.Pause = func() {
+		if !ended && !paused {
+			paused = true
+			call(op, slotICoreWebView2DownloadOperation_Pause)
+			d.State = DownloadPaused
+			report(d)
+		}
+	}
+	d.Resume = func() {
+		if !ended && paused {
+			paused = false
+			call(op, slotICoreWebView2DownloadOperation_Resume)
+			d.State = DownloadActive
+			report(d)
+		}
+	}
+	var token int64
+	hBytes = newHandler(iidICoreWebView2BytesReceivedChangedEventHandler, func(_, _ uintptr) uintptr {
+		if !ended && time.Since(last) > 200*time.Millisecond {
+			last = time.Now()
+			read()
+			report(d)
+		}
+		return sOK
+	})
+	call(op, slotICoreWebView2DownloadOperation_add_BytesReceivedChanged, hBytes, uintptr(unsafe.Pointer(&token)))
+	hState = newHandler(iidICoreWebView2StateChangedEventHandler, func(_, _ uintptr) uintptr {
+		if ended {
+			return sOK
+		}
+		read()
+		switch getInt(op, slotICoreWebView2DownloadOperation_State) {
+		case 2:
+			d.State = DownloadDone
+			if d.Total < 0 {
+				d.Total = d.Received
+			}
+		case 1: // interrupted: paused by us, canceled, or failed
+			switch {
+			case canceled:
+				d.State = DownloadCanceled
+			case paused:
+				d.State = DownloadPaused
+				report(d)
+				return sOK
+			default:
+				d.State = DownloadFailed
+			}
+		default:
+			d.State = DownloadActive
+			report(d)
+			return sOK
+		}
+		out := d
+		finish()
+		out.Cancel, out.Pause, out.Resume = nil, nil, nil
+		report(out)
+		return sOK
+	})
+	call(op, slotICoreWebView2DownloadOperation_add_StateChanged, hState, uintptr(unsafe.Pointer(&token)))
+	read()
+	report(d)
+}
+
+// SetZoom scales the page; where the factor cannot be passed to the engine
+// (see setZoom) the page's own CSS zoom is used.
+func (v *view) SetZoom(f float64) {
+	if v.closed {
+		return
+	}
+	if !setZoom(v.ctrl, f) {
+		v.Eval("document.documentElement.style.zoom=" + strconv.FormatFloat(f, 'f', 2, 64))
+	}
+}
+
+// SetBackground lowers the page's memory target without suspending it.
+func (v *view) SetBackground(on bool) {
+	if v.closed || v.core19 == 0 {
+		return
+	}
+	call(v.core19, slotICoreWebView2_19_SetMemoryUsageTargetLevel, boolArg(on))
+}
+
 func (v *view) SetMuted(on bool) {
 	if v.core8 != 0 {
 		call(v.core8, slotICoreWebView2_8_SetIsMuted, boolArg(on))
@@ -565,6 +820,9 @@ func (v *view) Close() {
 	}
 	v.closed = true
 	call(v.ctrl, slotICoreWebView2Controller_Close)
+	for _, p := range v.held {
+		release(p)
+	}
 	for _, p := range []uintptr{v.core3, v.core8, v.core19, v.core, v.ctrl} {
 		release(p)
 	}

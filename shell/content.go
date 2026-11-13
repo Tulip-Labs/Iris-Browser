@@ -23,16 +23,17 @@ func (a *App) content(r ui.Rect) {
 	case t.search != nil:
 		a.results(r, t)
 	case t.Crashed:
-		a.message(r, ui.IWarning, "This page stopped working",
-			"Its process ended (it may have run out of memory). Reload to open it again.", "Reload", func() { a.reload(t) })
+		why := "Its process ended (it may have run out of memory). Reload to open it again."
+		if a.set.MemoryCap && a.plan.LimitMB > 0 {
+			why = "Its process ended. If it went past the " + mb(float64(a.plan.LimitMB)) + " limit for one page, reload it, or turn the limit off under Memory in the menu if this page needs more."
+		}
+		a.message(r, ui.IWarning, "This page stopped working", why, "Reload", func() { a.reload(t) })
 	case a.engErr != nil || a.eng == nil:
 		msg := "Lite Go shows pages with Microsoft Edge WebView2, which is not installed. Run the Lite Go installer again, or get the runtime from Microsoft."
 		if a.engErr != nil && !strings.Contains(a.engErr.Error(), "not available") {
 			msg = "The web engine did not start: " + a.engErr.Error()
 		}
-		if runtime.GOOS == "android" {
-			msg = "Lite Go shows pages with Android System WebView. Update it (and Chrome) from the Play Store, then open Lite Go again."
-		} else if runtime.GOOS == "linux" {
+		if runtime.GOOS == "linux" {
 			msg = "Lite Go shows pages with WebKitGTK. Install WebKitGTK 4.1 (webkit2gtk-4.1) and open Lite Go again."
 		}
 		a.message(r, ui.IGlobe, "The web engine is not available", msg, "", nil)
@@ -120,10 +121,12 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 		title, sub = "Temporary tab", "A fresh session for this tab alone. Sign in to a second account here; it is wiped when the tab closes."
 	case KContainer:
 		title, sub = t.Container, "A container: its own sign-ins and cookies, kept apart from your other tabs."
+	case KSandbox:
+		title, sub = "Sandbox", "For a site you do not trust. It cannot download, use the camera, microphone or location, or save passwords, and everything is wiped when the tab closes."
 	}
 	subLines := wrap(g, sub, ui.FBody, colW)
 	const ms = 44
-	blockH := float32(ms+16) + float32(len(subLines))*22 + 22 + 56 + 16 + 34
+	blockH := float32(ms+16) + float32(len(subLines))*22 + 22 + 56 + 16 + 34 + 150
 	y := r.Y + max(24, (r.H-blockH)*0.38)
 
 	// heading: the mark (or the kind's icon in its color) and the title
@@ -174,6 +177,11 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 
 	// search modes as M3 filter chips
 	y += a.modeChips(cx, y, r.W-32, func() { a.st.Focus = id; a.suggest(a.ntpQ.Text()) })
+
+	// what kind of tab this is (hidden while suggestions cover the place)
+	if !(focused && len(a.sugg) > 0) {
+		y += a.kindPicker(cx, y+22, colW, t) + 22
+	}
 
 	// footer: what the shield did and how much memory the pages use
 	fy := r.B() - 34

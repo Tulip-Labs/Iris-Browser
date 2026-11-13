@@ -1,4 +1,4 @@
-//go:build linux && !webkit && !android
+//go:build linux && !webkit
 
 package main
 

@@ -25,8 +25,8 @@ type Entry struct {
 // History keeps visited pages in SQLite (never for private tabs). It opens in
 // the background; until then, and if the disk fails, it works in memory.
 type History struct {
-	mu    sync.Mutex
-	db    *sql.DB
+	mu     sync.Mutex
+	db     *sql.DB
 	mem    map[string]*Entry
 	ready  chan struct{}
 	writes sync.WaitGroup // writes still going to the disk
@@ -137,6 +137,21 @@ func (h *History) Suggest(text string, n int) []Entry {
 		}
 		return s
 	})
+}
+
+// Recent returns the pages visited last, newest first; text narrows them to
+// the ones whose address or title contains it.
+func (h *History) Recent(n int, text string) []Entry {
+	t := strings.ToLower(strings.TrimSpace(text))
+	h.mu.Lock()
+	var all []*Entry
+	for _, e := range h.mem {
+		if t == "" || strings.Contains(strings.ToLower(e.URL), t) || strings.Contains(strings.ToLower(e.Title), t) {
+			all = append(all, e)
+		}
+	}
+	h.mu.Unlock()
+	return best(all, n, func(e *Entry) float64 { return float64(e.Last.UnixNano()) })
 }
 
 // Top returns the most visited sites (one entry per host).

@@ -1,4 +1,4 @@
-//go:build darwin || (linux && webkit) || android
+//go:build linux && webkit
 
 package webview
 
@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-// The WebKit engines (macOS, Linux) keep their views in a table: the native
+// The WebKit engine keeps its views in a table: the native
 // side reports events with a view's number, and Go finds the view here.
 
 type wkView struct {
@@ -17,6 +17,7 @@ type wkView struct {
 	url     string
 	closed  bool
 	private bool
+	sandbox bool
 }
 
 var (
@@ -49,7 +50,7 @@ func wkDel(id uintptr) {
 	wkMu.Unlock()
 }
 
-// the shared policy decisions of the WebKit engines
+// the policy decisions of the WebKit engine
 
 type wkEngine struct {
 	mu      sync.Mutex
@@ -60,7 +61,7 @@ type wkEngine struct {
 }
 
 // decide returns the address to open instead of u ("" to open u as is), or
-// "-" to stop it (HTTPS-only).
+// "-" to stop it (HTTPS-only, or a page that looks unsafe).
 func (e *wkEngine) decide(v *wkView, u string) string {
 	e.mu.Lock()
 	p := e.policy
@@ -70,7 +71,14 @@ func (e *wkEngine) decide(v *wkView, u string) string {
 			return c
 		}
 	}
-	if p.HTTPSOnly && strings.HasPrefix(strings.ToLower(u), "http://") && (p.AllowInsecure == nil || !p.AllowInsecure(u)) {
+	if v.sandbox {
+		return "" // a sandbox is where an unsafe page may open
+	}
+	stop := p.HTTPSOnly && strings.HasPrefix(strings.ToLower(u), "http://") && (p.AllowInsecure == nil || !p.AllowInsecure(u))
+	if !stop && p.Unsafe != nil {
+		stop = p.Unsafe(u)
+	}
+	if stop {
 		if v.ev.Insecure != nil {
 			v.ev.Insecure(u)
 		}
@@ -89,6 +97,10 @@ func vkFromChar(c rune) uint32 {
 		return uint32(c)
 	case c == ',':
 		return 0xBC
+	case c == '+', c == '=':
+		return 0xBB
+	case c == '-':
+		return 0xBD
 	case c == '\t':
 		return 0x09
 	}
