@@ -1,0 +1,124 @@
+// Package core is Lite Go's browser logic, independent of the window and the
+// web engine: what the address bar opens, the shield, HTTPS-only, tab sleep
+// and history. Rules match Lite Desktop exactly.
+package core
+
+import (
+	"net/url"
+	"regexp"
+	"strings"
+)
+
+// Mode is a search mode; AI (Google AI Mode) is the default.
+type Mode uint8
+
+const (
+	ModeAI Mode = iota
+	ModeWeb
+	ModeImages
+	ModeVideos
+	ModeYouTube
+)
+
+var ModeNames = []string{"AI", "Web", "Images", "Videos", "YouTube"}
+
+const google = "https://www.google.com/search?gl=us&hl=en"
+
+func (m Mode) URL(q string) string {
+	e := url.QueryEscape(q)
+	switch m {
+	case ModeWeb:
+		return google + "&udm=14&q=" + e
+	case ModeImages:
+		return google + "&udm=2&q=" + e
+	case ModeVideos:
+		return google + "&udm=7&q=" + e
+	case ModeYouTube:
+		return "https://www.youtube.com/results?search_query=" + e
+	}
+	return google + "&udm=50&q=" + e
+}
+
+var (
+	reScheme  = regexp.MustCompile(`(?i)^([a-z][a-z0-9+.-]*):(.*)$`)
+	rePort    = regexp.MustCompile(`^\d+([/?#]|$)`)
+	reLocal   = regexp.MustCompile(`^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)`)
+	reYT      = regexp.MustCompile(`(?i)^yt\s+(.+)$`)
+	rePrivate = regexp.MustCompile(`(?i)^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[::1\])`)
+)
+
+func hasScheme(t string) bool {
+	m := reScheme.FindStringSubmatch(t)
+	return m != nil && !rePort.MatchString(m[2])
+}
+
+// IsURLLike reports whether typed text is an address rather than a search.
+func IsURLLike(text string) bool {
+	t := strings.TrimSpace(text)
+	return t != "" && (hasScheme(t) || !strings.Contains(t, " ") && (strings.Contains(t, ".") || t == "localhost" || strings.HasPrefix(strings.ToLower(t), "localhost:")))
+}
+
+// URLFor completes an address: https:// unless it is a local address.
+func URLFor(text string) string {
+	t := strings.TrimSpace(text)
+	if hasScheme(t) {
+		return t
+	}
+	host := strings.SplitN(strings.SplitN(t, "/", 2)[0], ":", 2)[0]
+	if reLocal.MatchString(host) {
+		return "http://" + t
+	}
+	return "https://" + t
+}
+
+// Resolve turns address-bar text into the URL to open ("" for empty input).
+// "yt cats" searches YouTube whatever the mode.
+func Resolve(input string, m Mode) string {
+	t := strings.TrimSpace(input)
+	if t == "" {
+		return ""
+	}
+	if IsURLLike(t) {
+		return URLFor(t)
+	}
+	if y := reYT.FindStringSubmatch(t); y != nil {
+		return ModeYouTube.URL(strings.TrimSpace(y[1]))
+	}
+	return m.URL(t)
+}
+
+// HTTPSUpgrade returns the https:// form of a public http:// address, or "" when none applies.
+func HTTPSUpgrade(u string) string {
+	if !strings.HasPrefix(strings.ToLower(u), "http://") {
+		return ""
+	}
+	p, err := url.Parse(u)
+	if err != nil || p.Hostname() == "" || rePrivate.MatchString(p.Hostname()) {
+		return ""
+	}
+	return "https://" + u[7:]
+}
+
+// IsPrivateHost reports a local network address (allowed over plain http).
+func IsPrivateHost(u string) bool {
+	p, err := url.Parse(u)
+	return err == nil && rePrivate.MatchString(p.Hostname())
+}
+
+// Host returns the lower-case host of a URL ("" if none).
+func Host(u string) string {
+	p, err := url.Parse(u)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(p.Hostname())
+}
+
+// Display is the short form shown in the address bar when it is not focused.
+func Display(u string) string {
+	if strings.HasPrefix(u, "https://") {
+		u = u[8:]
+	}
+	u = strings.TrimPrefix(u, "www.")
+	return strings.TrimSuffix(u, "/")
+}
