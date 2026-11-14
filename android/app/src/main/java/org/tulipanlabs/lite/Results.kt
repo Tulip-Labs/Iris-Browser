@@ -45,6 +45,10 @@ class Results(private val ctx: Context) {
         val w = worker ?: WebView(ctx).also { v ->
             v.settings.javaScriptEnabled = true
             v.settings.domStorageEnabled = true
+            // Google's desktop page: the reading scripts are the desktop's, and its mobile page is built differently
+            v.settings.userAgentString = DESKTOP_AGENT
+            v.settings.useWideViewPort = true
+            v.settings.loadWithOverviewMode = true
             v.visibility = View.INVISIBLE
             host.addView(v, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             worker = v
@@ -55,16 +59,19 @@ class Results(private val ctx: Context) {
         }
         var web: List<WebHit>? = null
         var finished = false
+        var stage = 0
         fun finish(hits: List<WebHit>?, images: List<ImageHit>) {
             if (finished || my != seq) return
             finished = true
             w.stopLoading()
             done(hits, images)
         }
-        ui.postDelayed({ finish(web, emptyList()) }, 15000)
+        ui.postDelayed({
+            if (!finished && my == seq) android.util.Log.i("LiteResults", "timed out at stage $stage")
+            finish(web, emptyList())
+        }, 15000)
 
         // first the links, then the pictures
-        var stage = 0
         w.webViewClient = object : WebViewClient() {
             override fun onPageFinished(v: WebView, url: String) {
                 if (my != seq || finished) return
@@ -74,6 +81,7 @@ class Results(private val ctx: Context) {
                     if (stage == 0) {
                         v.evaluateJavascript(webJs) { raw ->
                             val (hits, captcha) = parseWeb(raw)
+                            android.util.Log.i("LiteResults", "web: ${hits.size} links, captcha $captcha, at $url")
                             if (captcha || hits.isEmpty()) {
                                 finish(null, emptyList())
                                 return@evaluateJavascript
@@ -83,7 +91,11 @@ class Results(private val ctx: Context) {
                             v.loadUrl(Search.url(q, Mode.IMAGES))
                         }
                     } else {
-                        v.evaluateJavascript(imagesJs) { raw -> finish(web, parseImages(raw)) }
+                        v.evaluateJavascript(imagesJs) { raw ->
+                            val im = parseImages(raw)
+                            android.util.Log.i("LiteResults", "images: ${im.size}")
+                            finish(web, im)
+                        }
                     }
                 }, if (st == 0) 250 else 900)
             }
@@ -129,6 +141,8 @@ class Results(private val ctx: Context) {
     }
 
     companion object {
+        const val DESKTOP_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+
         private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;")
 
         private fun css(c: Int) = String.format("#%06x", c and 0xffffff)
