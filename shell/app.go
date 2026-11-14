@@ -113,6 +113,9 @@ type App struct {
 	kindEdit  bool // the container editor on the new tab page
 	balance   balancer
 	phone     phoneLink
+	setSec    string // the settings page's section
+	setSc     ui.Scroll
+	kindOpen  bool // the + button's menu
 	apps      []*sideApp
 	syncSrv   *link.SyncServer
 	syncErr   string

@@ -72,20 +72,8 @@ func (a *App) drawPanel(r ui.Rect) {
 		g.FillRect(ui.Rect{X: x, Y: y, W: w, H: 1}, th.Divider)
 		y += 6
 	}
-	note := func(s string) {
-		for _, ln := range wrap(g, s, ui.FSmall, w) {
-			g.Text(ln, x, y+14, ui.FSmall, th.OnSurfaceVariant)
-			y += 18
-		}
-	}
-	check := func(id, label string, v bool) bool {
-		nv := u.Checkbox(ID(id), ui.Rect{X: x, Y: y, W: w, H: 36}, label, v)
-		y += 36
-		return nv
-	}
-
 	// what every browser has, one click away
-	section("This page")
+	section("Menu")
 	{
 		type tool struct {
 			icon  ui.Icon
@@ -94,13 +82,13 @@ func (a *App) drawPanel(r ui.Rect) {
 			act   action
 		}
 		tools := []tool{
+			{ui.IPrivate, "Private tab", "Ctrl+Shift+N", actPrivate},
+			{ui.IContainer, "Containers", "Open a tab in a container, or a temporary or sandbox tab", actKinds},
 			{ui.IHistory, "History", "Ctrl+H", actHistory},
 			{ui.IDownload, "Downloads", "Ctrl+Shift+D", actDownloads},
 			{ui.ISplit, "Split view", "Ctrl+Shift+S", actSplit},
 			{ui.ISearch, "Find", "Find in this page  Ctrl+F", actFind},
 			{ui.IPrint, "Print", "Print, or save as PDF  Ctrl+P", actPrint},
-			{ui.IPhone, "Phone", "Move files to and from your phone with a QR code  Ctrl+Shift+L", actPhone},
-			{ui.IStar, "Muse", "Muse, Meta's AI agent, beside the page  Ctrl+Shift+M", actMuse},
 			{ui.ILock, "Proton Pass", "Your passwords, beside the page", actPass},
 			{ui.IUndo, "Reopen", "Reopen the last closed tab  Ctrl+Shift+T", actReopen},
 		}
@@ -139,329 +127,400 @@ func (a *App) drawPanel(r ui.Rect) {
 	}
 	divider()
 
-	// look
-	section("Look")
-	sw := float32(34)
-	perRow := max(1, int((w+8)/(sw+8)))
-	for i, tm := range ui.Themes {
-		cr := ui.Rect{X: x + float32(i%perRow)*(sw+8), Y: y + float32(i/perRow)*(sw+10), W: sw, H: sw}
-		if tm.Grad != nil {
-			// the three pastels as they merge, with a dot of the accent
-			ui.FillGradient3(g, cr, sw/2, tm.Grad)
-			ui.FillOval(g, ui.RectAround(cr.CX(), cr.CY(), 10, 10), tm.Deep)
-		} else {
-			ui.FillOval(g, cr, tm.G5)
-			ui.FillPathClip(g, ui.NewPath().Ellipse(cr), ui.Rect{X: cr.X, Y: cr.CY(), W: cr.W, H: cr.H / 2}, tm.Deep)
-		}
-		ui.StrokeOval(g, cr.Inset(0.5), 1, th.Outline)
-		if tm.ID == a.set.Theme {
-			ui.StrokeOval(g, cr.Inset(-3), 2, th.Primary)
-		}
-		u.Tooltip(tm.Label, cr)
-		if u.Clickable(ui.IdN("theme", i), cr) {
-			a.set.Theme, a.set.ThemeAt = tm.ID, time.Now().Unix()
-			a.set.Save()
-		}
+	// everything else lives on the settings page
+	if u.Button(ID("psettings"), ui.Rect{X: x, Y: y, W: w, H: 42}, "Settings", ui.ButtonOpt{Icon: ui.ISettings, HasIcon: true, Primary: true, Tip: "Look, search, shields, containers, memory, phone and sync"}) {
+		a.openSettings("")
 	}
-	y += float32((len(ui.Themes)+perRow-1)/perRow)*(sw+10) + 4
-	{
-		g.Text("Tabs", x, y+14, ui.FSmallBold, th.OnSurfaceVariant)
-		y += 22
-		sel := 0
-		if a.set.VerticalTabs {
-			sel = 1
-		}
-		if n := u.Segmented(ID("tablayout"), ui.Rect{X: x, Y: y, W: w, H: 36}, []string{"On top", "At the side"}, sel); n != sel {
-			a.set.VerticalTabs = n == 1
-			a.set.Save()
-		}
-		y += 44
-	}
-	divider()
-
-	// search
-	section("Search")
-	if n := u.Segmented(ID("pmode"), ui.Rect{X: x, Y: y, W: w, H: 36}, core.ModeNames, int(a.set.Mode)); n != int(a.set.Mode) {
-		a.set.Mode = core.Mode(n)
-		a.set.Save()
-	}
-	y += 42
-	if v := check("lite", "Lite results for Google searches", a.set.LiteResults); v != a.set.LiteResults {
-		a.set.LiteResults = v
-		a.set.Save()
-	}
-	note("Google opens in English (US) and is shown on Lite Go's own page: the AI answer, links, pictures and videos, in your theme. \"On Google\" shows the original. Type \"yt \" before words to search YouTube.")
-	divider()
-
-	// Google account
-	signed := a.set.GoogleSignIn == "done"
-	status := "Not signed in: Google may ask to prove you are human"
-	if signed {
-		status = "Signed in: results and AI answers come without human checks"
-	}
-	note(status)
-	y += 4
-	lbl := "Sign in to Google"
-	if signed {
-		lbl = "Sign in again"
-	}
-	if u.Button(ID("psignin"), ui.Rect{X: x, Y: y, W: w, H: 38}, lbl, ui.ButtonOpt{Icon: ui.IPerson, HasIcon: true}) {
-		a.signIn(a.tab())
-	}
-	y += 46
-	divider()
-
-	{
-		// startup
-		section("Startup")
-		if v := check("boost", "Open instantly (stay ready in the background)", a.set.Boost); v != a.set.Boost {
-			a.set.Boost = v
-			a.set.Save()
-			if a.cfg.SetBoost != nil {
-				a.cfg.SetBoost(v)
-			}
-		}
-		note("Lite Go keeps a small, page-free part of itself running after you close the window and when Windows starts, so the window appears the moment you click it.")
-		divider()
-	}
-
-	// shield
-	section("Lite Shields")
-	if v := check("shon", "Shields on", a.shield.On); v != a.shield.On {
-		a.set.Shield = v
-		a.set.Save()
-		sh := a.shield
-		a.web(func() { sh.On = v }) // read on the window thread for every request
-	}
-	host := ""
-	if t != nil {
-		host = strings.TrimPrefix(core.Host(t.URL), "www.")
-	}
-	if host != "" && a.shield.On {
-		full := core.Host(t.URL)
-		off := a.siteOff(full)
-		if v := check("shsite", "Shields off on "+host, off); v != off {
-			a.setSiteOff(full, v)
-			a.reload(t)
-		}
-	}
-	if v := check("shadapt", "Adaptive: scan a site, block where needed", a.set.Adaptive); v != a.set.Adaptive {
-		a.set.Adaptive = v
-		a.set.Save()
-		a.applyPolicy()
-	}
-	if a.set.Adaptive && a.shield.On && a.livePage(t) && host != "" {
-		st, found := a.scan.State(t.URL)
-		msg := ""
-		switch {
-		case t.scanning:
-			msg = "Scanning " + host + " now: every request is checked."
-		case st == core.ScanStandby && !a.scan.Need(t.URL):
-			msg = host + " was scanned and has nothing to block: the shield stands by here, and the page loads straight from the network."
-		case st == core.ScanActive:
-			msg = host + " has ads or trackers (" + comma(found) + " at the last scan): the shield stays on here."
-		case st == core.ScanLearning:
-			msg = host + " looked clean so far; a few more visits decide."
-		}
-		if msg != "" {
-			note(msg)
-			y += 4
-			if u.Button(ID("rescan"), ui.Rect{X: x, Y: y, W: w, H: 34}, "Scan this site again", ui.ButtonOpt{Icon: ui.IReload, HasIcon: true}) {
-				a.scan.Forget(t.URL)
-				a.reload(t)
-			}
-			y += 42
-		}
-	}
-	reloadLists := false
-	if v := check("lists", "Block ads and trackers (filter lists)", a.set.Lists); v != a.set.Lists {
-		a.set.Lists = v
-		a.set.Save()
-		reloadLists = true
-	}
-	if v := check("cookies", "Hide cookie notices", a.set.Cookies); v != a.set.Cookies {
-		a.set.Cookies = v
-		a.set.Save()
-		reloadLists = true
-	}
-	if v := check("clean", "Remove tracking from links", a.set.CleanLinks); v != a.set.CleanLinks {
-		a.set.CleanLinks = v
-		a.set.Save()
-		a.applyPolicy()
-	}
-	if v := check("farble", "Fingerprinting protection", a.set.Farble); v != a.set.Farble {
-		a.set.Farble = v
-		a.set.Save()
-		a.applyPolicy()
-	}
-	if v := check("https", "HTTPS only", a.set.HTTPSOnly); v != a.set.HTTPSOnly {
-		a.set.HTTPSOnly = v
-		a.set.Save()
-		a.applyPolicy()
-	}
-	if v := check("yt", "Clean YouTube (no ads before videos)", a.set.YouTube); v != a.set.YouTube {
-		a.set.YouTube = v
-		a.set.Save()
-		a.applyPolicy()
-	}
-	if v := check("ytlight", "Light YouTube (H.264, no glow or previews)", a.set.YouTubeLight); v != a.set.YouTubeLight {
-		a.set.YouTubeLight = v
-		a.set.Save()
-		a.applyPolicy()
-	}
-	if v := check("strict", "Strict tracking prevention", a.set.Strict); v != a.set.Strict {
-		a.set.Strict = v
-		a.set.Save()
-		a.applyPolicy()
-	}
-	if reloadLists {
-		h := a.h
-		a.core.LoadLists(false, h.Invalidate)
-	}
-	blocked := 0
-	if t != nil {
-		blocked = t.Blocked
-	}
-	note(comma(blocked) + " blocked on this page · " + comma(a.blockedTotal) + " this session")
-	// the lists: how many rules and how fresh
-	lists := "Filter lists are loading…"
-	if f := a.core.Filters.Load(); f != nil {
-		lists = comma(f.Rules) + " blocking and " + comma(f.Hiding) + " hiding rules"
-		if !a.core.ListsAt.IsZero() {
-			lists += " · updated " + ago(a.core.ListsAt)
-		}
-	} else if !a.set.Lists && !a.set.Cookies {
-		lists = "Filter lists are off; the built-in list of " + comma(a.shield.Size()) + " tracker domains still works"
-	} else if a.core.ListsErr != nil {
-		lists = "Could not download the filter lists yet; the built-in list of " + comma(a.shield.Size()) + " domains works meanwhile"
-	}
-	note(lists)
-	y += 4
-	if u.Button(ID("updlists"), ui.Rect{X: x, Y: y, W: w, H: 36}, "Update filter lists", ui.ButtonOpt{Icon: ui.IReload, HasIcon: true, Tip: "EasyList, EasyPrivacy, uBlock filters and EasyList Cookie"}) {
-		h := a.h
-		a.core.LoadLists(true, func() { a.post(func() { a.notify("Filter lists updated.") }); h.Invalidate() })
-		a.notify("Updating the filter lists…")
-	}
-	y += 44
-	note("Sign-in, messaging, human checks and YouTube playback are never blocked. Style sheets and fonts always load, so pages keep their look.")
-	divider()
-
-	// memory
-	section("Memory")
-	live, asleep, unloaded := a.Counts()
-	big := "—"
-	if a.memMB > 0 {
-		big = mb(a.memMB)
-	}
-	g.Text(big, x, y+26, ui.FBig, th.OnSurface)
-	bigW := g.Measure(big, ui.FBig)
-	g.Text("pages", x+bigW+8, y+26, ui.FBody, th.OnSurfaceVariant)
-	if a.appMB > 0 {
-		s := "Lite Go " + mb(a.appMB)
-		g.Text(s, x+w-g.Measure(s, ui.FSmall), y+26, ui.FSmall, th.OnSurfaceVariant)
-	}
-	y += 40
-	// a bar: awake, asleep, unloaded
-	tot := max(1, live+asleep+unloaded)
-	br := ui.Rect{X: x, Y: y, W: w, H: 10}
-	ui.FillRound(g, br, 5, th.SurfaceHighest)
-	bx := br.X
-	for i, n := range []int{live, asleep, unloaded} {
-		if n == 0 {
-			continue
-		}
-		seg := br.W * float32(n) / float32(tot)
-		col := []ui.Color{th.Primary, th.Deep2.Alpha(0.6), th.Outline}[i]
-		ui.FillPathClip(g, ui.NewPath().RoundRect(br, 5), ui.Rect{X: bx, Y: br.Y, W: seg, H: br.H}, col)
-		bx += seg
-	}
-	y += 18
-	note(strconv.Itoa(live) + " awake · " + strconv.Itoa(asleep) + " asleep · " + strconv.Itoa(unloaded) + " unloaded")
-	y += 6
-	profiles := []string{"saver", "balanced", "speed"}
-	pi := 1
-	for i, p := range profiles {
-		if p == a.set.Memory {
-			pi = i
-		}
-	}
-	if n := u.Segmented(ID("memprof"), ui.Rect{X: x, Y: y, W: w, H: 36}, []string{"Saver", "Balanced", "Speed"}, pi); n != pi {
-		a.set.Memory = profiles[n]
-		a.set.Save()
-		a.plan = core.Plan(a.cfg.TotalMB, a.set.Memory)
-		a.lastTick = 0
-	}
-	y += 42
-	if b := a.balance; a.plan.BudgetMB > 0 {
-		s := "Balancer: pages may hold " + mb(float64(a.plan.BudgetMB)) + " together"
-		if b.freeMB > 0 {
-			s += " · " + mb(float64(b.freeMB)) + " free on this computer"
-		}
-		if b.pressure {
-			s += " · making room now"
-		}
-		if b.slept+b.freed > 0 {
-			s += " · put " + strconv.Itoa(b.slept) + " to sleep and unloaded " + strconv.Itoa(b.freed) + " under pressure"
-		}
-		note(s + ".")
-	}
-	note("Background tabs sleep after " + dur(a.plan.SleepAfter) + " and unload after " + dur(a.plan.UnloadAfter) + "; at most " + strconv.Itoa(a.plan.Live) + " tabs stay awake. Tabs playing sound stay awake.")
-	y += 8
-	if u.Button(ID("free"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Free memory now", ui.ButtonOpt{Icon: ui.IMemory2, HasIcon: true}) {
-		a.FreeMemory()
-	}
-	y += 46
-	if u.Button(ID("memrep"), ui.Rect{X: x, Y: y, W: w, H: 36}, "Save a memory report", ui.ButtonOpt{Tip: "Writes memory-report.txt to the settings folder"}) {
-		if p, err := a.memoryReport(); err == nil {
-			a.notify("Saved " + p)
-			a.bar.until = a.now() + 8
-		} else {
-			a.notify("Could not save the report: " + err.Error())
-		}
-	}
-	y += 44
-	divider()
-
-	// data
-	section("Data")
-	if v := check("restore", "Reopen the last tabs when Lite Go starts", a.set.Restore); v != a.set.Restore {
-		a.set.Restore = v
-		a.set.Save()
-	}
-	if u.Button(ID("clearh"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Clear history", ui.ButtonOpt{}) {
-		a.hist.Clear()
-		a.notify("History cleared.")
-	}
-	y += 48
-	note("Lite Go keeps no bookmarks. History feeds address suggestions and stays on this computer.")
-	divider()
-
-	// about
-	section("About")
-	ver := "Lite Go " + a.cfg.Version
-	if a.eng != nil && a.eng.Version() != "" {
-		ver += " · WebView2 " + a.eng.Version()
-	}
-	note(ver)
-	switch a.integrity {
-	case IntegrityVerified:
-		note("Program file verified: it is the one that was installed.")
-	case IntegrityProtected:
-		note("Installed as a Windows package: Windows keeps the program read-only and verifies it.")
-	case IntegrityChanged:
-		note("Warning: the program file is not the one that was installed. Install Lite Go again from a source you trust.")
-	}
-	note("Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · GPL 3.0")
-	y += 8
-	if u.Button(ID("quit"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Quit Lite Go", ui.ButtonOpt{Icon: ui.IClose, HasIcon: true, Tip: "Closes the window and the part that keeps it ready"}) {
+	y += 50
+	if u.Button(ID("quit"), ui.Rect{X: x, Y: y, W: w, H: 38}, "Quit Lite Go", ui.ButtonOpt{Icon: ui.IClose, HasIcon: true, Tip: "Closes the window and the part that keeps it ready"}) {
 		a.h.Quit()
 	}
-	y += 48
-	note("Shortcuts: Ctrl+T new tab, Ctrl+Shift+N private, Ctrl+W close, Ctrl+Shift+T reopen, Ctrl+L address, Ctrl+Tab next, Alt+Left back, Ctrl+F find, Ctrl+P print, Ctrl+H history, Ctrl+Shift+D downloads, Ctrl+Shift+S split view, Ctrl+plus and Ctrl+minus zoom, F11 full screen.")
-	y += 16
+	y += 46
 	sc.Content = y + sc.Y - body.Y
 	a.u.PopHit()
 	g.Restore()
+}
+
+// settingsBody draws one section of the settings (sec) from y, in a column
+// at x of width w, and returns where it ends.
+func (a *App) settingsBody(x, y, w float32, sec string) float32 {
+	u, g, th := &a.u, a.u.G, a.u.Th
+	t := a.tab()
+	if t != nil && t.settings {
+		t = nil // the settings page itself is not a site
+	}
+	section := func(title string) {
+		y += 10
+		g.Text(title, x, y+16, ui.FTitle, th.OnSurface)
+		y += 34
+	}
+	divider := func() {
+		y += 10
+		g.FillRect(ui.Rect{X: x, Y: y, W: w, H: 1}, th.Divider)
+		y += 6
+	}
+	note := func(s string) {
+		for _, ln := range wrap(g, s, ui.FSmall, w) {
+			g.Text(ln, x, y+14, ui.FSmall, th.OnSurfaceVariant)
+			y += 18
+		}
+	}
+	check := func(id, label string, v bool) bool {
+		nv := u.Checkbox(ID(id), ui.Rect{X: x, Y: y, W: w, H: 36}, label, v)
+		y += 36
+		return nv
+	}
+	_, _ = divider, check
+	if sec == "look" {
+		// look
+		section("Appearance")
+		// each palette as a tile with its name
+		const tw, thh, gap = 128, 84, 10
+		per := max(1, int((w+gap)/(tw+gap)))
+		for i, tm := range ui.Themes {
+			cr := ui.Rect{X: x + float32(i%per)*(tw+gap), Y: y + float32(i/per)*(thh+gap), W: tw, H: thh}
+			sw := ui.Rect{X: cr.X + 6, Y: cr.Y + 6, W: cr.W - 12, H: 44}
+			if tm.Grad != nil {
+				ui.FillGradient3(g, sw, 10, tm.Grad)
+			} else {
+				ui.FillRound(g, sw, 10, tm.G5)
+				ui.FillRound(g, ui.Rect{X: sw.X, Y: sw.CY(), W: sw.W, H: sw.H / 2}, 10, tm.Deep)
+				g.FillRect(ui.Rect{X: sw.X, Y: sw.CY(), W: sw.W, H: 10}, tm.Deep)
+			}
+			ui.FillOval(g, ui.RectAround(sw.R()-14, sw.Y+14, 14, 14), tm.Primary)
+			on := tm.ID == a.set.Theme
+			switch {
+			case on:
+				ui.StrokeRound(g, cr, 14, 2, th.Primary)
+			case u.Hover(cr):
+				ui.FillRound(g, cr, 14, th.Ink.Alpha(0.05))
+			default:
+				ui.StrokeRound(g, cr, 14, 1, th.OutlineVariant)
+			}
+			f := ui.FSmall
+			if on {
+				f = ui.FSmallBold
+			}
+			ui.TextCenter(g, ui.Fit(g, tm.Label, f, tw-12), ui.Rect{X: cr.X, Y: sw.B() + 4, W: cr.W, H: 24}, f, th.OnSurface)
+			if u.Clickable(ui.IdN("theme", i), cr) {
+				a.set.Theme, a.set.ThemeAt = tm.ID, time.Now().Unix()
+				a.set.Save()
+			}
+		}
+		y += float32((len(ui.Themes)+per-1)/per)*(thh+gap) + 10
+		{
+			g.Text("Tabs", x, y+14, ui.FSmallBold, th.OnSurfaceVariant)
+			y += 22
+			sel := 0
+			if a.set.VerticalTabs {
+				sel = 1
+			}
+			if n := u.Segmented(ID("tablayout"), ui.Rect{X: x, Y: y, W: w, H: 36}, []string{"On top", "At the side"}, sel); n != sel {
+				a.set.VerticalTabs = n == 1
+				a.set.Save()
+			}
+			y += 44
+		}
+		divider()
+
+	}
+	if sec == "search" {
+		// search
+		section("Search")
+		if n := u.Segmented(ID("pmode"), ui.Rect{X: x, Y: y, W: w, H: 36}, core.ModeNames, int(a.set.Mode)); n != int(a.set.Mode) {
+			a.set.Mode = core.Mode(n)
+			a.set.Save()
+		}
+		y += 42
+		if v := check("lite", "Lite results for Google searches", a.set.LiteResults); v != a.set.LiteResults {
+			a.set.LiteResults = v
+			a.set.Save()
+		}
+		note("Google opens in English (US) and is shown on Lite Go's own page: the AI answer, links, pictures and videos, in your theme. \"On Google\" shows the original. Type \"yt \" before words to search YouTube.")
+		divider()
+
+		// Google account
+		signed := a.set.GoogleSignIn == "done"
+		status := "Not signed in: Google may ask to prove you are human"
+		if signed {
+			status = "Signed in: results and AI answers come without human checks"
+		}
+		note(status)
+		y += 4
+		lbl := "Sign in to Google"
+		if signed {
+			lbl = "Sign in again"
+		}
+		if u.Button(ID("psignin"), ui.Rect{X: x, Y: y, W: w, H: 38}, lbl, ui.ButtonOpt{Icon: ui.IPerson, HasIcon: true}) {
+			a.signIn(a.tab())
+		}
+		y += 46
+		divider()
+
+	}
+	if sec == "startup" {
+		{
+			// startup
+			section("On startup")
+			if v := check("boost", "Open instantly (stay ready in the background)", a.set.Boost); v != a.set.Boost {
+				a.set.Boost = v
+				a.set.Save()
+				if a.cfg.SetBoost != nil {
+					a.cfg.SetBoost(v)
+				}
+			}
+			note("Lite Go keeps a small, page-free part of itself running after you close the window and when Windows starts, so the window appears the moment you click it.")
+			divider()
+		}
+
+	}
+	if sec == "shields" {
+		// shield
+		section("Shields and privacy")
+		if v := check("shon", "Shields on", a.shield.On); v != a.shield.On {
+			a.set.Shield = v
+			a.set.Save()
+			sh := a.shield
+			a.web(func() { sh.On = v }) // read on the window thread for every request
+		}
+		host := ""
+		if t != nil {
+			host = strings.TrimPrefix(core.Host(t.URL), "www.")
+		}
+		if host != "" && a.shield.On {
+			full := core.Host(t.URL)
+			off := a.siteOff(full)
+			if v := check("shsite", "Shields off on "+host, off); v != off {
+				a.setSiteOff(full, v)
+				a.reload(t)
+			}
+		}
+		if v := check("shadapt", "Adaptive: scan a site, block where needed", a.set.Adaptive); v != a.set.Adaptive {
+			a.set.Adaptive = v
+			a.set.Save()
+			a.applyPolicy()
+		}
+		if a.set.Adaptive && a.shield.On && a.livePage(t) && host != "" {
+			st, found := a.scan.State(t.URL)
+			msg := ""
+			switch {
+			case t.scanning:
+				msg = "Scanning " + host + " now: every request is checked."
+			case st == core.ScanStandby && !a.scan.Need(t.URL):
+				msg = host + " was scanned and has nothing to block: the shield stands by here, and the page loads straight from the network."
+			case st == core.ScanActive:
+				msg = host + " has ads or trackers (" + comma(found) + " at the last scan): the shield stays on here."
+			case st == core.ScanLearning:
+				msg = host + " looked clean so far; a few more visits decide."
+			}
+			if msg != "" {
+				note(msg)
+				y += 4
+				if u.Button(ID("rescan"), ui.Rect{X: x, Y: y, W: w, H: 34}, "Scan this site again", ui.ButtonOpt{Icon: ui.IReload, HasIcon: true}) {
+					a.scan.Forget(t.URL)
+					a.reload(t)
+				}
+				y += 42
+			}
+		}
+		reloadLists := false
+		if v := check("lists", "Block ads and trackers (filter lists)", a.set.Lists); v != a.set.Lists {
+			a.set.Lists = v
+			a.set.Save()
+			reloadLists = true
+		}
+		if v := check("cookies", "Hide cookie notices", a.set.Cookies); v != a.set.Cookies {
+			a.set.Cookies = v
+			a.set.Save()
+			reloadLists = true
+		}
+		if v := check("clean", "Remove tracking from links", a.set.CleanLinks); v != a.set.CleanLinks {
+			a.set.CleanLinks = v
+			a.set.Save()
+			a.applyPolicy()
+		}
+		if v := check("farble", "Fingerprinting protection", a.set.Farble); v != a.set.Farble {
+			a.set.Farble = v
+			a.set.Save()
+			a.applyPolicy()
+		}
+		if v := check("https", "HTTPS only", a.set.HTTPSOnly); v != a.set.HTTPSOnly {
+			a.set.HTTPSOnly = v
+			a.set.Save()
+			a.applyPolicy()
+		}
+		if v := check("yt", "Clean YouTube (no ads before videos)", a.set.YouTube); v != a.set.YouTube {
+			a.set.YouTube = v
+			a.set.Save()
+			a.applyPolicy()
+		}
+		if v := check("ytlight", "Light YouTube (H.264, no glow or previews)", a.set.YouTubeLight); v != a.set.YouTubeLight {
+			a.set.YouTubeLight = v
+			a.set.Save()
+			a.applyPolicy()
+		}
+		if v := check("strict", "Strict tracking prevention", a.set.Strict); v != a.set.Strict {
+			a.set.Strict = v
+			a.set.Save()
+			a.applyPolicy()
+		}
+		if reloadLists {
+			h := a.h
+			a.core.LoadLists(false, h.Invalidate)
+		}
+		blocked := 0
+		if t != nil {
+			blocked = t.Blocked
+		}
+		if t != nil {
+			note(comma(blocked) + " blocked on this page · " + comma(a.blockedTotal) + " this session")
+		} else {
+			note(comma(a.blockedTotal) + " ads and trackers blocked this session")
+		}
+		// the lists: how many rules and how fresh
+		lists := "Filter lists are loading…"
+		if f := a.core.Filters.Load(); f != nil {
+			lists = comma(f.Rules) + " blocking and " + comma(f.Hiding) + " hiding rules"
+			if !a.core.ListsAt.IsZero() {
+				lists += " · updated " + ago(a.core.ListsAt)
+			}
+		} else if !a.set.Lists && !a.set.Cookies {
+			lists = "Filter lists are off; the built-in list of " + comma(a.shield.Size()) + " tracker domains still works"
+		} else if a.core.ListsErr != nil {
+			lists = "Could not download the filter lists yet; the built-in list of " + comma(a.shield.Size()) + " domains works meanwhile"
+		}
+		note(lists)
+		y += 4
+		if u.Button(ID("updlists"), ui.Rect{X: x, Y: y, W: w, H: 36}, "Update filter lists", ui.ButtonOpt{Icon: ui.IReload, HasIcon: true, Tip: "EasyList, EasyPrivacy, uBlock filters and EasyList Cookie"}) {
+			h := a.h
+			a.core.LoadLists(true, func() { a.post(func() { a.notify("Filter lists updated.") }); h.Invalidate() })
+			a.notify("Updating the filter lists…")
+		}
+		y += 44
+		note("Sign-in, messaging, human checks and YouTube playback are never blocked. Pictures, video, style sheets and fonts always load, so pages keep their look.")
+		divider()
+
+	}
+	if sec == "memory" {
+		// memory
+		section("Performance")
+		live, asleep, unloaded := a.Counts()
+		big := "—"
+		if a.memMB > 0 {
+			big = mb(a.memMB)
+		}
+		g.Text(big, x, y+26, ui.FBig, th.OnSurface)
+		bigW := g.Measure(big, ui.FBig)
+		g.Text("pages", x+bigW+8, y+26, ui.FBody, th.OnSurfaceVariant)
+		if a.appMB > 0 {
+			s := "Lite Go " + mb(a.appMB)
+			g.Text(s, x+w-g.Measure(s, ui.FSmall), y+26, ui.FSmall, th.OnSurfaceVariant)
+		}
+		y += 40
+		// a bar: awake, asleep, unloaded
+		tot := max(1, live+asleep+unloaded)
+		br := ui.Rect{X: x, Y: y, W: w, H: 10}
+		ui.FillRound(g, br, 5, th.SurfaceHighest)
+		bx := br.X
+		for i, n := range []int{live, asleep, unloaded} {
+			if n == 0 {
+				continue
+			}
+			seg := br.W * float32(n) / float32(tot)
+			col := []ui.Color{th.Primary, th.Deep2.Alpha(0.6), th.Outline}[i]
+			ui.FillPathClip(g, ui.NewPath().RoundRect(br, 5), ui.Rect{X: bx, Y: br.Y, W: seg, H: br.H}, col)
+			bx += seg
+		}
+		y += 18
+		note(strconv.Itoa(live) + " awake · " + strconv.Itoa(asleep) + " asleep · " + strconv.Itoa(unloaded) + " unloaded")
+		y += 6
+		profiles := []string{"saver", "balanced", "speed"}
+		pi := 1
+		for i, p := range profiles {
+			if p == a.set.Memory {
+				pi = i
+			}
+		}
+		if n := u.Segmented(ID("memprof"), ui.Rect{X: x, Y: y, W: w, H: 36}, []string{"Saver", "Balanced", "Speed"}, pi); n != pi {
+			a.set.Memory = profiles[n]
+			a.set.Save()
+			a.plan = core.Plan(a.cfg.TotalMB, a.set.Memory)
+			a.lastTick = 0
+		}
+		y += 42
+		if b := a.balance; a.plan.BudgetMB > 0 {
+			s := "Balancer: pages may hold " + mb(float64(a.plan.BudgetMB)) + " together"
+			if b.freeMB > 0 {
+				s += " · " + mb(float64(b.freeMB)) + " free on this computer"
+			}
+			if b.pressure {
+				s += " · making room now"
+			}
+			if b.slept+b.freed > 0 {
+				s += " · put " + strconv.Itoa(b.slept) + " to sleep and unloaded " + strconv.Itoa(b.freed) + " under pressure"
+			}
+			note(s + ".")
+		}
+		note("Background tabs sleep after " + dur(a.plan.SleepAfter) + " and unload after " + dur(a.plan.UnloadAfter) + "; at most " + strconv.Itoa(a.plan.Live) + " tabs stay awake. Tabs playing sound stay awake.")
+		y += 8
+		if u.Button(ID("free"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Free memory now", ui.ButtonOpt{Icon: ui.IMemory2, HasIcon: true}) {
+			a.FreeMemory()
+		}
+		y += 46
+		if u.Button(ID("memrep"), ui.Rect{X: x, Y: y, W: w, H: 36}, "Save a memory report", ui.ButtonOpt{Tip: "Writes memory-report.txt to the settings folder"}) {
+			if p, err := a.memoryReport(); err == nil {
+				a.notify("Saved " + p)
+				a.bar.until = a.now() + 8
+			} else {
+				a.notify("Could not save the report: " + err.Error())
+			}
+		}
+		y += 44
+		divider()
+
+	}
+	if sec == "data" {
+		// data
+		section("History and data")
+		if v := check("restore", "Reopen the last tabs when Lite Go starts", a.set.Restore); v != a.set.Restore {
+			a.set.Restore = v
+			a.set.Save()
+		}
+		if u.Button(ID("clearh"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Clear history", ui.ButtonOpt{}) {
+			a.hist.Clear()
+			a.notify("History cleared.")
+		}
+		y += 48
+		note("Lite Go keeps no bookmarks. History feeds address suggestions and stays on this computer.")
+		divider()
+
+	}
+	if sec == "about" {
+		// about
+		section("About Lite Go")
+		ver := "Lite Go " + a.cfg.Version
+		if a.eng != nil && a.eng.Version() != "" {
+			ver += " · WebView2 " + a.eng.Version()
+		}
+		note(ver)
+		switch a.integrity {
+		case IntegrityVerified:
+			note("Program file verified: it is the one that was installed.")
+		case IntegrityProtected:
+			note("Installed as a Windows package: Windows keeps the program read-only and verifies it.")
+		case IntegrityChanged:
+			note("Warning: the program file is not the one that was installed. Install Lite Go again from a source you trust.")
+		}
+		note("Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · GPL 3.0")
+		y += 8
+		if u.Button(ID("quit"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Quit Lite Go", ui.ButtonOpt{Icon: ui.IClose, HasIcon: true, Tip: "Closes the window and the part that keeps it ready"}) {
+			a.h.Quit()
+		}
+		y += 48
+		note("Shortcuts: Ctrl+T new tab, Ctrl+Shift+N private, Ctrl+W close, Ctrl+Shift+T reopen, Ctrl+L address, Ctrl+Tab next, Alt+Left back, Ctrl+F find, Ctrl+P print, Ctrl+H history, Ctrl+Shift+D downloads, Ctrl+Shift+S split view, Ctrl+plus and Ctrl+minus zoom, F11 full screen.")
+		y += 16
+	}
+	return y
 }
 
 func dur(s float64) string {

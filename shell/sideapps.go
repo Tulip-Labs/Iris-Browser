@@ -9,7 +9,7 @@ import (
 
 // A side app is a website kept in the side panel, beside whatever page is
 // open: it stays signed in and keeps its place while the panel is closed.
-// Lite Go comes with two: Muse (Meta's AI agent) and Proton Pass (passwords).
+// Lite Go comes with Proton Pass (passwords).
 // They are the sites themselves, shown in a narrow view; Lite Go adds nothing
 // to them and reads nothing from them.
 type sideApp struct {
@@ -24,7 +24,6 @@ type sideApp struct {
 
 func defaultSideApps() []*sideApp {
 	return []*sideApp{
-		{id: "muse", name: "Muse", url: "https://www.meta.ai/", icon: ui.IStar, tip: "Muse, Meta's AI agent, beside the page  Ctrl+Shift+M"},
 		{id: "pass", name: "Proton Pass", url: "https://pass.proton.me/", icon: ui.ILock, tip: "Proton Pass, your passwords, beside the page"},
 	}
 }

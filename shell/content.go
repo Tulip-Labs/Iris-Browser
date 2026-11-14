@@ -18,6 +18,8 @@ func (a *App) content(r ui.Rect) {
 		return
 	}
 	switch {
+	case t.settings:
+		a.settingsPage(r)
 	case t.URL == "":
 		a.ntp(r, t)
 	case t.search != nil:
@@ -185,11 +187,6 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 
 	// search modes as M3 filter chips
 	y += a.modeChips(cx, y, r.W-32, func() { a.st.Focus = id; a.suggest(a.ntpQ.Text()) })
-
-	// what kind of tab this is (hidden while suggestions cover the place)
-	if !(focused && len(a.sugg) > 0) {
-		y += a.kindPicker(cx, y+22, colW, t) + 22
-	}
 
 	// footer: what the shield did and how much memory the pages use
 	fy := r.B() - 34

@@ -50,6 +50,7 @@ type Tab struct {
 	pageURL      string
 	last         float64 // when it was last the current tab
 	closed       bool
+	settings     bool    // the settings page (no web page)
 	zoom         float64 // 0 or 1 = the page's normal size
 	background   bool    // the engine was told nobody is looking at it
 	// adaptive shields: whether this page is being scanned, and what was found
@@ -244,7 +245,10 @@ func (a *App) navigate(t *Tab, url string) {
 	if t.search != nil {
 		t.lastSearch = t.search
 	}
-	t.search = nil
+	if t.settings {
+		t.Title = ""
+	}
+	t.search, t.settings = nil, false
 	t.URL, t.Loading, t.Crashed, t.Blocked = url, true, false, 0
 	if t.Title == "" {
 		t.Title = core.Display(url)
