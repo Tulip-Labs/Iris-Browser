@@ -55,6 +55,17 @@ jobs:
         with:
           name: flatpak
           path: LiteGo-x86_64.flatpak
+      - name: The Flatpak installs and starts
+        continue-on-error: true
+        run: |
+          set -x
+          flatpak install --user -y --noninteractive LiteGo-x86_64.flatpak
+          (command -v xvfb-run || dnf install -y -q xorg-x11-server-Xvfb xorg-x11-xauth || true) >/dev/null 2>&1
+          export LIBGL_ALWAYS_SOFTWARE=1 LITEGO_GL_DEBUG=1
+          timeout 25 xvfb-run -a flatpak run io.github.tulip_labs.LiteGo about:blank > log.txt 2>&1
+          code=$?
+          cat log.txt
+          [ $code = 124 ] && ! grep -q "no GPU drawing" log.txt
 
   # Installs each package the way a reader would, then starts Lite Go in a
   # virtual display: it must still be running after 20 seconds.
