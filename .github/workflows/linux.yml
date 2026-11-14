@@ -116,7 +116,8 @@ jobs:
           code=$?
           cat /tmp/log.txt
           [ $code = 124 ] || { echo "Lite Go exited with $code before 20 seconds"; exit 1; }
-          echo "Lite Go ran for 20 seconds."
+          ! grep -q "no GPU drawing\|no OpenGL context" /tmp/log.txt || { echo "Lite Go ran but could not draw"; exit 1; }
+          echo "Lite Go ran for 20 seconds and drew its window."
           SH
           chmod 755 /tmp/smoke.sh
           su tester -c "sh /tmp/smoke.sh"
@@ -137,6 +138,7 @@ jobs:
           code=$?
           cat /tmp/log.txt
           [ $code = 124 ] || { echo "Lite Go exited with $code on Wayland before 20 seconds"; exit 1; }
+          ! grep -q "no GPU drawing\|no OpenGL context" /tmp/log.txt || { echo "Lite Go ran on Wayland but could not draw"; exit 1; }
           echo "Lite Go ran for 20 seconds on Wayland."
           SH
           su tester -c "sh /tmp/wl.sh"
@@ -149,13 +151,10 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: experimental-features = nix-command flakes
-      - name: go.sum
+      - name: go.mod and go.sum are tidy
         run: |
-          if [ ! -f go.sum ]; then
-            nix shell nixpkgs#go -c go mod tidy
-            git add go.sum
-            echo "----- go.sum -----"; cat go.sum; echo "----- end -----"
-          fi
+          nix shell nixpkgs#go -c go mod tidy
+          git diff --exit-code go.mod go.sum || { echo "run go mod tidy and commit go.mod and go.sum"; exit 1; }
       - name: nix build
         run: |
           nix build -L .#default

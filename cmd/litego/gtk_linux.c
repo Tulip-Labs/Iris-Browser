@@ -268,6 +268,10 @@ static const char *appID(void) {
 }
 
 void lgwInit(void) {
+	// OpenGL ES for the GL area, as Gio's renderer needs (its GLSL ES shaders
+	// fail on a desktop GL context); set before GTK starts, unless the user
+	// chose otherwise
+	if (!g_getenv("GDK_GL")) g_setenv("GDK_GL", "gles", TRUE);
 	// GTK picks the session's own display server: Wayland where there is one
 	gtk_init(NULL, NULL);
 	g_object_set(gtk_settings_get_default(), "gtk-application-prefer-dark-theme", FALSE, NULL);
