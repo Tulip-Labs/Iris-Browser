@@ -14,7 +14,7 @@
           pname = "lite-go-browser";
           version = "1.0.4";
           src = self;
-          vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+          vendorHash = "sha256-DUuIMLR+RLt5e6kRZcxRdGo4Q4i9ZGR7ia629F8Vp2o=";
           subPackages = [ "cmd/litego" ];
           tags = [ "webkit" "novulkan" ];
           ldflags = [ "-s" "-w" ];

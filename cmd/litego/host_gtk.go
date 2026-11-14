@@ -30,6 +30,7 @@ int lgwWayland(void);
 import "C"
 
 import (
+	"fmt"
 	"image"
 	"log"
 	"os"
@@ -189,7 +190,7 @@ func lgwGoRender(w, ht C.int, sf C.int, fbo C.uint) {
 	}
 	h.sf = max(int(sf), 1)
 	if glr == nil {
-		g, err := gpu.New(gpu.OpenGL{Shared: true})
+		g, err := newGPU()
 		if err != nil {
 			log.Println("Lite Go: no GPU drawing:", err)
 			return
@@ -493,4 +494,15 @@ func lgwGoPaste(s *C.char) {
 		h.in.Paste += t
 		h.Invalidate()
 	}
+}
+
+// newGPU makes Gio's renderer on the GL area's context; Gio panics on a
+// context it cannot use, which becomes an error here instead of a crash.
+func newGPU() (g gpu.GPU, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	return gpu.New(gpu.OpenGL{Shared: true})
 }

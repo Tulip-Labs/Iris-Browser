@@ -112,7 +112,6 @@ jobs:
           cat > /tmp/smoke.sh <<'SH'
           export XDG_RUNTIME_DIR=$(mktemp -d)
           export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LITEGO_GL_DEBUG=1
-          for gl in "" gles; do echo "== GDK_GL=$gl"; GDK_GL=$gl timeout 8 xvfb-run -a lite-go about:blank 2>&1 | grep -E "Lite Go:|panic" ; done
           timeout 20 xvfb-run -a -s "-screen 0 1280x800x24" lite-go about:blank > /tmp/log.txt 2>&1
           code=$?
           cat /tmp/log.txt
@@ -121,6 +120,26 @@ jobs:
           SH
           chmod 755 /tmp/smoke.sh
           su tester -c "sh /tmp/smoke.sh"
+      - name: Lite Go starts on Wayland too (a headless Weston)
+        run: |
+          case "${{ matrix.kind }}" in
+          deb) DEBIAN_FRONTEND=noninteractive apt-get install -y -qq weston >/dev/null ;;
+          rpm) dnf install -y -q weston ;;
+          zypper) zypper --non-interactive -q install weston ;;
+          tar) pacman -S --noconfirm --needed weston >/dev/null ;;
+          esac
+          cat > /tmp/wl.sh <<'SH'
+          export XDG_RUNTIME_DIR=$(mktemp -d) LIBGL_ALWAYS_SOFTWARE=1 LITEGO_GL_DEBUG=1
+          weston --backend=headless --renderer=gl --socket=wl-test --width=1280 --height=800 > /tmp/weston.txt 2>&1 &
+          for i in $(seq 1 50); do [ -S "$XDG_RUNTIME_DIR/wl-test" ] && break; sleep 0.2; done
+          if [ ! -S "$XDG_RUNTIME_DIR/wl-test" ]; then echo "Weston did not start here; skipped:"; tail -5 /tmp/weston.txt; exit 0; fi
+          WAYLAND_DISPLAY=wl-test GDK_BACKEND=wayland timeout 20 lite-go about:blank > /tmp/log.txt 2>&1
+          code=$?
+          cat /tmp/log.txt
+          [ $code = 124 ] || { echo "Lite Go exited with $code on Wayland before 20 seconds"; exit 1; }
+          echo "Lite Go ran for 20 seconds on Wayland."
+          SH
+          su tester -c "sh /tmp/wl.sh"
 
   # nix build github:Tulip-Labs/Lite-Go-Browser must keep working
   nix:

@@ -303,6 +303,9 @@ uintptr_t lgwOpen(int w, int h, int maximized) {
 
 	area = gtk_gl_area_new();
 	gtk_gl_area_set_has_alpha(GTK_GL_AREA(area), FALSE);
+	// OpenGL ES, as Gio's renderer expects: Gio loads libGLESv2 and its
+	// shaders are GLSL ES, which a desktop core profile context rejects
+	gtk_gl_area_set_use_es(GTK_GL_AREA(area), TRUE);
 	gtk_gl_area_set_auto_render(GTK_GL_AREA(area), FALSE);
 	g_signal_connect(area, "render", G_CALLBACK(onRender), NULL);
 	g_signal_connect(area, "realize", G_CALLBACK(onRealize), NULL);
