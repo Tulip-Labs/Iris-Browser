@@ -2,7 +2,6 @@
 # VERSION and ARCH come from the environment.
 name: lite-go-browser
 version: ${VERSION}
-release: 1
 arch: ${ARCH}
 platform: linux
 section: web
