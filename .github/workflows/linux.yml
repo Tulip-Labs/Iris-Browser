@@ -45,12 +45,15 @@ jobs:
       options: --privileged
     steps:
       - uses: actions/checkout@v4
-      - uses: flathub-infra/flatpak-github-actions/flatpak-builder@master
-        with:
-          bundle: LiteGo-x86_64.flatpak
-          manifest-path: packaging/flatpak/io.github.tulip_labs.LiteGo.yml
-          cache: false
-          upload-artifact: false
+      - name: Build the Flatpak bundle
+        run: |
+          # the SDK in the image is used as it is (updating it in a container
+          # fails); the Go extension goes into the user installation
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub org.freedesktop.Sdk.Extension.golang//25.08
+          flatpak-builder --disable-rofiles-fuse --force-clean --repo=repo build packaging/flatpak/io.github.tulip_labs.LiteGo.yml
+          flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo repo LiteGo-x86_64.flatpak io.github.tulip_labs.LiteGo
+          ls -l LiteGo-x86_64.flatpak
       - uses: actions/upload-artifact@v4
         with:
           name: flatpak
