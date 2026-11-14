@@ -1,6 +1,8 @@
 package shell
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -660,4 +662,63 @@ func TestSettingsPageAndChrome(t *testing.T) {
 	d2.a.openSettings("containers")
 	d2.frames(2)
 	d2.shot("settings-narrow")
+}
+
+// A page that is downloading stays open when its tab goes to the background,
+// gets old, or is closed: the download must not stop or get stuck.
+func TestDownloadSurvivesTabs(t *testing.T) {
+	d := newDriver(t, 1280, 800, true)
+	d.frames(2)
+	d.open("https://example.com/files")
+	src := d.a.tab()
+	v := src.view.(*fakeView)
+	dl := webview.Download{ID: 3, URL: "https://example.com/files/big.iso", Total: 1 << 30, Received: 1 << 20, View: v,
+		Cancel: func() {}}
+	d.eng.policy.Download(dl)
+	// another tab in front, then a long time passes
+	d.a.newTab(src.Kind, src.Container, "https://example.org/", true)
+	d.frames(2)
+	d.a.In.Now += 3600
+	d.a.tick()
+	d.a.FreeMemory()
+	d.frames(2)
+	if src.view == nil || v.asleep || v.closed || v.background {
+		t.Fatalf("the downloading page was put away: view=%v asleep=%v closed=%v background=%v", src.view != nil, v.asleep, v.closed, v.background)
+	}
+	// closing its tab hides the page but keeps it until the download ends
+	for i, x := range d.a.tabs {
+		if x == src {
+			d.a.closeTab(i)
+		}
+	}
+	d.frames(1)
+	if v.closed || v.visible {
+		t.Fatalf("closed tab: page closed=%v visible=%v", v.closed, v.visible)
+	}
+	dl.Received, dl.State, dl.Cancel = dl.Total, webview.DownloadDone, nil
+	d.eng.policy.Download(dl)
+	d.frames(1)
+	if !v.closed {
+		t.Fatal("the page should close once its download is done")
+	}
+}
+
+func TestUpdatesSection(t *testing.T) {
+	for _, k := range []string{"user", "deb", "nix"} {
+		d := newDriver(t, 1280, 800, false)
+		d.a.cfg.UpdateKind = k
+		d.a.upd.status = "Lite Go 1.0 is the latest version."
+		d.a.openSettings("about")
+		d.frames(2)
+		if os.Getenv("SHOTS") != "" {
+			d.last.SavePNG(filepath.Join(os.Getenv("SHOTS"), "settings-updates-"+k+".png"))
+		}
+	}
+	// no kind: no checks (tests, screenshots)
+	d := newDriver(t, 1280, 800, false)
+	d.a.In.Now = 100
+	d.a.updateTick()
+	if d.a.upd.busy {
+		t.Fatal("checked for updates without an install kind")
+	}
 }

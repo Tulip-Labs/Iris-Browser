@@ -4,6 +4,7 @@
 #                                elsewhere: the Windows files
 #   ./build-litego.sh linux      Lite Go for Linux only (needs the WebKitGTK development files)
 #   ./build-litego.sh windows    the Windows files only (cross-built, no C compiler needed)
+#   ./build-litego.sh packages   Lite Go for Linux as .deb and .rpm too (fetches nfpm)
 #   ./build-litego.sh install    build for Linux and install for the current user (~/.local)
 #   ./build-litego.sh uninstall  remove that install
 set -e
@@ -44,17 +45,7 @@ build_linux() {
 	CGO_ENABLED=1 go build -tags "webkit novulkan" -trimpath -ldflags "-s -w" -o dist/linux/lite-go ./cmd/litego
 	go run tools/sum.go dist/linux/lite-go # the record Lite Go checks itself against
 	cp assets/icon.png dist/linux/lite-go.png
-	cat > dist/linux/lite-go.desktop <<DESK
-[Desktop Entry]
-Type=Application
-Name=Lite Go
-Comment=A light, fast browser
-Exec=lite-go %U
-Icon=lite-go
-StartupWMClass=lite-go
-Categories=Network;WebBrowser;
-MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;
-DESK
+	cp packaging/linux/lite-go.desktop dist/linux/
 	cp LICENSE NOTICE THIRD_PARTY_NOTICES.md packaging/linux/install.sh dist/linux/
 	chmod +x dist/linux/install.sh
 	arch=$(uname -m)
@@ -62,6 +53,26 @@ DESK
 	tar -C dist -czf "dist/LiteGo-linux-$arch.tar.gz" --transform "s,^linux,LiteGo-linux-$arch," linux
 	echo "Done: dist/linux/lite-go and dist/LiteGo-linux-$arch.tar.gz"
 	echo "Install it with: ./build-litego.sh install   (or dist/linux/install.sh)"
+}
+
+# version is the one the program reports (cmd/litego/main.go).
+version() { sed -n 's/^const version = "\(.*\)"/\1/p' cmd/litego/main.go; }
+
+build_packages() {
+	build_linux
+	export VERSION
+	VERSION=$(version)
+	case "$(uname -m)" in
+	x86_64) ARCH=amd64 ;;
+	aarch64) ARCH=arm64 ;;
+	*) ARCH=$(uname -m) ;;
+	esac
+	export ARCH
+	nfpm="go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.0"
+	for p in deb rpm; do
+		$nfpm package --config packaging/linux/nfpm.yaml --packager $p --target dist/
+	done
+	ls dist/*.deb dist/*.rpm
 }
 
 build_windows() {
@@ -101,6 +112,7 @@ auto)
 	fi
 	;;
 linux) build_linux ;;
+packages) build_packages ;;
 windows) build_windows ;;
 install)
 	build_linux
@@ -110,7 +122,7 @@ uninstall)
 	packaging/linux/install.sh --remove
 	;;
 *)
-	echo "usage: $0 [linux|windows|install|uninstall]"
+	echo "usage: $0 [linux|packages|windows|install|uninstall]"
 	exit 2
 	;;
 esac

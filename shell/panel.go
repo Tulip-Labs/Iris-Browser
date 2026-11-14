@@ -1,12 +1,14 @@
 package shell
 
 import (
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"litego/core"
 	"litego/ui"
+	"litego/update"
 )
 
 // drawPanel is the side panel: the menu (page tools, look, search, shield and
@@ -500,7 +502,11 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 		section("About Lite Go")
 		ver := "Lite Go " + a.cfg.Version
 		if a.eng != nil && a.eng.Version() != "" {
-			ver += " · WebView2 " + a.eng.Version()
+			engine := "WebView2 "
+			if runtime.GOOS == "linux" {
+				engine = "WebKitGTK "
+			}
+			ver += " · " + engine + a.eng.Version()
 		}
 		note(ver)
 		switch a.integrity {
@@ -512,6 +518,42 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 			note("Warning: the program file is not the one that was installed. Install Lite Go again from a source you trust.")
 		}
 		note("Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · GPL 3.0")
+		if k := a.updateKind(); k != "" {
+			divider()
+			section("Updates")
+			note("Installed " + kindLabels[k] + ".")
+			if k.CanSelf() {
+				if v := check("autoupd", "Update automatically from the latest GitHub release", a.set.AutoUpdate); v != a.set.AutoUpdate {
+					a.set.AutoUpdate = v
+					a.set.Save()
+				}
+				switch k {
+				case update.KindUser, update.KindFlatpak:
+					note("New versions download and install in the background, checked against the release's checksums, and open with the next start.")
+				default:
+					note("New versions download in the background; installing one takes a click and your password.")
+				}
+			} else {
+				note("Updates for this copy come from " + k.Managed() + ".")
+			}
+			if a.upd.status != "" {
+				note(a.upd.status)
+			}
+			y += 6
+			label := "Check for updates"
+			if a.upd.ready != "" {
+				label = "Install the update"
+			}
+			if u.Button(ID("updnow"), ui.Rect{X: x, Y: y, W: w, H: 40}, label, ui.ButtonOpt{Icon: ui.IReload, HasIcon: true, Disabled: a.upd.busy}) {
+				if a.upd.ready != "" {
+					a.installUpdate(k, a.upd.ready, a.upd.latest)
+				} else {
+					a.checkUpdate(true)
+				}
+			}
+			y += 48
+			divider()
+		}
 		y += 8
 		if u.Button(ID("quit"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Quit Lite Go", ui.ButtonOpt{Icon: ui.IClose, HasIcon: true, Tip: "Closes the window and the part that keeps it ready"}) {
 			a.h.Quit()

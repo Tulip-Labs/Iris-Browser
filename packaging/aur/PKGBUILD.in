@@ -1,0 +1,28 @@
+# Maintainer: Tulip Labs <tulip-labs@users.noreply.github.com>
+# Made by the release workflow from packaging/aur/PKGBUILD.in; publish it as
+# the AUR package lite-go-browser-bin.
+pkgname=lite-go-browser-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="A light, fast browser with shields built in"
+arch=('x86_64')
+url="https://github.com/Tulip-Labs/Lite-Go-Browser"
+license=('GPL-3.0-only')
+depends=('webkit2gtk-4.1' 'gtk3' 'libepoxy' 'libglvnd')
+provides=('lite-go-browser')
+conflicts=('lite-go-browser')
+source=("LiteGo-linux-x86_64-${pkgver}.tar.gz::https://github.com/Tulip-Labs/Lite-Go-Browser/releases/download/v${pkgver}/LiteGo-linux-x86_64.tar.gz")
+sha256sums=('@SHA256@')
+
+package() {
+	cd "LiteGo-linux-x86_64"
+	install -Dm755 lite-go "$pkgdir/usr/lib/lite-go-browser/lite-go"
+	install -Dm644 lite-go.sha256 "$pkgdir/usr/lib/lite-go-browser/lite-go.sha256"
+	echo arch > "$pkgdir/usr/lib/lite-go-browser/install-kind"
+	install -d "$pkgdir/usr/bin"
+	ln -s /usr/lib/lite-go-browser/lite-go "$pkgdir/usr/bin/lite-go"
+	ln -s /usr/lib/lite-go-browser/lite-go "$pkgdir/usr/bin/lite-go-browser"
+	install -Dm644 lite-go.desktop "$pkgdir/usr/share/applications/lite-go.desktop"
+	install -Dm644 lite-go.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/lite-go.png"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -1,16 +1,21 @@
-# Builds Lite Go for Linux (WebKitGTK) on every push, so the Linux build is
-# checked as often as the Windows one. Download the result from the run's
-# artifacts; tagged releases attach it too (see release.yml).
+# Lite Go for Linux: builds the .tar.gz, .deb, .rpm and Flatpak on every
+# push, then installs them on several distributions and starts Lite Go on
+# each (in a virtual display) to check it opens. The release workflow calls
+# this too and publishes what it makes.
 name: Linux
 
 on:
   push:
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    # the oldest supported Ubuntu, so the program runs on older systems too
+    # (it needs glibc 2.35 or newer: Debian 12, Ubuntu 22.04, Fedora 36 and later)
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -21,9 +26,153 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libepoxy-dev
-      - name: Build (the script runs the tests first)
-        run: ./build-litego.sh linux
+      - name: Build the program, the .tar.gz, the .deb and the .rpm (tests run first)
+        run: ./build-litego.sh packages
+      - name: Collect
+        run: |
+          mkdir out
+          cp dist/LiteGo-linux-x86_64.tar.gz dist/*.deb dist/*.rpm out/
+          ls -l out
       - uses: actions/upload-artifact@v4
         with:
-          name: LiteGo-linux-x86_64
-          path: dist/LiteGo-linux-x86_64.tar.gz
+          name: linux
+          path: out/*
+
+  flatpak:
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the Flatpak bundle
+        run: |
+          # the SDK in the image is used as it is (updating it in a container
+          # fails); the Go extension goes into the user installation
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub org.freedesktop.Sdk.Extension.golang//25.08
+          flatpak-builder --disable-rofiles-fuse --force-clean --repo=repo build packaging/flatpak/io.github.tulip_labs.LiteGo.yml
+          flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo repo LiteGo-x86_64.flatpak io.github.tulip_labs.LiteGo
+          ls -l LiteGo-x86_64.flatpak
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: LiteGo-x86_64.flatpak
+      - name: The Flatpak installs and starts
+        continue-on-error: true
+        run: |
+          set -x
+          flatpak install --user -y --noninteractive LiteGo-x86_64.flatpak
+          # Mesa for Flatpak apps (a desktop has it; this container does not)
+          flatpak install --user -y --noninteractive flathub org.freedesktop.Platform.GL.default//25.08 || true
+          (command -v xvfb-run || dnf install -y -q xorg-x11-server-Xvfb xorg-x11-xauth || true) >/dev/null 2>&1
+          export LIBGL_ALWAYS_SOFTWARE=1 LITEGO_GL_DEBUG=1
+          code=0
+          timeout 25 xvfb-run -a flatpak run io.github.tulip_labs.LiteGo about:blank > log.txt 2>&1 || code=$?
+          cat log.txt
+          [ $code = 124 ] && ! grep -q "no GPU drawing\|no OpenGL context" log.txt
+
+  # Installs each package the way a reader would, then starts Lite Go in a
+  # virtual display: it must still be running after 20 seconds.
+  install:
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {distro: "debian:12", kind: deb}
+          - {distro: "debian:13", kind: deb}
+          - {distro: "ubuntu:22.04", kind: deb}
+          - {distro: "ubuntu:24.04", kind: deb}
+          - {distro: "fedora:42", kind: rpm}
+          - {distro: "fedora:43", kind: rpm}
+          - {distro: "opensuse/tumbleweed", kind: zypper}
+          - {distro: "archlinux:latest", kind: tar}
+    container: ${{ matrix.distro }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: pkg
+      - name: Install
+        run: |
+          set -e
+          case "${{ matrix.kind }}" in
+          deb)
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./pkg/*.deb xvfb xauth procps
+            ;;
+          rpm)
+            dnf install -y ./pkg/*.rpm xorg-x11-server-Xvfb xauth procps-ng mesa-dri-drivers which
+            ;;
+          zypper)
+            zypper --non-interactive install --allow-unsigned-rpm ./pkg/*.rpm xvfb-run procps Mesa-dri which
+            ;;
+          tar)
+            pacman -Syu --noconfirm --needed webkit2gtk-4.1 gtk3 libepoxy libglvnd mesa xorg-server-xvfb xorg-xauth procps-ng which tar gzip
+            tar -xzf pkg/LiteGo-linux-x86_64.tar.gz -C /tmp
+            useradd -m tester
+            su tester -c "/tmp/LiteGo-linux-x86_64/install.sh"
+            ln -s /home/tester/.local/bin/lite-go /usr/local/bin/lite-go
+            ;;
+          esac
+      - name: Libraries are all there
+        run: |
+          exe=$(readlink -f "$(command -v lite-go)")
+          echo "$exe"
+          ! ldd "$exe" | grep "not found"
+      - name: Lite Go starts and keeps running
+        run: |
+          id -u tester >/dev/null 2>&1 || useradd -m tester
+          cat > /tmp/smoke.sh <<'SH'
+          export XDG_RUNTIME_DIR=$(mktemp -d)
+          export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LITEGO_GL_DEBUG=1
+          timeout 20 xvfb-run -a -s "-screen 0 1280x800x24" lite-go about:blank > /tmp/log.txt 2>&1
+          code=$?
+          cat /tmp/log.txt
+          [ $code = 124 ] || { echo "Lite Go exited with $code before 20 seconds"; exit 1; }
+          ! grep -q "no GPU drawing\|no OpenGL context" /tmp/log.txt || { echo "Lite Go ran but could not draw"; exit 1; }
+          echo "Lite Go ran for 20 seconds and drew its window."
+          SH
+          chmod 755 /tmp/smoke.sh
+          su tester -c "sh /tmp/smoke.sh"
+      - name: Lite Go starts on Wayland too (a headless Weston)
+        run: |
+          case "${{ matrix.kind }}" in
+          deb) DEBIAN_FRONTEND=noninteractive apt-get install -y -qq weston >/dev/null ;;
+          rpm) dnf install -y -q weston ;;
+          zypper) zypper --non-interactive -q install weston ;;
+          tar) pacman -S --noconfirm --needed weston >/dev/null ;;
+          esac
+          cat > /tmp/wl.sh <<'SH'
+          export XDG_RUNTIME_DIR=$(mktemp -d) LIBGL_ALWAYS_SOFTWARE=1 LITEGO_GL_DEBUG=1
+          weston --backend=headless --renderer=gl --socket=wl-test --width=1280 --height=800 > /tmp/weston.txt 2>&1 &
+          for i in $(seq 1 50); do [ -S "$XDG_RUNTIME_DIR/wl-test" ] && break; sleep 0.2; done
+          if [ ! -S "$XDG_RUNTIME_DIR/wl-test" ]; then echo "Weston did not start here; skipped:"; tail -5 /tmp/weston.txt; exit 0; fi
+          WAYLAND_DISPLAY=wl-test GDK_BACKEND=wayland timeout 20 lite-go about:blank > /tmp/log.txt 2>&1
+          code=$?
+          cat /tmp/log.txt
+          [ $code = 124 ] || { echo "Lite Go exited with $code on Wayland before 20 seconds"; exit 1; }
+          ! grep -q "no GPU drawing\|no OpenGL context" /tmp/log.txt || { echo "Lite Go ran on Wayland but could not draw"; exit 1; }
+          echo "Lite Go ran for 20 seconds on Wayland."
+          SH
+          su tester -c "sh /tmp/wl.sh"
+
+  # nix build github:Tulip-Labs/Lite-Go-Browser must keep working
+  nix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: experimental-features = nix-command flakes
+      - name: go.mod and go.sum are tidy
+        run: |
+          nix shell nixpkgs#go -c go mod tidy
+          git diff --exit-code go.mod go.sum || { echo "run go mod tidy and commit go.mod and go.sum"; exit 1; }
+      - name: nix build
+        run: |
+          nix build -L .#default
+          ls -l result/bin
+          ! ldd result/bin/.lite-go-wrapped | grep "not found"

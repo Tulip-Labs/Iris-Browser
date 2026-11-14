@@ -75,6 +75,14 @@ void lgwAfterFrame(void) { g_idle_add_full(G_PRIORITY_DEFAULT, afterFrame, NULL,
 
 static void onRealize(GtkGLArea *a, gpointer d) {
 	gtk_gl_area_make_current(a);
+	GError *err = gtk_gl_area_get_error(a);
+	if (err) g_printerr("Lite Go: no OpenGL context: %s\n", err->message);
+	if (g_getenv("LITEGO_GL_DEBUG")) {
+		GdkGLContext *c = gtk_gl_area_get_context(a);
+		g_printerr("Lite Go: GL %s | GLSL %s | %s | es=%d legacy=%d\n", (const char *)glGetString(GL_VERSION),
+		           (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION), (const char *)glGetString(GL_RENDERER),
+		           c ? gdk_gl_context_get_use_es(c) : -1, c ? gdk_gl_context_is_legacy(c) : -1);
+	}
 }
 
 static void onUnrealize(GtkGLArea *a, gpointer d) {
@@ -252,11 +260,22 @@ void lgwDo(uintptr_t h) { g_idle_add_full(G_PRIORITY_DEFAULT, doGo, (gpointer)h,
 
 // Startup
 
+// appID is the Wayland app id and icon name: the Flatpak's id inside a
+// Flatpak (its desktop file and icon carry that name), lite-go otherwise.
+static const char *appID(void) {
+	const char *id = g_getenv("FLATPAK_ID");
+	return id && *id ? id : "lite-go";
+}
+
 void lgwInit(void) {
+	// OpenGL ES for the GL area, as Gio's renderer needs (its GLSL ES shaders
+	// fail on a desktop GL context); set before GTK starts, unless the user
+	// chose otherwise
+	if (!g_getenv("GDK_GL")) g_setenv("GDK_GL", "gles", TRUE);
 	// GTK picks the session's own display server: Wayland where there is one
 	gtk_init(NULL, NULL);
 	g_object_set(gtk_settings_get_default(), "gtk-application-prefer-dark-theme", FALSE, NULL);
-	g_set_prgname("lite-go"); // the Wayland app id: matches lite-go.desktop, for the dock icon
+	g_set_prgname(appID()); // the Wayland app id: matches the desktop file, for the dock icon
 	g_set_application_name("Lite Go");
 }
 
@@ -266,7 +285,7 @@ void lgwMain(void) { gtk_main(); }
 uintptr_t lgwOpen(int w, int h, int maximized) {
 	win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_window_set_title(GTK_WINDOW(win), "Lite Go");
-	gtk_window_set_icon_name(GTK_WINDOW(win), "lite-go");
+	gtk_window_set_icon_name(GTK_WINDOW(win), appID());
 	gtk_window_set_default_size(GTK_WINDOW(win), w, h);
 	GdkGeometry g = {.min_width = 480, .min_height = 420};
 	gtk_window_set_geometry_hints(GTK_WINDOW(win), NULL, &g, GDK_HINT_MIN_SIZE);
@@ -288,6 +307,9 @@ uintptr_t lgwOpen(int w, int h, int maximized) {
 
 	area = gtk_gl_area_new();
 	gtk_gl_area_set_has_alpha(GTK_GL_AREA(area), FALSE);
+	// OpenGL ES, as Gio's renderer expects: Gio loads libGLESv2 and its
+	// shaders are GLSL ES, which a desktop core profile context rejects
+	gtk_gl_area_set_use_es(GTK_GL_AREA(area), TRUE);
 	gtk_gl_area_set_auto_render(GTK_GL_AREA(area), FALSE);
 	g_signal_connect(area, "render", G_CALLBACK(onRender), NULL);
 	g_signal_connect(area, "realize", G_CALLBACK(onRealize), NULL);

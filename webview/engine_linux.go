@@ -314,7 +314,7 @@ func lgxGoFocus(id C.uintptr_t) {
 }
 
 //export lgxGoDownload
-func lgxGoDownload(id C.uintptr_t, state C.int, u, path *C.char, total, got C.longlong) {
+func lgxGoDownload(id, owner C.uintptr_t, state C.int, u, path *C.char, total, got C.longlong) {
 	if wkEng == nil {
 		return
 	}
@@ -325,6 +325,9 @@ func lgxGoDownload(id C.uintptr_t, state C.int, u, path *C.char, total, got C.lo
 		return
 	}
 	d := Download{ID: int(id), URL: C.GoString(u), Path: C.GoString(path), Total: int64(total), Received: int64(got), State: DownloadState(state)}
+	if v := wkGet(uintptr(owner)); v != nil && !v.closed {
+		d.View = v
+	}
 	if d.State == DownloadActive {
 		n := uintptr(id)
 		d.Cancel = func() { call(C.OP_DLCANCEL, n, 0, 0, 0, 0, "", 0) }

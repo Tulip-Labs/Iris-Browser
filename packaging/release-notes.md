@@ -1,4 +1,10 @@
-Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11.
+Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
+
+## New in 1.0.4
+
+- **Lite Go for Linux**, tested on Debian, Ubuntu, Fedora, openSUSE and Arch: `.deb`, `.rpm`, Flatpak (`LiteGo-x86_64.flatpak`), an AUR recipe (`PKGBUILD`), a Nix flake and a `.tar.gz` for any distribution. apt and dnf repositories: see the README.
+- **Updates from GitHub**: Lite Go checks the latest release every few hours and checks each download against `SHA256SUMS`. Turn it off in Settings, About Lite Go.
+- **Downloads keep going** when you switch tabs, when the tab that started one goes to sleep, and when you close that tab.
 
 ## New in 1.0.3
 
@@ -37,7 +43,6 @@ Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11.
 - The files are not signed, so Windows SmartScreen shows "Windows protected your PC". Choose **More info**, then **Run anyway**.
 - Pages are shown by Microsoft Edge WebView2, which Windows 11 already has; the installer gets it if it is missing.
 - Downloads, split view, the sandbox and the phone link are new and have been tested with a stand-in engine, not yet on many real PCs. If something misbehaves, open an issue.
-- Linux: `LiteGo-linux-x86_64.tar.gz` (unpack, then `./install.sh`), or build from source with `./build-litego.sh`.
 
 ## What is in it
 

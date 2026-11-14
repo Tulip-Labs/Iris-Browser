@@ -104,7 +104,7 @@ func (r *resident) loop(w *app.Window, urls []string) error {
 	h := &host{w: w}
 	eng := webview.New()
 	a := shell.New(h, shell.Config{Engine: eng, DataDir: r.conf, TotalMB: totalMB(), Version: version, SelfMB: webview.SelfMB,
-		Core: r.core, SetBoost: setStartup, Sys: sysHooks()})
+		Core: r.core, SetBoost: setStartup, Sys: sysHooks(), UpdateKind: installKind()})
 	eng.SetPolicy(a.Policy())
 	for _, u := range urls {
 		a.OpenURL(u)

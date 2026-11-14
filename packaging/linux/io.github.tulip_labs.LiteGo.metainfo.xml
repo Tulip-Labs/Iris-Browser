@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.tulip_labs.LiteGo</id>
+  <name>Lite Go</name>
+  <summary>A light, fast browser with shields built in</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <developer id="io.github.tulip_labs">
+    <name>Tulip Labs</name>
+  </developer>
+  <description>
+    <p>Lite Go is a small browser written in Go. Pages are shown by the system's web engine (WebKitGTK), and Lite Go adds what keeps browsing light and private.</p>
+    <ul>
+      <li>Lite Shields: ads, trackers, cookie notices and fingerprinting blocked</li>
+      <li>Containers for separate sign-ins, private tabs and split view</li>
+      <li>Background tabs that sleep and unload to save memory</li>
+      <li>Eleven palettes, including pastel gradients</li>
+      <li>Sync with Lite for Android over your own network, with no servers</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.tulip_labs.LiteGo.desktop</launchable>
+  <url type="homepage">https://github.com/Tulip-Labs/Lite-Go-Browser</url>
+  <url type="bugtracker">https://github.com/Tulip-Labs/Lite-Go-Browser/issues</url>
+  <content_rating type="oars-1.1"/>
+  <categories>
+    <category>Network</category>
+    <category>WebBrowser</category>
+  </categories>
+  <releases>
+    <release version="1.0.4" date="2026-11-14"/>
+  </releases>
+</component>

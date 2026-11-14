@@ -526,7 +526,7 @@ func (v *view) setup() {
 				return
 			}
 			call(args, slotICoreWebView2DownloadStartingEventArgs_SetHandled, 1) // Lite Go lists it itself
-			trackDownload(op, getString(args, slotICoreWebView2DownloadStartingEventArgs_ResultFilePath), report)
+			trackDownload(v, op, getString(args, slotICoreWebView2DownloadStartingEventArgs_ResultFilePath), report)
 		})
 	}
 	if v.core8 != 0 && ev.Audio != nil {
@@ -633,9 +633,9 @@ func (v *view) Run(js string, done func(string)) {
 }
 
 // trackDownload follows one download (op is owned here) and reports its changes.
-func trackDownload(op uintptr, path string, report func(Download)) {
+func trackDownload(owner *view, op uintptr, path string, report func(Download)) {
 	downloadID++
-	d := Download{ID: downloadID, URL: getString(op, slotICoreWebView2DownloadOperation_Uri), Path: path, Total: -1}
+	d := Download{ID: downloadID, URL: getString(op, slotICoreWebView2DownloadOperation_Uri), Path: path, Total: -1, View: owner}
 	paused, canceled, ended := false, false, false
 	var last time.Time
 	var hBytes, hState uintptr

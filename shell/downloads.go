@@ -64,6 +64,7 @@ func (a *App) onDownload(n webview.Download) {
 	}
 	d.speed = 0
 	d.seen = a.panel && a.panelMode == panelDownloads
+	a.reapPages()
 	switch d.State {
 	case webview.DownloadDone:
 		a.bar = infobar{text: d.name + " downloaded.", action: "Open", until: now + 6, do: func() { a.openFile(d, false) },
@@ -72,6 +73,39 @@ func (a *App) onDownload(n webview.Download) {
 		a.bar = infobar{warn: true, text: d.name + " could not be downloaded.", until: now + 6}
 	}
 	a.h.Invalidate()
+}
+
+// downloadingIn says whether a page has a download running. Such a page is
+// kept open until the download ends: it is not put to sleep or unloaded, and
+// closing its tab only hides it (closing it could stop the download).
+func (a *App) downloadingIn(v webview.View) bool {
+	if v == nil {
+		return false
+	}
+	for _, d := range a.downloads {
+		if d.active() && d.View == v {
+			return true
+		}
+	}
+	return false
+}
+
+// keepAwake: tabs playing sound or downloading stay awake in the background.
+func (a *App) keepAwake(t *Tab) bool { return t.Audio || a.downloadingIn(t.view) }
+
+// reapPages closes the pages of closed tabs whose downloads have ended.
+func (a *App) reapPages() {
+	w := 0
+	for _, v := range a.keptPages {
+		if a.downloadingIn(v) {
+			a.keptPages[w] = v
+			w++
+			continue
+		}
+		a.web(v.Close)
+	}
+	clear(a.keptPages[w:])
+	a.keptPages = a.keptPages[:w]
 }
 
 func fileName(d webview.Download) string {
