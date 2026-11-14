@@ -34,6 +34,8 @@ import java.security.SecureRandom
 
 class Tab(val id: Long, val private: Boolean, val container: String = "") {
     var url = ""
+    /** the search shown on Lite's own results page, while it is open */
+    var lite = ""
     var title = ""
     var web: WebView? = null
     var saved: Bundle? = null // the page's history while its WebView is put away to save memory
