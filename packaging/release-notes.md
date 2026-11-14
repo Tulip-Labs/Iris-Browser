@@ -1,5 +1,11 @@
 Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.8
+
+- **Lite Go for Linux now runs on Chromium** (Chromium 156, through CEF), in place of WebKitGTK: videos play (YouTube included), pages draw and scroll the way they do in Chrome, and the shields check every request again. It runs on Wayland. Your settings, history and containers stay; sign-ins and site data start fresh, because Chromium keeps them its own way.
+- Lite Go for Linux is now a folder with Chromium inside, so the packages are bigger (about 110 MB). The apt repository moved to the GitHub releases; the package moves your sources line over by itself.
+- The Flatpak is paused until Chromium is packaged for Flatpak's sandbox. Chrome extensions do not run in an embedded Chromium; the shields block ads and trackers.
+
 ## New in 1.0.7
 
 - The Linux packages bring the video players along: GStreamer's VP9 player and, where the system offers them, OpenH264 and libav for H.264.

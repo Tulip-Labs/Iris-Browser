@@ -249,6 +249,29 @@ static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type
 		cef_string_clear(&k);
 		cef_string_clear(&val);
 	}
+	const char *extra = g_getenv("LITEGO_CEF_ARGS"); // for diagnosis: --name or --name=value, separated by spaces
+	if (extra) {
+		char **sw = g_strsplit(extra, " ", -1);
+		for (char **p = sw; *p; p++) {
+			const char *a = *p;
+			while (*a == '-') a++;
+			if (!*a) continue;
+			char *eq = strchr(a, '=');
+			if (eq) {
+				char *name = g_strndup(a, eq - a);
+				setStr(&k, name);
+				setStr(&val, eq + 1);
+				cl->append_switch_with_value(cl, &k, &val);
+				cef_string_clear(&val);
+				g_free(name);
+			} else {
+				setStr(&k, a);
+				cl->append_switch(cl, &k);
+			}
+			cef_string_clear(&k);
+		}
+		g_strfreev(sw);
+	}
 	if (noSandbox) {
 		setStr(&k, "no-sandbox");
 		cl->append_switch(cl, &k);
@@ -1300,6 +1323,28 @@ void lgxCall(int op, uintptr_t id, int a, int b, int c, int d, const char *s, ui
 	g_main_context_invoke(NULL, runOp, o);
 }
 
+// With LITEGO_SHOT=<prefix> set (the tests), the page on screen is written
+// to <prefix>-1.png, -2.png and so on, every five seconds.
+static gboolean shotTick(gpointer d) {
+	static int n;
+	const char *pre = g_getenv("LITEGO_SHOT");
+	if (!pre || n >= 6) return G_SOURCE_REMOVE;
+	GHashTableIter it;
+	gpointer k, val;
+	g_hash_table_iter_init(&it, views);
+	while (g_hash_table_iter_next(&it, &k, &val)) {
+		LV *v = val;
+		if (v->shown && v->page) {
+			char *path = g_strdup_printf("%s-%d.png", pre, ++n);
+			cairo_surface_write_to_png(v->page, path);
+			g_printerr("Lite Go: page written to %s (%dx%d)\n", path, cairo_image_surface_get_width(v->page), cairo_image_surface_get_height(v->page));
+			g_free(path);
+			break;
+		}
+	}
+	return G_SOURCE_CONTINUE;
+}
+
 // ---- start ----
 
 static char *exeDir(void) {
@@ -1352,6 +1397,7 @@ static void setup(const char *dir) {
 	if (!started) g_printerr("Lite Go: Chromium (CEF) could not start\n");
 	// a steady beat as well, for work CEF does not schedule
 	g_timeout_add(30, pumpTick, NULL);
+	if (g_getenv("LITEGO_SHOT")) g_timeout_add_seconds(5, shotTick, NULL);
 	g_free(bin);
 	g_free(helper);
 	g_free(root);

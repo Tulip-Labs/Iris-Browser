@@ -33,9 +33,9 @@
 
 ## Why Lite Go
 
-Most browsers ship a whole web engine and then spend your memory on it. Lite Go ships none.
-It uses the engine the system keeps up to date (WebView2 on Windows, WebKitGTK on Linux) and
-puts a small Go program around it that decides what each page may cost.
+Most browsers spend your memory on their web engine without asking what each page is worth.
+Lite Go puts a small Go program around the engine (WebView2 on Windows, which the system keeps
+up to date; Chromium on Linux) that decides what each page may cost.
 
 <table>
 <tr>
@@ -185,27 +185,34 @@ They work while a page has the keyboard too.
 | System | Web engine | Status |
 |---|---|---|
 | Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, phone link) are covered by tests with a stand-in engine and still need a pass on a real PC. |
-| Linux: native Wayland and X11 (GNOME, KDE, niri and others) | WebKitGTK 4.1, in a GTK window | Built and started on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora 42 and 43, openSUSE Tumbleweed and Arch on every push. Packages: .deb, .rpm, Flatpak, AUR, Nix and .tar.gz. |
+| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Chromium, through CEF (the Chromium Embedded Framework), which Lite Go carries | Built and started on Wayland on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora 42 and 43, openSUSE Tumbleweed and Arch on every push, with a VP9 video playing. Packages: .deb, .rpm, AUR and .tar.gz. (The Nix package still uses WebKitGTK; the Flatpak is paused until Chromium is packaged for its sandbox.) |
 | Android 8 and newer | Android System WebView | **Lite for Android**, a separate app in Kotlin (`android/`): shields, Lite results for Web searches, tabs, containers (WebView 123 or newer), eleven palettes, phone and tablet layouts, and sync with the computer. `Lite-android.apk` is in each release. |
 
-No engine is bundled: each comes with the system and is kept up to date by it.
+On Windows the engine comes with the system. On Linux, Lite Go carries its own Chromium
+(Chromium 156, from CEF) in `/usr/lib/lite-go-browser`, and each release brings the newer one.
 
 On Linux the window is a GTK window, because Wayland does not let one program's surface sit
 inside another's. GTK owns the window, Gio's GPU renderer draws the interface into a GL area
-in it, and each page's WebKitWebView sits over that area. One window, one connection to the
-display.
+in it, and Chromium draws each page off screen: Lite Go paints the page into its own area of
+the window and passes it the pointer, the wheel and the keys. One window, one connection to
+the display. Chrome extensions do not run in an embedded Chromium like this one; the shields
+do the work of an ad blocker.
 
 ## Install on Linux
 
-Every release has a `.deb`, an `.rpm`, a Flatpak bundle and a `.tar.gz` for any distribution. Lite Go needs glibc 2.35 or newer (Debian 12, Ubuntu 22.04, Fedora 36 or later).
+Every release has a `.deb`, an `.rpm` and a `.tar.gz` for any distribution (each about 110 MB: Chromium is inside). Lite Go needs glibc 2.35 or newer (Debian 12, Ubuntu 22.04, Fedora 36 or later) and a Wayland session.
 
 **Debian, Ubuntu, Linux Mint** (from the signed repository, so updates come with the system's):
 
 ```sh
 curl -fsSL https://tulip-labs.github.io/Lite-Go-Browser/lite-go-browser.gpg | sudo tee /usr/share/keyrings/lite-go-browser.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/lite-go-browser.gpg] https://tulip-labs.github.io/Lite-Go-Browser/deb stable main" | sudo tee /etc/apt/sources.list.d/lite-go-browser.list
+echo "deb [signed-by=/usr/share/keyrings/lite-go-browser.gpg] https://github.com/Tulip-Labs/Lite-Go-Browser/releases/latest download/" | sudo tee /etc/apt/sources.list.d/lite-go-browser.list
 sudo apt update && sudo apt install lite-go-browser
 ```
+
+The packages are too big for GitHub Pages, so the apt repository is made of the latest
+release's files. If you added the old `tulip-labs.github.io/.../deb` line, version 1.0.8 moves
+it over when it installs.
 
 **Fedora**
 
@@ -221,19 +228,17 @@ sudo zypper addrepo https://tulip-labs.github.io/Lite-Go-Browser/lite-go-browser
 sudo zypper install lite-go-browser
 ```
 
-**Fedora Atomic** (Silverblue, Kinoite): `sudo curl -fsSLo /etc/yum.repos.d/lite-go-browser.repo https://tulip-labs.github.io/Lite-Go-Browser/lite-go-browser.repo`, then `rpm-ostree install lite-go-browser`. Or use the Flatpak.
-
-**Flatpak** (any distribution): download `LiteGo-x86_64.flatpak` from the release, then `flatpak install --user LiteGo-x86_64.flatpak`.
+**Fedora Atomic** (Silverblue, Kinoite): `sudo curl -fsSLo /etc/yum.repos.d/lite-go-browser.repo https://tulip-labs.github.io/Lite-Go-Browser/lite-go-browser.repo`, then `rpm-ostree install lite-go-browser`, and restart. Updates come with `rpm-ostree upgrade`.
 
 **Arch**: download the `PKGBUILD` from the latest release into an empty folder and run `makepkg -si` (an AUR package is planned).
 
 **Nix**: `nix profile install github:Tulip-Labs/Lite-Go-Browser`, or try it with `nix run github:Tulip-Labs/Lite-Go-Browser`.
 
-**Any distribution, no root**: unpack `LiteGo-linux-x86_64.tar.gz` and run `./install.sh` (it installs to `~/.local`).
+**Any distribution, no root**: unpack `LiteGo-linux-x86_64.tar.gz` and run `./install.sh` (it installs to `~/.local/lib/lite-go-browser`, with `lite-go` in `~/.local/bin`).
 
 The repository pages with these commands are at [tulip-labs.github.io/Lite-Go-Browser](https://tulip-labs.github.io/Lite-Go-Browser/).
 
-**Updates.** Lite Go checks the latest GitHub release every few hours (Settings, About Lite Go; on by default) and checks each download against the release's `SHA256SUMS`. The `.tar.gz` and Flatpak copies update by themselves; `.deb` and `.rpm` copies download in the background and install with one click and your password. Copies from the AUR, Nix or rpm-ostree update the way those tools do.
+**Updates.** Lite Go checks the latest GitHub release every few hours (Settings, About Lite Go; on by default) and checks each download against the release's `SHA256SUMS`. The `.tar.gz` copy updates by itself; `.deb` and `.rpm` copies download in the background and install with one click and your password. Copies from the AUR, Nix or rpm-ostree update the way those tools do.
 
 ## Build
 
@@ -249,29 +254,29 @@ tests and makes:
 No C compiler is needed, and builds stay well under 2 GB of memory.
 
 **Linux.** On Linux, `./build-litego.sh` builds Lite Go for Linux first and then the Windows
-files. It checks for the build tools and WebKitGTK development files and says what to install if
+files. It fetches Chromium (CEF, about 300 MB, checked against its SHA-1) into `third_party/cef`
+once, checks for the build tools and GTK development files and says what to install if
 something is missing:
 
 ```sh
 # Fedora
-sudo dnf install gcc pkgconf gtk3-devel webkit2gtk4.1-devel libepoxy-devel
+sudo dnf install gcc pkgconf gtk3-devel libepoxy-devel curl bzip2
 # Fedora Atomic (Silverblue, Kinoite): build inside a toolbox
 toolbox create && toolbox enter   # then the Fedora line above
 # Debian, Ubuntu
-sudo apt install gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libepoxy-dev
+sudo apt install gcc pkg-config libgtk-3-dev libepoxy-dev curl bzip2
 # Arch
-sudo pacman -S gcc pkgconf gtk3 webkit2gtk-4.1 libepoxy
+sudo pacman -S gcc pkgconf gtk3 libepoxy curl bzip2
 
 ./build-litego.sh             # Linux (dist/linux, dist/LiteGo-linux-x86_64.tar.gz), then Windows
 ./build-litego.sh linux       # Linux only
 ./build-litego.sh windows     # Windows only
-./build-litego.sh install     # build for Linux and install for you: ~/.local/bin and the app list
+./build-litego.sh install     # build for Linux and install for you: ~/.local and the app list
 ./build-litego.sh uninstall
 ```
 
-Each release also has `LiteGo-linux-x86_64.tar.gz`: unpack it and run `./install.sh`. It needs
-WebKitGTK 4.1 on the system (most desktops have it; on Fedora Atomic, `rpm-ostree install webkit2gtk4.1`
-if it is missing).
+Each release also has `LiteGo-linux-x86_64.tar.gz`: unpack it and run `./install.sh`. It carries
+Chromium and needs only GTK 3 and the libraries every desktop has.
 
 **Tests.**
 
@@ -319,7 +324,7 @@ cmd/litego          the program: window, resident process, system hooks
     +-- webview     one small interface over two engines:
                       WebView2 from pure Go (COM vtables, profiles, sandbox, suspend,
                       request filtering, downloads)
-                      WebKitGTK through cgo
+                      Chromium (CEF) through cgo, off screen in a GTK window (Linux)
 ```
 
 | Folder | What it is |

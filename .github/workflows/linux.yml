@@ -165,21 +165,16 @@ jobs:
           export WAYLAND_DISPLAY=wl-test GDK_BACKEND=wayland
           page=about:blank
           [ -f /tmp/page/video.html ] && page=file:///tmp/page/video.html
-          LITEGO_CEF_VERBOSE=1 dbus-run-session -- lite-go "$page" > /tmp/log.txt 2>&1 &
-          pid=$!
-          shot() {
-            shooter=$(command -v weston-screenshooter || ls /usr/lib*/weston/weston-screenshooter /usr/libexec/weston-screenshooter 2>/dev/null | head -1)
-            [ -n "$shooter" ] && [ -f /tmp/page/video.html ] || return 0
-            (cd /tmp/shots && "$shooter" >/dev/null 2>&1 && for f in wayland-screenshot*.png; do [ -f "$f" ] && mv "$f" "$1.png"; done) || true
-          }
           mkdir -p /tmp/shots
-          sleep 12; shot video-1
-          sleep 3; shot video-2
-          sleep 5
+          export LITEGO_CEF_VERBOSE=1 LITEGO_SHOT=/tmp/shots/page LITEGO_CEF_ARGS="--enable-logging=stderr --v=0"
+          run=""; command -v dbus-run-session >/dev/null && run="dbus-run-session --"
+          $run lite-go "$page" > /tmp/log.txt 2>&1 &
+          pid=$!
+          sleep 20
           alive=0; kill -0 $pid 2>/dev/null && alive=1
           kill $pid 2>/dev/null; sleep 1; kill -9 $pid 2>/dev/null
-          grep -v "dbus" /tmp/log.txt | tail -150
-          for f in /tmp/shots/*.png; do [ -f "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
+          grep -v "dbus" /tmp/log.txt | tail -200
+          for f in /tmp/shots/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
           [ $alive = 1 ] || { echo "Lite Go exited on Wayland before 20 seconds"; exit 1; }
           ! grep -q "no GPU drawing\|no OpenGL context\|could not start" /tmp/log.txt || { echo "Lite Go ran on Wayland but could not draw"; exit 1; }
           echo "Lite Go ran for 20 seconds on Wayland."
