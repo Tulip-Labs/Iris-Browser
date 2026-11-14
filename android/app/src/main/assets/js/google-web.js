@@ -44,22 +44,34 @@
     for (const a of root.querySelectorAll('a[href]')) {
       let u = a.href;
       try { const x = new URL(u); if (/google\./.test(x.hostname) && x.pathname === '/url') u = x.searchParams.get('q') || x.searchParams.get('url') || u; } catch (e) {}
-      if (!/^https?:/.test(u) || /^https?:\/\/([a-z]+\.)*(google|gstatic|youtube\.com\/(redirect|results))[a-z.]*\//.test(u) || seen.has(u)) continue;
+      const sealed = /^https?:\/\/www\.google\.[a-z.]+\/goto\?/.test(u);
+      if (!/^https?:/.test(u) || !sealed && /^https?:\/\/([a-z]+\.)*(google|gstatic|youtube\.com\/(redirect|results))[a-z.]*\//.test(u) || seen.has(u)) continue;
       if (a.closest('#tads,#tadsb,#bottomads,[data-text-ad],[aria-label="Ads"],[aria-label="Sponsored"],[data-pla],header,footer,nav')) continue;
-      // the title: the longest line that is not an address
-      const lines = (a.innerText || '').split('\n').map(s => s.trim()).filter(s => s.length > 3 && !/›|^https?:\/\/|^www\./.test(s));
-      const t = lines.reduce((p, s) => s.length > p.length && s.length < 160 ? s : p, '');
-      if (t.length < 12) continue;
+      // the title: the heading if there is one, else the last line that is not an
+      // address (the site's name comes first, the title last)
+      const all = (a.innerText || '').split('\n').map(s => s.trim()).filter(Boolean);
+      const lines = all.filter(s => s.length > 3 && s.length < 160 && !/›|^https?:\/\/|^www\./.test(s));
+      const hd = a.querySelector('h3, [role="heading"]');
+      const t = hd ? hd.innerText.trim() : (lines.length > 1 || sealed ? lines[lines.length - 1] : lines[0]) || '';
+      if (t.length < 4 || (!sealed && lines.length < 2 && t.length < 12)) continue;
+      const addr = all.find(s => /^https?:\/\//.test(s));
+      const site = addr ? addr.replace(/^https?:\/\/(www\.)?/, '').split(/[\/ ›]/)[0] : '';
+      if (sealed && !site) continue;
       seen.add(u);
       let box = a;
-      for (let i = 0; i < 6 && box.parentElement; i++) { box = box.parentElement; if ((box.innerText || '').length > (a.innerText || '').length + 40) break; }
+      const titled = (el) => [...el.querySelectorAll('a[href]')].filter(x => (x.innerText || '').trim().length > 3).length;
+      for (let i = 0; i < 6 && box.parentElement; i++) {
+        if (titled(box.parentElement) > 1) break; // the next block holds another result
+        box = box.parentElement;
+        if ((box.innerText || '').length > (a.innerText || '').length + 40) break;
+      }
       let snip = '';
       for (const el of box.querySelectorAll('div, span')) {
         if (el.contains(a) || a.contains(el) || el.querySelector('a[href]')) continue;
         const s = (el.innerText || '').trim();
         if (s.length > snip.length && s.length < 420) snip = s;
       }
-      out.push({t, u, s: snip.replace(/\s+/g, ' '), site: ''});
+      out.push({t, u, s: snip.replace(/\s+/g, ' '), site});
       if (out.length >= 12) break;
     }
   }
