@@ -111,7 +111,8 @@ jobs:
           id -u tester >/dev/null 2>&1 || useradd -m tester
           cat > /tmp/smoke.sh <<'SH'
           export XDG_RUNTIME_DIR=$(mktemp -d)
-          export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1
+          export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LITEGO_GL_DEBUG=1
+          for gl in "" gles; do echo "== GDK_GL=$gl"; GDK_GL=$gl timeout 8 xvfb-run -a lite-go about:blank 2>&1 | grep -E "Lite Go:|panic" ; done
           timeout 20 xvfb-run -a -s "-screen 0 1280x800x24" lite-go about:blank > /tmp/log.txt 2>&1
           code=$?
           cat /tmp/log.txt

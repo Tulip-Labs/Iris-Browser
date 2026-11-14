@@ -75,6 +75,14 @@ void lgwAfterFrame(void) { g_idle_add_full(G_PRIORITY_DEFAULT, afterFrame, NULL,
 
 static void onRealize(GtkGLArea *a, gpointer d) {
 	gtk_gl_area_make_current(a);
+	GError *err = gtk_gl_area_get_error(a);
+	if (err) g_printerr("Lite Go: no OpenGL context: %s\n", err->message);
+	if (g_getenv("LITEGO_GL_DEBUG")) {
+		GdkGLContext *c = gtk_gl_area_get_context(a);
+		g_printerr("Lite Go: GL %s | GLSL %s | %s | es=%d legacy=%d\n", (const char *)glGetString(GL_VERSION),
+		           (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION), (const char *)glGetString(GL_RENDERER),
+		           c ? gdk_gl_context_get_use_es(c) : -1, c ? gdk_gl_context_is_legacy(c) : -1);
+	}
 }
 
 static void onUnrealize(GtkGLArea *a, gpointer d) {
