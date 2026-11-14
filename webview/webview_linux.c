@@ -141,6 +141,31 @@ static LV *lv(uintptr_t id, int make) {
 	return v;
 }
 
+// Memory. memTotalMB is the computer's memory (lgxSetMemory, before the
+// first page). Each page's process is told how much it may use: past a third
+// of that it starts giving memory back, past a half it does so hard. On
+// computers with 8 GB or less, the caches are the small ones (no whole pages
+// kept for Back and Forward).
+static int memTotalMB;
+
+void lgxSetMemory(int totalMB) { memTotalMB = totalMB; }
+
+static WebKitMemoryPressureSettings *pressureSettings(void) {
+	static WebKitMemoryPressureSettings *s;
+	if (s || memTotalMB <= 0) return s;
+	int limit = memTotalMB / 10;
+	if (limit < 384) limit = 384;
+	if (limit > 1536) limit = 1536;
+	s = webkit_memory_pressure_settings_new();
+	webkit_memory_pressure_settings_set_memory_limit(s, limit);
+	webkit_memory_pressure_settings_set_conservative_threshold(s, 0.33);
+	webkit_memory_pressure_settings_set_strict_threshold(s, 0.5);
+	webkit_memory_pressure_settings_set_poll_interval(s, 5);
+	// the network processes made from now on get the same limits
+	webkit_website_data_manager_set_memory_pressure_settings(s);
+	return s;
+}
+
 static WebKitWebContext *contextFor(const char *profile, int priv, int sandbox) {
 	char key[512];
 	snprintf(key, sizeof key, "%s%s:%s", priv ? "private" : "disk", sandbox ? "+sandbox" : "", profile);
@@ -156,11 +181,16 @@ static WebKitWebContext *contextFor(const char *profile, int priv, int sandbox) 
 		g_free(base);
 		g_free(cache);
 	}
-	c = webkit_web_context_new_with_website_data_manager(m);
+	WebKitMemoryPressureSettings *ps = pressureSettings();
+	if (ps) {
+		c = WEBKIT_WEB_CONTEXT(g_object_new(WEBKIT_TYPE_WEB_CONTEXT, "website-data-manager", m, "memory-pressure-settings", ps, NULL));
+	} else {
+		c = webkit_web_context_new_with_website_data_manager(m);
+	}
 	if (sandbox) g_object_set_data(G_OBJECT(c), "lgx-sandbox", GINT_TO_POINTER(1));
 	g_signal_connect(c, "download-started", G_CALLBACK(onDownload), NULL);
 	webkit_web_context_set_process_model(c, WEBKIT_PROCESS_MODEL_MULTIPLE_SECONDARY_PROCESSES);
-	webkit_web_context_set_cache_model(c, WEBKIT_CACHE_MODEL_WEB_BROWSER);
+	webkit_web_context_set_cache_model(c, memTotalMB > 0 && memTotalMB <= 8192 ? WEBKIT_CACHE_MODEL_DOCUMENT_BROWSER : WEBKIT_CACHE_MODEL_WEB_BROWSER);
 	if (!priv) {
 		char *cookies = g_build_filename(dataDir, *profile ? profile : "default", "cookies.sqlite", NULL);
 		webkit_cookie_manager_set_persistent_storage(webkit_web_context_get_cookie_manager(c), cookies, WEBKIT_COOKIE_PERSISTENT_STORAGE_SQLITE);

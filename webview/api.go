@@ -5,6 +5,11 @@ package webview
 
 import "errors"
 
+// SleepFreesMemory says whether putting a page to sleep gives its memory
+// back (WebView2 does; WebKitGTK only hides the page, so under memory
+// pressure Lite Go unloads pages there instead).
+var SleepFreesMemory = true
+
 // Options choose a tab's storage: a named container (its own cookies,
 // storage and cache) or a private session that is never written to disk.
 type Options struct {

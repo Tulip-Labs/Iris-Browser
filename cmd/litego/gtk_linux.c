@@ -92,12 +92,19 @@ static void onUnrealize(GtkGLArea *a, gpointer d) {
 
 // The GL area always fills the layout (a GtkLayout gives its children their
 // requested size, and asks for none itself, so the window can still shrink).
+// niri resizes windows often (column widths, Super+R, Super+F): the area
+// takes the new size in the same pass and draws again at once, instead of
+// a frame later with the old size stretched.
 static void onLayoutSize(GtkWidget *l, GdkRectangle *r, gpointer d) {
 	int w, h;
 	gtk_widget_get_size_request(area, &w, &h);
 	if (w != r->width || h != r->height) {
 		gtk_widget_set_size_request(area, r->width, r->height);
 		gtk_widget_set_size_request(events, r->width, r->height);
+		GtkAllocation a = {0, 0, r->width, r->height};
+		gtk_widget_size_allocate(area, &a);
+		gtk_widget_size_allocate(events, &a);
+		gtk_gl_area_queue_render(GTK_GL_AREA(area));
 	}
 }
 

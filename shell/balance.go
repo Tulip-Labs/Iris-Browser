@@ -5,6 +5,7 @@ import (
 
 	"litego/core"
 	"litego/ui"
+	"litego/webview"
 )
 
 type panelMode uint8
@@ -78,9 +79,16 @@ func (a *App) rebalance() {
 	low := p.ReserveMB > 0 && b.freeMB > 0 && b.freeMB < p.ReserveMB
 	b.pressure = over || low
 	now := a.now()
-	if !b.pressure || now-b.lastAct < 6 { // a step needs a moment to show in the numbers
+	wait := 6.0 // a step needs a moment to show in the numbers
+	if !webview.SleepFreesMemory {
+		wait = 3
+	}
+	if !b.pressure || now-b.lastAct < wait {
 		return
 	}
+	// very short of memory: two pages at a time, before the system steps in
+	// (on Linux, the out-of-memory killer can close the whole browser)
+	critical := low && b.freeMB < p.ReserveMB/2
 	cur := a.tab()
 	other, _ := a.splitWith()
 	slept := 0
@@ -100,11 +108,25 @@ func (a *App) rebalance() {
 		}
 	}
 	switch {
-	case slept > 0:
+	case slept > 0 && webview.SleepFreesMemory:
 		b.slept += slept
 	case lru != nil:
+		b.slept += slept
 		a.unload(lru)
 		b.freed++
+		if critical {
+			// and the next one used longest ago
+			var next *Tab
+			for _, t := range a.tabs {
+				if t.view != nil && t != cur && t != other && !a.keepAwake(t) && !t.private() && (next == nil || t.last < next.last) {
+					next = t
+				}
+			}
+			if next != nil {
+				a.unload(next)
+				b.freed++
+			}
+		}
 	default:
 		return
 	}

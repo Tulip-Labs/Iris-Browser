@@ -11,6 +11,7 @@ enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SH
 
 void lgxMain(unsigned long parent, const char *dataDir);
 void lgxAttach(uintptr_t layout, const char *dataDir);
+void lgxSetMemory(int totalMB);
 void lgxCall(int op, uintptr_t id, int a, int b, int c, int d, const char *s, uintptr_t cb);
 char *lgxVersion(void);
 */
@@ -75,6 +76,7 @@ func call(op int, id uintptr, a, b, c, d int, s string, cb uintptr) {
 
 func (e *wkEngine) Start(window uintptr, dataDir string, low bool, ready func(error)) {
 	e.dataDir, e.low, e.started = dataDir, low, true
+	C.lgxSetMemory(C.int(totalMemMB()))
 	if hosted {
 		cs := C.CString(dataDir)
 		C.lgxAttach(C.uintptr_t(window), cs)
@@ -344,3 +346,20 @@ func lgxGoResult(cb C.uintptr_t, res *C.char) {
 	h.Delete()
 	done(C.GoString(res))
 }
+
+// totalMemMB is the computer's memory, for the pages' memory limits.
+func totalMemMB() int {
+	b, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if v, ok := strings.CutPrefix(l, "MemTotal:"); ok {
+			kb, _ := strconv.Atoi(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(v), "kB")))
+			return kb / 1024
+		}
+	}
+	return 0
+}
+
+func init() { SleepFreesMemory = false }
