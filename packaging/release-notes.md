@@ -37,7 +37,7 @@ Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11.
 - The files are not signed, so Windows SmartScreen shows "Windows protected your PC". Choose **More info**, then **Run anyway**.
 - Pages are shown by Microsoft Edge WebView2, which Windows 11 already has; the installer gets it if it is missing.
 - Downloads, split view, the sandbox and the phone link are new and have been tested with a stand-in engine, not yet on many real PCs. If something misbehaves, open an issue.
-- Linux: build from source with `./build-litego.sh linux` (first run pending).
+- Linux: `LiteGo-linux-x86_64.tar.gz` (unpack, then `./install.sh`), or build from source with `./build-litego.sh`.
 
 ## What is in it
 

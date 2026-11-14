@@ -208,19 +208,30 @@ tests and makes:
 
 No C compiler is needed, and builds stay well under 2 GB of memory.
 
-**Linux.**
+**Linux.** On Linux, `./build-litego.sh` builds Lite Go for Linux first and then the Windows
+files. It checks for the build tools and WebKitGTK development files and says what to install if
+something is missing:
 
 ```sh
-# Debian, Ubuntu
-sudo apt install gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libepoxy-dev
 # Fedora
 sudo dnf install gcc pkgconf gtk3-devel webkit2gtk4.1-devel libepoxy-devel
+# Fedora Atomic (Silverblue, Kinoite): build inside a toolbox
+toolbox create && toolbox enter   # then the Fedora line above
+# Debian, Ubuntu
+sudo apt install gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libepoxy-dev
 # Arch
 sudo pacman -S gcc pkgconf gtk3 webkit2gtk-4.1 libepoxy
 
-./build-litego.sh linux     # makes dist/linux/lite-go
-./build-litego.sh           # cross-builds the Windows files from Linux
+./build-litego.sh             # Linux (dist/linux, dist/LiteGo-linux-x86_64.tar.gz), then Windows
+./build-litego.sh linux       # Linux only
+./build-litego.sh windows     # Windows only
+./build-litego.sh install     # build for Linux and install for you: ~/.local/bin and the app list
+./build-litego.sh uninstall
 ```
+
+Each release also has `LiteGo-linux-x86_64.tar.gz`: unpack it and run `./install.sh`. It needs
+WebKitGTK 4.1 on the system (most desktops have it; on Fedora Atomic, `rpm-ostree install webkit2gtk4.1`
+if it is missing).
 
 **Tests.**
 
