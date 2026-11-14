@@ -1,7 +1,8 @@
 (() => {
   const out = [], seen = new Set();
   const root = document.querySelector('#rso') || document.querySelector('#search') || document.body;
-  for (const h of root.querySelectorAll('a h3')) {
+  // h3 on the desktop page; a heading role on the mobile one
+  for (const h of root.querySelectorAll('a h3, a [role="heading"]')) {
     const a = h.closest('a');
     if (!a || !a.href) continue;
     // never ads or promoted units

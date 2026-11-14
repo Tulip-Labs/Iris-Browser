@@ -45,10 +45,6 @@ class Results(private val ctx: Context) {
         val w = worker ?: WebView(ctx).also { v ->
             v.settings.javaScriptEnabled = true
             v.settings.domStorageEnabled = true
-            // Google's desktop page: the reading scripts are the desktop's, and its mobile page is built differently
-            v.settings.userAgentString = DESKTOP_AGENT
-            v.settings.useWideViewPort = true
-            v.settings.loadWithOverviewMode = true
             v.visibility = View.INVISIBLE
             host.addView(v, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             worker = v
@@ -60,6 +56,8 @@ class Results(private val ctx: Context) {
         var web: List<WebHit>? = null
         var finished = false
         var stage = 0
+        var tries = 0
+        lateinit var again: (String?) -> Unit
         fun finish(hits: List<WebHit>?, images: List<ImageHit>) {
             if (finished || my != seq) return
             finished = true
@@ -82,6 +80,11 @@ class Results(private val ctx: Context) {
                         v.evaluateJavascript(webJs) { raw ->
                             val (hits, captcha) = parseWeb(raw)
                             android.util.Log.i("LiteResults", "web: ${hits.size} links, captcha $captcha, at $url")
+                            if (hits.isEmpty() && !captcha && tries++ < 3) {
+                                // the page may still be building its results: look again
+                                ui.postDelayed({ if (my == seq && !finished) v.evaluateJavascript(webJs) { r2 -> again(r2) } }, 700)
+                                return@evaluateJavascript
+                            }
                             if (captcha || hits.isEmpty()) {
                                 finish(null, emptyList())
                                 return@evaluateJavascript
@@ -98,6 +101,19 @@ class Results(private val ctx: Context) {
                         }
                     }
                 }, if (st == 0) 250 else 900)
+            }
+        }
+        again = { raw ->
+            val (hits, captcha) = parseWeb(raw)
+            android.util.Log.i("LiteResults", "web again: ${hits.size} links, captcha $captcha")
+            when {
+                hits.isNotEmpty() -> {
+                    web = hits
+                    stage = 1
+                    w.loadUrl(Search.url(q, Mode.IMAGES))
+                }
+                captcha || tries++ >= 3 -> finish(null, emptyList())
+                else -> ui.postDelayed({ if (my == seq && !finished) w.evaluateJavascript(webJs) { r -> again(r) } }, 700)
             }
         }
         w.loadUrl(Search.url(q, Mode.WEB))

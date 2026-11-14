@@ -1182,7 +1182,7 @@ class MainActivity : Activity(), PageEvents {
         // about
         col.addView(section("About"))
         val wv = WebView.getCurrentWebViewPackage()?.versionName ?: ""
-        col.addView(note("Lite 1.0.2 for Android · pages by Android System WebView $wv\nTulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · GPL 3.0"))
+        col.addView(note("Lite 1.0.3 for Android · pages by Android System WebView $wv\nTulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · GPL 3.0"))
         return col
     }
 
