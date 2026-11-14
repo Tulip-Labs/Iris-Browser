@@ -1,0 +1,50 @@
+# Fetches the newest stable CEF for Linux and publishes its headers (and the
+# file list of the binary distribution) on the cef-headers branch, so the CEF
+# engine can be written against the exact API.
+name: CEF headers
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [cef]
+    paths: [.github/workflows/cef-headers.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  headers:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Newest stable CEF for linux64
+        run: |
+          curl -fsSL https://cef-builds.spotifycdn.com/index.json -o index.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open("index.json"))["linux64"]["versions"]
+          v = next(x for x in d if x["channel"] == "stable")
+          f = next(x for x in v["files"] if x["type"] == "minimal")
+          open("cef.env", "w").write(f"CEF_VERSION={v['cef_version']}\nCEF_FILE={f['name']}\nCEF_SHA1={f['sha1']}\nCHROMIUM={v['chromium_version']}\n")
+          print(v["cef_version"], f["name"], f["size"])
+          PY
+          cat cef.env >> $GITHUB_ENV
+      - name: Download and unpack
+        run: |
+          curl -fsSL "https://cef-builds.spotifycdn.com/${CEF_FILE// /%20}" -o cef.tar.bz2
+          echo "$CEF_SHA1  cef.tar.bz2" | sha1sum -c
+          mkdir cef && tar -xjf cef.tar.bz2 -C cef --strip-components=1
+          ls cef
+          (cd cef && find . -type f | sort | xargs ls -l) > files.txt
+          du -sh cef/Release cef/Resources
+      - name: Publish the headers
+        run: |
+          mkdir out
+          cp -r cef/include out/
+          cp cef.env files.txt out/
+          cp cef/README.txt out/ 2>/dev/null || true
+          cd out
+          git init -q -b cef-headers
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -q -m "CEF $CEF_VERSION headers"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" cef-headers
