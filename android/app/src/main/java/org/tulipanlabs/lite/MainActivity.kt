@@ -474,6 +474,7 @@ class MainActivity : Activity(), PageEvents {
     }
 
     private fun open(t: Tab, url: String) {
+        t.lite = ""
         t.url = url
         t.page = url
         val w = t.web ?: pages.make(t).also { content.addView(it, 0, flp(MATCH, MATCH)) }
@@ -511,6 +512,7 @@ class MainActivity : Activity(), PageEvents {
     /** a web search shown on Lite's own page (see Results.kt) */
     private fun liteSearch(t: Tab, q: String) {
         val g = Search.url(q, Mode.WEB)
+        t.lite = g
         t.url = g
         t.page = g
         t.title = q
@@ -1251,6 +1253,15 @@ class MainActivity : Activity(), PageEvents {
 
     override fun onUrl(t: Tab, url: String) {
         if (url.startsWith("about:")) return
+        if (t.lite.isNotEmpty()) {
+            // Lite's results page reports Google's address: the tab keeps showing the search
+            if (url == t.lite || url.startsWith("data:") || (hostOf(url).contains("google.") && !url.contains("/search?"))) {
+                t.url = t.lite
+                if (t === tab()) updateBars()
+                return
+            }
+            t.lite = ""
+        }
         t.url = url
         if (t === tab()) {
             ntp?.let { if (t.web?.visibility == View.VISIBLE) { content.removeView(it); ntp = null } }
