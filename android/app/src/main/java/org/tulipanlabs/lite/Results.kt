@@ -80,6 +80,10 @@ class Results(private val ctx: Context) {
                         v.evaluateJavascript(webJs) { raw ->
                             val (hits, captcha) = parseWeb(raw)
                             android.util.Log.i("LiteResults", "web: ${hits.size} links, captcha $captcha, at $url")
+                            if (hits.isEmpty() && tries == 0 && (ctx.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                                // what the page holds, for the screenshot run's log
+                                v.evaluateJavascript(DIAG) { d -> (d ?: "").chunked(900).forEach { android.util.Log.i("LiteResults", "diag: $it") } }
+                            }
                             if (hits.isEmpty() && !captcha && tries++ < 3) {
                                 // the page may still be building its results: look again
                                 ui.postDelayed({ if (my == seq && !finished) v.evaluateJavascript(webJs) { r2 -> again(r2) } }, 700)
@@ -157,6 +161,8 @@ class Results(private val ctx: Context) {
     }
 
     companion object {
+        private const val DIAG = "JSON.stringify({rso:!!document.querySelector('#rso'),a:document.querySelectorAll('a[href]').length,h3:document.querySelectorAll('h3').length,head:document.querySelectorAll('[role=heading]').length,it:(document.body.innerText||'').length,tc:document.body.textContent.length,title:document.title,sample:[...document.querySelectorAll('a[href]')].slice(0,30).map(a=>a.href.slice(0,70)+' :: '+(a.innerText||'').slice(0,70).replace(/\\n/g,'|'))})"
+
         const val DESKTOP_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 
         private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;")
