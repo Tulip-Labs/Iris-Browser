@@ -112,16 +112,16 @@ jobs:
           case "${{ matrix.kind }}" in
           deb)
             apt-get update -qq
-            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./pkg/*.deb weston procps ffmpeg fonts-dejavu-core
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./pkg/*.deb weston procps ffmpeg fonts-dejavu-core dbus
             ;;
           rpm)
-            dnf install -y ./pkg/*.rpm weston procps-ng mesa-dri-drivers which ffmpeg-free dejavu-sans-fonts
+            dnf install -y ./pkg/*.rpm weston procps-ng mesa-dri-drivers which ffmpeg-free dejavu-sans-fonts util-linux dbus-daemon
             ;;
           zypper)
-            zypper --non-interactive install --allow-unsigned-rpm ./pkg/*.rpm weston procps Mesa-dri which
+            zypper --non-interactive install --allow-unsigned-rpm ./pkg/*.rpm weston procps Mesa-dri which dbus-1
             ;;
           tar)
-            pacman -Syu --noconfirm --needed gtk3 libepoxy libglvnd mesa nss alsa-lib libdrm libxkbcommon at-spi2-core libcups libxcomposite libxdamage libxrandr weston procps-ng which tar gzip ttf-dejavu
+            pacman -Syu --noconfirm --needed gtk3 libepoxy libglvnd mesa nss alsa-lib libdrm libxkbcommon at-spi2-core libcups libxcomposite libxdamage libxrandr weston procps-ng which tar gzip ttf-dejavu dbus
             tar -xzf pkg/LiteGo-linux-x86_64.tar.gz -C /tmp
             useradd -m tester
             su tester -c "/tmp/LiteGo-linux-x86_64/install.sh"
@@ -156,17 +156,16 @@ jobs:
           id -u tester >/dev/null 2>&1 || useradd -m tester
           cat > /tmp/wl.sh <<'SH'
           export XDG_RUNTIME_DIR=$(mktemp -d) LIBGL_ALWAYS_SOFTWARE=1 LITEGO_GL_DEBUG=1 LITEGO_NO_SANDBOX=1
-          weston --backend=headless --renderer=gl --socket=wl-test --width=1280 --height=800 --debug > /tmp/weston.txt 2>&1 &
-          for i in $(seq 1 50); do [ -S "$XDG_RUNTIME_DIR/wl-test" ] && break; sleep 0.2; done
-          if [ ! -S "$XDG_RUNTIME_DIR/wl-test" ]; then
-            weston --backend=headless --renderer=pixman --socket=wl-test --width=1280 --height=800 --debug > /tmp/weston.txt 2>&1 &
-            for i in $(seq 1 50); do [ -S "$XDG_RUNTIME_DIR/wl-test" ] && break; sleep 0.2; done
-          fi
+          for b in "--backend=headless --renderer=gl" "--backend=headless-backend.so --use-gl" "--backend=headless" "--backend=headless-backend.so"; do
+            weston $b --socket=wl-test --width=1280 --height=800 --debug > /tmp/weston.txt 2>&1 &
+            for i in $(seq 1 30); do [ -S "$XDG_RUNTIME_DIR/wl-test" ] && break; sleep 0.2; done
+            [ -S "$XDG_RUNTIME_DIR/wl-test" ] && break
+          done
           [ -S "$XDG_RUNTIME_DIR/wl-test" ] || { echo "Weston did not start"; cat /tmp/weston.txt; exit 1; }
           export WAYLAND_DISPLAY=wl-test GDK_BACKEND=wayland
           page=about:blank
           [ -f /tmp/page/video.html ] && page=file:///tmp/page/video.html
-          lite-go "$page" > /tmp/log.txt 2>&1 &
+          LITEGO_CEF_VERBOSE=1 dbus-run-session -- lite-go "$page" > /tmp/log.txt 2>&1 &
           pid=$!
           shot() {
             shooter=$(command -v weston-screenshooter || ls /usr/lib*/weston/weston-screenshooter /usr/libexec/weston-screenshooter 2>/dev/null | head -1)
@@ -179,7 +178,8 @@ jobs:
           sleep 5
           alive=0; kill -0 $pid 2>/dev/null && alive=1
           kill $pid 2>/dev/null; sleep 1; kill -9 $pid 2>/dev/null
-          cat /tmp/log.txt
+          grep -v "dbus" /tmp/log.txt | tail -150
+          for f in /tmp/shots/*.png; do [ -f "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
           [ $alive = 1 ] || { echo "Lite Go exited on Wayland before 20 seconds"; exit 1; }
           ! grep -q "no GPU drawing\|no OpenGL context\|could not start" /tmp/log.txt || { echo "Lite Go ran on Wayland but could not draw"; exit 1; }
           echo "Lite Go ran for 20 seconds on Wayland."
