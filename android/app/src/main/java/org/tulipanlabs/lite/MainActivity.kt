@@ -116,7 +116,9 @@ class MainActivity : Activity(), PageEvents {
         set.blockedTotal = set.blockedTotal + blockedSession
         blockedSession = 0
         tab()?.web?.onPause()
-        CookieManager.getInstance().flush()
+        // only once a page exists: before that, asking for the cookie store starts
+        // the web engine at a bad moment (seen crashing on a relaunch)
+        if (tabs.any { it.web != null }) CookieManager.getInstance().flush()
     }
 
     override fun onResume() {
