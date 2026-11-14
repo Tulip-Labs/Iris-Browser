@@ -129,6 +129,13 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: experimental-features = nix-command flakes
+      - name: go.sum
+        run: |
+          if [ ! -f go.sum ]; then
+            nix shell nixpkgs#go -c go mod tidy
+            git add go.sum
+            echo "----- go.sum -----"; cat go.sum; echo "----- end -----"
+          fi
       - name: nix build
         run: |
           nix build -L .#default
