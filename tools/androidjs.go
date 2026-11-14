@@ -30,6 +30,8 @@ func main() {
 		"youtube.js":       core.YouTubeScript,
 		"youtube-light.js": core.YouTubeLightScript,
 		"farble.js":        farble,
+		"google-web.js":    core.WebScript,
+		"google-images.js": core.ImagesScript,
 	}
 	for name, js := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(js+"\n"), 0o644); err != nil {

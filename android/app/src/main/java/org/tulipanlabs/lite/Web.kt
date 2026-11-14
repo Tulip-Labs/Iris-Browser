@@ -32,7 +32,7 @@ import java.security.SecureRandom
 // A tab and its page: Android's own WebView (Chromium, kept up to date by the
 // system), with Lite Shields between the page and the network.
 
-class Tab(val id: Long, val private: Boolean) {
+class Tab(val id: Long, val private: Boolean, val container: String = "") {
     var url = ""
     var title = ""
     var web: WebView? = null
@@ -84,10 +84,23 @@ class Pages(private val ctx: Context, private val set: Settings, private val eve
 
     private val docStart = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
 
-    @SuppressLint("SetJavaScriptEnabled")
+    /** whether this WebView can keep containers apart */
+    val containersWork = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
+
+    @SuppressLint("SetJavaScriptEnabled", "RequiresFeature")
     fun make(t: Tab): WebView {
         val w = WebView(ctx)
         t.web = w
+        // a container tab keeps its cookies and site data in a profile of its own
+        // (Android System WebView 123 or newer; older ones share the normal one)
+        if (t.container.isNotEmpty() && containersWork) {
+            try {
+                val name = "c-" + t.container.lowercase()
+                androidx.webkit.ProfileStore.getInstance().getOrCreateProfile(name)
+                WebViewCompat.setProfile(w, name)
+            } catch (e: Exception) {
+            }
+        }
         w.setBackgroundColor(Color.WHITE)
         val s = w.settings
         s.javaScriptEnabled = true

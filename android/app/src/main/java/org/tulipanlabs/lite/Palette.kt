@@ -11,6 +11,8 @@ class Palette(
     ink: Int, ink2: Int, ink3: Int,
     deep: Int, deep2: Int, val hl: Int, val danger: Int,
     g5: Int, val swatch: List<Int>,
+    /** three pastels merging from top to bottom behind the window, or null */
+    val grad: List<Int>? = null,
 ) {
     val primary = deep
     val onPrimary = WHITE
@@ -32,7 +34,27 @@ class Palette(
     val scrim = alpha(BLACK, if (dark) 0.55f else 0.32f)
 
     /** The window's frame around the page (bars, tab grid). */
-    val frame = if (dark) mix(g5, BLACK, 0.25f) else surfaceHigh
+    val frame = if (dark) mix(g5, BLACK, 0.25f) else if (grad != null) mix(grad[0], WHITE, 0.35f) else surfaceHigh
+
+    /** the frame as a drawable: the merging pastels, or the plain color */
+    fun frameDrawable(): android.graphics.drawable.Drawable =
+        if (grad == null) android.graphics.drawable.ColorDrawable(frame)
+        else android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, grad.toIntArray())
+
+    /** Lite's own pages (new tab, results): a paler version of the frame */
+    fun pageDrawable(): android.graphics.drawable.Drawable =
+        if (grad == null) android.graphics.drawable.ColorDrawable(surface)
+        else android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+            grad.map { mix(it, WHITE, 0.6f) }.toIntArray())
+
+    /** a container's color, tuned to this palette */
+    fun tone(name: String): Int {
+        val c = hex(when (name) {
+            "blue" -> "#3d7be0"; "turquoise" -> "#1fa3a3"; "green" -> "#3f9d4f"; "yellow" -> "#d9a400"
+            "orange" -> "#e8732c"; "red" -> "#d6453d"; "pink" -> "#d9508f"; "purple" -> "#8b5cd6"; else -> "#808080"
+        })
+        return if (dark) mix(c, WHITE, 0.25f) else c
+    }
 
     companion object {
         const val WHITE = 0xffffffff.toInt()
@@ -67,11 +89,27 @@ class Palette(
                 listOf("#c2457a", "#e48aae", "#ffd1df", "#fffafa", "#8fbf6a")),
             spring("meadow", "Meadow", "#12291c", "#66806f", "#a7c0ae", "#2f7d4f", "#5aa86f", "#f5c518", "#c43d2f", "#fbfdf6",
                 listOf("#2f7d4f", "#5aa86f", "#f5c518", "#d4f0ff", "#bfe6d0")),
+            pastel("peach", "Peach Sky", "#33172b", "#5f3d55", "#8a6880", "#a8487f", "#d47fae", "#f2a65a", "#c63d3d", "#fdf3f4",
+                listOf("#ffe3d3", "#fbdcec", "#dfe3fb")),
+            pastel("mint", "Mint Lilac", "#1c2340", "#424a6b", "#6c7494", "#5a63b8", "#8b93dc", "#f0b35a", "#c8424f", "#f4f8fc",
+                listOf("#d9f3e6", "#dcecf9", "#e9defa")),
+            pastel("sorbet", "Sorbet", "#33161f", "#623f49", "#8d6a74", "#c4517a", "#e68aa6", "#f09a3e", "#c0392b", "#fff6f1",
+                listOf("#fff0c9", "#ffdcd2", "#f9d3e6")),
+            pastel("lagoon", "Lagoon", "#10283a", "#38566a", "#647f90", "#2f7f97", "#63aebf", "#f3b24c", "#c4453a", "#f3f9fb",
+                listOf("#d6f1f5", "#dfeaf9", "#f2e3f5")),
             Palette("classic", "Classic", false, hex("#1d1d24"), hex("#6b6b78"), hex("#a8a8b4"), hex("#3a5bc7"), hex("#6f86d6"),
                 hex("#f0a500"), hex("#c62828"), hex("#f7f7f9"), listOf("#3a5bc7", "#e8eefc", "#e3f4e1", "#fff3cf", "#f0a500").map(::hex)),
             Palette("night", "Night", true, hex("#f3e9f7"), hex("#b29fbd"), hex("#7c6a87"), hex("#c07ad0"), hex("#9d60ab"),
                 hex("#ffae00"), hex("#ff6b4a"), hex("#17111c"), listOf("#17111c", "#c07ad0", "#9d60ab", "#ffae00", "#ff6b4a").map(::hex)),
         )
+
+        private fun pastel(
+            id: String, label: String, ink: String, ink2: String, ink3: String,
+            deep: String, deep2: String, hl: String, danger: String, g5: String, grad: List<String>,
+        ) = Palette(id, label, false, hex(ink), hex(ink2), hex(ink3), hex(deep), hex(deep2), hex(hl), hex(danger), hex(g5),
+            grad.map(::hex), grad.map(::hex))
+
+        val containerColors = listOf("blue", "turquoise", "green", "yellow", "orange", "red", "pink", "purple")
 
         fun byId(id: String?): Palette = all.firstOrNull { it.id == id } ?: all[0]
     }

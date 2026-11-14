@@ -85,6 +85,9 @@ class MainActivity : Activity(), PageEvents {
     private var insetBottom = 0
     private var keyboard = false
     private var suggestSeq = 0
+    private var wide = false // a tablet, or a phone on its side: the buttons sit beside the address
+    private lateinit var pill: LinearLayout
+    private val results by lazy { Results(this) }
 
     // ---- lifecycle ----
 
@@ -149,6 +152,15 @@ class MainActivity : Activity(), PageEvents {
                     }
                 }
             }
+        }
+    }
+
+    override fun onConfigurationChanged(c: android.content.res.Configuration) {
+        super.onConfigurationChanged(c)
+        // turning the phone, or a window resized: the layout follows when its width class changes
+        if ((c.screenWidthDp >= 600) != wide) {
+            closeSheet()
+            buildUi()
         }
     }
 
@@ -237,7 +249,8 @@ class MainActivity : Activity(), PageEvents {
         grid = null
         sheet = null
         root = FrameLayout(this)
-        root.setBackgroundColor(pal.frame)
+        root.background = pal.frameDrawable()
+        wide = resources.configuration.screenWidthDp >= 600
         // taking the focus when the address bar lets it go (or Android hands it straight back)
         root.isFocusableInTouchMode = true
         column = LinearLayout(this)
@@ -261,7 +274,7 @@ class MainActivity : Activity(), PageEvents {
         shieldBox.addView(badge, flp(WRAP, dp(15), Gravity.TOP or Gravity.END).also { it.topMargin = dp(4); it.rightMargin = dp(2) })
         top.addView(shieldBox, lp(dp(48), dp(48)))
 
-        val pill = LinearLayout(this)
+        pill = LinearLayout(this)
         pill.orientation = LinearLayout.HORIZONTAL
         pill.gravity = Gravity.CENTER_VERTICAL
         pill.background = rounded(pal.field, dp(22).toFloat())
@@ -314,12 +327,10 @@ class MainActivity : Activity(), PageEvents {
         bottom = LinearLayout(this)
         bottom.orientation = LinearLayout.HORIZONTAL
         bottom.gravity = Gravity.CENTER_VERTICAL
-        val slot = { v: View -> bottom.addView(v, lp(0, dp(52), 1f)) }
         backBtn = iconButton(pal, R.drawable.ic_back, "Back") { onBackPage() }
         fwdBtn = iconButton(pal, R.drawable.ic_forward, "Forward") { tab()?.web?.let { if (it.canGoForward()) it.goForward() } }
-        slot(backBtn)
-        slot(fwdBtn)
-        slot(iconButton(pal, R.drawable.ic_add, "New tab", pal.primary) { newTab("", false); focusAddress() })
+        val plus = iconButton(pal, R.drawable.ic_add, "New tab (hold for private and container tabs)", pal.primary) { newTab("", false); focusAddress() }
+        plus.setOnLongClickListener { newTabMenu(); true }
         val tb = FrameLayout(this)
         tabsBtn = text("1", 12f, pal.onSurfaceVariant, bold = true)
         tabsBtn.gravity = Gravity.CENTER
@@ -328,8 +339,21 @@ class MainActivity : Activity(), PageEvents {
         tb.background = ripple(pal, null, oval(Palette.WHITE))
         tb.contentDescription = "Tabs"
         tb.setOnClickListener { if (grid == null) openGrid() else closeGrid() }
-        slot(tb)
-        slot(iconButton(pal, R.drawable.ic_more, "Menu") { if (sheet == null) openSheet() else closeSheet() })
+        tb.setOnLongClickListener { newTabMenu(); true }
+        val menu = iconButton(pal, R.drawable.ic_more, "Menu") { if (sheet == null) openSheet() else closeSheet() }
+        if (wide) {
+            // one row: back, forward and reload before the address; tabs and menu after it
+            val reload = iconButton(pal, R.drawable.ic_reload, "Reload") { tab()?.web?.reload() }
+            top.addView(backBtn, 0, lp(dp(48), dp(48)))
+            top.addView(fwdBtn, 1, lp(dp(48), dp(48)))
+            top.addView(reload, 2, lp(dp(48), dp(48)))
+            top.addView(plus, lp(dp(48), dp(48)))
+            top.addView(tb, lp(dp(48), dp(48)))
+            top.addView(menu, lp(dp(48), dp(48)))
+            bottom.visibility = View.GONE
+        } else {
+            for (v in listOf(backBtn, fwdBtn, plus, tb, menu)) bottom.addView(v, lp(0, dp(52), 1f))
+        }
         column.addView(bottom, lp(MATCH, WRAP))
 
         root.setOnApplyWindowInsetsListener { _, ins -> insets(ins); ins }
@@ -381,8 +405,8 @@ class MainActivity : Activity(), PageEvents {
         }
     }
 
-    private fun newTab(url: String, private: Boolean, select: Boolean = true, after: Int = cur): Tab {
-        val t = Tab(nextId++, private)
+    private fun newTab(url: String, private: Boolean, select: Boolean = true, after: Int = cur, container: String = ""): Tab {
+        val t = Tab(nextId++, private, if (private) "" else container)
         val at = if (after in tabs.indices) after + 1 else tabs.size
         tabs.add(at, t)
         if (select) selectTab(at)
@@ -474,7 +498,126 @@ class MainActivity : Activity(), PageEvents {
         if (url.isEmpty()) return
         unfocusAddress()
         val t = tab() ?: newTab("", false)
+        val q = Search.query(url)
+        if (q != null && set.liteResults && set.mode == Mode.WEB && url.contains("udm=14") && !t.private && t.container.isEmpty()) {
+            liteSearch(t, q)
+            return
+        }
         open(t, url)
+    }
+
+    /** a web search shown on Lite's own page (see Results.kt) */
+    private fun liteSearch(t: Tab, q: String) {
+        val g = Search.url(q, Mode.WEB)
+        t.url = g
+        t.page = g
+        t.title = q
+        val w = t.web ?: pages.make(t).also { content.addView(it, 0, flp(MATCH, MATCH)) }
+        w.loadUrl("about:blank")
+        if (t === tab()) show()
+        t.progress = 30
+        if (t === tab()) progress.progress = 0.3f
+        results.fetch(content, q) { web, images ->
+            if (t.web !== w || isFinishing) return@fetch
+            t.progress = 100
+            if (web == null) {
+                w.loadUrl(g) // Google wants a human check, or did not answer: its own page
+            } else {
+                w.loadDataWithBaseURL("https://www.google.com/", Results.page(q, web, images, pal), "text/html", "utf-8", g)
+                if (!t.private) hist.add(g, q)
+            }
+            if (t === tab()) updateBars()
+        }
+    }
+
+    // ---- the new tab menu: private and container tabs (hold the + button) ----
+
+    private fun newTabMenu() {
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.setPadding(dp(12), dp(4), dp(12), dp(16))
+        col.addView(text("Open a new tab", 18f, pal.onSurface, bold = true), lp(WRAP, WRAP).also { it.setMargins(dp(8), 0, 0, dp(8)) })
+        fun item(label: String, sub: String, color: Int, letter: String, f: () -> Unit) {
+            val r = LinearLayout(this)
+            r.orientation = LinearLayout.HORIZONTAL
+            r.gravity = Gravity.CENTER_VERTICAL
+            r.setPadding(dp(10), dp(8), dp(10), dp(8))
+            r.background = ripple(pal, null, rounded(Palette.WHITE, dp(16).toFloat()))
+            val dot = text(letter, 15f, Palette.WHITE, bold = true)
+            dot.gravity = Gravity.CENTER
+            dot.background = rounded(color, dp(12).toFloat())
+            r.addView(dot, lp(dp(36), dp(36)))
+            val tx = LinearLayout(this)
+            tx.orientation = LinearLayout.VERTICAL
+            tx.addView(text(label, 15.5f, pal.onSurface, bold = true))
+            tx.addView(text(sub, 12.5f, pal.onSurfaceVariant))
+            r.addView(tx, lp(0, WRAP, 1f).also { it.leftMargin = dp(14) })
+            r.setOnClickListener { closeSheet(); f() }
+            col.addView(r, lp(MATCH, WRAP))
+        }
+        item("New tab", "Your everyday tab", pal.primary, "+") { newTab("", false); focusAddress() }
+        item("Private tab", "Nothing is kept after it closes", Palette.mix(pal.primary, Palette.BLACK, 0.35f), "P") { newTab("", true); focusAddress() }
+        for (c in set.containers) {
+            item(c.name, "Container: its own sign-ins and cookies", pal.tone(c.color), c.name.take(1).uppercase()) {
+                newTab("", false, container = c.name)
+                focusAddress()
+            }
+        }
+        if (!pages.containersWork) col.addView(note("Containers need Android System WebView 123 or newer: update it from the Play Store. Until then their tabs share sign-ins with the others."))
+        val m = button(pal, "Manage containers", false) { closeSheet(); openSheet(scrollTo = "containers") }
+        col.addView(m, lp(WRAP, dp(40)).also { it.topMargin = dp(10); it.leftMargin = dp(8) })
+        openSheet(col)
+    }
+
+    private fun containerDialog(edit: Container?) {
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.setPadding(dp(22), dp(8), dp(22), 0)
+        val name = EditText(this)
+        name.hint = "Name: Work, Shopping…"
+        name.setSingleLine(true)
+        name.setText(edit?.name ?: "")
+        box.addView(name, lp(MATCH, WRAP))
+        var color = edit?.color ?: Palette.containerColors[set.containers.size % Palette.containerColors.size]
+        val colors = Flow(this, dp(10))
+        val dots = ArrayList<View>()
+        fun paint() {
+            for ((i, d) in dots.withIndex()) {
+                val c = Palette.containerColors[i]
+                d.background = if (c == color) rounded(pal.tone(c), dp(18).toFloat(), dp(3), pal.onSurface) else rounded(pal.tone(c), dp(18).toFloat())
+            }
+        }
+        for (c in Palette.containerColors) {
+            val d = View(this)
+            d.contentDescription = c
+            d.setOnClickListener { color = c; paint() }
+            dots.add(d)
+            colors.addView(d, ViewGroup.LayoutParams(dp(36), dp(36)))
+        }
+        paint()
+        box.addView(colors, lp(MATCH, WRAP).also { it.topMargin = dp(14) })
+        val b = AlertDialog.Builder(this).setTitle(if (edit == null) "New container" else "Edit container").setView(box)
+            .setPositiveButton(if (edit == null) "Add" else "Save") { _, _ ->
+                val n = name.text.toString().trim()
+                if (n.isEmpty()) return@setPositiveButton
+                val list = set.containers.toMutableList()
+                if (list.any { it.name.equals(n, true) && it.name != edit?.name }) {
+                    Toast.makeText(this, "There is already a container named $n", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val i = list.indexOfFirst { it.name == edit?.name }
+                if (i >= 0) list[i] = Container(n, color) else list.add(Container(n, color))
+                set.containers = list
+                closeSheet()
+                openSheet(scrollTo = "containers")
+            }
+            .setNegativeButton("Cancel", null)
+        if (edit != null) b.setNeutralButton("Remove") { _, _ ->
+            set.containers = set.containers.filter { it.name != edit.name }
+            closeSheet()
+            openSheet(scrollTo = "containers")
+        }
+        b.show()
     }
 
     private fun onBackPage() {
@@ -509,6 +652,9 @@ class MainActivity : Activity(), PageEvents {
             addrIcon.setImageResource(icon)
             addrIcon.imageTintList = android.content.res.ColorStateList.valueOf(if (icon == R.drawable.ic_warning) pal.danger else pal.onSurfaceVariant)
         }
+        // a container tab wears its color around the address
+        val tone = t?.let { tt -> if (tt.container.isEmpty()) null else set.containers.firstOrNull { it.name == tt.container } }?.let { pal.tone(it.color) }
+        pill.background = if (tone != null) rounded(pal.field, dp(22).toFloat(), dp(2), tone) else rounded(pal.field, dp(22).toFloat())
         backBtn.isEnabled = t?.web?.canGoBack() == true
         backBtn.alpha = if (backBtn.isEnabled) 1f else 0.38f
         fwdBtn.isEnabled = t?.web?.canGoForward() == true
@@ -538,7 +684,7 @@ class MainActivity : Activity(), PageEvents {
     }
 
     private fun addressFocus(focused: Boolean) {
-        bottom.visibility = if (focused || keyboard) View.GONE else View.VISIBLE
+        bottom.visibility = if (focused || keyboard || wide) View.GONE else View.VISIBLE
         aiBtn.visibility = if (focused) View.GONE else View.VISIBLE
         if (focused) {
             val t = tab()
@@ -640,16 +786,26 @@ class MainActivity : Activity(), PageEvents {
         val t = tab()
         val sv = ScrollView(this)
         sv.isFillViewport = true
-        sv.setBackgroundColor(pal.surface)
+        sv.background = pal.pageDrawable()
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
         col.gravity = Gravity.CENTER_HORIZONTAL
-        col.setPadding(dp(24), dp(56), dp(24), dp(24))
+        val side = if (wide) maxOf(dp(24), (resources.displayMetrics.widthPixels - dp(620)) / 2) else dp(24)
+        col.setPadding(side, dp(if (wide) 36 else 56), side, dp(24))
         val logo = LogoView(this, pal)
         col.addView(logo, lp(dp(64), dp(64)))
-        val title = text(if (t?.private == true) "Private tab" else "Lite", 28f, pal.onSurface, bold = true)
+        val title = text(when {
+            t?.private == true -> "Private tab"
+            t != null && t.container.isNotEmpty() -> t.container
+            else -> "Lite"
+        }, 28f, pal.onSurface, bold = true)
+        if (t != null && t.container.isNotEmpty()) title.setTextColor(pal.tone(set.containers.firstOrNull { it.name == t.container }?.color ?: "blue"))
         col.addView(title, lp(WRAP, WRAP).also { it.topMargin = dp(14) })
-        val sub = text(if (t?.private == true) "Nothing you do here is kept in your history." else "Light on memory. Fast to Google and YouTube.", 14f, pal.onSurfaceVariant)
+        val sub = text(when {
+            t?.private == true -> "Nothing you do here is kept in your history."
+            t != null && t.container.isNotEmpty() -> "A container tab: its sign-ins and cookies are kept apart."
+            else -> "Light on memory. Fast to Google and YouTube."
+        }, 14f, pal.onSurfaceVariant)
         sub.gravity = Gravity.CENTER
         col.addView(sub, lp(WRAP, WRAP).also { it.topMargin = dp(4) })
 
@@ -693,14 +849,14 @@ class MainActivity : Activity(), PageEvents {
         grid?.let { content.removeView(it) }
         val wrap = LinearLayout(this)
         wrap.orientation = LinearLayout.VERTICAL
-        wrap.setBackgroundColor(pal.frame)
+        wrap.background = pal.frameDrawable()
         wrap.isClickable = true
         val head = LinearLayout(this)
         head.orientation = LinearLayout.HORIZONTAL
         head.gravity = Gravity.CENTER_VERTICAL
         head.setPadding(dp(18), dp(8), dp(12), dp(8))
         head.addView(text(if (tabs.size == 1) "1 tab" else "${tabs.size} tabs", 22f, pal.onSurface, bold = true), lp(0, WRAP, 1f))
-        head.addView(iconButton(pal, R.drawable.ic_private, "New private tab") { closeGrid(); newTab("", true); focusAddress() }, lp(dp(48), dp(48)))
+        head.addView(iconButton(pal, R.drawable.ic_add, "New tab: private or in a container", pal.primary) { newTabMenu() }, lp(dp(48), dp(48)))
         head.addView(button(pal, "Done", true) { closeGrid() }, lp(WRAP, dp(40)).also { it.leftMargin = dp(6) })
         wrap.addView(head, lp(MATCH, WRAP))
 
@@ -708,7 +864,7 @@ class MainActivity : Activity(), PageEvents {
         val list = LinearLayout(this)
         list.orientation = LinearLayout.VERTICAL
         list.setPadding(dp(12), dp(4), dp(12), dp(16))
-        val cols = if (resources.configuration.screenWidthDp >= 600) 3 else 2
+        val cols = (resources.configuration.screenWidthDp / 190).coerceIn(2, 6)
         var row: LinearLayout? = null
         for ((i, t) in tabs.withIndex()) {
             if (i % cols == 0) {
@@ -732,8 +888,12 @@ class MainActivity : Activity(), PageEvents {
         val c = LinearLayout(this)
         c.orientation = LinearLayout.VERTICAL
         val selected = i == cur
-        c.background = ripple(pal, rounded(pal.surface, dp(16).toFloat(), dp(if (selected) 2 else 1), if (selected) pal.primary else pal.outlineVariant),
-            rounded(Palette.WHITE, dp(16).toFloat()))
+        val tone = set.containers.firstOrNull { it.name == t.container }?.let { pal.tone(it.color) }
+        c.background = ripple(pal, rounded(pal.surface, dp(16).toFloat(), dp(if (selected || tone != null) 2 else 1), when {
+            tone != null -> tone
+            selected -> pal.primary
+            else -> pal.outlineVariant
+        }), rounded(Palette.WHITE, dp(16).toFloat()))
         c.elevation = dp(2).toFloat()
         val head = LinearLayout(this)
         head.orientation = LinearLayout.HORIZONTAL
@@ -743,11 +903,19 @@ class MainActivity : Activity(), PageEvents {
             t.title.isNotEmpty() -> t.title
             t.url.isNotEmpty() -> display(t.url)
             t.private -> "Private tab"
+            t.container.isNotEmpty() -> t.container
             else -> "New tab"
         }, 13f, pal.onSurface, bold = true)
         name.setSingleLine(true)
         name.ellipsize = TextUtils.TruncateAt.END
         head.addView(name, lp(0, WRAP, 1f))
+        if (tone != null) {
+            val tag = text(t.container, 10.5f, Palette.WHITE, bold = true)
+            tag.setSingleLine(true)
+            tag.setPadding(dp(6), dp(1), dp(6), dp(1))
+            tag.background = rounded(tone, dp(8).toFloat())
+            head.addView(tag, lp(WRAP, WRAP))
+        }
         head.addView(iconButton(pal, R.drawable.ic_close, "Close tab") {
             closeTab(i)
             if (grid != null) openGrid()
@@ -787,7 +955,7 @@ class MainActivity : Activity(), PageEvents {
 
     // ---- the menu ----
 
-    private fun openSheet() {
+    private fun openSheet(content: View? = null, scrollTo: String = "") {
         closeGrid()
         unfocusAddress()
         val scrim = FrameLayout(this)
@@ -806,13 +974,19 @@ class MainActivity : Activity(), PageEvents {
         handle.background = rounded(pal.outline, dp(2).toFloat())
         panel.addView(handle, lp(dp(32), dp(4)).also { it.gravity = Gravity.CENTER_HORIZONTAL; it.bottomMargin = dp(6) })
         val sv = ScrollView(this)
-        sv.addView(menuContent())
+        val body = content ?: menuContent()
+        sv.addView(body)
         panel.addView(sv, lp(MATCH, WRAP))
         val h = (resources.displayMetrics.heightPixels * 0.82f).toInt()
-        scrim.addView(panel, flp(MATCH, WRAP, Gravity.BOTTOM))
+        // on a wide screen the sheet keeps a phone's width, centered
+        val sw = if (wide) minOf(dp(560), resources.displayMetrics.widthPixels) else MATCH
+        scrim.addView(panel, flp(sw, WRAP, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL))
         panel.layoutParams.height = WRAP
         sv.layoutParams = lp(MATCH, WRAP)
-        panel.post { if (panel.height > h) panel.layoutParams = flp(MATCH, h, Gravity.BOTTOM) }
+        panel.post {
+            if (panel.height > h) panel.layoutParams = flp(sw, h, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+            if (scrollTo.isNotEmpty()) body.findViewWithTag<View>(scrollTo)?.let { v -> sv.post { sv.smoothScrollTo(0, v.top) } }
+        }
         root.addView(scrim, flp(MATCH, MATCH))
         sheet = scrim
     }
@@ -866,37 +1040,66 @@ class MainActivity : Activity(), PageEvents {
 
         // look
         col.addView(section("Look"))
-        val sw = Flow(this, dp(10))
+        // each palette as a tile with its name
+        val tiles = Flow(this, dp(8))
+        val sheetW = if (wide) minOf(dp(560), resources.displayMetrics.widthPixels) else resources.displayMetrics.widthPixels
+        val tileW = ((sheetW - dp(40) - dp(8) * 2) / 3).coerceAtMost(dp(160))
         for (p in Palette.all) {
-            val v = object : View(this) {
-                val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-                override fun onDraw(c: android.graphics.Canvas) {
-                    val w = width.toFloat()
-                    val o = android.graphics.RectF(dp(3).toFloat(), dp(3).toFloat(), w - dp(3), w - dp(3))
-                    paint.style = android.graphics.Paint.Style.FILL
-                    paint.color = p.swatch.getOrElse(1) { p.primary }
-                    c.drawArc(o, 0f, 180f, true, paint)
-                    paint.color = if (p.dark) p.surface else p.primary
-                    c.drawArc(o, 180f, 180f, true, paint)
-                    if (p.id == pal.id) {
-                        paint.style = android.graphics.Paint.Style.STROKE
-                        paint.strokeWidth = dp(2).toFloat()
-                        paint.color = pal.onSurface
-                        c.drawCircle(w / 2, w / 2, w / 2 - dp(1), paint)
-                    }
-                }
-            }
-            v.contentDescription = p.label
-            v.setOnClickListener {
+            val tile = LinearLayout(this)
+            tile.orientation = LinearLayout.VERTICAL
+            tile.gravity = Gravity.CENTER_HORIZONTAL
+            tile.setPadding(dp(6), dp(6), dp(6), dp(4))
+            val on = p.id == pal.id
+            tile.background = ripple(pal, rounded(pal.surfaceHigh, dp(16).toFloat(), dp(if (on) 2 else 1), if (on) pal.primary else pal.outlineVariant),
+                rounded(Palette.WHITE, dp(16).toFloat()))
+            val preview = FrameLayout(this)
+            val pd = if (p.grad != null) android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, p.grad.toIntArray())
+            else android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(p.surface, p.surface, p.primary, p.primary))
+            pd.cornerRadius = dp(11).toFloat()
+            preview.background = pd
+            val dot = View(this)
+            dot.background = oval(p.primary)
+            preview.addView(dot, flp(dp(14), dp(14), Gravity.TOP or Gravity.END).also { it.setMargins(0, dp(7), dp(7), 0) })
+            tile.addView(preview, lp(MATCH, dp(46)))
+            val l = text(p.label, 12.5f, pal.onSurface, bold = on)
+            l.setSingleLine(true)
+            l.ellipsize = TextUtils.TruncateAt.END
+            l.gravity = Gravity.CENTER
+            tile.addView(l, lp(MATCH, WRAP).also { it.topMargin = dp(5) })
+            tile.contentDescription = p.label
+            tile.setOnClickListener {
                 set.theme = p.id
                 set.themeAt = System.currentTimeMillis() / 1000
                 pal = p
                 closeSheet()
                 buildUi()
+                openSheet()
             }
-            sw.addView(v, ViewGroup.LayoutParams(dp(40), dp(40)))
+            tiles.addView(tile, ViewGroup.LayoutParams(tileW, dp(84)))
         }
-        col.addView(sw, lp(MATCH, WRAP).also { it.bottomMargin = dp(6) })
+        col.addView(tiles, lp(MATCH, WRAP).also { it.bottomMargin = dp(6) })
+
+        // containers
+        val ch = section("Containers")
+        ch.tag = "containers"
+        col.addView(ch)
+        for (c in set.containers) {
+            val r = LinearLayout(this)
+            r.orientation = LinearLayout.HORIZONTAL
+            r.gravity = Gravity.CENTER_VERTICAL
+            r.setPadding(0, dp(6), 0, dp(6))
+            val dot = text(c.name.take(1).uppercase(), 14f, Palette.WHITE, bold = true)
+            dot.gravity = Gravity.CENTER
+            dot.background = rounded(pal.tone(c.color), dp(11).toFloat())
+            r.addView(dot, lp(dp(34), dp(34)))
+            r.addView(text(c.name, 15f, pal.onSurface, bold = true), lp(0, WRAP, 1f).also { it.leftMargin = dp(12) })
+            r.addView(iconButton(pal, R.drawable.ic_add, "New tab in ${c.name}", pal.primary) { closeSheet(); newTab("", false, container = c.name); focusAddress() }, lp(dp(44), dp(44)))
+            r.setOnClickListener { containerDialog(c) }
+            col.addView(r, lp(MATCH, WRAP))
+        }
+        col.addView(button(pal, "New container", false) { containerDialog(null) }, lp(WRAP, dp(40)).also { it.topMargin = dp(6) })
+        col.addView(note(if (pages.containersWork) "Each container keeps its own sign-ins and cookies. Hold the + button to open a tab in one; tap a container here to rename it or change its color."
+            else "Containers need Android System WebView 123 or newer: update it from the Play Store. Until then their tabs share sign-ins with the others."))
 
         // search
         col.addView(section("Search"))
@@ -904,6 +1107,8 @@ class MainActivity : Activity(), PageEvents {
         for (m in Mode.values()) modes.addView(chip(pal, m.label, modeIcon(m), m == set.mode) { set.mode = m; closeSheet(); openSheet() })
         col.addView(modes, lp(MATCH, WRAP))
         col.addView(note("Google opens in the mode you pick. Type \"yt \" before words to search YouTube."))
+        col.addView(toggle("Lite results for Web searches", set.liteResults) { set.liteResults = it })
+        col.addView(note("Web searches are read in the background and shown on Lite's own page, in your palette, without ads."))
 
         // shields
         col.addView(section("Lite Shields"))
@@ -1171,6 +1376,21 @@ class MainActivity : Activity(), PageEvents {
 
     private fun handleIntent(i: Intent?): Boolean {
         if (i == null) return false
+        // screens for the screenshot run (debug builds only)
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            i.getStringExtra("lite.theme")?.let { th -> set.theme = th; pal = Palette.byId(th); buildUi() }
+            i.getStringExtra("lite.url")?.let { u -> ui.postDelayed({ go(u) }, 300) }
+            i.getStringExtra("lite.open")?.let { what ->
+                ui.postDelayed({
+                    when (what) {
+                        "menu" -> openSheet()
+                        "tabs" -> openGrid()
+                        "shield" -> shieldDialog()
+                        "new" -> newTabMenu()
+                    }
+                }, 900)
+            }
+        }
         when (i.action) {
             Intent.ACTION_VIEW -> {
                 val u = i.dataString ?: return false
@@ -1201,14 +1421,16 @@ class MainActivity : Activity(), PageEvents {
     private fun saveSession() {
         val keep = tabs.filter { !it.private && it.url.isNotEmpty() }
         set.session = keep.map { it.url }
+        set.sessionContainers = keep.map { it.container }
         set.sessionIndex = keep.indexOf(tab()).coerceAtLeast(0)
     }
 
     private fun restoreSession() {
         val urls = set.session
         if (urls.isEmpty()) return
-        for (u in urls) {
-            val t = Tab(nextId++, false)
+        val conts = set.sessionContainers
+        for ((k, u) in urls.withIndex()) {
+            val t = Tab(nextId++, false, conts.getOrElse(k) { "" })
             t.url = u
             t.page = u
             tabs.add(t)

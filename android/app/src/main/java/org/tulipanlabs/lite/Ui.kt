@@ -167,7 +167,13 @@ class Flow(ctx: Context, private val gap: Int) : ViewGroup(ctx) {
         var rowH = 0
         for (i in 0 until childCount) {
             val c = getChildAt(i)
-            c.measure(MeasureSpec.makeMeasureSpec(maxW, MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
+            // a child with a fixed size gets it; others take what they need
+            val lp = c.layoutParams
+            val ws = if (lp != null && lp.width > 0) MeasureSpec.makeMeasureSpec(minOf(lp.width, maxW), MeasureSpec.EXACTLY)
+            else MeasureSpec.makeMeasureSpec(maxW, MeasureSpec.AT_MOST)
+            val hs = if (lp != null && lp.height > 0) MeasureSpec.makeMeasureSpec(lp.height, MeasureSpec.EXACTLY)
+            else MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+            c.measure(ws, hs)
             if (x > 0 && x + c.measuredWidth > maxW) {
                 x = 0
                 y += rowH + gap
