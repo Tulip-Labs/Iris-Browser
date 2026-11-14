@@ -1,17 +1,28 @@
 #!/bin/sh
 # Makes the apt and dnf repositories served from GitHub Pages:
-#   update-repo.sh <folder with the .deb and .rpm> <output folder>
+#   update-repo.sh <folder with the .deb and .rpm> <output folder> <flat folder>
+# The packages themselves stay on the GitHub release (they carry Chromium,
+# and Pages keeps no file over 100 MB):
+#   dnf: the repository's index on Pages points at the release's files
+#        (xml:base, the release tag in TAG); the .rpm is signed in place in
+#        <folder with the .rpm>, so the release gets the signed one.
+#   apt: a flat repository made of release files (Packages, Release,
+#        InRelease), written to <flat folder> and uploaded with the release;
+#        sources point at releases/latest/download. The old apt address on
+#        Pages stays valid and empty, and the package moves its users over.
 # With the secret REPO_GPG_KEY (an armored private key, no passphrase) the
 # repositories and packages are signed and the key is published beside them;
 # without it the repositories are unsigned (the files still come over HTTPS).
 set -eu
 in=$1
 out=$2
+flat=$3
 URL=${PAGES_URL:-https://tulip-labs.github.io/Lite-Go-Browser}
-rm -rf "$out"
-mkdir -p "$out/deb/pool/main" "$out/rpm"
-cp "$in"/*.deb "$out/deb/pool/main/"
-cp "$in"/*.rpm "$out/rpm/"
+REL=${RELEASE_URL:-https://github.com/Tulip-Labs/Lite-Go-Browser/releases}
+: "${TAG:?TAG is the release tag}"
+rm -rf "$out" "$flat"
+mkdir -p "$out/deb/pool/main" "$out/rpm" "$flat"
+cp "$in"/*.deb "$flat/"
 
 signed=0
 if [ -n "${REPO_GPG_KEY:-}" ]; then
@@ -24,12 +35,12 @@ if [ -n "${REPO_GPG_KEY:-}" ]; then
 	signed=1
 fi
 
-# apt: one suite (stable), one component (main)
+# apt (old address): one suite, one component, no packages
 (
 	cd "$out/deb"
 	for arch in amd64 arm64; do
 		mkdir -p "dists/stable/main/binary-$arch"
-		dpkg-scanpackages --arch "$arch" pool/ > "dists/stable/main/binary-$arch/Packages"
+		: > "dists/stable/main/binary-$arch/Packages"
 		gzip -9kf "dists/stable/main/binary-$arch/Packages"
 	done
 	apt-ftparchive -o APT::FTPArchive::Release::Origin="Tulip Labs" -o APT::FTPArchive::Release::Label="Lite Go" \
@@ -42,24 +53,41 @@ fi
 	fi
 )
 
+# apt: the flat repository, from the release's files
+(
+	cd "$flat"
+	# sources: deb <releases>/latest download/  (so download/<file> is a release file)
+	dpkg-scanpackages --multiversion . | sed 's#^Filename: \./#Filename: download/#' > Packages
+	rm -f ./*.deb
+	gzip -9kf Packages
+	apt-ftparchive -o APT::FTPArchive::Release::Origin="Tulip Labs" -o APT::FTPArchive::Release::Label="Lite Go" \
+		release . > Release
+	if [ $signed = 1 ]; then
+		gpg --batch --yes --default-key "$KEYID" --clearsign -o InRelease Release
+		gpg --batch --yes --default-key "$KEYID" -abs -o Release.gpg Release
+	fi
+)
+
 # dnf / zypper
 if [ $signed = 1 ]; then
 	echo "%_gpg_name $KEYID" > ~/.rpmmacros
-	rpm --addsign "$out"/rpm/*.rpm
+	rpm --addsign "$in"/*.rpm
 fi
-createrepo_c -q "$out/rpm"
+cp "$in"/*.rpm "$out/rpm/"
+createrepo_c -q --baseurl "$REL/download/$TAG/" "$out/rpm"
+rm -f "$out"/rpm/*.rpm
 if [ $signed = 1 ]; then
 	gpg --batch --yes --default-key "$KEYID" --detach-sign --armor "$out/rpm/repodata/repomd.xml"
 	check="gpgcheck=1
 repo_gpgcheck=1
 gpgkey=$URL/lite-go-browser.asc"
-	apt_line="deb [signed-by=/usr/share/keyrings/lite-go-browser.gpg] $URL/deb stable main"
+	apt_line="deb [signed-by=/usr/share/keyrings/lite-go-browser.gpg] $REL/latest download/"
 	apt_setup="curl -fsSL $URL/lite-go-browser.gpg | sudo tee /usr/share/keyrings/lite-go-browser.gpg >/dev/null
 echo \"$apt_line\" | sudo tee /etc/apt/sources.list.d/lite-go-browser.list"
 else
 	check="gpgcheck=0
 repo_gpgcheck=0"
-	apt_line="deb [trusted=yes] $URL/deb stable main"
+	apt_line="deb [trusted=yes] $REL/latest download/"
 	apt_setup="echo \"$apt_line\" | sudo tee /etc/apt/sources.list.d/lite-go-browser.list"
 fi
 cat > "$out/rpm/lite-go-browser.repo" <<REPO

@@ -38,8 +38,7 @@ jobs:
           mkdir out
           cp dist/LiteGo-linux-x86_64.tar.gz dist/*.deb dist/*.rpm out/
           ls -l out
-          # the dnf and apt repositories live in git (GitHub Pages): no file over 100 MB
-          for f in out/*.deb out/*.rpm; do [ $(stat -c %s "$f") -lt 99000000 ] || { echo "$f is too big for the Pages repository"; exit 1; }; done
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux

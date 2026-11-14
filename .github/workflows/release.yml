@@ -94,11 +94,14 @@ jobs:
         with:
           path: art
           merge-multiple: true
-      - name: Linux files to the release
+      - name: apt and dnf repositories (indexes on GitHub Pages and on the release; the .rpm is signed here)
         run: |
           rm -f art/*.png # the test screenshots
           ls -l art
-          gh release upload "$TAG" art/* --clobber
+          sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev apt-utils createrepo-c gnupg rpm
+          ./packaging/repo/update-repo.sh art site flat
+      - name: Linux files to the release
+        run: gh release upload "$TAG" art/* flat/* --clobber
       - name: Checksums of every file, and the AUR recipe
         run: |
           mkdir all && cd all
@@ -111,10 +114,6 @@ jobs:
           sum=$(sha256sum all/LiteGo-linux-x86_64.tar.gz | cut -d' ' -f1)
           sed -e "s/@VERSION@/$ver/" -e "s/@SHA256@/$sum/" packaging/aur/PKGBUILD.in > PKGBUILD
           gh release upload "$TAG" SHA256SUMS PKGBUILD --clobber
-      - name: apt and dnf repositories (GitHub Pages, gh-pages branch)
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev apt-utils createrepo-c gnupg rpm
-          ./packaging/repo/update-repo.sh art site
       - name: Publish the repositories
         run: |
           cd site

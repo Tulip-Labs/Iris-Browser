@@ -82,6 +82,8 @@ scripts:
 
 overrides:
   deb:
+    scripts:
+      postinstall: packaging/linux/postinst-deb.sh
     # Chromium's libraries (libcef.so); t64 names on Debian 13 and Ubuntu 24.04
     depends:
       - libgtk-3-0 | libgtk-3-0t64
