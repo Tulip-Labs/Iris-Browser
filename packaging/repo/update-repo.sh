@@ -67,6 +67,7 @@ cat > "$out/rpm/lite-go-browser.repo" <<REPO
 name=Lite Go
 baseurl=$URL/rpm
 enabled=1
+metadata_expire=1h
 $check
 REPO
 cp "$out/rpm/lite-go-browser.repo" "$out/lite-go-browser.repo"
