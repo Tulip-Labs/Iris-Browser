@@ -9,19 +9,33 @@
     if (a.closest('#tads,#tadsb,#bottomads,[data-text-ad],[aria-label="Ads"],[aria-label="Sponsored"],[data-pla]')) continue;
     let u = a.href;
     try { const x = new URL(u); if (/google\./.test(x.hostname) && x.pathname === '/url') u = x.searchParams.get('q') || x.searchParams.get('url') || u; } catch (e) {}
-    if (/^https?:\/\/([a-z]+\.)?google\.[a-z.]+\//.test(u) || seen.has(u)) continue;
+    // Google's mobile page sends results through /goto, whose target is sealed:
+    // the link is kept as it is (it leads to the site) and the site read from its text
+    const sealed = /^https?:\/\/www\.google\.[a-z.]+\/goto\?/.test(u);
+    if (!sealed && /^https?:\/\/([a-z]+\.)?google\.[a-z.]+\//.test(u) || seen.has(u)) continue;
     seen.add(u);
     let box = a;
-    for (let i = 0; i < 7 && box.parentElement; i++) { box = box.parentElement; if ((box.innerText || '').length > (a.innerText || '').length + 80) break; }
+    // up to the result's own block: never into one that holds another result
+    for (let i = 0; i < 7 && box.parentElement; i++) {
+      if (box.parentElement.querySelectorAll('a h3, a [role="heading"]').length > 1) break;
+      box = box.parentElement;
+      if ((box.innerText || '').length > (a.innerText || '').length + 80) break;
+    }
     let snip = '';
     for (const el of box.querySelectorAll('div, span')) {
-      if (el.contains(h) || el.querySelector('h3, cite')) continue;
+      if (el.contains(h) || a.contains(el) || el.querySelector('h3, cite, [role="heading"]')) continue;
       const t = (el.innerText || '').trim();
       if (t.length > snip.length && t.length < 420) snip = t;
     }
     if (/^(sponsored|ad|ads|patrocinado)\b/i.test((box.innerText || '').trim())) continue;
     const cite = box.querySelector('cite');
-    out.push({t: h.innerText.trim(), u, s: snip.replace(/\s+/g, ' '), site: cite ? cite.innerText.split('›')[0].trim() : ''});
+    let site = cite ? cite.innerText.split('›')[0].trim() : '';
+    if (!site) {
+      const line = (a.innerText || '').split('\n').map(s => s.trim()).find(s => /^https?:\/\//.test(s));
+      if (line) site = line.replace(/^https?:\/\/(www\.)?/, '').split(/[\/ ›]/)[0];
+    }
+    if (sealed && !site) continue;
+    out.push({t: h.innerText.trim(), u, s: snip.replace(/\s+/g, ' '), site});
     if (out.length >= 12) break;
   }
   // a page built some other way (Google's mobile page): any link to a site

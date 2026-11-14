@@ -211,7 +211,8 @@ class Results(private val ctx: Context) {
             }
             b.append("<div class=\"grid\">")
             for (h in web) {
-                val host = hostOf(h.url)
+                // a sealed Google link (/goto) names its site only in the text
+                val host = hostOf(h.url).let { if (it.contains("google.")) h.site else it }
                 b.append("<a class=\"r\" href=\"${esc(h.url)}\"><div class=\"site\"><span class=\"mono\" style=\"background:${css(siteColor(host))}\">${esc(monogram(host))}</span>${esc(h.site)}</div>")
                 b.append("<p class=\"t\">${esc(h.title)}</p>")
                 if (h.snippet.isNotEmpty()) b.append("<p class=\"s\">${esc(h.snippet)}</p>")
