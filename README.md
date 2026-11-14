@@ -93,12 +93,12 @@ a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
 <td align="center"><sub><b>Sorbet.</b> One of four pastel palettes that merge three colors.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="assets/screens/side-app.png" alt="Muse in the side panel beside a page"></td>
-<td width="50%"><img src="assets/screens/night.png" alt="Lite results in the Night palette"></td>
+<td width="50%"><img src="assets/screens/settings.png" alt="The settings page"></td>
+<td width="50%"><img src="assets/screens/new-tab-menu.png" alt="The menu of the + button: private, temporary, sandbox and container tabs"></td>
 </tr>
 <tr>
-<td align="center"><sub><b>Side apps.</b> Muse or Proton Pass beside the page.</sub></td>
-<td align="center"><sub><b>Night.</b> Eleven palettes in all.</sub></td>
+<td align="center"><sub><b>Settings.</b> A page of its own, with a status bar below.</sub></td>
+<td align="center"><sub><b>The + menu.</b> Private, temporary, sandbox and container tabs.</sub></td>
 </tr>
 </table>
 
@@ -113,14 +113,16 @@ and thumbnails are placeholders.</sub>
 |---|---|
 | **Lite results** | Google searches on Lite Go's own page: a picture carousel, a stack of video cards, the AI Mode answer with its sources, and the websites ranked by source quality (references, official sites and docs rise; shops, coupon farms and listicles sink). "On Google" shows the original. |
 | **Search modes** | AI Mode (default), Web, Images, Videos and YouTube. Type `yt ` before words to search YouTube from any mode. |
-| **Ask AI** | On any page, a side panel sends your question and the page's text (or your selection) to Google AI Mode and writes the answer with its sources. No API key. |
+| **Ask AI** (Ctrl+J) | On any page, a side panel sends your question and the page's text (or your selection) to Google AI Mode and writes the answer with its sources. No API key. |
 | **Split view** | Two pages side by side. The pane you click takes the keyboard and the address bar. |
 | **Downloads** | A toolbar icon with a progress ring; a list with speed, time left, pause, resume, cancel, open and show in folder. |
 | **Phone link** | Move photos and files between the computer and a phone with nothing to install on the phone: Lite Go shows a QR code, the phone scans it and uses its own browser to send files (they land in Downloads) or take the ones you offer, or the page you are on. Same Wi-Fi only; the address carries a random key and works only while the link is on. The connection is not encrypted, so it is for networks you trust. |
-| **Side apps** | Muse (Meta's AI agent; US only for now) and Proton Pass (passwords) open in the side panel, beside the page you are on, and stay signed in. They are the sites themselves; Lite Go reads nothing from them. |
+| **Proton Pass** | Your passwords in the side panel, beside the page you are on, kept signed in (from the menu). It is the Proton Pass site itself; Lite Go reads nothing from it. |
+| **Status bar** | Along the bottom, as in Vivaldi: what the shield blocked, the memory the pages use, downloads, history, find, print, split view and zoom. |
+| **Settings** | A page of their own, like Chromium's, with the sections at the left: appearance, search, shields and privacy, containers, performance, phone and sync, startup, history and about. |
 | **Sync with Android** | History, open tabs and the palette stay the same on the computer and Lite for Android, with no account and no server: the two trade directly when they are on the same Wi-Fi, sealed with AES-256 under a key only they share. Pair from Menu, Phone. |
 | **The usual** | Find in page, zoom, print, a searchable history by day, reopen a closed tab, and the last tabs brought back at start (unloaded until you open them). |
-| **Tabs** | On top or at the side. Normal, private, temporary, sandbox and container tabs, chosen on the new tab page. Containers keep their own sign-ins, each with its own icon and color. |
+| **Tabs** | On top or at the side. The arrow beside the + button (or a right-click on it) opens private, temporary, sandbox and container tabs, as in Brave. Containers keep their own sign-ins, each with an icon and a color you choose under Settings, Containers. |
 
 ### Memory
 
@@ -161,7 +163,7 @@ and thumbnails are placeholders.</sub>
 | `Ctrl` `Tab` | Next tab | `Ctrl` `M` | Mute tab |
 | `Ctrl` `1`...`9` | Go to tab | `Alt` `Left` / `Right` | Back, forward |
 | `Ctrl` `R` / `F5` | Reload | `F11` | Full screen |
-| `Ctrl` `Shift` `L` | Phone link | `Ctrl` `Shift` `M` | Muse |
+| `Ctrl` `Shift` `L` | Phone and sync | `Ctrl` `,` | Menu |
 
 They work while a page has the keyboard too.
 
@@ -171,7 +173,7 @@ They work while a page has the keyboard too.
 |---|---|---|
 | Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, phone link) are covered by tests with a stand-in engine and still need a pass on a real PC. |
 | Linux: native Wayland and X11 (GNOME, KDE, niri and others) | WebKitGTK 4.1, in a GTK window | Written; first run pending. |
-| Android 8 and newer | Android System WebView | **Lite for Android**, a separate app in Kotlin (`android/`): shields, Lite results, tabs, palettes and sync with the computer. `Lite-android.apk` is in each release. |
+| Android 8 and newer | Android System WebView | **Lite for Android**, a separate app in Kotlin (`android/`): shields, Lite results for Web searches, tabs, containers (WebView 123 or newer), eleven palettes, phone and tablet layouts, and sync with the computer. `Lite-android.apk` is in each release. |
 
 No engine is bundled: each comes with the system and is kept up to date by it.
 

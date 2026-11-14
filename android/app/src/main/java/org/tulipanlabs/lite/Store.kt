@@ -11,6 +11,9 @@ import java.util.concurrent.Executors
 // Settings in SharedPreferences, history in SQLite (Android's own), and the
 // open tabs so they come back after the app restarts.
 
+/** a container: its own cookies and site data, apart from other tabs */
+class Container(val name: String, val color: String)
+
 class Settings(ctx: Context) {
     private val p: SharedPreferences = ctx.getSharedPreferences("lite", Context.MODE_PRIVATE)
 
@@ -57,6 +60,27 @@ class Settings(ctx: Context) {
     var sessionIndex: Int
         get() = p.getInt("sessionIndex", 0)
         set(v) = p.edit().putInt("sessionIndex", v).apply()
+
+    /** Lite results: Google searches shown on Lite's own page */
+    var liteResults: Boolean
+        get() = p.getBoolean("liteResults", true)
+        set(v) = p.edit().putBoolean("liteResults", v).apply()
+
+    /** containers: a name and a color each ("name\tcolor" lines) */
+    var containers: List<Container>
+        get() {
+            val raw = p.getString("containers", null) ?: return listOf(Container("Work", "blue"), Container("Personal", "orange"))
+            return raw.split('\n').mapNotNull { l ->
+                val f = l.split('\t')
+                if (f.isEmpty() || f[0].isBlank()) null else Container(f[0], f.getOrElse(1) { "blue" })
+            }
+        }
+        set(v) = p.edit().putString("containers", v.joinToString("\n") { it.name.replace('\n', ' ').replace('\t', ' ') + "\t" + it.color }).apply()
+
+    /** the container of each kept tab, in the order of [session] ("" = none) */
+    var sessionContainers: List<String>
+        get() = (p.getString("sessionContainers", "") ?: "").split('\n')
+        set(v) = p.edit().putString("sessionContainers", v.joinToString("\n")).apply()
 
     // ---- sync with Lite Go on a computer (see Sync.kt) ----
 

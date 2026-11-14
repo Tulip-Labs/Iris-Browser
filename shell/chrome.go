@@ -33,6 +33,7 @@ func (a *App) vertical(w float32) bool { return a.set.VerticalTabs && w >= 720 }
 
 // chrome draws the window's frame and returns where the page goes.
 func (a *App) chrome(full ui.Rect) ui.Rect {
+	const sbH = 30 // the status bar
 	w := full.W
 	vert := a.vertical(w)
 	y := float32(0)
@@ -58,6 +59,14 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 	}
 	sugTop := y
 	y += sugH
+	if a.kindOpen {
+		if a.In.Has(ui.KEscape, false) {
+			a.kindOpen = false
+		} else {
+			a.kindMenu(ui.Rect{X: 8, Y: y, W: w - 16, H: 54})
+			y += 60
+		}
+	}
 	if a.find.open {
 		a.findBar(ui.Rect{X: 8, Y: y, W: w - 16, H: 40})
 		y += 46
@@ -76,7 +85,7 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 		if w < 1000 {
 			rw = 64
 		}
-		a.rail(ui.Rect{X: 0, Y: barH, W: rw, H: full.H - barH})
+		a.rail(ui.Rect{X: 0, Y: barH, W: rw, H: full.H - barH - sbH - 4})
 		x = rw
 	}
 	right := w - 8
@@ -85,7 +94,7 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 		if a.panelMode == panelApp { // a site needs more room than a list
 			pw = max(panelW, min(440, w*0.36))
 		}
-		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - 8}
+		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - sbH - 10}
 		a.drawPanel(pr)
 		right = pr.X - 8
 	} else if a.ai.open {
@@ -93,14 +102,16 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 		if w < 900 {
 			pw = 320
 		}
-		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - 8}
+		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - sbH - 10}
 		a.drawAI(pr)
 		right = pr.X - 8
 	}
 	if sugH > 0 {
 		a.suggestions(ui.Rect{X: addr.X, Y: sugTop + 2, W: addr.W, H: sugH - 6}, ID("sugA"))
 	}
-	return ui.Rect{X: x, Y: y, W: max(0, right-x), H: max(0, full.H-y-8)}
+	// the status bar along the bottom, as in Vivaldi
+	a.statusBar(ui.Rect{X: x, Y: full.H - sbH - 2, W: w - x - 6, H: sbH})
+	return ui.Rect{X: x, Y: y, W: max(0, right-x), H: max(0, full.H-y-sbH-6)}
 }
 
 // logo is Lite Go's mark: a liquid accent tile with a ring in motion and a spark.
@@ -139,6 +150,9 @@ func (a *App) tabIcon(t *Tab, x, y float32) {
 		ph := float32(math.Mod(a.now()*400, 360))
 		ui.StrokeOval(g, ui.Rect{X: x + 1.5, Y: y + 1.5, W: 13, H: 13}, 2, th.Primary.Alpha(0.18))
 		ui.Pen(g, ui.NewPath().Arc(x+8, y+8, 6.5, ph, ph+110, true), 2, th.Primary)
+	case t.settings:
+		ui.DrawIcon(g, ui.ISettings, x, y, 16, th.Primary)
+		return
 	case t.search != nil:
 		ui.FillRoundAccent(g, ui.Rect{X: x, Y: y, W: 16, H: 16}, 5, th.Primary)
 		ui.DrawIcon(g, modeIcons[t.search.Mode], x+2, y+2, 12, ui.White)
@@ -164,6 +178,8 @@ func (a *App) tabIcon(t *Tab, x, y float32) {
 
 func (t *Tab) label() string {
 	switch {
+	case t.settings:
+		return "Settings"
 	case t.URL == "" && t.Kind == KPrivate:
 		return "Private tab"
 	case t.URL == "" && t.Kind == KTemp:
@@ -266,7 +282,7 @@ func (a *App) tabStrip(r ui.Rect) {
 	a.MoveAreas = append(a.MoveAreas, mark)
 	area := r.CutLeft(48)
 	n := float32(len(a.tabs))
-	const plusW, minW, maxW, gapMove = 40, 52, 236, 56
+	const plusW, minW, maxW, gapMove = 64, 52, 236, 56
 	avail := area.W - plusW - gapMove
 	tw := min(maxW, max(minW, avail/n))
 	total := tw * n
@@ -292,8 +308,15 @@ func (a *App) tabStrip(r ui.Rect) {
 	a.u.PopHit()
 	g.Restore()
 	px := area.X + min(total, avail) + 2
-	if u.IconButton(ID("newtab"), ui.Rect{X: px, Y: r.Y + 4, W: 36, H: 34}, ui.IPlus, "New tab  Ctrl+T", ui.IconOpt{}) {
+	pr := ui.Rect{X: px, Y: r.Y + 4, W: 36, H: 34}
+	if u.IconButton(ID("newtab"), pr, ui.IPlus, "New tab  Ctrl+T · right-click for private, temporary, sandbox and container tabs", ui.IconOpt{}) {
 		a.newTab(KNormal, "", "", true)
+	}
+	if u.In.RightPressed && u.Over(pr) {
+		a.kindOpen = !a.kindOpen
+	}
+	if u.IconButton(ID("newkind"), ui.Rect{X: pr.R(), Y: pr.Y + 5, W: 22, H: 24}, ui.IChevronDown, "Open a private, temporary, sandbox or container tab", ui.IconOpt{Toggled: a.kindOpen}) {
+		a.kindOpen = !a.kindOpen
 	}
 	px += plusW
 	if px < r.R() {
@@ -424,28 +447,7 @@ func (a *App) toolbar(r ui.Rect, vert bool) ui.Rect {
 		a.togglePanel(panelSettings)
 	}
 	rx -= 44
-	if u.IconButton(ID("ai"), ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40}, ui.ISparkle, "Ask AI about this page  Ctrl+J", ui.IconOpt{Toggled: a.ai.open, Accent: th.Primary}) {
-		if a.ai.open {
-			a.ai.open = false
-		} else {
-			a.openAI("")
-		}
-	}
-	compact := r.W < 760
-	if !compact {
-		mw := float32(92)
-		rx -= mw + 4
-		a.memoryPill(ui.Rect{X: rx, Y: cy - 15, W: mw, H: 30})
-	}
-	rx -= 44
 	a.shieldButton(ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40}, t)
-	if r.W >= 620 {
-		rx -= 44
-		other, _ := a.splitWith()
-		if u.IconButton(ID("split"), ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40}, ui.ISplit, "Split view: two pages side by side  Ctrl+Shift+S", ui.IconOpt{Toggled: other != nil}) {
-			a.toggleSplit()
-		}
-	}
 	if len(a.downloads) > 0 {
 		rx -= 44
 		a.downloadButton(ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40})

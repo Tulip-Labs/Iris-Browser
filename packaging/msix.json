@@ -2,6 +2,6 @@
   "name": "TulipanLabs.LiteGo",
   "publisher": "CN=Tulipan Labs",
   "publisherDisplayName": "Tulipan Labs",
-  "version": "1.0.2.0",
+  "version": "1.0.3.0",
   "_note": "For the Microsoft Store, copy name and publisher from Partner Center > your app > Product identity (Package/Identity/Name and Package/Identity/Publisher)."
 }

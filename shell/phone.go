@@ -96,10 +96,16 @@ func (a *App) sharePick() {
 
 // linkTick closes a link nobody has used for a while.
 func (a *App) linkTick() {
-	if s := a.phone.srv; s != nil && s.Idle() > 30*time.Minute && !(a.panel && a.panelMode == panelPhone) {
+	if s := a.phone.srv; s != nil && s.Idle() > 30*time.Minute && !a.phoneShown() {
 		a.stopLink()
 		a.notify("The phone link was closed after 30 minutes without use.")
 	}
+}
+
+// phoneShown says whether the phone settings are on screen.
+func (a *App) phoneShown() bool {
+	t := a.tab()
+	return t != nil && t.settings && a.setSec == "phone"
 }
 
 func (a *App) drawPhone(body ui.Rect) {

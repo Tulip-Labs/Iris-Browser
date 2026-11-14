@@ -473,8 +473,8 @@ func TestPhoneLink(t *testing.T) {
 	tab.Title = "An article"
 	d.a.do(actPhone)
 	d.frames(2)
-	if !d.a.panel || d.a.panelMode != panelPhone {
-		t.Fatal("Ctrl+Shift+L should open the phone link")
+	if st := d.a.tab(); !st.settings || d.a.setSec != "phone" {
+		t.Fatal("Ctrl+Shift+L should open the phone settings")
 	}
 	d.shot("phone-off")
 	d.a.startLink()
@@ -528,43 +528,35 @@ func TestSideApps(t *testing.T) {
 	d.frames(2)
 	tab := d.open("https://example.com/")
 	before := len(d.eng.views)
-	d.a.do(actMuse)
+	d.a.do(actPass)
 	d.frames(4)
 	if !d.a.panel || d.a.panelMode != panelApp || d.a.apps[0].view == nil {
-		t.Fatal("Ctrl+Shift+M should open Muse in the side panel")
+		t.Fatal("Proton Pass should open in the side panel")
 	}
-	mv := d.a.apps[0].view.(*fakeView)
-	if mv.url != "https://www.meta.ai/" || !mv.visible || len(d.eng.views) != before+1 {
-		t.Fatalf("Muse view: %q visible %v", mv.url, mv.visible)
+	pv2 := d.a.apps[0].view.(*fakeView)
+	if pv2.url != "https://pass.proton.me/" || !pv2.visible || len(d.eng.views) != before+1 {
+		t.Fatalf("Pass view: %q visible %v", pv2.url, pv2.visible)
 	}
 	pv := lastView(t, tab)
-	if !pv.visible || pv.bounds[0]+pv.bounds[2] > mv.bounds[0] || mv.bounds[2] < 380 {
-		t.Fatalf("the page and the side app must sit side by side: %v %v", pv.bounds, mv.bounds)
+	if !pv.visible || pv.bounds[0]+pv.bounds[2] > pv2.bounds[0] || pv2.bounds[2] < 380 {
+		t.Fatalf("the page and the side app must sit side by side: %v %v", pv.bounds, pv2.bounds)
 	}
 	d.shot("side-app")
-	// the other app takes its place; Muse is kept, hidden
-	d.a.do(actPass)
-	d.frames(4)
-	if mv.visible || mv.closed || d.a.apps[1].view == nil || d.a.apps[1].view.(*fakeView).url != "https://pass.proton.me/" {
-		t.Fatal("Proton Pass should replace Muse in the panel, and Muse stay signed in behind")
-	}
-	// closing the panel hides it; reopening does not load it again
 	d.a.do(actPass)
 	d.frames(2)
-	if d.a.panel || d.a.apps[1].view.(*fakeView).visible {
+	if d.a.panel || pv2.visible {
 		t.Fatal("closing the panel must hide the app")
 	}
-	d.a.do(actMuse)
+	d.a.do(actPass)
 	d.frames(3)
-	if d.a.apps[0].view != mv || !mv.visible || len(d.eng.views) != before+2 {
-		t.Fatal("coming back to Muse should show the same page")
+	if d.a.apps[0].view != pv2 || !pv2.visible || len(d.eng.views) != before+1 {
+		t.Fatal("coming back should show the same page")
 	}
-	// long out of sight: its memory is given back
 	d.a.panel = false
 	d.frames(2)
 	d.advance(1000)
 	d.frames(2)
-	if d.a.apps[0].view != nil || !mv.closed {
+	if d.a.apps[0].view != nil || !pv2.closed {
 		t.Fatal("a side app hidden for a long while should be closed")
 	}
 }
@@ -608,7 +600,64 @@ func TestSyncExchange(t *testing.T) {
 		t.Fatal("an older choice must not win")
 	}
 	d.a.set.Sync.On = true
-	d.a.togglePanel(panelPhone)
+	d.a.openSettings("phone")
 	d.frames(2)
 	d.shot("sync")
+}
+
+func TestSettingsPageAndChrome(t *testing.T) {
+	d := newDriver(t, 1440, 900, true)
+	d.frames(2)
+	page := d.open("https://example.com/article")
+	v := lastView(t, page)
+	// the status bar keeps the page off the bottom edge
+	if b := v.bounds; b[1]+b[3] > 900-30 {
+		t.Fatalf("the page covers the status bar: %v", b)
+	}
+	d.shot("statusbar")
+	n := len(d.a.tabs)
+	d.a.openSettings("look")
+	d.frames(2)
+	st := d.a.tab()
+	if !st.settings || len(d.a.tabs) != n+1 || st.view != nil {
+		t.Fatal("settings should open in a tab of its own, with no web page")
+	}
+	if v.visible {
+		t.Fatal("the page must hide behind the settings tab")
+	}
+	for _, s := range settingsSections {
+		d.a.setSec = s.id
+		d.frames(2)
+		d.shot("settings-" + s.id)
+	}
+	// opening it again goes to the same tab
+	d.a.selectTab(0)
+	d.a.openSettings("shields")
+	if len(d.a.tabs) != n+1 || !d.a.tab().settings || d.a.setSec != "shields" {
+		t.Fatal("one settings tab")
+	}
+	// typing an address there leaves the settings
+	d.a.navigate(st, "https://example.org/")
+	d.frames(3)
+	if st.settings || st.view == nil {
+		t.Fatal("navigating must turn the settings tab into a page")
+	}
+	// the + menu opens tabs of each kind
+	d.a.do(actKinds)
+	d.frames(2)
+	if !d.a.kindOpen {
+		t.Fatal("the kind menu should open")
+	}
+	d.shot("kind-menu")
+	d.key(ui.KEscape, false, false)
+	d.frames(1)
+	if d.a.kindOpen {
+		t.Fatal("Esc closes the kind menu")
+	}
+	// narrow window: the settings page shrinks its column to icons
+	d2 := newDriver(t, 700, 760, true)
+	d2.frames(2)
+	d2.a.openSettings("containers")
+	d2.frames(2)
+	d2.shot("settings-narrow")
 }

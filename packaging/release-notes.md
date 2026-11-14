@@ -1,5 +1,13 @@
 Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11.
 
+## New in 1.0.3
+
+- **Settings page** in a tab of its own, like Chromium's, with the sections at the left.
+- **Status bar** along the bottom, as in Vivaldi: shield count, memory, downloads, history, find, print, split view and zoom.
+- **Container tabs from the + button** (its arrow, or right-click), as in Brave; pick each container's icon and color under Settings, Containers.
+- **Removed:** Muse, the AI button and the memory pill from the toolbar. Ask AI is still on Ctrl+J; Proton Pass is in the menu; the phone link is under Settings, Phone and sync.
+- **Lite for Android:** the palettes show properly (they were drawn with no height), the four pastel palettes, containers (hold the + button), Lite results for Web searches, and layouts for tablets and landscape.
+
 ## New in 1.0.2
 
 - **Opens maximized**, and remembers the size and state you leave the window in.
