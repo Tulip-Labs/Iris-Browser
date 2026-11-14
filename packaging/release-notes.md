@@ -1,5 +1,9 @@
 Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.7
+
+- The Linux packages bring the video players along: GStreamer's VP9 player and, where the system offers them, OpenH264 and libav for H.264.
+
 ## New in 1.0.6
 
 - **YouTube plays on Linux systems without H.264** (Fedora without OpenH264 or RPM Fusion, for one): Light YouTube now asks for H.264 only where it can actually play it, and uses VP9 otherwise.
