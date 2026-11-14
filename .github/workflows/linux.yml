@@ -22,10 +22,15 @@ jobs:
         with:
           go-version: "1.24"
           cache: false
-      - name: Build tools and WebKitGTK development files
+      - name: Build tools and GTK development files
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libepoxy-dev
+          sudo apt-get install -y -qq gcc pkg-config libgtk-3-dev libepoxy-dev curl bzip2
+      - name: Chromium (CEF), from the cache when it is there
+        uses: actions/cache@v4
+        with:
+          path: third_party/cef
+          key: cef-${{ hashFiles('packaging/cef/cef.env') }}
       - name: Build the program, the .tar.gz, the .deb and the .rpm (tests run first)
         run: ./build-litego.sh packages
       - name: Collect
@@ -33,12 +38,17 @@ jobs:
           mkdir out
           cp dist/LiteGo-linux-x86_64.tar.gz dist/*.deb dist/*.rpm out/
           ls -l out
+          # the dnf and apt repositories live in git (GitHub Pages): no file over 100 MB
+          for f in out/*.deb out/*.rpm; do [ $(stat -c %s "$f") -lt 99000000 ] || { echo "$f is too big for the Pages repository"; exit 1; }; done
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: out/*
 
+  # The Flatpak waits for the Chromium engine to be packaged for Flatpak's
+  # sandbox (zypak); until then it is not built.
   flatpak:
+    if: false
     runs-on: ubuntu-24.04
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49
@@ -84,33 +94,35 @@ jobs:
           - {distro: "debian:12", kind: deb}
           - {distro: "debian:13", kind: deb}
           - {distro: "ubuntu:22.04", kind: deb}
-          - {distro: "ubuntu:24.04", kind: deb}
+          - {distro: "ubuntu:24.04", kind: deb, shots: true}
           - {distro: "fedora:42", kind: rpm}
-          - {distro: "fedora:43", kind: rpm}
+          - {distro: "fedora:43", kind: rpm, shots: true}
           - {distro: "opensuse/tumbleweed", kind: zypper}
           - {distro: "archlinux:latest", kind: tar}
-    container: ${{ matrix.distro }}
+    container:
+      image: ${{ matrix.distro }}
+      options: --shm-size=1g # Chromium keeps its frames in shared memory
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: linux
           path: pkg
-      - name: Install
+      - name: Install (and Weston, a Wayland compositor that runs without a screen)
         run: |
           set -e
           case "${{ matrix.kind }}" in
           deb)
             apt-get update -qq
-            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./pkg/*.deb xvfb xauth procps
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./pkg/*.deb weston procps ffmpeg fonts-dejavu-core
             ;;
           rpm)
-            dnf install -y ./pkg/*.rpm xorg-x11-server-Xvfb xauth procps-ng mesa-dri-drivers which
+            dnf install -y ./pkg/*.rpm weston procps-ng mesa-dri-drivers which ffmpeg-free dejavu-sans-fonts
             ;;
           zypper)
-            zypper --non-interactive install --allow-unsigned-rpm ./pkg/*.rpm xvfb-run procps Mesa-dri which
+            zypper --non-interactive install --allow-unsigned-rpm ./pkg/*.rpm weston procps Mesa-dri which
             ;;
           tar)
-            pacman -Syu --noconfirm --needed webkit2gtk-4.1 gtk3 libepoxy libglvnd mesa xorg-server-xvfb xorg-xauth procps-ng which tar gzip
+            pacman -Syu --noconfirm --needed gtk3 libepoxy libglvnd mesa nss alsa-lib libdrm libxkbcommon at-spi2-core libcups libxcomposite libxdamage libxrandr weston procps-ng which tar gzip ttf-dejavu
             tar -xzf pkg/LiteGo-linux-x86_64.tar.gz -C /tmp
             useradd -m tester
             su tester -c "/tmp/LiteGo-linux-x86_64/install.sh"
@@ -120,44 +132,66 @@ jobs:
       - name: Libraries are all there
         run: |
           exe=$(readlink -f "$(command -v lite-go)")
+          dir=$(dirname "$exe")
           echo "$exe"
-          ! ldd "$exe" | grep "not found"
-      - name: Lite Go starts and keeps running
+          ls -l "$dir"
+          ! ldd "$exe" "$dir/libcef.so" "$dir/lite-go-helper" | grep "not found"
+      - name: Test pages (a VP9 video, made here)
+        if: matrix.shots
+        run: |
+          mkdir -p /tmp/page
+          ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime /tmp/page/v.webm
+          cat > /tmp/page/video.html <<'HTML'
+          <!doctype html><body style="margin:0;background:#202020;font:24px sans-serif;color:#fff">
+          <p id=s>video: loading</p>
+          <video id=v src="v.webm" autoplay muted loop width=640 height=360></video>
+          <script>
+          const v = document.getElementById('v'), s = document.getElementById('s');
+          v.addEventListener('playing', () => s.textContent = 'video: playing, VP9 ' + v.videoWidth + 'x' + v.videoHeight);
+          v.addEventListener('error', () => s.textContent = 'video: error ' + (v.error && v.error.code));
+          </script>
+          HTML
+          chmod -R a+rX /tmp/page
+      - name: Lite Go starts on Wayland and keeps running
         run: |
           id -u tester >/dev/null 2>&1 || useradd -m tester
-          cat > /tmp/smoke.sh <<'SH'
-          export XDG_RUNTIME_DIR=$(mktemp -d)
-          export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LITEGO_GL_DEBUG=1
-          timeout 20 xvfb-run -a -s "-screen 0 1280x800x24" lite-go about:blank > /tmp/log.txt 2>&1
-          code=$?
-          cat /tmp/log.txt
-          [ $code = 124 ] || { echo "Lite Go exited with $code before 20 seconds"; exit 1; }
-          ! grep -q "no GPU drawing\|no OpenGL context" /tmp/log.txt || { echo "Lite Go ran but could not draw"; exit 1; }
-          echo "Lite Go ran for 20 seconds and drew its window."
-          SH
-          chmod 755 /tmp/smoke.sh
-          su tester -c "sh /tmp/smoke.sh"
-      - name: Lite Go starts on Wayland too (a headless Weston)
-        run: |
-          case "${{ matrix.kind }}" in
-          deb) DEBIAN_FRONTEND=noninteractive apt-get install -y -qq weston >/dev/null ;;
-          rpm) dnf install -y -q weston ;;
-          zypper) zypper --non-interactive -q install weston ;;
-          tar) pacman -S --noconfirm --needed weston >/dev/null ;;
-          esac
           cat > /tmp/wl.sh <<'SH'
-          export XDG_RUNTIME_DIR=$(mktemp -d) LIBGL_ALWAYS_SOFTWARE=1 LITEGO_GL_DEBUG=1
-          weston --backend=headless --renderer=gl --socket=wl-test --width=1280 --height=800 > /tmp/weston.txt 2>&1 &
+          export XDG_RUNTIME_DIR=$(mktemp -d) LIBGL_ALWAYS_SOFTWARE=1 LITEGO_GL_DEBUG=1 LITEGO_NO_SANDBOX=1
+          weston --backend=headless --renderer=gl --socket=wl-test --width=1280 --height=800 --debug > /tmp/weston.txt 2>&1 &
           for i in $(seq 1 50); do [ -S "$XDG_RUNTIME_DIR/wl-test" ] && break; sleep 0.2; done
-          if [ ! -S "$XDG_RUNTIME_DIR/wl-test" ]; then echo "Weston did not start here; skipped:"; tail -5 /tmp/weston.txt; exit 0; fi
-          WAYLAND_DISPLAY=wl-test GDK_BACKEND=wayland timeout 20 lite-go about:blank > /tmp/log.txt 2>&1
-          code=$?
+          if [ ! -S "$XDG_RUNTIME_DIR/wl-test" ]; then
+            weston --backend=headless --renderer=pixman --socket=wl-test --width=1280 --height=800 --debug > /tmp/weston.txt 2>&1 &
+            for i in $(seq 1 50); do [ -S "$XDG_RUNTIME_DIR/wl-test" ] && break; sleep 0.2; done
+          fi
+          [ -S "$XDG_RUNTIME_DIR/wl-test" ] || { echo "Weston did not start"; cat /tmp/weston.txt; exit 1; }
+          export WAYLAND_DISPLAY=wl-test GDK_BACKEND=wayland
+          page=about:blank
+          [ -f /tmp/page/video.html ] && page=file:///tmp/page/video.html
+          lite-go "$page" > /tmp/log.txt 2>&1 &
+          pid=$!
+          shot() {
+            shooter=$(command -v weston-screenshooter || ls /usr/lib*/weston/weston-screenshooter /usr/libexec/weston-screenshooter 2>/dev/null | head -1)
+            [ -n "$shooter" ] && [ -f /tmp/page/video.html ] || return 0
+            (cd /tmp/shots && "$shooter" >/dev/null 2>&1 && for f in wayland-screenshot*.png; do [ -f "$f" ] && mv "$f" "$1.png"; done) || true
+          }
+          mkdir -p /tmp/shots
+          sleep 12; shot video-1
+          sleep 3; shot video-2
+          sleep 5
+          alive=0; kill -0 $pid 2>/dev/null && alive=1
+          kill $pid 2>/dev/null; sleep 1; kill -9 $pid 2>/dev/null
           cat /tmp/log.txt
-          [ $code = 124 ] || { echo "Lite Go exited with $code on Wayland before 20 seconds"; exit 1; }
-          ! grep -q "no GPU drawing\|no OpenGL context" /tmp/log.txt || { echo "Lite Go ran on Wayland but could not draw"; exit 1; }
+          [ $alive = 1 ] || { echo "Lite Go exited on Wayland before 20 seconds"; exit 1; }
+          ! grep -q "no GPU drawing\|no OpenGL context\|could not start" /tmp/log.txt || { echo "Lite Go ran on Wayland but could not draw"; exit 1; }
           echo "Lite Go ran for 20 seconds on Wayland."
           SH
           su tester -c "sh /tmp/wl.sh"
+      - uses: actions/upload-artifact@v4
+        if: matrix.shots && always()
+        with:
+          name: shots-${{ matrix.kind }}
+          path: /tmp/shots/*.png
+          if-no-files-found: ignore
 
   # nix build github:Tulip-Labs/Lite-Go-Browser must keep working
   nix:

@@ -1,0 +1,24 @@
+#!/bin/sh
+# Starts Lite Go (the program is lite-go-browser, beside this script).
+#
+# Lite Go 1.0.7 and older, installed in the home folder, update by replacing
+# one file, ~/.local/bin/lite-go, with this script. Lite Go now comes as a
+# folder (it carries Chromium), so in that case the script fetches the latest
+# release once, installs it with its install.sh and starts it.
+here=$(dirname "$(readlink -f "$0")")
+[ -x "$here/lite-go-browser" ] && exec "$here/lite-go-browser" "$@"
+lib="$HOME/.local/lib/lite-go-browser"
+[ -x "$lib/lite-go-browser" ] && exec "$lib/lite-go-browser" "$@"
+
+set -e
+command -v notify-send >/dev/null 2>&1 && notify-send -a "Lite Go" "Lite Go" "Finishing the update (Lite Go now uses Chromium), one moment..." || true
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+base=https://github.com/Tulip-Labs/Lite-Go-Browser/releases/latest/download
+name="LiteGo-linux-$(uname -m).tar.gz"
+curl -fsSL -o "$tmp/$name" "$base/$name"
+curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"
+(cd "$tmp" && grep " $name\$" SHA256SUMS | sha256sum -c - >/dev/null)
+tar -xzf "$tmp/$name" -C "$tmp"
+"$tmp/LiteGo-linux-$(uname -m)/install.sh" >/dev/null
+exec "$lib/lite-go-browser" "$@"

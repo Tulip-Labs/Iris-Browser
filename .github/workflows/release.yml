@@ -96,6 +96,7 @@ jobs:
           merge-multiple: true
       - name: Linux files to the release
         run: |
+          rm -f art/*.png # the test screenshots
           ls -l art
           gh release upload "$TAG" art/* --clobber
       - name: Checksums of every file, and the AUR recipe

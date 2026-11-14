@@ -5,3 +5,4 @@ go.local.mod
 go.local.sum
 webview/litego_android.jar
 build/
+third_party/

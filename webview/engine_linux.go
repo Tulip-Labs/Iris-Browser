@@ -3,7 +3,6 @@
 package webview
 
 /*
-#cgo pkg-config: gtk+-3.0 webkit2gtk-4.1
 #include <stdlib.h>
 #include <stdint.h>
 
@@ -119,7 +118,7 @@ func (e *wkEngine) MemoryMB() float64 { return 0 }
 func (e *wkEngine) Version() string {
 	s := C.lgxVersion()
 	defer C.free(unsafe.Pointer(s))
-	return "WebKitGTK " + C.GoString(s)
+	return engineName + C.GoString(s)
 }
 
 func (e *wkEngine) NewView(o Options, ev Events, done func(View, error)) {
@@ -337,6 +336,35 @@ func lgxGoDownload(id, owner C.uintptr_t, state C.int, u, path *C.char, total, g
 		d.Total = d.Received
 	}
 	report(d)
+}
+
+//export lgxGoAllow
+func lgxGoAllow(id C.uintptr_t, u, page, kind *C.char) C.int {
+	v := wkGet(uintptr(id))
+	if v == nil || v.sandbox || wkEng == nil {
+		return 1
+	}
+	wkEng.mu.Lock()
+	p := wkEng.policy
+	wkEng.mu.Unlock()
+	if p.Allow == nil {
+		return 1
+	}
+	pg := C.GoString(page)
+	if p.Scan != nil && !p.Scan(pg) {
+		return 1
+	}
+	if p.Allow(C.GoString(u), pg, C.GoString(kind)) {
+		return 1
+	}
+	return 0
+}
+
+//export lgxGoBlocked
+func lgxGoBlocked(id C.uintptr_t, u *C.char) {
+	if v := wkGet(uintptr(id)); v != nil && v.ev.Blocked != nil {
+		v.ev.Blocked(C.GoString(u))
+	}
 }
 
 //export lgxGoResult

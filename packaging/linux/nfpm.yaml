@@ -12,25 +12,60 @@ homepage: https://github.com/Tulip-Labs/Lite-Go-Browser
 license: GPL-3.0-only
 description: |-
   A light, fast browser with shields built in.
-  Lite Go shows pages with the system's WebKitGTK and adds ad and tracker
-  blocking, containers, split view and tabs that sleep to save memory.
+  Lite Go shows pages with Chromium (through CEF, which it carries) and adds
+  ad and tracker blocking, containers, split view and tabs that sleep to
+  save memory. It runs on Wayland.
 
 contents:
-  - src: dist/linux/lite-go
-    dst: /usr/lib/lite-go-browser/lite-go
+  - src: dist/linux/lite-go-browser
+    dst: /usr/lib/lite-go-browser/lite-go-browser
     file_info: {mode: 0755}
-  - src: dist/linux/lite-go.sha256
-    dst: /usr/lib/lite-go-browser/lite-go.sha256
+  - src: dist/linux/lite-go-browser.sha256
+    dst: /usr/lib/lite-go-browser/lite-go-browser.sha256
+  - src: dist/linux/lite-go-helper
+    dst: /usr/lib/lite-go-browser/lite-go-helper
+    file_info: {mode: 0755}
+  - src: dist/linux/libcef.so
+    dst: /usr/lib/lite-go-browser/libcef.so
+    file_info: {mode: 0644}
+  - src: dist/linux/libvk_swiftshader.so
+    dst: /usr/lib/lite-go-browser/libvk_swiftshader.so
+    file_info: {mode: 0644}
+  - src: dist/linux/libvulkan.so.1
+    dst: /usr/lib/lite-go-browser/libvulkan.so.1
+    file_info: {mode: 0644}
+  - src: dist/linux/vk_swiftshader_icd.json
+    dst: /usr/lib/lite-go-browser/vk_swiftshader_icd.json
+  - src: dist/linux/v8_context_snapshot.bin
+    dst: /usr/lib/lite-go-browser/v8_context_snapshot.bin
+  - src: dist/linux/icudtl.dat
+    dst: /usr/lib/lite-go-browser/icudtl.dat
+  - src: dist/linux/resources.pak
+    dst: /usr/lib/lite-go-browser/resources.pak
+  - src: dist/linux/chrome_100_percent.pak
+    dst: /usr/lib/lite-go-browser/chrome_100_percent.pak
+  - src: dist/linux/chrome_200_percent.pak
+    dst: /usr/lib/lite-go-browser/chrome_200_percent.pak
+  # Chromium's sandbox helper must be setuid root
+  - src: dist/linux/chrome-sandbox
+    dst: /usr/lib/lite-go-browser/chrome-sandbox
+    file_info: {mode: 04755, owner: root, group: root}
+  - src: dist/linux/locales/*.pak
+    dst: /usr/lib/lite-go-browser/locales/
+  - src: dist/linux/CEF-LICENSE.txt
+    dst: /usr/share/licenses/lite-go-browser/CEF-LICENSE.txt
+  - src: dist/linux/CHROMIUM-CREDITS.html
+    dst: /usr/share/doc/lite-go-browser/CHROMIUM-CREDITS.html
   - src: packaging/linux/install-kind-deb
     dst: /usr/lib/lite-go-browser/install-kind
     packager: deb
   - src: packaging/linux/install-kind-rpm
     dst: /usr/lib/lite-go-browser/install-kind
     packager: rpm
-  - src: /usr/lib/lite-go-browser/lite-go
+  - src: /usr/lib/lite-go-browser/lite-go-browser
     dst: /usr/bin/lite-go
     type: symlink
-  - src: /usr/lib/lite-go-browser/lite-go
+  - src: /usr/lib/lite-go-browser/lite-go-browser
     dst: /usr/bin/lite-go-browser
     type: symlink
   - src: packaging/linux/lite-go.desktop
@@ -42,35 +77,70 @@ contents:
   - src: THIRD_PARTY_NOTICES.md
     dst: /usr/share/doc/lite-go-browser/THIRD_PARTY_NOTICES.md
 
+scripts:
+  postinstall: packaging/linux/postinst.sh
+
 overrides:
   deb:
+    # Chromium's libraries (libcef.so); t64 names on Debian 13 and Ubuntu 24.04
     depends:
-      - libwebkit2gtk-4.1-0
       - libgtk-3-0 | libgtk-3-0t64
       - libepoxy0
       - libgles2
+      - libnss3
+      - libnspr4
+      - libasound2 | libasound2t64
+      - libgbm1
+      - libdrm2
+      - libxkbcommon0
+      - libatk-bridge2.0-0 | libatk-bridge2.0-0t64
+      - libatk1.0-0 | libatk1.0-0t64
+      - libcups2 | libcups2t64
+      - libdbus-1-3
+      - libexpat1
+      - libpango-1.0-0
+      - libcairo2
+      - libx11-6
+      - libxcb1
+      - libxcomposite1
+      - libxdamage1
+      - libxext6
+      - libxfixes3
+      - libxrandr2
     recommends:
       - xdg-utils
-      # video: VP9 (good), and H.264 and the rest (libav)
-      - gstreamer1.0-plugins-good
-      - gstreamer1.0-libav
   rpm:
     # library names, so one package fits Fedora, RHEL-likes and openSUSE
     depends:
-      - libwebkit2gtk-4.1.so.0()(64bit)
       - libgtk-3.so.0()(64bit)
       - libepoxy.so.0()(64bit)
       - libGLESv2.so.2()(64bit)
-    # video: VP9 (good), H.264 (OpenH264 from Fedora's Cisco repository,
-    # which is on by default; libav decodes everything once RPM Fusion is on)
-    recommends:
-      - gstreamer1-plugins-good
-      - gstreamer1-plugin-openh264
-      - gstreamer1-plugin-libav
+      - libnss3.so()(64bit)
+      - libnspr4.so()(64bit)
+      - libasound.so.2()(64bit)
+      - libgbm.so.1()(64bit)
+      - libdrm.so.2()(64bit)
+      - libxkbcommon.so.0()(64bit)
+      - libatk-bridge-2.0.so.0()(64bit)
+      - libatk-1.0.so.0()(64bit)
+      - libcups.so.2()(64bit)
+      - libdbus-1.so.3()(64bit)
+      - libexpat.so.1()(64bit)
+      - libpango-1.0.so.0()(64bit)
+      - libcairo.so.2()(64bit)
+      - libX11.so.6()(64bit)
+      - libxcb.so.1()(64bit)
+      - libXcomposite.so.1()(64bit)
+      - libXdamage.so.1()(64bit)
+      - libXext.so.6()(64bit)
+      - libXfixes.so.3()(64bit)
+      - libXrandr.so.2()(64bit)
 
 deb:
+  compression: xz
   fields:
     Bugs: https://github.com/Tulip-Labs/Lite-Go-Browser/issues
 rpm:
+  compression: xz
   group: Applications/Internet
   summary: A light, fast browser with shields built in

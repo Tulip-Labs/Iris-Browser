@@ -1,4 +1,4 @@
-//go:build linux && webkit
+//go:build linux && webkit && !cef
 
 // The Linux side of Lite Go's web engine: WebKitGTK views.
 //

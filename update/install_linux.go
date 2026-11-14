@@ -132,9 +132,15 @@ func run(ctx context.Context, name string, args ...string) error {
 	return nil
 }
 
-// replaceFromTar puts the program and its checksum record from the release
-// archive in place of exe, each with one rename (a running copy keeps going).
+// replaceFromTar replaces the folder the program is in (the program,
+// Chromium beside it, the checksum record) with the release archive's
+// folder: it is unpacked next to it, then put in place with two renames (a
+// running copy keeps the files it has open).
 func replaceFromTar(archive, exe string) error {
+	dir := filepath.Dir(exe)
+	if _, err := os.Stat(filepath.Join(dir, "libcef.so")); err != nil {
+		return errors.New("this copy is not in its own folder; install the new version with its install.sh")
+	}
 	f, err := os.Open(archive)
 	if err != nil {
 		return err
@@ -144,49 +150,74 @@ func replaceFromTar(archive, exe string) error {
 	if err != nil {
 		return err
 	}
+	tmp, old := dir+".new", dir+".old"
+	os.RemoveAll(tmp)
+	os.RemoveAll(old)
+	if err := os.Mkdir(tmp, 0o755); err != nil {
+		return err
+	}
+	fail := func(err error) error { os.RemoveAll(tmp); return err }
 	tr := tar.NewReader(zr)
-	want := map[string]string{"lite-go": exe, "lite-go.sha256": exe + ".sha256"}
-	done := map[string]string{}
+	seen := map[string]bool{}
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return err
+			return fail(err)
 		}
-		dst, ok := want[filepath.Base(h.Name)]
-		if !ok || h.Typeflag != tar.TypeReg {
+		// LiteGo-linux-x86_64/<path>: the first part is the archive's folder
+		name := filepath.ToSlash(filepath.Clean(h.Name))
+		i := strings.IndexByte(name, '/')
+		if i < 0 {
 			continue
 		}
-		tmp := dst + ".new"
-		w, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
-		if err != nil {
-			return err
+		rel := name[i+1:]
+		if rel == "" || strings.HasPrefix(rel, "../") || rel == ".." || filepath.IsAbs(rel) || rel == "install.sh" {
+			continue
 		}
-		if _, err := io.Copy(w, io.LimitReader(tr, 512<<20)); err != nil {
-			w.Close()
-			os.Remove(tmp)
-			return err
+		dst := filepath.Join(tmp, filepath.FromSlash(rel))
+		switch h.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(dst, 0o755); err != nil {
+				return fail(err)
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+				return fail(err)
+			}
+			mode := os.FileMode(0o644)
+			if h.Mode&0o111 != 0 {
+				mode = 0o755
+			}
+			w, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+			if err != nil {
+				return fail(err)
+			}
+			_, err = io.Copy(w, io.LimitReader(tr, 2<<30))
+			if cerr := w.Close(); err == nil {
+				err = cerr
+			}
+			if err != nil {
+				return fail(err)
+			}
+			seen[rel] = true
 		}
-		if err := w.Close(); err != nil {
-			return err
-		}
-		done[dst] = tmp
 	}
-	if len(done) != 2 {
-		for _, tmp := range done {
-			os.Remove(tmp)
-		}
-		return errors.New("the release archive is missing lite-go or its record")
-	}
-	// the record first: if the program rename failed, the old program would
-	// be flagged as changed, which is the safe way round
-	for _, dst := range []string{exe + ".sha256", exe} {
-		if err := os.Rename(done[dst], dst); err != nil {
-			return err
+	for _, need := range []string{"lite-go-browser", "lite-go-browser.sha256", "libcef.so", "lite-go-helper"} {
+		if !seen[need] {
+			return fail(errors.New("the release archive is missing " + need))
 		}
 	}
+	if err := os.Rename(dir, old); err != nil {
+		return fail(err)
+	}
+	if err := os.Rename(tmp, dir); err != nil {
+		os.Rename(old, dir)
+		return fail(err)
+	}
+	os.RemoveAll(old)
 	return nil
 }
 
