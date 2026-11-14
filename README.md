@@ -199,10 +199,11 @@ display.
 
 Every release has a `.deb`, an `.rpm`, a Flatpak bundle and a `.tar.gz` for any distribution. Lite Go needs glibc 2.35 or newer (Debian 12, Ubuntu 22.04, Fedora 36 or later).
 
-**Debian, Ubuntu, Linux Mint** (from the repository, so updates come with the system's):
+**Debian, Ubuntu, Linux Mint** (from the signed repository, so updates come with the system's):
 
 ```sh
-echo "deb [trusted=yes] https://tulip-labs.github.io/Lite-Go-Browser/deb stable main" | sudo tee /etc/apt/sources.list.d/lite-go-browser.list
+curl -fsSL https://tulip-labs.github.io/Lite-Go-Browser/lite-go-browser.gpg | sudo tee /usr/share/keyrings/lite-go-browser.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/lite-go-browser.gpg] https://tulip-labs.github.io/Lite-Go-Browser/deb stable main" | sudo tee /etc/apt/sources.list.d/lite-go-browser.list
 sudo apt update && sudo apt install lite-go-browser
 ```
 
@@ -224,7 +225,7 @@ sudo zypper install lite-go-browser
 
 **Flatpak** (any distribution): download `LiteGo-x86_64.flatpak` from the release, then `flatpak install --user LiteGo-x86_64.flatpak`.
 
-**Arch**: the `PKGBUILD` in each release builds the package `lite-go-browser-bin` (`makepkg -si`).
+**Arch**: download the `PKGBUILD` from the latest release into an empty folder and run `makepkg -si` (an AUR package is planned).
 
 **Nix**: `nix profile install github:Tulip-Labs/Lite-Go-Browser`, or try it with `nix run github:Tulip-Labs/Lite-Go-Browser`.
 
