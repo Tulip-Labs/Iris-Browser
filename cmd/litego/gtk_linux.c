@@ -252,11 +252,18 @@ void lgwDo(uintptr_t h) { g_idle_add_full(G_PRIORITY_DEFAULT, doGo, (gpointer)h,
 
 // Startup
 
+// appID is the Wayland app id and icon name: the Flatpak's id inside a
+// Flatpak (its desktop file and icon carry that name), lite-go otherwise.
+static const char *appID(void) {
+	const char *id = g_getenv("FLATPAK_ID");
+	return id && *id ? id : "lite-go";
+}
+
 void lgwInit(void) {
 	// GTK picks the session's own display server: Wayland where there is one
 	gtk_init(NULL, NULL);
 	g_object_set(gtk_settings_get_default(), "gtk-application-prefer-dark-theme", FALSE, NULL);
-	g_set_prgname("lite-go"); // the Wayland app id: matches lite-go.desktop, for the dock icon
+	g_set_prgname(appID()); // the Wayland app id: matches the desktop file, for the dock icon
 	g_set_application_name("Lite Go");
 }
 
@@ -266,7 +273,7 @@ void lgwMain(void) { gtk_main(); }
 uintptr_t lgwOpen(int w, int h, int maximized) {
 	win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
 	gtk_window_set_title(GTK_WINDOW(win), "Lite Go");
-	gtk_window_set_icon_name(GTK_WINDOW(win), "lite-go");
+	gtk_window_set_icon_name(GTK_WINDOW(win), appID());
 	gtk_window_set_default_size(GTK_WINDOW(win), w, h);
 	GdkGeometry g = {.min_width = 480, .min_height = 420};
 	gtk_window_set_geometry_hints(GTK_WINDOW(win), NULL, &g, GDK_HINT_MIN_SIZE);

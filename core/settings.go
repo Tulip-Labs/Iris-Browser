@@ -49,7 +49,11 @@ type Settings struct {
 	// Sync keeps history, open tabs and the palette the same as on a paired phone.
 	Sync    SyncSettings `json:"sync"`
 	Restore bool         `json:"restore"`
-	Session []SessionTab `json:"session,omitempty"`
+	// AutoUpdate installs new versions from the GitHub releases by itself;
+	// UpdateChecked is when it last looked (Unix seconds).
+	AutoUpdate    bool         `json:"autoUpdate"`
+	UpdateChecked int64        `json:"updateChecked,omitempty"`
+	Session       []SessionTab `json:"session,omitempty"`
 
 	path  string
 	mu    sync.Mutex
@@ -61,7 +65,7 @@ func LoadSettings(dir string) *Settings {
 	s := &Settings{Theme: "crocus", Shield: true, HTTPSOnly: true, YouTube: true, Strict: false, Memory: "balanced",
 		LiteResults: true, Boost: true, YouTubeLight: true,
 		Lists: true, Cookies: true, CleanLinks: true, Farble: true,
-		Adaptive: true, Restore: true,
+		Adaptive: true, Restore: true, AutoUpdate: true,
 		Containers: []Container{{"Work", "briefcase", "blue"}, {"Personal", "person", "orange"}}}
 	if dir == "" {
 		return s

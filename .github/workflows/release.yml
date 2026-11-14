@@ -1,4 +1,7 @@
-# Builds the Windows installers and publishes them as a GitHub release.
+# Builds Lite Go for Windows, Linux (.tar.gz, .deb, .rpm, Flatpak, AUR) and
+# Android, and publishes them as a GitHub release with one SHA256SUMS file
+# (Lite Go's updater checks every download against it). The Linux packages
+# also go to the apt and dnf repositories on the project's GitHub Pages.
 # Runs when a tag like v1.0.0 is pushed, or by hand from the Actions tab
 # (give the tag to publish).
 name: Release
@@ -38,7 +41,6 @@ jobs:
           mkdir out
           cp "dist/Lite Go Setup.exe" out/LiteGo-Setup.exe
           cp dist/LiteGo-portable.zip dist/LiteGo.msixbundle out/
-          cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -51,25 +53,7 @@ jobs:
           fi
 
   linux:
-    needs: windows
-    runs-on: ubuntu-24.04
-    env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-          cache: false
-      - name: Build Lite Go for Linux
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libepoxy-dev
-          ./build-litego.sh linux
-      - name: Publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" dist/LiteGo-linux-x86_64.tar.gz --clobber
+    uses: ./.github/workflows/linux.yml
 
   android:
     needs: windows
@@ -94,3 +78,48 @@ jobs:
           cp android/app/build/outputs/apk/release/*.apk Lite-android.apk
           sha256sum Lite-android.apk
           gh release upload "$TAG" Lite-android.apk --clobber
+
+  # the Linux files, the checksums of every file, the AUR recipe, and the
+  # apt and dnf repositories
+  publish:
+    needs: [windows, linux, android]
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      REPO_GPG_KEY: ${{ secrets.REPO_GPG_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+          merge-multiple: true
+      - name: Linux files to the release
+        run: |
+          ls -l art
+          gh release upload "$TAG" art/* --clobber
+      - name: Checksums of every file, and the AUR recipe
+        run: |
+          mkdir all && cd all
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --skip-existing
+          rm -f SHA256SUMS SHA256SUMS.txt PKGBUILD
+          sha256sum * > ../SHA256SUMS
+          cd ..
+          cat SHA256SUMS
+          ver=${TAG#v}
+          sum=$(sha256sum all/LiteGo-linux-x86_64.tar.gz | cut -d' ' -f1)
+          sed -e "s/@VERSION@/$ver/" -e "s/@SHA256@/$sum/" packaging/aur/PKGBUILD.in > PKGBUILD
+          gh release upload "$TAG" SHA256SUMS PKGBUILD --clobber
+      - name: apt and dnf repositories (GitHub Pages, gh-pages branch)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev apt-utils createrepo-c gnupg rpm
+          ./packaging/repo/update-repo.sh art site
+      - name: Publish the repositories
+        run: |
+          cd site
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Lite Go $TAG packages"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages

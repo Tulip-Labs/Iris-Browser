@@ -55,8 +55,11 @@ type Download struct {
 	URL, Path       string
 	Total, Received int64 // Total is -1 when the size is not known
 	State           DownloadState
-	Cancel          func()
-	Pause, Resume   func()
+	// View is the page that started it (nil when unknown). That page must
+	// stay open until the download ends: closing it can stop the download.
+	View          View
+	Cancel        func()
+	Pause, Resume func()
 }
 
 // Key is a shortcut seen while the page has focus.

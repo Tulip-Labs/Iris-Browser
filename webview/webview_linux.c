@@ -30,7 +30,7 @@ extern void lgxGoAudio(uintptr_t id, int on);
 extern int lgxGoKey(uintptr_t id, int ch, int vk, int ctrl, int shift, int alt);
 extern void lgxGoResult(uintptr_t cb, char *res);
 extern void lgxGoFocus(uintptr_t id);
-extern void lgxGoDownload(uintptr_t id, int state, char *url, char *path, long long total, long long got);
+extern void lgxGoDownload(uintptr_t id, uintptr_t view, int state, char *url, char *path, long long total, long long got);
 
 enum { DL_ACTIVE = 0, DL_DONE = 2, DL_FAILED = 3, DL_CANCELED = 4 };
 
@@ -64,7 +64,8 @@ static void dlReport(WebKitDownload *d, int state) {
 	char *path = dest ? g_filename_from_uri(dest, NULL, NULL) : NULL;
 	WebKitURIResponse *rs = webkit_download_get_response(d);
 	long long total = rs ? (long long)webkit_uri_response_get_content_length(rs) : 0;
-	lgxGoDownload(id, state, (char *)(u ? u : ""), path ? path : "", total > 0 ? total : -1, (long long)webkit_download_get_received_data_length(d));
+	uintptr_t owner = (uintptr_t)g_object_get_data(G_OBJECT(d), "lgx-view");
+	lgxGoDownload(id, owner, state, (char *)(u ? u : ""), path ? path : "", total > 0 ? total : -1, (long long)webkit_download_get_received_data_length(d));
 	g_free(path);
 }
 
@@ -121,6 +122,8 @@ static void onDownload(WebKitWebContext *c, WebKitDownload *d, gpointer data) {
 	}
 	uintptr_t id = ++lastDownload;
 	g_object_set_data(G_OBJECT(d), "lgx-id", (gpointer)id);
+	WebKitWebView *w = webkit_download_get_web_view(d);
+	if (w) g_object_set_data(G_OBJECT(d), "lgx-view", g_object_get_data(G_OBJECT(w), "lgx-view"));
 	g_hash_table_insert(downloads, (gpointer)id, g_object_ref(d));
 	g_signal_connect(d, "decide-destination", G_CALLBACK(dlDestination), NULL);
 	g_signal_connect(d, "received-data", G_CALLBACK(dlData), NULL);
@@ -257,6 +260,7 @@ static GtkWidget *onCreate(WebKitWebView *w, WebKitNavigationAction *a, LV *v) {
 }
 
 static void wire(LV *v) {
+	g_object_set_data(G_OBJECT(v->web), "lgx-view", (gpointer)v->id); // downloads find their page by it
 	g_signal_connect(v->web, "notify::uri", G_CALLBACK(onURI), v);
 	g_signal_connect(v->web, "notify::title", G_CALLBACK(onTitle), v);
 	g_signal_connect(v->web, "load-changed", G_CALLBACK(onLoad), v);

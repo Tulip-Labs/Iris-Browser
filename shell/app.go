@@ -53,6 +53,9 @@ type Config struct {
 	Core *Core
 	// Sys is what the operating system does for the interface.
 	Sys Sys
+	// UpdateKind is how this copy was installed (update.Detect); "" turns
+	// updates off (tests and screenshots).
+	UpdateKind string
 }
 
 // Sys is what the operating system does for the interface; any may be nil.
@@ -103,6 +106,8 @@ type App struct {
 	split     splitView
 	find      findBar
 	downloads []*download
+	upd       updater
+	keptPages []webview.View // pages of closed tabs that are still downloading
 	panelMode panelMode
 	histQ     *ui.TextEdit
 	histList  []core.Entry
@@ -374,6 +379,10 @@ func (a *App) Close() {
 		a.stopped = true
 		close(a.stop)
 	}
+	for _, v := range a.keptPages {
+		a.web(v.Close)
+	}
+	a.keptPages = nil
 	for _, w := range a.workers {
 		if w != nil && w.view != nil {
 			a.web(w.view.Close)

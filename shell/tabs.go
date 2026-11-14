@@ -185,7 +185,13 @@ func (a *App) closeTab(i int) {
 	t.closed = true
 	if t.view != nil {
 		v := t.view
-		a.web(v.Close)
+		if a.downloadingIn(v) {
+			// its download goes on: hide the page, close it when the download ends
+			a.web(func() { v.SetVisible(false) })
+			a.keptPages = append(a.keptPages, v)
+		} else {
+			a.web(v.Close)
+		}
 		t.view = nil
 	}
 	if t == a.split.a || t == a.split.b {
@@ -526,6 +532,7 @@ func (a *App) tick() {
 	a.settleScans()
 	a.rebalance()
 	a.linkTick()
+	a.updateTick()
 	live := 0
 	for _, t := range a.tabs {
 		if t.view == nil || t == cur || t == other {
@@ -533,12 +540,12 @@ func (a *App) tick() {
 		}
 		live++
 		idle := now - t.last
-		if !t.asleep && !t.Audio && idle > a.plan.SleepAfter {
+		if !t.asleep && !a.keepAwake(t) && idle > a.plan.SleepAfter {
 			v := t.view
 			a.web(v.Sleep)
 			t.asleep, t.shown = true, false
 		}
-		if idle > a.plan.UnloadAfter && !t.Audio && !t.private() {
+		if idle > a.plan.UnloadAfter && !a.keepAwake(t) && !t.private() {
 			a.unload(t)
 			live--
 		}
@@ -546,7 +553,7 @@ func (a *App) tick() {
 	for live+1 > a.plan.Live {
 		var lru *Tab
 		for _, t := range a.tabs {
-			if t.view != nil && t != cur && t != other && !t.Audio && !t.private() && (lru == nil || t.last < lru.last) {
+			if t.view != nil && t != cur && t != other && !a.keepAwake(t) && !t.private() && (lru == nil || t.last < lru.last) {
 				lru = t
 			}
 		}
@@ -560,7 +567,7 @@ func (a *App) tick() {
 
 // unload closes a background page, keeping its address and title.
 func (a *App) unload(t *Tab) {
-	if t.view == nil {
+	if t.view == nil || a.downloadingIn(t.view) {
 		return
 	}
 	a.finishScan(t)
@@ -575,7 +582,7 @@ func (a *App) FreeMemory() {
 	other, _ := a.splitWith()
 	n := 0
 	for _, t := range a.tabs {
-		if t.view == nil || t == cur || t == other || t.Audio {
+		if t.view == nil || t == cur || t == other || a.keepAwake(t) {
 			continue
 		}
 		if t.private() {

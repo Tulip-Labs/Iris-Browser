@@ -61,7 +61,7 @@ func (a *App) prioritize() {
 		if t.view == nil || t.asleep {
 			continue
 		}
-		bg := t != cur && t != other && !t.Audio
+		bg := t != cur && t != other && !a.keepAwake(t)
 		if bg != t.background {
 			t.background = bg
 			v := t.view
@@ -86,7 +86,7 @@ func (a *App) rebalance() {
 	slept := 0
 	var lru *Tab
 	for _, t := range a.tabs {
-		if t.view == nil || t == cur || t == other || t.Audio {
+		if t.view == nil || t == cur || t == other || a.keepAwake(t) {
 			continue
 		}
 		if !t.asleep && !t.Loading {

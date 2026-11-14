@@ -159,7 +159,7 @@ func (r *resident) makeWindow(urls []string) {
 	layout := C.lgwOpen(C.int(ws.W), C.int(ws.H), max)
 	h.eng = webview.New()
 	h.a = shell.New(h, shell.Config{Engine: h.eng, DataDir: r.conf, TotalMB: totalMB(), Version: version, SelfMB: webview.SelfMB,
-		Core: r.core, SetBoost: setStartup, Sys: sysHooks()})
+		Core: r.core, SetBoost: setStartup, Sys: sysHooks(), UpdateKind: installKind()})
 	h.in = h.a.In
 	h.eng.SetPolicy(h.a.Policy())
 	for _, u := range urls {
