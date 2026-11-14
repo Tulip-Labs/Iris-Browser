@@ -1,5 +1,10 @@
 Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.5
+
+- **Linux: much less memory.** Each page has a memory limit and gives memory back early; computers with 8 GB or less use smaller caches; when memory runs short, background tabs are unloaded quickly (they reload when you open them) so the system never has to close the browser.
+- **Linux: resizing** (niri's column widths, Super+R, Super+F, dragging) redraws at the new size at once.
+
 ## New in 1.0.4
 
 - **Lite Go for Linux**, tested on Debian, Ubuntu, Fedora, openSUSE and Arch: `.deb`, `.rpm`, Flatpak (`LiteGo-x86_64.flatpak`), an AUR recipe (`PKGBUILD`), a Nix flake and a `.tar.gz` for any distribution. apt and dnf repositories: see the README.

@@ -27,6 +27,7 @@
     <category>WebBrowser</category>
   </categories>
   <releases>
+    <release version="1.0.5" date="2026-11-14"/>
     <release version="1.0.4" date="2026-11-14"/>
   </releases>
 </component>

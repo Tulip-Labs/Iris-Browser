@@ -12,7 +12,7 @@
       packages = forAll (pkgs: rec {
         lite-go-browser = pkgs.buildGoModule {
           pname = "lite-go-browser";
-          version = "1.0.4";
+          version = "1.0.5";
           src = self;
           vendorHash = "sha256-DUuIMLR+RLt5e6kRZcxRdGo4Q4i9ZGR7ia629F8Vp2o=";
           subPackages = [ "cmd/litego" ];
