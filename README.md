@@ -102,8 +102,21 @@ a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
 </tr>
 </table>
 
-<sub>The pictures are drawn by the test suite with Lite Go's software renderer; page areas
-and thumbnails are placeholders.</sub>
+<table>
+<tr>
+<td width="33%"><img src="assets/screens/android-results.png" alt="Lite results on Android"></td>
+<td width="33%"><img src="assets/screens/android-palettes.png" alt="The palettes on Android"></td>
+<td width="33%"><img src="assets/screens/android-new-tab.png" alt="Private and container tabs on Android"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Lite for Android.</b> Lite results.</sub></td>
+<td align="center"><sub>Eleven palettes.</sub></td>
+<td align="center"><sub>Hold + for private and container tabs.</sub></td>
+</tr>
+</table>
+
+<sub>The desktop pictures are drawn by the test suite with Lite Go's software renderer (page areas
+and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 
 ## What it does
 
