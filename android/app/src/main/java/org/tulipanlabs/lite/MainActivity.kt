@@ -1043,7 +1043,7 @@ class MainActivity : Activity(), PageEvents {
         // each palette as a tile with its name
         val tiles = Flow(this, dp(8))
         val sheetW = if (wide) minOf(dp(560), resources.displayMetrics.widthPixels) else resources.displayMetrics.widthPixels
-        val tileW = ((sheetW - dp(40) - dp(8) * 2) / 3).coerceAtMost(dp(160))
+        val tileW = ((sheetW - dp(40) - dp(8) * 3) / 3 - dp(2)).coerceAtMost(dp(160))
         for (p in Palette.all) {
             val tile = LinearLayout(this)
             tile.orientation = LinearLayout.VERTICAL
@@ -1379,6 +1379,7 @@ class MainActivity : Activity(), PageEvents {
         // screens for the screenshot run (debug builds only)
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             i.getStringExtra("lite.theme")?.let { th -> set.theme = th; pal = Palette.byId(th); buildUi() }
+            i.getStringExtra("lite.mode")?.let { m -> Mode.values().firstOrNull { it.name.equals(m, true) }?.let { set.mode = it } }
             i.getStringExtra("lite.url")?.let { u -> ui.postDelayed({ go(u) }, 300) }
             i.getStringExtra("lite.open")?.let { what ->
                 ui.postDelayed({

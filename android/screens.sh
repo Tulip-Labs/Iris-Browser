@@ -17,7 +17,7 @@ done
 start --es lite.theme crocus --es lite.open tabs; shot tabs; back
 start --es lite.open new; shot new-menu; back
 start --es lite.open shield; shot shield; back
-start --es lite.url "red pandas"; shot results 14
+start --es lite.mode web --es lite.url "red\ pandas"; shot results 16
 adb shell input swipe 540 1800 540 700 300; shot results-2 2
 
 # landscape and a tablet
@@ -32,7 +32,9 @@ sleep 3
 start; shot tablet 6
 start --es lite.open tabs; shot tablet-tabs; back
 start --es lite.open menu; shot tablet-menu; back
-start --es lite.url "red pandas"; shot tablet-results 14
+start --es lite.mode web --es lite.url "red\ pandas"; shot tablet-results 16
 adb shell wm size reset
 adb shell wm density reset
+adb logcat -d -b crash > screens/crash.txt
+adb logcat -d -s AndroidRuntime:E chromium:E > screens/errors.txt
 ls -la screens
