@@ -93,6 +93,18 @@ class Results(private val ctx: Context) {
                                 finish(null, emptyList())
                                 return@evaluateJavascript
                             }
+                            if (hits.size < 6 && tries == 0) {
+                                // the first results are in, the rest may still be coming: look once more
+                                tries = 1
+                                ui.postDelayed({ if (my == seq && !finished) v.evaluateJavascript(webJs) { r2 ->
+                                    val more = parseWeb(r2).first
+                                    android.util.Log.i("LiteResults", "web later: ${more.size} links")
+                                    web = if (more.size > hits.size) more else hits
+                                    stage = 1
+                                    v.loadUrl(Search.url(q, Mode.IMAGES))
+                                } }, 900)
+                                return@evaluateJavascript
+                            }
                             web = hits
                             stage = 1
                             v.loadUrl(Search.url(q, Mode.IMAGES))

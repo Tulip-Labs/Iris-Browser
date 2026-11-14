@@ -525,7 +525,7 @@ class MainActivity : Activity(), PageEvents {
             if (web == null) {
                 w.loadUrl(g) // Google wants a human check, or did not answer: its own page
             } else {
-                w.loadDataWithBaseURL("https://www.google.com/", Results.page(q, web, images, pal), "text/html", "utf-8", g)
+                w.loadDataWithBaseURL(g, Results.page(q, web, images, pal), "text/html", "utf-8", g) // the address stays the search
                 if (!t.private) hist.add(g, q)
             }
             if (t === tab()) updateBars()
