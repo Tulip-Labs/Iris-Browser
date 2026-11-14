@@ -51,6 +51,9 @@ overrides:
       - libgles2
     recommends:
       - xdg-utils
+      # video: VP9 (good), and H.264 and the rest (libav)
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-libav
   rpm:
     # library names, so one package fits Fedora, RHEL-likes and openSUSE
     depends:
@@ -58,6 +61,8 @@ overrides:
       - libgtk-3.so.0()(64bit)
       - libepoxy.so.0()(64bit)
       - libGLESv2.so.2()(64bit)
+    recommends:
+      - gstreamer1-plugins-good
 
 deb:
   fields:

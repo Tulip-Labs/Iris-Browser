@@ -1,5 +1,9 @@
 Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.6
+
+- **YouTube plays on Linux systems without H.264** (Fedora without OpenH264 or RPM Fusion, for one): Light YouTube now asks for H.264 only where it can actually play it, and uses VP9 otherwise.
+
 ## New in 1.0.5
 
 - **Linux: much less memory.** Each page has a memory limit and gives memory back early; computers with 8 GB or less use smaller caches; when memory runs short, background tabs are unloaded quickly (they reload when you open them) so the system never has to close the browser.
