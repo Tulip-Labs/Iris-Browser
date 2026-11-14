@@ -550,12 +550,12 @@ static gboolean onKey(GtkWidget *w, GdkEventKey *e, LV *v) {
 			k.type = KEYEVENT_CHAR;
 			if (vk == 0x0D) ch = '\r';
 			k.windows_key_code = (int)ch;
-			k.character = (cef_char16_t)ch;
-			k.unmodified_character = (cef_char16_t)ch;
+			k.character = (char16_t)ch;
+			k.unmodified_character = (char16_t)ch;
 			h->send_key_event(h, &k);
 		} else if (vk == 0x0D || vk == 0x08 || vk == 0x09 || vk == 0x1B) {
 			k.type = KEYEVENT_CHAR;
-			k.character = k.unmodified_character = (cef_char16_t)(vk == 0x0D ? '\r' : vk);
+			k.character = k.unmodified_character = (char16_t)(vk == 0x0D ? '\r' : vk);
 			h->send_key_event(h, &k);
 		}
 	} else {
@@ -1104,7 +1104,7 @@ static void createBrowser(LV *v) {
 	cef_string_t url = {0};
 	setStr(&url, v->startURL ? v->startURL : "about:blank");
 	cef_request_context_t *ctx = contextFor(v->profile, v->priv);
-	ctx->base.add_ref(&ctx->base); // create_browser takes one
+	ctx->base.base.add_ref(&ctx->base.base); // create_browser takes one
 	if (cef_browser_host_create_browser(&wi, &client, &url, &bs, NULL, ctx)) {
 		g_queue_push_tail(&pending, v);
 	} else {
