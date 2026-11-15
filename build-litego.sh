@@ -73,7 +73,7 @@ build_linux() {
 	# one file, use it to move to the new layout
 	install -m 755 packaging/linux/lite-go dist/linux/lite-go
 	cef=third_party/cef
-	gcc -O2 -I"$cef" -DCEF_API_VERSION=15600 packaging/cef/helper.c -L"$cef/Release" -lcef -Wl,-rpath,'$ORIGIN' -o dist/linux/lite-go-helper
+	gcc -O2 -fno-stack-protector -I"$cef" -DCEF_API_VERSION=15600 packaging/cef/helper.c -L"$cef/Release" -lcef -Wl,-rpath,'$ORIGIN' -o dist/linux/lite-go-helper
 	strip dist/linux/lite-go-helper
 	for f in libcef.so libvk_swiftshader.so libvulkan.so.1 vk_swiftshader_icd.json v8_context_snapshot.bin chrome-sandbox; do
 		cp "$cef/Release/$f" dist/linux/

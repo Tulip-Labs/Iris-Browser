@@ -3,6 +3,7 @@
 // whole browser. Built by build-litego.sh with the CEF distribution.
 
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -27,10 +28,16 @@ int main(int argc, char **argv) {
 		if (strncmp(argv[i], "--type=", 7) == 0) kind = argv[i] + 7;
 	}
 	if (getenv("LITEGO_CEF_VERBOSE")) {
+		char buf[160];
+		int n = snprintf(buf, sizeof buf, "lite-go-helper: pid %d, process type %s\n", (int)getpid(), kind);
+		if (n > 0) write(2, buf, (size_t)n);
 		signal(SIGABRT, onAbort);
 		signal(SIGSEGV, onAbort);
 	}
 	cef_api_hash(CEF_API_VERSION, 0);
 	cef_main_args_t args = {argc, argv};
-	return cef_execute_process(&args, NULL, NULL);
+	// Chromium's zygote gives each process it forks a new stack guard, so the
+	// helper must not return through its own frames (it is also built with
+	// -fno-stack-protector): it leaves from here.
+	_exit(cef_execute_process(&args, NULL, NULL));
 }
