@@ -27,6 +27,8 @@
           ldflags = [ "-s" "-w" ];
           doCheck = false;
           overrideModAttrs = _: { preBuild = ""; };
+          # libcef.so's own libraries are found at run time (autoPatchelf)
+          env.CGO_LDFLAGS = "-Wl,--allow-shlib-undefined";
           dontStrip = true; # libcef.so is stripped when it is unpacked
           nativeBuildInputs = with pkgs; [ pkg-config wrapGAppsHook3 autoPatchelfHook ];
           buildInputs = with pkgs; [
@@ -44,7 +46,7 @@
             mkdir -p $lib/locales
             mv $out/bin/litego $lib/lite-go-browser
             gcc -O2 -fno-stack-protector -Ithird_party/cef -DCEF_API_VERSION=15600 packaging/cef/helper.c \
-              -Lthird_party/cef/Release -lcef -Wl,-rpath,'$ORIGIN' -o $lib/lite-go-helper
+              -Lthird_party/cef/Release -lcef -Wl,--allow-shlib-undefined -Wl,-rpath,'$ORIGIN' -o $lib/lite-go-helper
             for f in libcef.so libvk_swiftshader.so libvulkan.so.1 vk_swiftshader_icd.json v8_context_snapshot.bin; do
               cp third_party/cef/Release/$f $lib/
             done
