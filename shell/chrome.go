@@ -11,10 +11,9 @@ import (
 )
 
 const (
-	stripH = 40
-	barH   = 48
-	ctlW   = 46 * 3
-	panelW = 340
+	barH   = 52
+	ctlW   = 42 * 3
+	panelW = 360
 )
 
 var (
@@ -28,45 +27,22 @@ type suggestion struct {
 	url        string
 }
 
-// vertical says whether tabs sit in a side rail (only when there is room).
-func (a *App) vertical(w float32) bool { return a.set.VerticalTabs && w >= 720 }
-
-// chrome draws the window's frame and returns where the page goes.
+// chrome draws the window's one slim bar (navigation, the address, the tabs
+// button and the menu) and returns where the page goes. Tabs live in the tab
+// grid, opened from the bar, as on a phone.
 func (a *App) chrome(full ui.Rect) ui.Rect {
-	const sbH = 30 // the status bar
 	w := full.W
-	vert := a.vertical(w)
-	y := float32(0)
-	if !vert {
-		strip := ui.Rect{W: w - ctlW, H: stripH}
-		a.tabStrip(strip)
-		a.windowControls(ui.Rect{X: w - ctlW, W: ctlW, H: stripH})
-		y = stripH
-	}
-	bar := ui.Rect{Y: y, W: w, H: barH}
-	if vert {
-		a.windowControls(ui.Rect{X: w - ctlW, W: ctlW, H: stripH})
-		bar.W -= ctlW
-	}
-	addr := a.toolbar(bar, vert)
-	y += barH
+	addr := a.toolbar(ui.Rect{W: w, H: barH})
+	y := float32(barH)
 
 	// suggestions open under the address bar and push the page down (the page
-	// is a native window and would cover anything drawn over it)
+	// is a native surface and would cover anything drawn over it)
 	sugH := float32(0)
 	if a.st.Focus == ID("addr") && len(a.sugg) > 0 {
 		sugH = float32(len(a.sugg))*40 + 12
 	}
 	sugTop := y
 	y += sugH
-	if a.kindOpen {
-		if a.In.Has(ui.KEscape, false) {
-			a.kindOpen = false
-		} else {
-			a.kindMenu(ui.Rect{X: 8, Y: y, W: w - 16, H: 54})
-			y += 60
-		}
-	}
 	if a.find.open {
 		a.findBar(ui.Rect{X: 8, Y: y, W: w - 16, H: 40})
 		y += 46
@@ -80,38 +56,28 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 		}
 	}
 	x := float32(8)
-	if vert {
-		rw := float32(232)
-		if w < 1000 {
-			rw = 64
-		}
-		a.rail(ui.Rect{X: 0, Y: barH, W: rw, H: full.H - barH - sbH - 4})
-		x = rw
-	}
 	right := w - 8
 	if a.panel {
-		pw := float32(panelW)
-		if a.panelMode == panelApp { // a site needs more room than a list
-			pw = max(panelW, min(440, w*0.36))
+		pw := min(float32(panelW), max(280, w*0.42))
+		if w < 560 {
+			pw = w - 16 // a phone-sized window: the menu takes the width
 		}
-		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - sbH - 10}
+		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - 8}
 		a.drawPanel(pr)
 		right = pr.X - 8
 	} else if a.ai.open {
 		pw := float32(aiW)
 		if w < 900 {
-			pw = 320
+			pw = min(320, w-16)
 		}
-		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - sbH - 10}
+		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - 8}
 		a.drawAI(pr)
 		right = pr.X - 8
 	}
 	if sugH > 0 {
 		a.suggestions(ui.Rect{X: addr.X, Y: sugTop + 2, W: addr.W, H: sugH - 6}, ID("sugA"))
 	}
-	// the status bar along the bottom, as in Vivaldi
-	a.statusBar(ui.Rect{X: x, Y: full.H - sbH - 2, W: w - x - 6, H: sbH})
-	return ui.Rect{X: x, Y: y, W: max(0, right-x), H: max(0, full.H-y-sbH-6)}
+	return ui.Rect{X: x, Y: y, W: max(0, right-x), H: max(0, full.H-y-8)}
 }
 
 // logo is Lite Go's mark: a liquid accent tile with a ring in motion and a spark.
@@ -133,7 +99,7 @@ func siteColor(host string) ui.Color {
 }
 
 func monogram(host string) string {
-	h := strings.TrimPrefix(host, "www.")
+	h := core.SiteKey("https://" + host) // en.wikipedia.org is W, not E
 	h = strings.TrimPrefix(h, "m.")
 	for _, r := range h {
 		return strings.ToUpper(string(r))
@@ -150,9 +116,6 @@ func (a *App) tabIcon(t *Tab, x, y float32) {
 		ph := float32(math.Mod(a.now()*400, 360))
 		ui.StrokeOval(g, ui.Rect{X: x + 1.5, Y: y + 1.5, W: 13, H: 13}, 2, th.Primary.Alpha(0.18))
 		ui.Pen(g, ui.NewPath().Arc(x+8, y+8, 6.5, ph, ph+110, true), 2, th.Primary)
-	case t.settings:
-		ui.DrawIcon(g, ui.ISettings, x, y, 16, th.Primary)
-		return
 	case t.search != nil:
 		ui.FillRoundAccent(g, ui.Rect{X: x, Y: y, W: 16, H: 16}, 5, th.Primary)
 		ui.DrawIcon(g, modeIcons[t.search.Mode], x+2, y+2, 12, ui.White)
@@ -178,8 +141,6 @@ func (a *App) tabIcon(t *Tab, x, y float32) {
 
 func (t *Tab) label() string {
 	switch {
-	case t.settings:
-		return "Settings"
 	case t.URL == "" && t.Kind == KPrivate:
 		return "Private tab"
 	case t.URL == "" && t.Kind == KTemp:
@@ -192,180 +153,6 @@ func (t *Tab) label() string {
 		return t.Title
 	}
 	return core.Display(t.URL)
-}
-
-// drawTab draws one tab; narrow tabs show only their icon.
-func (a *App) drawTab(i int, t *Tab, r ui.Rect) {
-	u, g, th := &a.u, a.u.G, a.u.Th
-	active := i == a.cur
-	id := ui.IdN("tab", t.ID)
-	hot := u.Hover(r)
-	if active {
-		ui.Glass(g, r, 11, th, true, true)
-	} else if hot {
-		ui.FillRound(g, r, 11, th.Ink.Alpha(0.06))
-	}
-	if t.Kind != KNormal {
-		// the kind's color runs along the bottom of the tab
-		_, col := a.kindIcon(t)
-		if active {
-			ui.FillRound(g, r, 11, col.Alpha(0.08))
-		}
-		bw := min(r.W-22, float32(28))
-		if active {
-			bw = r.W - 22
-		}
-		ui.FillRound(g, ui.Rect{X: r.CX() - bw/2, Y: r.B() - 3, W: bw, H: 2.5}, 1.25, col.Alpha(0.9))
-	}
-	if u.Clickable(id, r) && !active {
-		a.selectTab(i)
-	}
-	u.Tooltip(t.label(), r)
-	narrow := r.W < 76
-	ix := r.X + 10
-	if narrow {
-		ix = r.CX() - 8
-	}
-	a.tabIcon(t, ix, r.CY()-8)
-	if narrow {
-		return
-	}
-	tx := ix + 24
-	right := r.R() - 8
-	showClose := active || hot || r.W > 150
-	if showClose {
-		cr := ui.RectAround(right-11, r.CY(), 22, 22)
-		if u.Hover(cr) {
-			ui.FillOval(g, cr, th.Ink.Alpha(0.10))
-		}
-		ui.DrawIcon(g, ui.IClose, cr.CX()-7, cr.CY()-7, 14, th.OnSurfaceVariant)
-		if u.Clickable(id.Sub("x"), cr) {
-			a.closeTab(i)
-			return
-		}
-		right = cr.X - 2
-	}
-	if t.Audio || t.Muted {
-		mr := ui.RectAround(right-11, r.CY(), 22, 22)
-		ic := ui.IVolume
-		if t.Muted {
-			ic = ui.IMute
-		}
-		if u.Hover(mr) {
-			ui.FillOval(g, mr, th.Ink.Alpha(0.10))
-		}
-		ui.DrawIcon(g, ic, mr.CX()-7, mr.CY()-7, 14, th.Primary)
-		if u.Clickable(id.Sub("m"), mr) {
-			a.toggleMute(t)
-		}
-		u.Tooltip("Mute or unmute this tab", mr)
-		right = mr.X - 2
-	}
-	f := ui.FSmall
-	col := th.OnSurfaceVariant
-	if active {
-		f, col = ui.FSmallBold, th.OnSurface
-	}
-	if t.view == nil && t.URL != "" && !t.making {
-		col = col.Alpha(0.6) // unloaded: comes back when clicked
-	} else if t.asleep {
-		col = col.Alpha(0.8)
-	}
-	ui.TextFit(g, t.label(), tx, ui.Mid(g, r.Y, r.H, f), f, col, right-tx-2)
-}
-
-// tabStrip draws the tabs across the top, with the window's drag areas.
-func (a *App) tabStrip(r ui.Rect) {
-	u, g, th := &a.u, a.u.G, a.u.Th
-	mark := ui.Rect{X: r.X, Y: r.Y, W: 48, H: r.H}
-	logo(g, ui.RectAround(mark.CX()+2, mark.CY()+2, 22, 22), th, th.Primary)
-	a.MoveAreas = append(a.MoveAreas, mark)
-	area := r.CutLeft(48)
-	n := float32(len(a.tabs))
-	const plusW, minW, maxW, gapMove = 64, 52, 236, 56
-	avail := area.W - plusW - gapMove
-	tw := min(maxW, max(minW, avail/n))
-	total := tw * n
-	over := total > avail
-	if over && u.Hover(area) {
-		a.stripScroll = a.stripScroll - u.In.WheelY*60 - u.In.WheelX*60
-	}
-	if !over {
-		a.stripScroll = 0
-	}
-	a.stripScroll = max(0, min(a.stripScroll, total-avail))
-	g.Save()
-	g.Clip(ui.Rect{X: area.X, Y: area.Y, W: min(total, avail) + 4, H: area.H})
-	a.u.PushHit(ui.Rect{X: area.X, Y: area.Y, W: min(total, avail) + 4, H: area.H})
-	x := area.X - a.stripScroll
-	for i, t := range a.tabs {
-		tr := ui.Rect{X: x + 2, Y: r.Y + 5, W: tw - 4, H: r.H - 7}
-		if tr.R() > area.X && tr.X < area.X+avail+4 {
-			a.drawTab(i, t, tr)
-		}
-		x += tw
-	}
-	a.u.PopHit()
-	g.Restore()
-	px := area.X + min(total, avail) + 2
-	pr := ui.Rect{X: px, Y: r.Y + 4, W: 36, H: 34}
-	if u.IconButton(ID("newtab"), pr, ui.IPlus, "New tab  Ctrl+T · right-click for private, temporary, sandbox and container tabs", ui.IconOpt{}) {
-		a.newTab(KNormal, "", "", true)
-	}
-	if u.In.RightPressed && u.Over(pr) {
-		a.kindOpen = !a.kindOpen
-	}
-	if u.IconButton(ID("newkind"), ui.Rect{X: pr.R(), Y: pr.Y + 5, W: 22, H: 24}, ui.IChevronDown, "Open a private, temporary, sandbox or container tab", ui.IconOpt{Toggled: a.kindOpen}) {
-		a.kindOpen = !a.kindOpen
-	}
-	px += plusW
-	if px < r.R() {
-		a.MoveAreas = append(a.MoveAreas, ui.Rect{X: px, Y: r.Y, W: r.R() - px, H: r.H})
-	}
-	_ = th
-}
-
-// rail is the side tab list.
-func (a *App) rail(r ui.Rect) {
-	u, g, th := &a.u, a.u.G, a.u.Th
-	narrow := r.W < 100
-	nb := ui.Rect{X: r.X + 8, Y: r.Y + 4, W: r.W - 16, H: 38}
-	if narrow {
-		if u.IconButton(ID("railnew"), nb, ui.IPlus, "New tab  Ctrl+T", ui.IconOpt{}) {
-			a.newTab(KNormal, "", "", true)
-		}
-	} else if u.Button(ID("railnew"), nb, "New tab", ui.ButtonOpt{Icon: ui.IPlus, HasIcon: true, Tip: "Ctrl+T"}) {
-		a.newTab(KNormal, "", "", true)
-	}
-	list := ui.Rect{X: r.X, Y: nb.B() + 8, W: r.W, H: r.H - (nb.B() + 8 - r.Y) - 56}
-	const rowH = 40
-	sc := &a.railScroll
-	sc.Content = float32(len(a.tabs)) * (rowH + 2)
-	u.Scroll(ID("rail"), list, sc)
-	g.Save()
-	g.Clip(list)
-	a.u.PushHit(list)
-	for i, t := range a.tabs {
-		tr := ui.Rect{X: r.X + 8, Y: list.Y + float32(i)*(rowH+2) - sc.Y, W: r.W - 16, H: rowH}
-		if tr.B() < list.Y || tr.Y > list.B() {
-			continue
-		}
-		a.drawTab(i, t, tr)
-	}
-	a.u.PopHit()
-	g.Restore()
-	by := r.B() - 48
-	g.FillRect(ui.Rect{X: r.X + 12, Y: by - 4, W: r.W - 24, H: 1}, th.Divider)
-	bw := float32(40)
-	bx := r.X + 8
-	if u.IconButton(ID("railpriv"), ui.Rect{X: bx, Y: by, W: bw, H: 40}, ui.IPrivate, "New private tab  Ctrl+Shift+N", ui.IconOpt{}) {
-		a.newTab(KPrivate, "", "", true)
-	}
-	if !narrow {
-		if u.IconButton(ID("railtemp"), ui.Rect{X: bx + bw + 4, Y: by, W: bw, H: 40}, ui.IHourglass, "New temporary tab", ui.IconOpt{}) {
-			a.newTab(KTemp, "", "", true)
-		}
-	}
 }
 
 func (a *App) windowControls(r ui.Rect) {
@@ -405,75 +192,128 @@ func (a *App) windowControls(r ui.Rect) {
 	}
 }
 
-// toolbar draws navigation, the address bar and the status buttons; it returns the address bar.
-func (a *App) toolbar(r ui.Rect, vert bool) ui.Rect {
+// toolbar is the bar: back, forward and reload at the left (where the hand
+// and the mouse start), the address in the middle, then the tabs button, the
+// shield and the menu; on a narrow window only what is needed stays.
+func (a *App) toolbar(r ui.Rect) ui.Rect {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	t := a.tab()
-	x := r.X + 6
-	if vert {
-		mark := ui.Rect{X: r.X, Y: r.Y, W: 52, H: r.H}
-		logo(g, ui.RectAround(mark.CX()+2, mark.CY(), 24, 24), th, th.Primary)
-		a.MoveAreas = append(a.MoveAreas, mark)
-		x = mark.R()
-	}
 	cy := r.CY()
+	compact := r.W < 640
+	a.windowControls(ui.Rect{X: r.R() - ctlW, Y: r.Y, W: ctlW, H: 40})
+	rx := r.R() - ctlW - 6
+
+	// navigation: one soft pill
+	hasPage := t != nil && t.URL != ""
+	n := 3
+	if compact {
+		n = 1
+	}
+	nav := ui.Rect{X: r.X + 10, Y: cy - 19, W: float32(n)*36 + 6, H: 38}
+	ui.FillRound(g, nav, 19, th.Ink.Alpha(0.045))
+	x := nav.X + 3
 	btn := func(id string, ic ui.Icon, tip string, dis bool) bool {
-		b := ui.Rect{X: x, Y: cy - 20, W: 40, H: 40}
-		x += 40
+		b := ui.Rect{X: x, Y: cy - 18, W: 36, H: 36}
+		x += 36
 		return u.IconButton(ID(id), b, ic, tip, ui.IconOpt{Disabled: dis})
 	}
-	hasPage := t != nil && t.URL != ""
 	if btn("back", ui.IArrowLeft, "Back  Alt+Left", t == nil || !t.canBack()) {
 		a.do(actBack)
 	}
-	if btn("fwd", ui.IArrowRight, "Forward  Alt+Right", t == nil || !t.canForward()) {
-		a.do(actForward)
-	}
-	if t != nil && t.Loading {
-		if btn("stop", ui.IClose, "Stop", false) && t.view != nil {
-			v := t.view
-			a.web(v.Stop)
-			t.Loading = false
+	if !compact {
+		if btn("fwd", ui.IArrowRight, "Forward  Alt+Right", t == nil || !t.canForward()) {
+			a.do(actForward)
 		}
-	} else if btn("reload", ui.IReload, "Reload  Ctrl+R", !hasPage) {
-		a.do(actReload)
+		if t != nil && t.Loading {
+			if btn("stop", ui.IClose, "Stop", false) && t.view != nil {
+				v := t.view
+				a.web(v.Stop)
+				t.Loading = false
+			}
+		} else if btn("reload", ui.IReload, "Reload  Ctrl+R", !hasPage) {
+			a.do(actReload)
+		}
 	}
-	x += 6
+	left := nav.R() + 10
 
-	// right side: shield, memory, panel
-	rx := r.R() - 6
-	rx -= 40
-	if u.IconButton(ID("panel"), ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40}, ui.IMore, "Lite Go menu  Ctrl+,", ui.IconOpt{Toggled: a.panel && a.panelMode == panelSettings}) {
+	// right: menu, shield, downloads, tabs, and Sign in until Google knows you
+	icon := func(id string, ic ui.Icon, tip string, on bool) bool {
+		rx -= 38
+		return u.IconButton(ID(id), ui.Rect{X: rx, Y: cy - 18, W: 36, H: 36}, ic, tip, ui.IconOpt{Toggled: on})
+	}
+	if icon("panel", ui.IMore, "Menu: tools, look, shields, memory and more  Ctrl+,", a.panel && a.panelMode == panelSettings) {
 		a.togglePanel(panelSettings)
 	}
-	rx -= 44
-	a.shieldButton(ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40}, t)
+	if !compact {
+		rx -= 38
+		a.shieldButton(ui.Rect{X: rx, Y: cy - 18, W: 36, H: 36}, t)
+	}
 	if len(a.downloads) > 0 {
-		rx -= 44
-		a.downloadButton(ui.Rect{X: rx, Y: cy - 20, W: 40, H: 40})
+		rx -= 38
+		a.downloadButton(ui.Rect{X: rx, Y: cy - 18, W: 36, H: 36})
 	}
-	rx -= 8
+	rx -= 44
+	a.tabsButton(ui.Rect{X: rx, Y: cy - 19, W: 42, H: 38})
+	if a.set.GoogleSignIn != "done" && !compact {
+		lbl := "Sign in"
+		bw := g.Measure(lbl, ui.FSmallBold) + 44
+		rx -= bw + 6
+		br := ui.Rect{X: rx, Y: cy - 16, W: bw, H: 32}
+		if u.Button(ID("barsignin"), br, lbl, ui.ButtonOpt{Primary: true, Icon: ui.IPerson, HasIcon: true,
+			Tip: "Sign in to Google once: results and AI answers then come without human checks"}) {
+			a.signIn(t)
+		}
+	}
+	rx -= 10
 
-	aw := rx - x
-	if vert && aw > 980 {
-		pad := (aw - 980) / 2
-		a.MoveAreas = append(a.MoveAreas, ui.Rect{X: x, Y: r.Y, W: pad, H: r.H}, ui.Rect{X: rx - pad, Y: r.Y, W: pad, H: r.H})
-		x += pad
-		aw = 980
+	// the address: centered in the window when there is room, never wider than a calm line
+	aw := min(rx-left, float32(760))
+	ax := max(left, min(r.CX()-aw/2, rx-aw))
+	if ax > left+4 {
+		a.MoveAreas = append(a.MoveAreas, ui.Rect{X: left, Y: r.Y, W: ax - left - 4, H: r.H})
 	}
-	ar := ui.Rect{X: x, Y: cy - 18, W: aw, H: 36}
+	if rx > ax+aw+4 {
+		a.MoveAreas = append(a.MoveAreas, ui.Rect{X: ax + aw + 4, Y: r.Y, W: rx - ax - aw - 4, H: r.H})
+	}
+	ar := ui.Rect{X: ax, Y: cy - 19, W: aw, H: 38}
 	a.addressBar(ar, t)
 	if t != nil && t.Loading && t.URL != "" {
 		u.Redraw = true
 		p := float32(math.Mod(a.now()*0.9, 1))
 		seg := ar.W * 0.28
-		sx := ar.X + 12 + (ar.W-24+seg)*p - seg
+		sx := ar.X + 14 + (ar.W-28+seg)*p - seg
 		g.Save()
-		g.Clip(ui.Rect{X: ar.X + 12, Y: ar.B() - 3, W: ar.W - 24, H: 3})
+		g.Clip(ui.Rect{X: ar.X + 14, Y: ar.B() - 3, W: ar.W - 28, H: 3})
 		ui.FillRoundAccent(g, ui.Rect{X: sx, Y: ar.B() - 2.5, W: seg, H: 2.5}, 1.25, th.Primary)
 		g.Restore()
 	}
 	return ar
+}
+
+// tabsButton shows how many tabs are open and opens the tab grid.
+func (a *App) tabsButton(r ui.Rect) {
+	u, g, th := &a.u, a.u.G, a.u.Th
+	hot := u.Hover(r)
+	if a.tabsOpen {
+		ui.FillRound(g, r, 12, th.SecondaryContainer)
+	} else if hot {
+		ui.FillRound(g, r, 12, th.Ink.Alpha(0.07))
+	}
+	box := ui.RectAround(r.CX(), r.CY(), 24, 22)
+	col := th.OnSurface
+	if a.tabsOpen {
+		col = th.OnSecondaryContainer
+	}
+	ui.StrokeRound(g, box, 7, 1.8, col)
+	s := strconv.Itoa(len(a.tabs))
+	if len(a.tabs) > 99 {
+		s = ":D"
+	}
+	ui.TextCenter(g, s, box, ui.Font{Size: 11.5, Bold: true}, col)
+	u.Tooltip("Tabs  Ctrl+Shift+A", r)
+	if u.Clickable(ID("tabsbtn"), r) {
+		a.toggleTabs()
+	}
 }
 
 func (a *App) shieldButton(r ui.Rect, t *Tab) {
@@ -524,32 +364,6 @@ func mb(v float64) string {
 	return strconv.Itoa(int(v+0.5)) + " MB"
 }
 
-func (a *App) memoryPill(r ui.Rect) {
-	u, g, th := &a.u, a.u.G, a.u.Th
-	id := ID("mem")
-	hot := u.Hover(r)
-	ui.FillRound(g, r, r.H/2, th.Surface.Alpha(0.9))
-	ui.StrokeRound(g, r.Inset(0.5), r.H/2, 1, th.OutlineVariant)
-	if hot {
-		ui.FillRound(g, r, r.H/2, th.Ink.Alpha(0.06))
-	}
-	col := th.OnSurfaceVariant
-	if a.memMB > 2048 {
-		col = th.Danger
-	}
-	ui.DrawIcon(g, ui.IMemory2, r.X+10, r.CY()-8, 16, col)
-	label := "Memory"
-	if a.memMB > 0 {
-		label = mb(a.memMB)
-	}
-	ui.TextFit(g, label, r.X+30, ui.Mid(g, r.Y, r.H, ui.FSmallBold), ui.FSmallBold, th.OnSurface, r.W-36)
-	live, asleep, unloaded := a.Counts()
-	u.Tooltip("Pages "+mb(a.memMB)+" · "+strconv.Itoa(live)+" awake, "+strconv.Itoa(asleep)+" asleep, "+strconv.Itoa(unloaded)+" unloaded", r)
-	if u.Clickable(id, r) {
-		a.panel, a.panelMode = true, panelSettings
-	}
-}
-
 // addressBar is the search and address pill.
 func (a *App) addressBar(r ui.Rect, t *Tab) {
 	u, g, th, in := &a.u, a.u.G, a.u.Th, a.In
@@ -564,6 +378,7 @@ func (a *App) addressBar(r ui.Rect, t *Tab) {
 	rad := r.H / 2
 	if focused {
 		ui.Glass(g, r, rad, th, true, true)
+		ui.FillRound(g, r, rad, th.Primary.Alpha(0.04))
 		ui.StrokeRound(g, r.Inset(1), rad-1, 2, th.Primary)
 	} else {
 		ui.FillRound(g, r, rad, addrFill(th))
@@ -576,13 +391,13 @@ func (a *App) addressBar(r ui.Rect, t *Tab) {
 	tip := ""
 	switch {
 	case focused:
-		ic, icCol = modeIcons[a.set.Mode], th.Primary
+		ic, icCol = ui.ISearch, th.Primary
 	case t != nil && strings.HasPrefix(t.URL, "https://"):
 		ic, tip = ui.ILock, "Secure connection"
 	case t != nil && strings.HasPrefix(t.URL, "http://"):
 		ic, icCol, tip = ui.IWarning, th.Danger, "Not secure"
 	case t == nil || t.URL == "":
-		ic = modeIcons[a.set.Mode]
+		ic = ui.ISearch
 	}
 	if t != nil && t.search != nil && !focused {
 		ic, icCol, tip = modeIcons[t.search.Mode], th.Primary, "Lite results"
@@ -619,7 +434,7 @@ func (a *App) addressBar(r ui.Rect, t *Tab) {
 		if t != nil && t.URL != "" {
 			text = core.Display(t.URL)
 		} else {
-			text, col = "Search with "+modeLabels[a.set.Mode]+" or type an address", th.Ink3
+			text, col = "Search or type an address", th.Ink3
 		}
 		if t != nil && t.URL != "" {
 			// host in full color, the rest softer
@@ -695,10 +510,6 @@ func (a *App) suggestKeys(id ui.ID, cancel func()) {
 // suggest fills the suggestion list for typed text.
 func (a *App) suggest(text string) {
 	q := strings.TrimSpace(text)
-	if q != "" && a.set.LiteResults {
-		t := a.tab()
-		a.warmAI(t != nil && t.private())
-	}
 	a.sugSel = 0
 	if q == "" {
 		a.sugg = nil
@@ -712,7 +523,7 @@ func (a *App) suggest(text string) {
 		seen[u] = true
 	} else {
 		m := a.set.Mode
-		out = append(out, suggestion{modeIcons[m], q, "Search · " + modeLabels[m], core.Resolve(q, m)})
+		out = append(out, suggestion{ui.ISearch, q, "Search", core.Resolve(q, m)})
 	}
 	for _, e := range a.hist.Suggest(q, 6) {
 		if seen[e.URL] {
@@ -746,6 +557,13 @@ func (a *App) visit(url string) {
 	a.st.Focus = ui.ID{}
 	a.sugg, a.sugSel = nil, 0
 	if url == "" || t == nil {
+		return
+	}
+	if t.URL != "" && t.search == nil && !t.Crashed && core.SiteKey(url) != core.SiteKey(t.URL) {
+		// another website opens in a new tab; the page here stays
+		n := a.newTab(t.Kind, t.Container, url, true)
+		n.opener = t
+		a.addr.Set(n.addrText())
 		return
 	}
 	a.navigate(t, url)

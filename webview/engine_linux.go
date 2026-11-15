@@ -19,6 +19,7 @@ import "C"
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/cgo"
 	"strconv"
@@ -34,8 +35,8 @@ var hosted bool
 // in it directly, which works on Wayland as well as X11.
 func HostGTK() { hosted = true }
 
-// New returns the Linux engine: WebKitGTK views in Lite Go's GTK window (or,
-// when hosted by Gio, in GtkPlugs inside its X11 window).
+// New returns the Linux engine: Chromium (CEF) pages, drawn off screen into
+// Lite Go's GTK window.
 func New() Engine {
 	if wkEng == nil {
 		wkEng = &wkEngine{}
@@ -43,7 +44,7 @@ func New() Engine {
 	return wkEng
 }
 
-// Installed reports whether WebKitGTK is present (it is linked in; the program
+// Installed reports whether the engine is present (Chromium is linked in; the program
 // does not start without it).
 func Installed() bool { return true }
 
@@ -75,12 +76,12 @@ func call(op int, id uintptr, a, b, c, d int, s string, cb uintptr) {
 
 func (e *wkEngine) Start(window uintptr, dataDir string, low bool, ready func(error)) {
 	e.dataDir, e.low, e.started = dataDir, low, true
+	cleanOldEngine(dataDir)
 	C.lgxSetMemory(C.int(totalMemMB()))
 	if hosted {
 		cs := C.CString(dataDir)
 		C.lgxAttach(C.uintptr_t(window), cs)
 		C.free(unsafe.Pointer(cs))
-		e.applyBlocklist()
 		ready(nil)
 		return
 	}
@@ -93,24 +94,13 @@ func (e *wkEngine) Start(window uintptr, dataDir string, low bool, ready func(er
 		C.lgxMain(C.ulong(window), cs)
 	}()
 	<-started
-	e.applyBlocklist()
 	ready(nil)
-}
-
-func (e *wkEngine) applyBlocklist() {
-	e.mu.Lock()
-	bl := e.policy.Blocklist
-	e.mu.Unlock()
-	if bl != nil && e.started {
-		call(C.OP_BLOCKLIST, 0, 0, 0, 0, 0, bl(), 0)
-	}
 }
 
 func (e *wkEngine) SetPolicy(p Policy) {
 	e.mu.Lock()
 	e.policy = p
 	e.mu.Unlock()
-	e.applyBlocklist()
 }
 
 func (e *wkEngine) MemoryMB() float64 { return 0 }
@@ -192,7 +182,7 @@ func (v *wkView) SetMuted(on bool) {
 }
 func (v *wkView) SetZoom(f float64) { v.op(C.OP_ZOOM, int(f*100+0.5), 0, 0, 0, "", 0) }
 
-// SetBackground: WebKit lowers a hidden page's memory by itself.
+// SetBackground: a hidden page is told so (was_hidden), and Chromium lowers its memory.
 func (v *wkView) SetBackground(bool) {}
 
 func (v *wkView) Close() {
@@ -246,12 +236,22 @@ func lgxGoLoading(id C.uintptr_t, on, back, fwd C.int) {
 }
 
 //export lgxGoDecide
-func lgxGoDecide(id C.uintptr_t, u *C.char) *C.char {
+func lgxGoDecide(id C.uintptr_t, u *C.char, gesture C.int) *C.char {
 	v := wkGet(uintptr(id))
 	if v == nil || wkEng == nil {
 		return nil
 	}
-	if r := wkEng.decide(v, C.GoString(u)); r != "" {
+	to := C.GoString(u)
+	if gesture != 0 && v.url != "" && v.ev.NewTab != nil {
+		wkEng.mu.Lock()
+		nt := wkEng.policy.NewTabFor
+		wkEng.mu.Unlock()
+		if nt != nil && nt(v.url, to) {
+			v.ev.NewTab(to, nil)
+			return C.CString("-")
+		}
+	}
+	if r := wkEng.decide(v, to); r != "" {
 		return C.CString(r)
 	}
 	return nil
@@ -373,6 +373,21 @@ func lgxGoResult(cb C.uintptr_t, res *C.char) {
 	done := h.Value().(func(string))
 	h.Delete()
 	done(C.GoString(res))
+}
+
+// cleanOldEngine removes what WebKitGTK (Lite Go 1.0.7 and older) kept in the
+// pages' folder: its caches, site data and compiled filter lists. Chromium
+// keeps everything under "cef".
+func cleanOldEngine(dir string) {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		if e.Name() != "cef" {
+			_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+		}
+	}
 }
 
 // totalMemMB is the computer's memory, for the pages' memory limits.

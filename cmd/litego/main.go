@@ -1,12 +1,11 @@
 // Command litego is Lite Go: a light browser whose interface is drawn with Gio
 // and whose pages are shown by the system web view: WebView2 on Windows,
-// WKWebView on macOS, WebKitGTK on Linux.
+// Chromium (CEF) on Linux.
 package main
 
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -15,7 +14,7 @@ import (
 	"litego/shell"
 )
 
-const version = "1.0.8"
+const version = "1.0.9"
 
 func main() {
 	// a small, steady footprint: collect garbage sooner and keep the Go heap
@@ -44,7 +43,13 @@ func main() {
 	reqs := listen(conf)
 	r := &resident{conf: conf, webDir: webDir, core: shell.LoadCore(conf), gfx: giox.NewGfx()}
 	if r.core.Settings.Boost {
-		setStartup(true)
+		// nothing runs in the background any more: undo "Open instantly"
+		r.core.Settings.Boost = false
+		r.core.Settings.Save()
+		setStartup(false)
+	}
+	if background {
+		return
 	}
 	go func() {
 		if !background {
@@ -110,12 +115,8 @@ func (r *resident) closed() {
 	r.mu.Lock()
 	r.cur, r.host, r.opening = nil, nil, false
 	r.mu.Unlock()
-	if !r.core.Settings.Boost {
-		r.core.Settings.Flush()
-		os.Exit(0)
-	}
-	runtime.GC()
-	debug.FreeOSMemory() // between windows only the small resident part stays
+	r.core.Settings.Flush()
+	os.Exit(0) // Lite Go keeps nothing running once its window closes
 }
 
 type pendingClip struct{ text *string }

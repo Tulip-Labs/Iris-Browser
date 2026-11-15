@@ -96,16 +96,16 @@ func TestHistory(t *testing.T) {
 }
 
 func TestPlan(t *testing.T) {
-	if p := Plan(4096, "balanced"); p.Live != 4 || !p.Low {
+	if p := Plan(4096, "balanced"); p.Live != 2 || !p.Low || p.UnloadAfter > 30 {
 		t.Fatalf("4 GB: %+v", p)
 	}
-	if p := Plan(8192, "balanced"); p.Live != 6 || p.Low {
+	if p := Plan(8192, "balanced"); p.Live != 3 || p.Low || p.UnloadAfter > 60 {
 		t.Fatalf("8 GB: %+v", p)
 	}
-	if p := Plan(8192, "saver"); p.Live != 3 || !p.Low || p.SleepAfter != 30 {
+	if p := Plan(8192, "saver"); p.Live != 2 || !p.Low || p.UnloadAfter > 20 {
 		t.Fatalf("8 GB saver: %+v", p)
 	}
-	if p := Plan(16384, "speed"); p.Live != 24 {
+	if p := Plan(16384, "speed"); p.Live != 8 {
 		t.Fatalf("16 GB speed: %+v", p)
 	}
 }

@@ -7,7 +7,7 @@
 //   - a GtkGLArea where Gio's GPU renderer draws our interface (the same
 //     drawing as on Windows and macOS), under an input-only GtkEventBox that
 //     takes the pointer and keyboard;
-//   - the WebKitWebView of each page, placed over it where the page goes.
+//   - each page, drawn by Chromium off screen, placed over it where the page goes.
 // One window, one connection to the display: nothing is embedded across
 // programs, which is what Wayland does not allow.
 //

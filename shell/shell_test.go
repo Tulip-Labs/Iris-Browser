@@ -191,17 +191,16 @@ func TestStartsOnNewTabPage(t *testing.T) {
 	if d.a.st.Focus != ID("ntp") {
 		t.Fatal("the new tab page search must have the keyboard")
 	}
-	if d.a.spare == nil || d.a.spare.view == nil {
-		t.Fatal("a spare page should be ready before the first search")
+	if len(d.eng.views) != 0 {
+		t.Fatal("no page is made ahead of time")
 	}
 	shot := d
 	shot.shot("ntp")
 }
 
-func TestSearchOpensInSpareView(t *testing.T) {
+func TestSearchOpensPage(t *testing.T) {
 	d := newDriver(t, 1280, 800, true)
 	d.frames(2)
-	spare := d.eng.views[0]
 	d.a.set.LiteResults = false // this test is about the page itself
 	d.typeText("lofi beats")
 	if len(d.a.sugg) == 0 {
@@ -211,10 +210,8 @@ func TestSearchOpensInSpareView(t *testing.T) {
 	d.key(ui.KEnter, false, false)
 	d.frames(2)
 	tab := d.a.tab()
-	if tab.view != webview.View(spare) {
-		t.Fatal("the first page must use the spare view")
-	}
-	if want := "https://www.google.com/search?gl=us&hl=en&udm=50&q=lofi+beats"; spare.url != want {
+	spare := lastView(t, tab)
+	if want := core.ModeWeb.URL("lofi beats"); spare.url != want {
 		t.Fatalf("url %q, want %q", spare.url, want)
 	}
 	if !spare.visible || spare.bounds[2] == 0 {
@@ -223,9 +220,7 @@ func TestSearchOpensInSpareView(t *testing.T) {
 	if spare.focused == 0 {
 		t.Fatal("the page should get the keyboard after a search")
 	}
-	if len(d.eng.views) != 1 {
-		t.Fatal("no spare should be kept once no new tab page waits")
-	}
+
 	// the address bar shows the page and pushes suggestions above the page
 	d.a.do(actAddress)
 	d.frame()
@@ -234,7 +229,7 @@ func TestSearchOpensInSpareView(t *testing.T) {
 		t.Fatal("address bar did not suggest")
 	}
 	y := spare.bounds[1]
-	if y < 88+40 {
+	if y < barH+40 {
 		t.Fatalf("suggestions must push the page down, page top %d", y)
 	}
 	d.shot("address-suggest")
@@ -256,8 +251,8 @@ func TestHTTPSAndShortcuts(t *testing.T) {
 		t.Fatal("Ctrl+T")
 	}
 	d.frame()
-	if d.a.spare == nil || d.a.spare.view == nil {
-		t.Fatal("a new tab page should prepare a spare page while the user types")
+	if d.a.tab().view != nil {
+		t.Fatal("a new tab page holds no page until something opens")
 	}
 	d.key(ui.KW, true, false)
 	d.key(ui.KW, true, false)
@@ -522,19 +517,16 @@ func TestLiteResults(t *testing.T) {
 	if d.a.side.shown {
 		t.Fatal("closing the video must hide and quiet it")
 	}
-	// a link opens the page; Back returns to the results
+	// a link opens in a new tab beside the results; Back there returns to them
 	d.a.visitFromResults(s.Web[0].URL)
 	d.frames(3)
-	if tab.search != nil || tab.URL != "https://en.wikipedia.org/wiki/Red_panda" {
-		t.Fatalf("link did not open: %q", tab.URL)
+	if nt := d.a.tab(); nt == tab || nt.URL != "https://en.wikipedia.org/wiki/Red_panda" || tab.search == nil {
+		t.Fatalf("link did not open in a new tab: %q", nt.URL)
 	}
 	d.a.do(actBack)
 	d.frame()
-	if tab.search == nil {
-		t.Fatal("Back should return to the results")
-	}
-	if !tab.canForward() {
-		t.Fatal("Forward should return to the page")
+	if d.a.tab() != tab || tab.search == nil {
+		t.Fatal("Back from the link's first page should return to the results")
 	}
 	// night theme
 	d.a.set.Theme = "night"

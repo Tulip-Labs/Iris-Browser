@@ -10,7 +10,8 @@ import (
 
 // The AI answer, laid out like an article: headings, paragraphs and bullets,
 // with **bold** runs inline and numbered citation pills at the end of the
-// blocks that cite sources.
+// blocks that cite sources, named by their site so you know where a fact is
+// from before you click.
 
 type aiSpan struct {
 	text string
@@ -36,14 +37,38 @@ type aiLayout struct {
 
 func spanFont(size float32, bold bool) ui.Font { return ui.Font{Size: size, Bold: bold} }
 
-const citeH = 17
+const citeH = 18
 
-func citeW(g ui.Gfx, n int) float32 {
-	return g.Measure(strconv.Itoa(n), ui.Font{Size: 10.5, Bold: true}) + 11
+var citeF = ui.Font{Size: 10.5, Bold: true}
+
+// citeName is the short name a citation shows: the source's site, without
+// the www. and the usual endings (wikipedia, go.dev, nature).
+func citeName(src []core.WebResult, n int) string {
+	if n < 1 || n > len(src) {
+		return strconv.Itoa(n)
+	}
+	k := core.SiteKey(src[n-1].URL)
+	for _, end := range []string{".com", ".org", ".net", ".edu", ".gov", ".io", ".co.uk", ".co"} {
+		if strings.HasSuffix(k, end) && len(k) > len(end)+1 {
+			k = strings.TrimSuffix(k, end)
+			break
+		}
+	}
+	if len(k) > 18 {
+		k = k[:17] + "…"
+	}
+	if k == "" {
+		return strconv.Itoa(n)
+	}
+	return k
+}
+
+func citeW(g ui.Gfx, src []core.WebResult, n int) float32 {
+	return g.Measure(citeName(src, n), citeF) + 14
 }
 
 // layoutAnswer wraps blocks to width w at a body size.
-func layoutAnswer(g ui.Gfx, blocks []core.AIBlock, w, size float32) aiLayout {
+func layoutAnswer(g ui.Gfx, blocks []core.AIBlock, w, size float32, src []core.WebResult) aiLayout {
 	lh := size * 1.6
 	var out []aiLine
 	y := float32(0)
@@ -108,7 +133,7 @@ func layoutAnswer(g ui.Gfx, blocks []core.AIBlock, w, size float32) aiLayout {
 		if len(b.Cites) > 0 {
 			cw := float32(0)
 			for _, c := range b.Cites {
-				cw += citeW(g, c) + 4
+				cw += citeW(g, src, c) + 4
 			}
 			if x+cw > w && len(line.spans) > 0 {
 				// carry the last word down with the citations, so they never sit alone
@@ -161,15 +186,15 @@ func (a *App) drawAnswer(l aiLayout, x, y float32, src []core.WebResult, n int, 
 		}
 		cx := x + ln.citeX
 		for ci, c := range ln.cites {
-			cw := citeW(g, c)
-			r := ui.Rect{X: cx, Y: base - citeH + 3, W: cw, H: citeH}
+			cw := citeW(g, src, c)
+			r := ui.Rect{X: cx, Y: base - citeH + 4, W: cw, H: citeH}
 			hot := u.Hover(r)
 			bg := th.Primary.Alpha(0.13)
 			if hot {
 				bg = th.Primary.Alpha(0.26)
 			}
 			ui.FillRound(g, r, citeH/2, bg)
-			ui.TextCenter(g, strconv.Itoa(c), r, ui.Font{Size: 10.5, Bold: true}, th.Primary)
+			ui.TextCenter(g, citeName(src, c), r, citeF, th.Primary)
 			if c-1 < len(src) {
 				s := src[c-1]
 				u.Tooltip(strings.TrimSpace(s.Title+"  ·  "+strings.TrimPrefix(core.Host(s.URL), "www.")), r)
@@ -221,6 +246,48 @@ func (a *App) sourceCards(src []core.WebResult, x, y, w float32, cols int, id st
 	}
 	rows := (len(src) + cols - 1) / cols
 	return y + float32(rows)*(ch+gap)
+}
+
+// sourceChips lists sources as chips that wrap: each site's mark and short
+// name. With measure set it draws nothing and returns the height it needs.
+func (a *App) sourceChips(src []core.WebResult, x, y, w float32, id string, measure bool) float32 {
+	u, g, th := &a.u, a.u.G, a.u.Th
+	const h, gap = 30, 6
+	top := y
+	cx := x
+	if !measure {
+		g.Text("Sources", x, y+12, ui.FSmallBold, th.OnSurfaceVariant)
+	}
+	y += 20
+	f := ui.FSmallBold
+	for i := range src {
+		name := citeName(src, i+1)
+		cw := g.Measure(name, f) + 40
+		if cx+cw > x+w && cx > x {
+			cx, y = x, y+h+gap
+		}
+		if measure {
+			cx += cw + gap
+			continue
+		}
+		r := ui.Rect{X: cx, Y: y, W: cw, H: h}
+		host := strings.TrimPrefix(core.Host(src[i].URL), "www.")
+		hot := u.Hover(r)
+		ui.FillRound(g, r, h/2, th.Ink.Alpha(0.045))
+		if hot {
+			ui.StrokeRound(g, r.Inset(0.5), h/2, 1, th.Primary.Alpha(0.6))
+		}
+		mr := ui.RectAround(r.X+15, r.CY(), 18, 18)
+		ui.FillOval(g, mr, siteColor(host))
+		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 9, Bold: true}, ui.White)
+		g.Text(name, r.X+30, ui.Mid(g, r.Y, r.H, f), f, th.OnSurface)
+		u.Tooltip(strings.TrimSpace(src[i].Title+"  ·  "+host), r)
+		if u.Clickable(ui.IdN(id, i), r) {
+			a.visitFromResults(src[i].URL)
+		}
+		cx = r.R() + gap
+	}
+	return y + h - top
 }
 
 // sourceStack is the compact "sources" chip: overlapping site marks and a count.

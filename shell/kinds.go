@@ -17,9 +17,6 @@ func (a *App) setKind(t *Tab, k Kind, container string) {
 		a.unload(t)
 	}
 	t.Kind, t.Container = k, container
-	if k == KNormal {
-		a.makeSpare()
-	}
 	a.st.Focus = ID("ntp")
 }
 

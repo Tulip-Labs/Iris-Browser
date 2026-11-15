@@ -43,15 +43,15 @@ up to date; Chromium on Linux) that decides what each page may cost.
 
 **Light**
 
-Background tabs give memory back at once, sleep, then unload. A balancer keeps the computer's resources on what you are using.
+A background tab rests within a minute: its page closes and its memory goes back, and it comes back where you left it. A closed tab frees its memory at once. Nothing runs in the background.
 
 </td>
 <td width="33%" valign="top">
 
 **Fast**
 
-It stays ready in the background, so the window opens on click. The new tab page is drawn
-by Lite Go itself, and a page is prepared while you type.
+One slim bar, tabs in a grid like a phone's, and a new tab page drawn by Lite Go itself:
+the name and a search, nothing else.
 
 </td>
 <td width="33%" valign="top">
@@ -73,7 +73,7 @@ a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
 <td width="50%"><img src="assets/screens/split-view.png" alt="Split view"></td>
 </tr>
 <tr>
-<td align="center"><sub><b>New tab.</b> Search, and what kind of tab this is.</sub></td>
+<td align="center"><sub><b>New tab.</b> The name and a search.</sub></td>
 <td align="center"><sub><b>Split view.</b> Two pages, one divider to drag.</sub></td>
 </tr>
 <tr>
@@ -85,20 +85,20 @@ a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
 <td align="center"><sub><b>Sandbox.</b> Unsafe addresses are stopped first.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="assets/screens/phone-link.png" alt="The phone link with its QR code"></td>
+<td width="50%"><img src="assets/screens/results.png" alt="Lite results: the AI answer, goggles, websites, pictures and videos"></td>
+<td width="50%"><img src="assets/screens/tab-grid.png" alt="The tab grid"></td>
+</tr>
+<tr>
+<td align="center"><sub><b>Lite results.</b> The AI answer with named sources, goggles, stacks of pictures and videos.</sub></td>
+<td align="center"><sub><b>Tabs.</b> A grid of cards, with a search and every kind of new tab.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="assets/screens/menu.png" alt="The menu"></td>
 <td width="50%"><img src="assets/screens/sorbet.png" alt="Lite results in the Sorbet palette"></td>
 </tr>
 <tr>
-<td align="center"><sub><b>Phone link.</b> Scan the code, move files both ways.</sub></td>
-<td align="center"><sub><b>Sorbet.</b> One of four pastel palettes that merge three colors.</sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="assets/screens/settings.png" alt="The settings page"></td>
-<td width="50%"><img src="assets/screens/new-tab-menu.png" alt="The menu of the + button: private, temporary, sandbox and container tabs"></td>
-</tr>
-<tr>
-<td align="center"><sub><b>Settings.</b> A page of its own, with a status bar below.</sub></td>
-<td align="center"><sub><b>The + menu.</b> Private, temporary, sandbox and container tabs.</sub></td>
+<td align="center"><sub><b>The menu.</b> Tools, then the settings in sections that open in place.</sub></td>
+<td align="center"><sub><b>Sorbet.</b> One of the palettes, shared with Ember.</sub></td>
 </tr>
 </table>
 
@@ -124,24 +124,22 @@ and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 
 | | |
 |---|---|
-| **Lite results** | Google searches on Lite Go's own page: a picture carousel, a stack of video cards, the AI Mode answer with its sources, and the websites ranked by source quality (references, official sites and docs rise; shops, coupon farms and listicles sink). "On Google" shows the original. |
-| **Search modes** | AI Mode (default), Web, Images, Videos and YouTube. Type `yt ` before words to search YouTube from any mode. |
+| **Lite results** | Google searches on Lite Go's own page, minimal like Kagi. At the top, the AI answer: written for you (by your name, warm, insight over hype), tagged with its topic, how strong its sources are and how complete it is, with each citation named by its site. Then the websites as a stack of cards that keeps loading as long as Google has relevant ones, ranked by source quality (references, official sites and docs rise; shops, coupon farms and listicles sink), and stacks of picture cards (each in its own shape, sharp at the front) and video cards. "On Google" shows the original. Type `yt ` before words to search YouTube. |
+| **Goggles** | Re-rank the links in one click, as Brave Search's Goggles do: Forums, Academic, Tech, News, Small web (personal sites first, big platforms last) and No shops. Raise, lower or hide any site, and it stays that way. |
+| **Websites in new tabs** | A result, an address typed while a site is open, or a link to another website opens in a new tab beside the one you are on. Back from its first page (or closing it) returns there. Sign-in steps stay in their tab. |
 | **Ask AI** (Ctrl+J) | On any page, a side panel sends your question and the page's text (or your selection) to Google AI Mode and writes the answer with its sources. No API key. |
 | **Split view** | Two pages side by side. The pane you click takes the keyboard and the address bar. |
 | **Downloads** | A toolbar icon with a progress ring; a list with speed, time left, pause, resume, cancel, open and show in folder. |
-| **Phone link** | Move photos and files between the computer and a phone with nothing to install on the phone: Lite Go shows a QR code, the phone scans it and uses its own browser to send files (they land in Downloads) or take the ones you offer, or the page you are on. Same Wi-Fi only; the address carries a random key and works only while the link is on. The connection is not encrypted, so it is for networks you trust. |
-| **Proton Pass** | Your passwords in the side panel, beside the page you are on, kept signed in (from the menu). It is the Proton Pass site itself; Lite Go reads nothing from it. |
-| **Status bar** | Along the bottom, as in Vivaldi: what the shield blocked, the memory the pages use, downloads, history, find, print, split view and zoom. |
-| **Settings** | A page of their own, like Chromium's, with the sections at the left: appearance, search, shields and privacy, containers, performance, phone and sync, startup, history and about. |
-| **Sync with Android** | History, open tabs and the palette stay the same on the computer and Lite for Android, with no account and no server: the two trade directly when they are on the same Wi-Fi, sealed with AES-256 under a key only they share. Pair from Menu, Phone. |
+| **One slim bar** | Back, forward and reload at the left, the address in the middle, then the tabs button, the shield and the menu. It narrows to what is needed on a small window. A Sign in button shows only while Lite Go is not signed in to Google. |
+| **The menu** | Tools (private tab, history, downloads, reopen, split view, find, print, free memory), zoom, your name for the AI answers, and the settings in sections that open in place: appearance (the palettes, shared with Ember), shields and privacy, containers, memory, history and data, about and updates. |
 | **The usual** | Find in page, zoom, print, a searchable history by day, reopen a closed tab, and the last tabs brought back at start (unloaded until you open them). |
-| **Tabs** | On top or at the side. The arrow beside the + button (or a right-click on it) opens private, temporary, sandbox and container tabs, as in Brave. Containers keep their own sign-ins, each with an icon and a color you choose under Settings, Containers. |
+| **Tabs** | A grid of cards, as on a phone (Ctrl+Shift+A or the tabs button): type to find a tab, arrows and Enter to pick one, and a row that opens new, private, temporary, sandbox and container tabs. Containers keep their own sign-ins, each with an icon and a color. |
 
 ### Memory
 
 | | |
 |---|---|
-| **The plan** | Background tabs are hidden at once, put to sleep after a while and unloaded later, keeping their address and title. Tabs playing sound stay awake. Saver, Balanced and Speed profiles follow the computer's RAM. |
+| **The plan** | Background tabs are hidden at once and rest soon after (20 seconds on Saver, a minute on Balanced, ten on Speed): the page closes and gives its memory back, keeping its address, title and scroll position, so it comes back where it was (hydration). A closed tab frees its memory at once. Tabs playing sound stay awake. Nothing is prepared ahead of time and nothing keeps running once the window closes. |
 | **The balancer** | The tab in front (both, in split view) has priority. Every other page is told at once that nobody is looking, so the engine gives memory back. When the pages pass the budget, or the computer runs short, background pages sleep and then unload, oldest first. |
 
 ### Lite Shields
@@ -176,7 +174,7 @@ and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 | `Ctrl` `Tab` | Next tab | `Ctrl` `M` | Mute tab |
 | `Ctrl` `1`...`9` | Go to tab | `Alt` `Left` / `Right` | Back, forward |
 | `Ctrl` `R` / `F5` | Reload | `F11` | Full screen |
-| `Ctrl` `Shift` `L` | Phone and sync | `Ctrl` `,` | Menu |
+| `Ctrl` `Shift` `A` | Tab grid | `Ctrl` `,` | Menu |
 
 They work while a page has the keyboard too.
 
@@ -184,8 +182,8 @@ They work while a page has the keyboard too.
 
 | System | Web engine | Status |
 |---|---|---|
-| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, phone link) are covered by tests with a stand-in engine and still need a pass on a real PC. |
-| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Chromium, through CEF (the Chromium Embedded Framework), which Lite Go carries | Built and started on Wayland on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora 42 and 43, openSUSE Tumbleweed and Arch on every push, with a VP9 video playing. Packages: .deb, .rpm, AUR and .tar.gz. (The Nix package still uses WebKitGTK; the Flatpak is paused until Chromium is packaged for its sandbox.) |
+| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, the tab grid) are covered by tests with a stand-in engine and still need a pass on a real PC. |
+| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Chromium, through CEF (the Chromium Embedded Framework), which Lite Go carries | Built and started on Wayland on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora 42 and 43, openSUSE Tumbleweed and Arch on every push, with a VP9 video playing. Packages: .deb, .rpm, AUR, Nix and .tar.gz. (The Flatpak is paused until Chromium is packaged for its sandbox.) |
 | Android 8 and newer | Android System WebView | **Lite for Android**, a separate app in Kotlin (`android/`): shields, Lite results for Web searches, tabs, containers (WebView 123 or newer), eleven palettes, phone and tablet layouts, and sync with the computer. `Lite-android.apk` is in each release. |
 
 On Windows the engine comes with the system. On Linux, Lite Go carries its own Chromium
@@ -320,7 +318,6 @@ cmd/litego          the program: window, resident process, system hooks
     +-- core        rules with no window: search, shields, adaptive scans, unsafe
     |               addresses, HTTPS, the memory plan, history, settings
     +-- shields     filter lists, hiding rules, link cleaning, fingerprinting
-    +-- link        the phone link: a small server on the local network
     +-- webview     one small interface over two engines:
                       WebView2 from pure Go (COM vtables, profiles, sandbox, suspend,
                       request filtering, downloads)

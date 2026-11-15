@@ -2,7 +2,7 @@
 
 // The Linux window: GTK owns it (native on Wayland and on X11), Gio's GPU
 // renderer draws our interface into a GtkGLArea inside it, and the pages are
-// WebKitWebViews in the same window. See gtk_linux.c.
+// the pages (Chromium, drawn off screen) in the same window. See gtk_linux.c.
 
 package main
 

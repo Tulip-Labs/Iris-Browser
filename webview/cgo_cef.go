@@ -1,4 +1,4 @@
-//go:build linux && webkit && cef
+//go:build linux && webkit
 
 package webview
 

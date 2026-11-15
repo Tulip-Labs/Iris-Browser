@@ -30,6 +30,8 @@ type Settings struct {
 	SiteRanks map[string]int `json:"siteRanks"`
 	// GoogleSignIn is "" until the first-run sign-in is answered, then "done" or "later".
 	GoogleSignIn string `json:"googleSignIn"`
+	// Name is what the AI answers call the reader ("" = no name).
+	Name string `json:"name,omitempty"`
 	// Lite Shields: filter lists (EasyList, EasyPrivacy, uBlock), cookie
 	// notices, links without tracking, fingerprinting protection.
 	Lists      bool `json:"lists"`

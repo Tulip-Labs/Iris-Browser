@@ -171,6 +171,19 @@ var Themes = []*Theme{
 		[]string{"#fff2c2", "#f2e3f5", "#d2f0e4", "#cfe9f3", "#f3f9fb", "#dfeaf9"},
 		[]string{"#dbeafb", "#d6f2e6", "#fdf1cb", "#f8e3ee", "#e8e3f8"}, "#17405a",
 		[]string{"#d6f1f5", "#dfeaf9", "#f2e3f5", "#2f7f97", "#f3b24c"}), "#d6f1f5", "#dfeaf9", "#f2e3f5"),
+	// warm and strong
+	pastel(spring("glow", "Ember Glow", "#3a1608", "#6b3a22", "#946450", "#d0a995", "#d9480f", "#f27a3a", "#ffc233", "#b3261e",
+		[]string{"#ffd59e", "#ffb59e", "#ffe7b3", "#ffc7a8", "#fff6ee", "#ffd9c2"},
+		[]string{"#ffe5d6", "#fdf0d0", "#ffe9c2", "#fde0e4", "#f6e1d6"}, "#5c2410",
+		[]string{"#ffd8a8", "#ffbfa0", "#ffb3b8", "#d9480f", "#ffc233"}), "#ffd8a8", "#ffbfa0", "#ffb3b8"),
+	pastel(spring("sunset", "Sunset", "#2e0f1e", "#5c2c42", "#86566c", "#c79fb2", "#c2185b", "#e64a6f", "#ff9f1c", "#b71c1c",
+		[]string{"#ffc98c", "#ff9fb2", "#ffd6a5", "#d7a8f2", "#fff2ef", "#ffb4a2"},
+		[]string{"#f3dcf2", "#ffe3d3", "#ffedc7", "#ffd9e2", "#ead8f8"}, "#5a1030",
+		[]string{"#ffb88c", "#ff8fa3", "#c79bf2", "#c2185b", "#ff9f1c"}), "#ffb88c", "#ff8fa3", "#c79bf2"),
+	pastel(spring("terracotta", "Terracotta", "#2f1a12", "#5e3e30", "#86685a", "#c4a99b", "#b5532a", "#d77a4c", "#e9b44c", "#a83224",
+		[]string{"#f6d5b8", "#efc0a0", "#e6dcc2", "#e8b4a6", "#fbf4ec", "#f3cdb0"},
+		[]string{"#efe2d6", "#e6ecd6", "#f8ebcc", "#f6dcd4", "#ece0dc"}, "#4e2516",
+		[]string{"#f6d5b8", "#efc0a0", "#e8b4a6", "#b5532a", "#e9b44c"}), "#f6d5b8", "#efc0a0", "#e8b4a6"),
 	(&Theme{ID: "classic", Label: "Classic", Ink: Hex("#1d1d24"), Body: Hex("#3c3c48"), Ink2: Hex("#6b6b78"), Ink3: Hex("#a8a8b4"),
 		Deep: Hex("#3a5bc7"), Deep2: Hex("#6f86d6"), Hl: Hex("#f0a500"), Danger: Hex("#c62828"),
 		G1: White, G2: White, G3: White, G4: White, G5: Hex("#f7f7f9"), G6: White,
@@ -181,6 +194,30 @@ var Themes = []*Theme{
 		G1: Hex("#3a2a14"), G2: Hex("#3d1f44"), G3: Hex("#1f3324"), G4: Hex("#2f2140"), G5: Hex("#17111c"), G6: Hex("#2e1b2a"),
 		TBlue: Hex("#3a3357"), TGreen: Hex("#2b4430"), THoney: Hex("#4a3d17"), TPink: Hex("#4a2a43"), TLav: Hex("#3c2c4f"),
 		Shadow: Black, Swatch: hexes("#17111c", "#c07ad0", "#9d60ab", "#ffae00", "#ff6b4a"), Fields: true}).derive(),
+	// more nights
+	dark("midnight", "Midnight", "#e6ecff", "#c4cdec", "#97a3c9", "#5e6990", "#6b93ff", "#4a6fd6", "#ffc857", "#ff6b6b",
+		[]string{"#1b2747", "#21234a", "#16303a", "#262049", "#0b1120", "#1a1d3d"},
+		[]string{"#24305a", "#1f3a3a", "#3b3420", "#3a2440", "#2d2852"}),
+	dark("embernight", "Ember Night", "#fbe9df", "#e8cbbb", "#bf9886", "#7d5f52", "#ff7a3d", "#e0592a", "#ffc233", "#ff5a5a",
+		[]string{"#3a1d10", "#3b1622", "#2a2414", "#3a2016", "#140c09", "#33130f"},
+		[]string{"#3d2a22", "#2e3322", "#45351a", "#46231f", "#3a2630"}),
+	dark("aurora", "Aurora", "#e3fbf2", "#bfe6d8", "#8fbfae", "#58806f", "#3ddc97", "#22b07a", "#b388ff", "#ff6b7a",
+		[]string{"#0f3329", "#1c2448", "#133a33", "#26204a", "#08130f", "#0e2a33"},
+		[]string{"#17323f", "#183a2c", "#3a3622", "#3c2335", "#2b2648"}),
+	dark("abyss", "Abyss", "#e2f6fb", "#bcdde6", "#8bb3bf", "#55788a", "#22d3ee", "#0ea5c4", "#fbbf24", "#f87171",
+		[]string{"#0c2a38", "#10193a", "#0b302f", "#1a1840", "#050b12", "#0a2236"},
+		[]string{"#13304a", "#123a33", "#3a3418", "#3a1d2c", "#221e45"}),
+}
+
+// dark makes a night palette: light ink on a deep base with soft color
+// fields, like Night.
+func dark(id, label, ink, body, ink2, ink3, deep, deep2, hl, danger string, g, tint []string) *Theme {
+	gs, ts := hexes(g...), hexes(tint...)
+	return (&Theme{ID: id, Label: label, Dark: true, Ink: Hex(ink), Body: Hex(body), Ink2: Hex(ink2), Ink3: Hex(ink3),
+		Deep: Hex(deep), Deep2: Hex(deep2), Hl: Hex(hl), Danger: Hex(danger),
+		G1: gs[0], G2: gs[1], G3: gs[2], G4: gs[3], G5: gs[4], G6: gs[5],
+		TBlue: ts[0], TGreen: ts[1], THoney: ts[2], TPink: ts[3], TLav: ts[4],
+		Shadow: Black, Swatch: []Color{gs[4], Hex(deep), Hex(deep2), Hex(hl), Hex(danger)}, Fields: true}).derive()
 }
 
 // pastel gives a palette a backdrop of three colors merging top to bottom.

@@ -1,4 +1,4 @@
-//go:build linux && webkit && cef
+//go:build linux && webkit
 
 // The Linux side of Lite Go's web engine on Chromium, through CEF (the
 // Chromium Embedded Framework).
@@ -53,7 +53,7 @@ extern void lgxGoCreated(uintptr_t cb, int ok);
 extern void lgxGoURL(uintptr_t id, char *u);
 extern void lgxGoTitle(uintptr_t id, char *t);
 extern void lgxGoLoading(uintptr_t id, int on, int back, int fwd);
-extern char *lgxGoDecide(uintptr_t id, char *u);
+extern char *lgxGoDecide(uintptr_t id, char *u, int gesture);
 extern uintptr_t lgxGoPopup(uintptr_t id, char *u);
 extern void lgxGoFullscreen(uintptr_t id, int on);
 extern void lgxGoCrashed(uintptr_t id);
@@ -77,6 +77,7 @@ typedef struct {
 	cef_rect_t popupRect;
 	int popupShown;
 	int w, h;      // size in GTK units
+	int sf;        // the scale Chromium was last told
 	int shown;
 	char *profile;
 	int priv, sandbox;
@@ -303,13 +304,15 @@ static gboolean onDraw(GtkWidget *w, cairo_t *cr, LV *v) {
 	return TRUE;
 }
 
-static void copyInto(cairo_surface_t **dst, const void *buf, int w, int h) {
-	int sf = scaleOf();
+// copyInto copies a frame; scale is pixels per GTK unit of that frame (taken
+// from the frame itself, so a frame made before a scale change still fits).
+static void copyInto(cairo_surface_t **dst, const void *buf, int w, int h, double scale) {
+	double sf = scale > 0 ? scale : scaleOf();
 	if (!*dst || cairo_image_surface_get_width(*dst) != w || cairo_image_surface_get_height(*dst) != h) {
 		if (*dst) cairo_surface_destroy(*dst);
 		*dst = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
-		cairo_surface_set_device_scale(*dst, sf, sf);
 	}
+	cairo_surface_set_device_scale(*dst, sf, sf);
 	cairo_surface_flush(*dst);
 	unsigned char *d = cairo_image_surface_get_data(*dst);
 	int stride = cairo_image_surface_get_stride(*dst);
@@ -327,9 +330,9 @@ static void CEF_CALLBACK onPaint(cef_render_handler_t *self, cef_browser_t *b, c
 	LV *v = of(b);
 	if (!v || !v->area) return;
 	if (type == PET_POPUP) {
-		copyInto(&v->popup, buf, w, h);
+		copyInto(&v->popup, buf, w, h, v->popupRect.width > 0 ? (double)w / v->popupRect.width : 0);
 	} else {
-		copyInto(&v->page, buf, w, h);
+		copyInto(&v->page, buf, w, h, v->w > 0 ? (double)w / v->w : 0);
 	}
 	gtk_widget_queue_draw(v->area);
 }
@@ -749,6 +752,8 @@ static cef_load_handler_t loadH;
 static void applyState(LV *v) {
 	cef_browser_host_t *h = hostOf(v);
 	if (!h) return;
+	v->sf = scaleOf();
+	h->notify_screen_info_changed(h);
 	h->was_resized(h);
 	h->was_hidden(h, !v->shown);
 	if (v->muted) h->set_audio_muted(h, 1);
@@ -842,7 +847,7 @@ static int CEF_CALLBACK onBeforeBrowse(cef_request_handler_t *self, cef_browser_
 		g_free(u);
 		return 0;
 	}
-	char *to = lgxGoDecide(v->id, u);
+	char *to = lgxGoDecide(v->id, u, gesture && !redirect);
 	g_free(u);
 	if (!to) return 0;
 	if (strcmp(to, "-") != 0 && v->browser) {
@@ -1242,8 +1247,6 @@ static gboolean runOp(gpointer data) {
 		v->createdCB = op->cb;
 		createBrowser(v);
 		break;
-	case OP_BLOCKLIST:
-		break; // the shield asks about each request instead (onBeforeResource)
 	case OP_NAV:
 		if (v) navigate(v, op->s);
 		break;
@@ -1256,6 +1259,12 @@ static gboolean runOp(gpointer data) {
 			makeArea(v);
 			gtk_layout_move(host, v->area, op->a / sf, op->b / sf);
 			gtk_widget_set_size_request(v->area, w, hh);
+			if (h && sf != v->sf) {
+				// the window moved to a screen with another scale (or the first
+				// size arrived before the window knew its scale)
+				v->sf = sf;
+				h->notify_screen_info_changed(h);
+			}
 			if (w != v->w || hh != v->h) {
 				v->w = w, v->h = hh;
 				if (h) h->was_resized(h);

@@ -1,13 +1,13 @@
 // Package webview embeds the operating system's web engine under Lite Go's
-// own Gio interface: WebView2 (Chromium) on Windows and WebKitGTK on Linux. Every method must be
+// own Gio interface: WebView2 on Windows and Chromium (CEF) on Linux. Every method must be
 // called on the window's UI thread; events arrive on that thread too.
 package webview
 
 import "errors"
 
 // SleepFreesMemory says whether putting a page to sleep gives its memory
-// back (WebView2 does; WebKitGTK only hides the page, so under memory
-// pressure Lite Go unloads pages there instead).
+// back (WebView2 does; on Linux a hidden page keeps its memory, so under
+// memory pressure Lite Go unloads pages there instead).
 var SleepFreesMemory = true
 
 // Options choose a tab's storage: a named container (its own cookies,
@@ -79,12 +79,12 @@ type Policy struct {
 	// loads: "script", "image", "media", "xmlhttprequest", "ping" or "other".
 	// nil = allow all.
 	Allow func(url, page, kind string) bool
-	// Blocklist returns the shield as a Safari content-blocker list, for the
-	// engines that cannot ask about each request (WebKit on Linux).
-	Blocklist func() string
 	// Rewrite may change the address of a page about to open (links cleaned of
 	// tracking); it returns the address unchanged when there is nothing to do.
 	Rewrite func(url string) string
+	// NewTabFor says whether a link the reader clicked, from page from to
+	// address to, opens in a new tab instead (another website). nil = never.
+	NewTabFor func(from, to string) bool
 	// HTTPSOnly stops plain http:// pages unless AllowInsecure says yes.
 	HTTPSOnly     bool
 	AllowInsecure func(url string) bool

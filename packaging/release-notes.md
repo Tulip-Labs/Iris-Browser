@@ -1,5 +1,16 @@
 Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.9
+
+- **A new look, lighter on the screen.** One slim bar: back, forward and reload at the left, a compact address in the middle, the tabs button, the shield and the menu at the right. The tab strip, the corner mark and the status bar are gone, and it fits any window size.
+- **Tabs as a grid of cards**, like a phone (the tabs button, or Ctrl+Shift+A): find a tab by typing, pick one with the arrows and Enter, and open private, temporary, sandbox or container tabs from the same place.
+- **Settings live in the menu**, in sections that open in place. Gone: the settings page, Search and On startup, the Quit button, the phone link and Proton Pass. A Sign in button shows only while Lite Go is not signed in to Google.
+- **Lite results, redesigned.** The AI answer leads, written for you (add your name in the menu), tagged with its topic, the strength of its sources and how complete it is; citations show the site they come from. Goggles re-rank the links in one click (Forums, Academic, Tech, News, Small web, No shops). Websites come as a stack of cards that keeps loading while Google has relevant ones; pictures and videos as stacks of cards, each picture in its own shape and sharp at the front.
+- **Websites open in new tabs**: from the results, from the address bar while a site is open, and links to other websites. Back from the first page returns to where you came from.
+- **Memory goes back early**: background tabs rest within a minute and come back where they were; a closed tab frees its memory at once; nothing is prepared ahead of time, and nothing keeps running after the window closes.
+- **The new tab page** is the name and a search, nothing else. The palettes of Ember come along: Ember Glow, Sunset, Terracotta, Midnight, Ember Night, Aurora and Abyss.
+- **Linux:** pages were drawn at half size on scaled screens; fixed. WebKitGTK is gone entirely, with what it kept on disk. The Nix package now uses Chromium too.
+
 ## New in 1.0.8
 
 - **Lite Go for Linux now runs on Chromium** (Chromium 156, through CEF), in place of WebKitGTK: videos play (YouTube included), pages draw and scroll the way they do in Chrome, and the shields check every request again. It runs on Wayland. Your settings, history and containers stay; sign-ins and site data start fresh, because Chromium keeps them its own way.

@@ -11,14 +11,13 @@ import (
 	"litego/update"
 )
 
-// drawPanel is the side panel: the menu (page tools, look, search, shield and
-// memory), the downloads list or the history.
-// It sits beside the page (never over it), so the page stays usable.
+// drawPanel is the side panel: the menu (tools, then the settings in
+// sections that open in place), the downloads list or the history. It sits
+// beside the page (never over it), so the page stays usable.
 func (a *App) drawPanel(r ui.Rect) {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	ui.Glass(g, r, 20, th, true, true)
-	// header
-	hr := ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 56}
+	hr := ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 54}
 	title := "Lite Go"
 	switch a.panelMode {
 	case panelDownloads:
@@ -27,18 +26,17 @@ func (a *App) drawPanel(r ui.Rect) {
 	case panelHistory:
 		title = "History"
 		ui.DrawIcon(g, ui.IHistory, hr.X+19, hr.CY()-11, 22, th.Primary)
-	case panelPhone:
-		title = "Phone link"
-		ui.DrawIcon(g, ui.IPhone, hr.X+19, hr.CY()-11, 22, th.Primary)
-	case panelApp:
-		title = a.apps[a.appCur].name
-		ui.DrawIcon(g, a.apps[a.appCur].icon, hr.X+19, hr.CY()-11, 22, th.Primary)
 	default:
 		logo(g, ui.RectAround(hr.X+30, hr.CY(), 26, 26), th, th.Primary)
 	}
 	g.Text(title, hr.X+52, ui.Mid(g, hr.Y, hr.H, ui.FTitle), ui.FTitle, th.OnSurface)
-	if u.IconButton(ID("pclose"), ui.Rect{X: hr.R() - 48, Y: hr.CY() - 20, W: 40, H: 40}, ui.IClose, "Close", ui.IconOpt{}) {
+	if u.IconButton(ID("pclose"), ui.Rect{X: hr.R() - 46, Y: hr.CY() - 19, W: 38, H: 38}, ui.IClose, "Close  Esc", ui.IconOpt{}) {
 		a.panel = false
+		a.refocusPage()
+	}
+	if a.st.Focus != ID("histq") && a.In.Has(ui.KEscape, false) {
+		a.panel = false
+		a.refocusPage()
 	}
 	body := ui.Rect{X: r.X, Y: hr.B(), W: r.W, H: r.H - hr.H - 8}
 	switch a.panelMode {
@@ -48,96 +46,128 @@ func (a *App) drawPanel(r ui.Rect) {
 	case panelHistory:
 		a.drawHistory(body)
 		return
-	case panelPhone:
-		a.drawPhone(body)
-		return
-	case panelApp:
-		a.drawSideApp(body, hr)
-		return
 	}
 	sc := &a.panelScroll
 	u.Scroll(ID("pscroll"), body, sc)
 	g.Save()
 	g.Clip(body)
 	a.u.PushHit(body)
-	x, w := body.X+18, body.W-36
-	y := body.Y + 4 - sc.Y
+	x, w := body.X+16, body.W-32
+	y := body.Y + 2 - sc.Y
 	t := a.tab()
 
-	section := func(title string) {
-		y += 10
-		g.Text(title, x, y+14, ui.FSmallBold, th.Primary)
-		y += 26
-	}
-	divider := func() {
-		y += 10
-		g.FillRect(ui.Rect{X: x, Y: y, W: w, H: 1}, th.Divider)
-		y += 6
-	}
 	// what every browser has, one click away
-	section("Menu")
-	{
-		type tool struct {
-			icon  ui.Icon
-			label string
-			tip   string
-			act   action
-		}
-		tools := []tool{
-			{ui.IPrivate, "Private tab", "Ctrl+Shift+N", actPrivate},
-			{ui.IContainer, "Containers", "Open a tab in a container, or a temporary or sandbox tab", actKinds},
-			{ui.IHistory, "History", "Ctrl+H", actHistory},
-			{ui.IDownload, "Downloads", "Ctrl+Shift+D", actDownloads},
-			{ui.ISplit, "Split view", "Ctrl+Shift+S", actSplit},
-			{ui.ISearch, "Find", "Find in this page  Ctrl+F", actFind},
-			{ui.IPrint, "Print", "Print, or save as PDF  Ctrl+P", actPrint},
-			{ui.ILock, "Proton Pass", "Your passwords, beside the page", actPass},
-			{ui.IUndo, "Reopen", "Reopen the last closed tab  Ctrl+Shift+T", actReopen},
-		}
-		bw := (w - 16) / 3
-		for i, tl := range tools {
-			br := ui.Rect{X: x + float32(i%3)*(bw+8), Y: y + float32(i/3)*66, W: bw, H: 58}
-			ui.FillRound(g, br, 16, th.Primary.Alpha(0.09))
-			if u.Hover(br) {
-				ui.FillRound(g, br, 16, th.Ink.Alpha(0.06))
-			}
-			u.Tooltip(tl.tip, br)
-			ui.DrawIcon(g, tl.icon, br.CX()-10, br.Y+9, 20, th.Primary)
-			ui.TextCenter(g, ui.Fit(g, tl.label, ui.FSmallBold, bw-8), ui.Rect{X: br.X, Y: br.Y + 33, W: br.W, H: 20}, ui.FSmallBold, th.OnSurface)
-			if u.Clickable(ui.IdN("ptool", i), br) {
-				a.do(tl.act)
-			}
-		}
-		y += 66*3 + 4
-		// zoom
-		g.Text("Zoom", x, ui.Mid(g, y, 36, ui.FBody), ui.FBody, th.OnSurface)
-		zr := ui.Rect{X: x + w - 148, Y: y, W: 148, H: 36}
-		ui.FillRound(g, zr, 18, th.SurfaceHigh)
-		if u.IconButton(ID("zout"), ui.Rect{X: zr.X + 2, Y: zr.Y + 2, W: 32, H: 32}, ui.IZoomOut, "Smaller  Ctrl+-", ui.IconOpt{Disabled: !a.livePage(t)}) {
-			a.zoomBy(t, -1)
-		}
-		if u.IconButton(ID("zin"), ui.Rect{X: zr.R() - 34, Y: zr.Y + 2, W: 32, H: 32}, ui.IZoomIn, "Larger  Ctrl++", ui.IconOpt{Disabled: !a.livePage(t)}) {
-			a.zoomBy(t, 1)
-		}
-		mid := ui.Rect{X: zr.X + 36, Y: zr.Y, W: zr.W - 72, H: zr.H}
-		ui.TextCenter(g, zoomLabel(t), mid, ui.FBodyBold, th.OnSurface)
-		u.Tooltip("Back to 100%  Ctrl+0", mid)
-		if u.Clickable(ID("zreset"), mid) {
-			a.zoomBy(t, 0)
-		}
-		y += 44
+	type tool struct {
+		icon  ui.Icon
+		label string
+		tip   string
+		act   action
 	}
-	divider()
+	tools := []tool{
+		{ui.IPrivate, "Private", "New private tab  Ctrl+Shift+N", actPrivate},
+		{ui.IHistory, "History", "Ctrl+H", actHistory},
+		{ui.IDownload, "Downloads", "Ctrl+Shift+D", actDownloads},
+		{ui.IUndo, "Reopen", "Reopen the last closed tab  Ctrl+Shift+T", actReopen},
+		{ui.ISplit, "Split", "Split view  Ctrl+Shift+S", actSplit},
+		{ui.ISearch, "Find", "Find in this page  Ctrl+F", actFind},
+		{ui.IPrint, "Print", "Print, or save as PDF  Ctrl+P", actPrint},
+		{ui.IMemory2, "Free memory", "Let every background tab rest now", actFree},
+	}
+	cols := 4
+	if w < 300 {
+		cols = 3
+	}
+	bw := (w - float32(cols-1)*8) / float32(cols)
+	for i, tl := range tools {
+		br := ui.Rect{X: x + float32(i%cols)*(bw+8), Y: y + float32(i/cols)*64, W: bw, H: 56}
+		ui.FillRound(g, br, 16, th.Primary.Alpha(0.08))
+		if u.Hover(br) {
+			ui.FillRound(g, br, 16, th.Ink.Alpha(0.06))
+		}
+		u.Tooltip(tl.tip, br)
+		ui.DrawIcon(g, tl.icon, br.CX()-10, br.Y+8, 20, th.Primary)
+		ui.TextCenter(g, ui.Fit(g, tl.label, ui.FSmallBold, bw-6), ui.Rect{X: br.X, Y: br.Y + 32, W: br.W, H: 18}, ui.FSmallBold, th.OnSurface)
+		if u.Clickable(ui.IdN("ptool", i), br) {
+			a.do(tl.act)
+		}
+	}
+	y += float32((len(tools)+cols-1)/cols)*64 + 4
 
-	// everything else lives on the settings page
-	if u.Button(ID("psettings"), ui.Rect{X: x, Y: y, W: w, H: 42}, "Settings", ui.ButtonOpt{Icon: ui.ISettings, HasIcon: true, Primary: true, Tip: "Look, search, shields, containers, memory, phone and sync"}) {
-		a.openSettings("")
+	// zoom
+	g.Text("Zoom", x, ui.Mid(g, y, 36, ui.FBody), ui.FBody, th.OnSurface)
+	zr := ui.Rect{X: x + w - 148, Y: y, W: 148, H: 36}
+	ui.FillRound(g, zr, 18, th.SurfaceHigh)
+	if u.IconButton(ID("zout"), ui.Rect{X: zr.X + 2, Y: zr.Y + 2, W: 32, H: 32}, ui.IZoomOut, "Smaller  Ctrl+-", ui.IconOpt{Disabled: !a.livePage(t)}) {
+		a.zoomBy(t, -1)
 	}
-	y += 50
-	if u.Button(ID("quit"), ui.Rect{X: x, Y: y, W: w, H: 38}, "Quit Lite Go", ui.ButtonOpt{Icon: ui.IClose, HasIcon: true, Tip: "Closes the window and the part that keeps it ready"}) {
-		a.h.Quit()
+	if u.IconButton(ID("zin"), ui.Rect{X: zr.R() - 34, Y: zr.Y + 2, W: 32, H: 32}, ui.IZoomIn, "Larger  Ctrl++", ui.IconOpt{Disabled: !a.livePage(t)}) {
+		a.zoomBy(t, 1)
+	}
+	mid := ui.Rect{X: zr.X + 36, Y: zr.Y, W: zr.W - 72, H: zr.H}
+	ui.TextCenter(g, zoomLabel(t), mid, ui.FBodyBold, th.OnSurface)
+	u.Tooltip("Back to 100%  Ctrl+0", mid)
+	if u.Clickable(ID("zreset"), mid) {
+		a.zoomBy(t, 0)
 	}
 	y += 46
+
+	// your name, for the AI answers
+	g.Text("Your name", x, y+14, ui.FSmallBold, th.OnSurfaceVariant)
+	y += 22
+	if a.nameEd == nil {
+		a.nameEd = ui.NewTextEdit(a.set.Name, false)
+	}
+	nr := ui.Rect{X: x, Y: y, W: w, H: 38}
+	if u.TextField(ID("pname"), nr, a.nameEd, ui.FieldOpt{Placeholder: "So the AI answers greet you by name"}) {
+		a.set.Name = strings.TrimSpace(a.nameEd.Text())
+		a.set.Save()
+	}
+	y += 46
+
+	// Google: only while Lite Go is not signed in
+	if a.set.GoogleSignIn != "done" {
+		if u.Button(ID("psignin"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Sign in to Google", ui.ButtonOpt{Icon: ui.IPerson, HasIcon: true, Primary: true,
+			Tip: "Results and AI answers then come without human checks"}) {
+			a.signIn(t)
+		}
+		y += 48
+	}
+
+	// the settings, one section open at a time
+	for _, sec := range settingsSections {
+		row := ui.Rect{X: x - 6, Y: y, W: w + 12, H: 44}
+		open := a.setSec == sec.id
+		if open {
+			ui.FillRound(g, row, 14, th.Primary.Alpha(0.10))
+		} else if u.Hover(row) {
+			ui.FillRound(g, row, 14, th.Ink.Alpha(0.05))
+		}
+		ui.DrawIcon(g, sec.icon, row.X+12, row.CY()-10, 20, th.Primary)
+		g.Text(sec.label, row.X+44, ui.Mid(g, row.Y, row.H, ui.FBodyBold), ui.FBodyBold, th.OnSurface)
+		ic := ui.IChevron
+		if open {
+			ic = ui.IChevronDown
+		}
+		ui.DrawIcon(g, ic, row.R()-28, row.CY()-8, 16, th.OnSurfaceVariant)
+		u.Tooltip(sec.tip, row)
+		if u.Clickable(ui.Id("psec/"+sec.id), row) {
+			if open {
+				a.setSec = ""
+			} else {
+				a.setSec = sec.id
+			}
+		}
+		y += 48
+		if open {
+			if sec.id == "containers" {
+				y = a.containerSettings(x, y-10, w)
+			} else {
+				y = a.settingsBody(x, y-10, w, sec.id)
+			}
+			y += 6
+		}
+	}
+	y += 8
 	sc.Content = y + sc.Y - body.Y
 	a.u.PopHit()
 	g.Restore()
@@ -148,14 +178,7 @@ func (a *App) drawPanel(r ui.Rect) {
 func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	t := a.tab()
-	if t != nil && t.settings {
-		t = nil // the settings page itself is not a site
-	}
-	section := func(title string) {
-		y += 10
-		g.Text(title, x, y+16, ui.FTitle, th.OnSurface)
-		y += 34
-	}
+	section := func(string) { y += 6 } // the menu's row is the title
 	divider := func() {
 		y += 10
 		g.FillRect(ui.Rect{X: x, Y: y, W: w, H: 1}, th.Divider)
@@ -177,7 +200,8 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 		// look
 		section("Appearance")
 		// each palette as a tile with its name
-		const tw, thh, gap = 128, 84, 10
+		const thh, gap = 76, 8
+		tw := (w - 2*gap) / 3
 		per := max(1, int((w+gap)/(tw+gap)))
 		for i, tm := range ui.Themes {
 			cr := ui.Rect{X: x + float32(i%per)*(tw+gap), Y: y + float32(i/per)*(thh+gap), W: tw, H: thh}
@@ -209,71 +233,8 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 				a.set.Save()
 			}
 		}
-		y += float32((len(ui.Themes)+per-1)/per)*(thh+gap) + 10
-		{
-			g.Text("Tabs", x, y+14, ui.FSmallBold, th.OnSurfaceVariant)
-			y += 22
-			sel := 0
-			if a.set.VerticalTabs {
-				sel = 1
-			}
-			if n := u.Segmented(ID("tablayout"), ui.Rect{X: x, Y: y, W: w, H: 36}, []string{"On top", "At the side"}, sel); n != sel {
-				a.set.VerticalTabs = n == 1
-				a.set.Save()
-			}
-			y += 44
-		}
+		y += float32((len(ui.Themes)+per-1)/per)*(thh+gap) + 4
 		divider()
-
-	}
-	if sec == "search" {
-		// search
-		section("Search")
-		if n := u.Segmented(ID("pmode"), ui.Rect{X: x, Y: y, W: w, H: 36}, core.ModeNames, int(a.set.Mode)); n != int(a.set.Mode) {
-			a.set.Mode = core.Mode(n)
-			a.set.Save()
-		}
-		y += 42
-		if v := check("lite", "Lite results for Google searches", a.set.LiteResults); v != a.set.LiteResults {
-			a.set.LiteResults = v
-			a.set.Save()
-		}
-		note("Google opens in English (US) and is shown on Lite Go's own page: the AI answer, links, pictures and videos, in your theme. \"On Google\" shows the original. Type \"yt \" before words to search YouTube.")
-		divider()
-
-		// Google account
-		signed := a.set.GoogleSignIn == "done"
-		status := "Not signed in: Google may ask to prove you are human"
-		if signed {
-			status = "Signed in: results and AI answers come without human checks"
-		}
-		note(status)
-		y += 4
-		lbl := "Sign in to Google"
-		if signed {
-			lbl = "Sign in again"
-		}
-		if u.Button(ID("psignin"), ui.Rect{X: x, Y: y, W: w, H: 38}, lbl, ui.ButtonOpt{Icon: ui.IPerson, HasIcon: true}) {
-			a.signIn(a.tab())
-		}
-		y += 46
-		divider()
-
-	}
-	if sec == "startup" {
-		{
-			// startup
-			section("On startup")
-			if v := check("boost", "Open instantly (stay ready in the background)", a.set.Boost); v != a.set.Boost {
-				a.set.Boost = v
-				a.set.Save()
-				if a.cfg.SetBoost != nil {
-					a.cfg.SetBoost(v)
-				}
-			}
-			note("Lite Go keeps a small, page-free part of itself running after you close the window and when Windows starts, so the window appears the moment you click it.")
-			divider()
-		}
 
 	}
 	if sec == "shields" {
@@ -504,7 +465,7 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 		if a.eng != nil && a.eng.Version() != "" {
 			engine := "WebView2 "
 			if runtime.GOOS == "linux" {
-				engine = "WebKitGTK "
+				engine = ""
 			}
 			ver += " · " + engine + a.eng.Version()
 		}
@@ -528,7 +489,7 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 					a.set.Save()
 				}
 				switch k {
-				case update.KindUser, update.KindFlatpak:
+				case update.KindUser:
 					note("New versions download and install in the background, checked against the release's checksums, and open with the next start.")
 				default:
 					note("New versions download in the background; installing one takes a click and your password.")
@@ -554,12 +515,7 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 			y += 48
 			divider()
 		}
-		y += 8
-		if u.Button(ID("quit"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Quit Lite Go", ui.ButtonOpt{Icon: ui.IClose, HasIcon: true, Tip: "Closes the window and the part that keeps it ready"}) {
-			a.h.Quit()
-		}
-		y += 48
-		note("Shortcuts: Ctrl+T new tab, Ctrl+Shift+N private, Ctrl+W close, Ctrl+Shift+T reopen, Ctrl+L address, Ctrl+Tab next, Alt+Left back, Ctrl+F find, Ctrl+P print, Ctrl+H history, Ctrl+Shift+D downloads, Ctrl+Shift+S split view, Ctrl+plus and Ctrl+minus zoom, F11 full screen.")
+		note("Shortcuts: Ctrl+T new tab, Ctrl+Shift+A the tab grid, Ctrl+Shift+N private, Ctrl+W close, Ctrl+Shift+T reopen, Ctrl+L address, Ctrl+Tab next, Alt+Left back, Ctrl+F find, Ctrl+P print, Ctrl+H history, Ctrl+Shift+D downloads, Ctrl+Shift+S split view, Ctrl+plus and Ctrl+minus zoom, F11 full screen.")
 		y += 16
 	}
 	return y

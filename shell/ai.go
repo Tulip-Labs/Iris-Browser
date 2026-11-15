@@ -190,7 +190,7 @@ func (a *App) drawAI(r ui.Rect) {
 				a.writing(x+30+g.Measure("AI Mode", ui.FSmallBold)+12, cy+11)
 			}
 			cy += 32
-			lay := layoutAnswer(g, turn.ans.Blocks, w, 14)
+			lay := layoutAnswer(g, turn.ans.Blocks, w, 14, turn.ans.Sources)
 			cy = a.drawAnswer(lay, x, cy, turn.ans.Sources, 0, "aip"+strconv.Itoa(i))
 			if turn.state == stDone {
 				cy += 6

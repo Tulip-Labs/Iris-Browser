@@ -52,11 +52,16 @@ type Search struct {
 	captcha  bool
 	aiStable int
 	cancel   bool
+	// the goggle the links are ranked with ("" = all), and the pages read so far
+	goggle  string
+	page    int
+	moreSt  loadState
+	moreEnd bool
 }
 
 // startSearch reads Google and YouTube for q in the background.
 func (a *App) startSearch(q string, m core.Mode, url string, private bool) *Search {
-	s := &Search{Q: q, Mode: m, URL: url, private: private}
+	s := &Search{Q: q, Mode: m, URL: url, private: private, moreSt: stDone}
 	w := a.workerFor(private, false)
 	w.cancel(func(j *job) bool { return true }) // a new search replaces waiting ones
 	aw := a.workerFor(private, true)
@@ -96,7 +101,7 @@ func (a *App) startSearch(q string, m core.Mode, url string, private bool) *Sear
 				s.imgSt = stFailed
 			}
 		}})
-	a.askGoogleAI(aw, "search", q, q, 35, func(r core.AIResult, done bool) {
+	a.askGoogleAI(aw, "search", a.aiPrompt(q), q, 35, func(r core.AIResult, done bool) {
 		s.captcha = s.captcha || r.Captcha
 		if r.Text != "" {
 			s.AI = r
@@ -175,17 +180,6 @@ func (a *App) askGoogleAITry(w *worker, tag, prompt string, timeout float64, upd
 		}})
 }
 
-// warmAI opens the AI page early (while the user types), so the first answer
-// does not wait for Google's page to start.
-func (a *App) warmAI(private bool) {
-	w := a.workerFor(private, true)
-	if w.view != nil || w.making || w.cur != nil || len(w.queue) > 0 || a.eng == nil || !a.ready {
-		return
-	}
-	a.enqueue(w, &job{tag: "warm", url: "https://www.google.com/?hl=en&gl=us", script: "1", timeout: 8, every: 0.5,
-		handle: func(string) bool { return true }})
-}
-
 // ---- drawing ----
 
 func shimmer(a *App, r ui.Rect, rad float32) {
@@ -195,10 +189,11 @@ func shimmer(a *App, r ui.Rect, rad float32) {
 	ui.FillRound(a.u.G, r, rad, th.Ink.Alpha(0.05+0.04*k))
 }
 
-// results draws the results page in r. On a wide window it has two columns:
-// at the left the pictures, the videos and the AI answer; at the right the
-// websites, or whatever picture or video you opened, shown in place. On a
-// narrow window they stack, and an opened picture or video takes the page.
+// results draws the results page in r, minimal like Kagi: the question and
+// the goggles that re-rank it, then on a wide window two columns: at the left
+// the AI answer and the websites (more load as you read on); at the right the
+// pictures and the videos as stacks of cards, or whatever you opened, shown
+// in place. On a narrow window they follow one another.
 func (a *App) results(r ui.Rect, t *Tab) {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	s := t.search
@@ -217,27 +212,38 @@ func (a *App) results(r ui.Rect, t *Tab) {
 	g.Clip(r)
 	defer g.Restore()
 
-	ranked := core.Rank(s.Web, s.Q, a.set.SiteRanks)
-	wide := r.W >= 1060
+	ranked := core.ApplyGoggle(core.Rank(s.Web, s.Q, a.set.SiteRanks), s.goggle)
 	pad := float32(28)
-
-	// header: the question, what Lite Go did, and the original
-	head := ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 86}
-	hx := r.X + pad
-	ui.TextFit(g, s.Q, hx, r.Y+44, ui.Font{Size: 24, Bold: true}, th.OnSurface, r.W-2*pad-160)
-	info := "Ads and promotions removed"
-	if len(ranked) > 0 {
-		info += " · " + strconv.Itoa(len(ranked)) + " websites ranked by source quality"
+	if r.W < 700 {
+		pad = 14
 	}
-	ui.DrawIcon(g, ui.IShield, hx, r.Y+56, 14, th.Primary)
-	ui.TextFit(g, info, hx+20, r.Y+68, ui.FSmall, th.OnSurfaceVariant, r.W-2*pad-180)
-	ob := ui.Rect{X: r.R() - pad - 132, Y: r.Y + 22, W: 132, H: 34}
-	if u.Button(ID("og"), ob, "On Google", ui.ButtonOpt{Icon: ui.IExternal, HasIcon: true, Tip: "Open Google's own page"}) {
+	wide := r.W >= 1000
+
+	// header: the question, the goggles, the original
+	hx := r.X + pad
+	y := r.Y + 16
+	ob := ui.Rect{X: r.R() - pad - 112, Y: y + 4, W: 112, H: 30}
+	if u.Hover(ob) {
+		ui.FillRound(g, ob, 15, th.Ink.Alpha(0.06))
+	}
+	g.Text("On Google", ob.X+12, ui.Mid(g, ob.Y, ob.H, ui.FSmallBold), ui.FSmallBold, th.OnSurfaceVariant)
+	ui.DrawIcon(g, ui.IExternal, ob.R()-24, ob.CY()-7, 14, th.OnSurfaceVariant)
+	u.Tooltip("Open Google's own page", ob)
+	if u.Clickable(ID("og"), ob) {
 		a.openOriginal(t)
 		return
 	}
-	g.FillRect(ui.Rect{X: r.X + 20, Y: head.B() - 1, W: r.W - 40, H: 1}, th.Divider)
-	body := ui.Rect{X: r.X, Y: head.B(), W: r.W, H: r.H - head.H}
+	ui.TextFit(g, s.Q, hx, y+28, ui.Font{Size: 24, Bold: true}, th.OnSurface, ob.X-hx-12)
+	y += 44
+	y = a.goggleChips(s, hx, y, r.W-2*pad)
+	info := "Ads removed"
+	if len(ranked) > 0 {
+		info += " · " + strconv.Itoa(len(ranked)) + " websites, ranked by source quality"
+	}
+	g.Text(info, hx, y+16, ui.FSmall, th.Ink3)
+	y += 28
+	g.FillRect(ui.Rect{X: r.X + 20, Y: y, W: r.W - 40, H: 1}, th.Divider)
+	body := ui.Rect{X: r.X, Y: y + 1, W: r.W, H: r.B() - y - 1}
 
 	if s.captcha && len(s.Web) == 0 && s.AI.Text == "" {
 		y := body.Y + 22
@@ -255,11 +261,12 @@ func (a *App) results(r ui.Rect, t *Tab) {
 		g.Save()
 		g.Clip(body)
 		a.u.PushHit(body)
-		y := body.Y + 22 - s.scroll.Y
+		y := body.Y + 20 - s.scroll.Y
 		x, w := r.X+pad, r.W-2*pad
-		y = a.mediaAndAnswer(s, x, y, w, dt)
-		y = sectionTitle(a, ui.IGlobe, "Websites", "", x, y, nil) + 6
-		y = a.websites(s, t, ranked, x, y, w)
+		y = a.aiCard(s, ui.Rect{X: x, Y: y, W: w}) + 26
+		y = a.media(s, x, y, w, dt)
+		y = sectionTitle(a, ui.IGlobe, "Websites", "", x, y, nil) + 4
+		y = a.websites(s, t, ranked, x, y, w, body.B())
 		s.scroll.Content = y - (body.Y - s.scroll.Y)
 		a.u.PopHit()
 		g.Restore()
@@ -268,17 +275,19 @@ func (a *App) results(r ui.Rect, t *Tab) {
 
 	// two columns, each scrolling on its own
 	gap := float32(32)
-	rw := min(560, max(400, (r.W-2*pad-gap)*0.42))
+	rw := min(520, max(360, (r.W-2*pad-gap)*0.38))
 	lw := r.W - 2*pad - gap - rw
 	left := ui.Rect{X: r.X, Y: body.Y, W: pad + lw + gap/2, H: body.H}
 	right := ui.Rect{X: left.R(), Y: body.Y, W: r.R() - left.R(), H: body.H}
-	g.FillRect(ui.Rect{X: right.X, Y: body.Y + 16, W: 1, H: body.H - 32}, th.Divider)
 
 	u.Scroll(ID("results"), left, &s.scroll)
 	g.Save()
 	g.Clip(left)
 	a.u.PushHit(left)
-	y := a.mediaAndAnswer(s, r.X+pad, body.Y+22-s.scroll.Y, lw, dt)
+	y = body.Y + 20 - s.scroll.Y
+	y = a.aiCard(s, ui.Rect{X: r.X + pad, Y: y, W: lw}) + 30
+	y = sectionTitle(a, ui.IGlobe, "Websites", "", r.X+pad, y, nil) + 4
+	y = a.websites(s, t, ranked, r.X+pad, y, lw, left.B())
 	s.scroll.Content = y + 30 - (body.Y - s.scroll.Y)
 	a.u.PopHit()
 	g.Restore()
@@ -292,41 +301,119 @@ func (a *App) results(r ui.Rect, t *Tab) {
 	g.Save()
 	g.Clip(right)
 	a.u.PushHit(right)
-	y = body.Y + 22 - s.scroll2.Y
-	y = sectionTitle(a, ui.IGlobe, "Websites", "", col.X, y, nil) + 6
-	y = a.websites(s, t, ranked, col.X, y, col.W)
+	y = body.Y + 20 - s.scroll2.Y
+	y = a.media(s, col.X, y, col.W, dt)
 	s.scroll2.Content = y - (body.Y - s.scroll2.Y)
 	a.u.PopHit()
 	g.Restore()
 }
 
-// mediaAndAnswer is the left column: pictures, videos, then the AI answer.
-func (a *App) mediaAndAnswer(s *Search, x, y, w, dt float32) float32 {
+// media is the pictures and the videos, each a stack of cards.
+func (a *App) media(s *Search, x, y, w, dt float32) float32 {
 	if len(s.Images) > 0 || s.imgSt == stLoading {
-		y = a.imageCarousel(s, x, y, w, dt) + 28
+		y = a.imageStack(s, x, y, w, dt) + 26
 	}
 	if len(s.Videos) > 0 || s.vidSt == stLoading {
 		y = a.videoStack(s, x, y, w, dt) + 24
 	}
-	return a.aiCard(s, ui.Rect{X: x, Y: y, W: w})
+	return y
 }
 
-// websites lists the ranked links and the way to more.
-func (a *App) websites(s *Search, t *Tab, ranked []core.Ranked, x, y, w float32) float32 {
-	u := &a.u
+// goggleChips draws the goggles; a click re-ranks the links at once.
+func (a *App) goggleChips(s *Search, x, y, w float32) float32 {
+	u, g, th := &a.u, a.u.G, a.u.Th
+	cx := x
+	const h = 30
+	for i, gg := range core.Goggles {
+		cw := g.Measure(gg.Label, ui.FSmallBold) + 26
+		if cx+cw > x+w {
+			cx, y = x, y+h+6
+		}
+		cr := ui.Rect{X: cx, Y: y, W: cw, H: h}
+		on := s.goggle == gg.ID
+		switch {
+		case on:
+			ui.FillRound(g, cr, h/2, th.Primary)
+		case u.Hover(cr):
+			ui.FillRound(g, cr, h/2, th.Ink.Alpha(0.08))
+		default:
+			ui.FillRound(g, cr, h/2, th.Ink.Alpha(0.045))
+		}
+		fg := th.OnSurfaceVariant
+		if on {
+			fg = th.OnPrimary
+		}
+		ui.TextCenter(g, gg.Label, cr, ui.FSmallBold, fg)
+		u.Tooltip(gg.Tip, cr)
+		if u.Clickable(ui.IdN("goggle", i), cr) && !on {
+			s.goggle = gg.ID
+			s.scroll.Y = 0
+		}
+		cx = cr.R() + 6
+	}
+	return y + h + 4
+}
+
+// websites draws the ranked links as cards; more load as the reader nears
+// the end, for as long as Google has relevant ones (bottom is where the
+// column ends on screen).
+func (a *App) websites(s *Search, t *Tab, ranked []core.Ranked, x, y, w, bottom float32) float32 {
 	switch {
 	case s.webSt == stLoading && len(ranked) == 0:
-		y = a.webSkeleton(x, y, w)
+		return a.webSkeleton(x, y, w)
 	case len(ranked) == 0:
-		y = a.resultNote(ui.Rect{X: x, Y: y, W: w}, "No websites came back for this search.", "Open on Google", func() { a.openOriginal(t) })
-	default:
-		y = a.webItems(s, ranked, 0, x, y, w)
+		return a.resultNote(ui.Rect{X: x, Y: y, W: w}, "No websites came back for this search.", "Open on Google", func() { a.openOriginal(t) })
 	}
-	mr := ui.Rect{X: x, Y: y + 6, W: 220, H: 40}
-	if u.Button(ID("moreog"), mr, "More results on Google", ui.ButtonOpt{Icon: ui.IExternal, HasIcon: true}) {
-		a.openOriginal(t)
+	y = a.webItems(s, ranked, 0, x, y, w)
+	switch {
+	case s.moreSt == stLoading:
+		y = a.webSkeleton(x, y, w)
+	case !s.moreEnd && s.webSt == stDone && y < bottom+500:
+		a.moreResults(s)
+	case s.moreEnd:
+		g, th := a.u.G, a.u.Th
+		ui.TextCenter(g, "That is everything relevant Google has for this search.", ui.Rect{X: x, Y: y, W: w, H: 30}, ui.FSmall, th.Ink3)
+		y += 40
 	}
-	return mr.B() + 30
+	return y + 20
+}
+
+// moreResults reads the next page of Google's links and adds the new ones.
+func (a *App) moreResults(s *Search) {
+	if s.moreSt == stLoading || s.moreEnd {
+		return
+	}
+	if s.page >= 8 {
+		s.moreEnd = true
+		return
+	}
+	s.page++
+	s.moreSt = stLoading
+	w := a.workerFor(s.private, false)
+	before := len(s.Web)
+	a.enqueue(w, &job{tag: "more", url: core.ModeWeb.URL(s.Q) + "&start=" + strconv.Itoa(s.page*10), script: core.WebScript, timeout: 15, every: 0.4,
+		handle: func(js string) bool {
+			web, captcha := core.ParseWeb(js)
+			if len(web) == 0 && !captcha {
+				return false
+			}
+			seen := map[string]bool{}
+			for _, r := range s.Web {
+				seen[r.URL] = true
+			}
+			for _, r := range web {
+				if !seen[r.URL] {
+					seen[r.URL] = true
+					s.Web = append(s.Web, r)
+				}
+			}
+			s.moreSt = stDone
+			if len(s.Web)-before < 3 || captcha {
+				s.moreEnd = true // Google has run out of relevant links
+			}
+			return true
+		},
+		fail: func() { s.moreSt, s.moreEnd = stFailed, true }})
 }
 
 func (a *App) openOriginal(t *Tab) {
@@ -397,65 +484,76 @@ func labelColor(th *ui.Theme, label string) ui.Color {
 	return th.Primary
 }
 
-// webItems draws ranked links; start numbers them for ids.
+// webItems draws ranked links as a stack of cards (each with the edge of the
+// next showing under it); start numbers them for ids.
 func (a *App) webItems(s *Search, rs []core.Ranked, start int, x, y, w float32) float32 {
 	u, g, th := &a.u, a.u.G, a.u.Th
-	titleF := ui.Font{Size: 17.5, Bold: true}
+	titleF := ui.Font{Size: 17, Bold: true}
+	const in = 18
+	tw := w - 2*in
 	for k, r := range rs {
 		i := start + k
 		host := strings.TrimPrefix(core.Host(r.URL), "www.")
-		row := ui.Rect{X: x - 14, Y: y - 10, W: w + 28, H: 0}
-		tl := wrap(g, r.Title, titleF, w)
+		tl := wrap(g, r.Title, titleF, tw)
 		if len(tl) > 2 {
 			tl = tl[:2]
 		}
-		sl := wrap(g, r.Snippet, ui.FBody, w)
-		if len(sl) > 2 {
-			sl = sl[:2]
-			sl[1] = ui.Fit(g, sl[1]+" …", ui.FBody, w)
+		sl := wrap(g, r.Snippet, ui.FBody, tw)
+		if len(sl) > 3 {
+			sl = sl[:3]
+			sl[2] = ui.Fit(g, sl[2]+" …", ui.FBody, tw)
 		}
-		row.H = 34 + float32(len(tl))*25 + float32(len(sl))*22 + 16
-		hot := u.Hover(row)
+		card := ui.Rect{X: x, Y: y, W: w, H: 16 + 24 + 8 + float32(len(tl))*24 + float32(len(sl))*21 + 16}
+		hot := u.Hover(card)
+		// the stack: the edge of a card under this one
+		if k < len(rs)-1 {
+			ui.FillRound(g, ui.Rect{X: card.X + 14, Y: card.B() - 12, W: card.W - 28, H: 18}, 14, ui.Mix(pageColor(th), th.Ink, 0.06))
+		}
+		ui.Shadow(g, card, 18, th.Shadow, 0.6, 2)
+		ui.FillRound(g, card, 18, pageColor(th))
 		if hot {
-			ui.FillRound(g, row, 16, th.Ink.Alpha(0.035))
+			ui.StrokeRound(g, card.Inset(0.5), 18, 1.2, th.Primary.Alpha(0.5))
+		} else {
+			ui.StrokeRound(g, card.Inset(0.5), 18, 1, th.OutlineVariant.Alpha(0.35))
 		}
-		// site line: mark, name, path, kind
-		mr := ui.Rect{X: x, Y: y, W: 22, H: 22}
+		cx, cy := x+in, y+16
+		// site line: mark, name, kind, path
+		mr := ui.Rect{X: cx, Y: cy, W: 22, H: 22}
 		ui.FillRoundAccent(g, mr, 7, siteColor(host))
 		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 11, Bold: true}, ui.White)
 		site := r.Site
 		if site == "" || strings.HasPrefix(site, "http") || len(site) > 40 {
 			site = host
 		}
-		sx := x + 30
-		g.Text(site, sx, y+15, ui.FSmallBold, th.OnSurface)
+		sx := cx + 30
+		g.Text(site, sx, cy+15, ui.FSmallBold, th.OnSurface)
 		sx += g.Measure(site, ui.FSmallBold) + 8
 		if r.Label != "" {
 			lc := labelColor(th, r.Label)
 			lw := g.Measure(r.Label, ui.Font{Size: 10.5, Bold: true}) + 14
-			lr := ui.Rect{X: sx, Y: y + 2, W: lw, H: 18}
+			lr := ui.Rect{X: sx, Y: cy + 2, W: lw, H: 18}
 			ui.FillRound(g, lr, 9, lc.Alpha(0.14))
 			ui.TextCenter(g, r.Label, lr, ui.Font{Size: 10.5, Bold: true}, ui.Mix(lc, th.Ink, 0.25))
 			sx += lw + 8
 		}
 		path := strings.TrimPrefix(core.Display(r.URL), strings.TrimPrefix(core.Host(r.URL), "www."))
-		ui.TextFit(g, path, sx, y+15, ui.FSmall, th.Ink3, x+w-sx-100)
-		ty := y + 30
+		ui.TextFit(g, path, sx, cy+15, ui.FSmall, th.Ink3, cx+tw-sx-104)
+		ty := cy + 30
 		for _, ln := range tl {
-			g.Text(ln, x, ty+18, titleF, th.Primary)
+			g.Text(ln, cx, ty+18, titleF, th.Primary)
 			if hot {
-				g.FillRect(ui.Rect{X: x, Y: ty + 21, W: g.Measure(ln, titleF), H: 1.3}, th.Primary.Alpha(0.6))
+				g.FillRect(ui.Rect{X: cx, Y: ty + 21, W: g.Measure(ln, titleF), H: 1.3}, th.Primary.Alpha(0.6))
 			}
-			ty += 25
+			ty += 24
 		}
 		for _, ln := range sl {
-			g.Text(ln, x, ty+17, ui.FBody, th.OnSurfaceVariant)
-			ty += 22
+			g.Text(ln, cx, ty+16, ui.FBody, th.OnSurfaceVariant)
+			ty += 21
 		}
 		// the reader's own say about the site: raise, lower, hide
 		acted := false
 		if hot {
-			bx := x + w - 96
+			bx := cx + tw - 96
 			key := core.SiteKey(r.URL)
 			cur := a.set.SiteRanks[key]
 			for j, b := range []struct {
@@ -463,7 +561,7 @@ func (a *App) webItems(s *Search, rs []core.Ranked, start int, x, y, w float32) 
 				tip  string
 				rank int
 			}{{ui.IStar, "Raise " + key, 1}, {ui.IChevronDown, "Lower " + key, -1}, {ui.IClose, "Hide " + key, -2}} {
-				br := ui.Rect{X: bx + float32(j)*32, Y: y - 6, W: 30, H: 30}
+				br := ui.Rect{X: bx + float32(j)*32, Y: cy - 5, W: 30, H: 30}
 				if u.IconButton(ui.IdN("rank"+strconv.Itoa(j), i), br, b.ic, b.tip, ui.IconOpt{Toggled: cur == b.rank}) {
 					acted = true
 					if a.set.SiteRanks == nil {
@@ -482,21 +580,25 @@ func (a *App) webItems(s *Search, rs []core.Ranked, start int, x, y, w float32) 
 				}
 			}
 		}
-		u.Tooltip(r.URL, ui.Rect{X: x, Y: y + 30, W: w, H: float32(len(tl)) * 25})
-		if u.Clickable(ui.IdN("web", i), row) && !acted {
+		u.Tooltip(r.URL, ui.Rect{X: cx, Y: cy + 30, W: tw, H: float32(len(tl)) * 24})
+		if u.Clickable(ui.IdN("web", i), card) && !acted {
 			a.visitFromResults(r.URL)
 		}
-		y = row.B() + 18
+		y = card.B() + 16
 	}
 	return y
 }
 
 func (a *App) webSkeleton(x, y, w float32) float32 {
-	for i := 0; i < 4; i++ {
-		shimmer(a, ui.Rect{X: x, Y: y, W: w * 0.35, H: 12}, 6)
-		shimmer(a, ui.Rect{X: x, Y: y + 26, W: w * 0.7, H: 17}, 8)
-		shimmer(a, ui.Rect{X: x, Y: y + 54, W: w * 0.95, H: 11}, 5)
-		y += 100
+	g, th := a.u.G, a.u.Th
+	for i := 0; i < 3; i++ {
+		card := ui.Rect{X: x, Y: y, W: w, H: 118}
+		ui.FillRound(g, card, 18, pageColor(th))
+		ui.StrokeRound(g, card.Inset(0.5), 18, 1, th.OutlineVariant.Alpha(0.6))
+		shimmer(a, ui.Rect{X: x + 18, Y: y + 18, W: w * 0.3, H: 12}, 6)
+		shimmer(a, ui.Rect{X: x + 18, Y: y + 44, W: w * 0.66, H: 17}, 8)
+		shimmer(a, ui.Rect{X: x + 18, Y: y + 74, W: w * 0.88, H: 11}, 5)
+		y += 134
 	}
 	return y
 }
@@ -553,115 +655,134 @@ func roundBtn(a *App, r ui.Rect, ic ui.Icon, tip string) bool {
 	return u.Clickable(ui.Id("rb/"+tip), r)
 }
 
-// imageCarousel shows the pictures in a row you can drag, scroll sideways or step through.
-func (a *App) imageCarousel(s *Search, x, y, w, dt float32) float32 {
+// imageStack shows the pictures as a stack of cards, like the videos: the
+// front card in the picture's own shape and sharp (the full picture loads for
+// it), the next ones peeking out behind; drag, scroll sideways or use the
+// arrows to move through them, click the front one to open it.
+func (a *App) imageStack(s *Search, x, y, w, dt float32) float32 {
 	u, g, th := &a.u, a.u.G, a.u.Th
-	y = sectionTitle(a, ui.IImage, "Images", imageNote(s), x, y, func() { s.viewer = viewer{kind: vImages} }, w)
-	const h, gap = 190, 12
-	view := ui.Rect{X: x, Y: y, W: w, H: h}
-	if len(s.Images) == 0 {
+	n := len(s.Images)
+	note := ""
+	if n > 0 {
+		note = strconv.Itoa(int(s.imgTo)+1) + " of " + strconv.Itoa(n)
+	}
+	y = sectionTitle(a, ui.IImage, "Images", note, x, y, func() { s.viewer = viewer{kind: vImages} }, w)
+	const peek = 3
+	maxW := w - float32(peek)*20 - 4
+	H := min(maxW*0.72, 340)
+	area := ui.Rect{X: x, Y: y, W: w, H: H + 70}
+	if n == 0 {
 		if s.imgSt == stLoading {
-			for i, f := range []float32{1.4, 1, 1.3, 0.8, 1.5} {
-				_ = i
-				tw := h * f
-				if x+tw > view.R() {
-					break
-				}
-				shimmer(a, ui.Rect{X: x, Y: y, W: tw, H: h}, 18)
-				x += tw + gap
-			}
-			return y + h
+			shimmer(a, ui.Rect{X: x, Y: y, W: H * 1.4, H: H}, 22)
+			return y + H + 20
 		}
 		g.Text("No pictures for this search.", x, y+16, ui.FBody, th.OnSurfaceVariant)
 		return y + 30
 	}
-	// widths follow each picture's own shape
-	widths := make([]float32, len(s.Images))
-	total := float32(0)
-	for i, im := range s.Images {
-		ar := float32(1.35)
-		if t := a.thumbs[im.Src]; t != nil && t.img != nil {
-			b := t.img.Bounds()
-			ar = min(1.9, max(0.62, float32(b.Dx())/float32(max(1, b.Dy()))))
+	if dx, active := a.dragOn(s, "img", area, s.imgTo); !active && dx != 0 && s.moved {
+		if dx < -50 {
+			s.imgTo++
+		} else if dx > 50 {
+			s.imgTo--
 		}
-		widths[i] = h * ar
-		total += widths[i] + gap
+	} else if active {
+		s.imgPos = s.imgTo - max(-0.6, min(0.6, dx/maxW))
 	}
-	total -= gap
-	maxOff := max(0, total-w)
-	// input: drag, sideways wheel, arrows
-	if dx, active := a.dragOn(s, "img", view, s.imgTo); active {
-		s.imgTo = s.imgFrom(dx)
-		s.imgPos = s.imgTo
-	}
-	if u.Hover(view) && u.In.WheelX != 0 {
-		s.imgTo -= u.In.WheelX * 90
+	if u.Hover(area) && u.In.WheelX != 0 {
+		s.imgTo -= u.In.WheelX / 1.5
 		u.In.WheelX = 0
 	}
-	s.imgTo = min(maxOff, max(0, s.imgTo))
-	if ease(&s.imgPos, s.imgTo, dt) {
+	s.imgTo = float32(math.Round(float64(min(float32(n-1), max(0, s.imgTo)))))
+	if s.drag != "img" && ease(&s.imgPos, s.imgTo, dt) {
 		u.Redraw = true
 	}
-	g.Save()
-	g.Clip(ui.Rect{X: view.X - 6, Y: view.Y - 6, W: view.W + 12, H: view.H + 12}) // room for the lift on hover
-	a.u.PushHit(ui.Rect{X: view.X - 6, Y: view.Y - 6, W: view.W + 12, H: view.H + 12})
-	tx := x - s.imgPos
-	for i, im := range s.Images {
-		tr := ui.Rect{X: tx, Y: y, W: widths[i], H: h}
-		tx += widths[i] + gap
-		if tr.R() < view.X-40 || tr.X > view.R()+40 {
+	// each picture's own shape: from the sharp copy once it is in, else the thumbnail
+	shape := func(k int) (image.Image, float32) {
+		im := s.Images[k]
+		var img image.Image
+		if absf(float32(k)-s.imgPos) < 0.5 {
+			src := im.Full
+			if src == "" {
+				src = im.Src
+			}
+			img = a.imageFor(src, int(maxW*1.2))
+			if img == nil {
+				img = a.thumbFor(im.Src)
+			}
+		} else {
+			img = a.thumbFor(im.Src)
+		}
+		ar := float32(1.4)
+		if img != nil {
+			b := img.Bounds()
+			ar = min(2.2, max(0.56, float32(b.Dx())/float32(max(1, b.Dy()))))
+		}
+		return img, ar
+	}
+	front := int(math.Floor(float64(s.imgPos)))
+	// the front card's right edge: the cards behind peek out past it
+	_, far := shape(max(0, min(n-1, front)))
+	frontR := x + min(H*far, maxW)
+	for k := min(n-1, front+peek); k >= max(0, front-1); k-- {
+		d := float32(k) - s.imgPos
+		img, ar := shape(k)
+		cw, ch := H*ar, H
+		if cw > maxW {
+			cw, ch = maxW, maxW/ar
+		}
+		var r ui.Rect
+		shade := float32(0)
+		if d >= 0 {
+			sc := 1 - d*0.07
+			r = ui.Rect{W: cw * sc, H: ch * sc}
+			r.X = x + d*20
+			if d >= 0.5 {
+				r.X = max(r.X, frontR+d*20-r.W)
+			}
+			r.Y = y + (H-r.H)/2
+			shade = min(0.5, d*0.16)
+		} else {
+			r = ui.Rect{X: x + d*maxW*1.1, Y: y + (H-ch)/2, W: cw, H: ch}
+		}
+		if r.R() < area.X-20 {
 			continue
 		}
-		hot := u.Hover(tr) && view.Contains(u.In.MX, u.In.MY)
-		if hot {
-			tr = ui.RectAround(tr.CX(), tr.CY(), tr.W*1.03, tr.H*1.03)
-			ui.Shadow(g, tr, 18, th.Shadow, 1, 4)
-		}
-		if img := a.thumbFor(im.Src); img != nil {
-			g.Image(img, tr, 18)
+		ui.Shadow(g, r, 20, th.Shadow, 1.1, 5)
+		if img != nil {
+			g.Image(img, r, 20)
 		} else {
-			shimmer(a, tr, 18)
+			shimmer(a, r, 20)
 		}
-		if hot {
-			host := strings.TrimPrefix(core.Host(im.Page), "www.")
-			cap := im.Alt
-			if cap == "" {
-				cap = host
+		if shade > 0 {
+			ui.FillRound(g, r, 20, pageColor(th).Alpha(shade))
+		}
+		if absf(d) < 0.5 {
+			if a.tapped(s, r) {
+				s.viewer = viewer{kind: vImage, idx: k}
 			}
-			cr := ui.Rect{X: tr.X, Y: tr.B() - 44, W: tr.W, H: 44}
-			g.Save()
-			g.Clip(tr)
-			g.FillPathGradient(ui.NewPath().RoundRect(ui.Rect{X: tr.X, Y: cr.Y - 16, W: tr.W, H: 76}, 18), ui.Black.Alpha(0), ui.Black.Alpha(0.7), cr.Y-16, tr.B())
-			g.Restore()
-			ui.TextFit(g, cap, cr.X+12, cr.Y+20, ui.FSmallBold, ui.White, cr.W-24)
-			if host != "" && host != cap {
-				ui.TextFit(g, host, cr.X+12, cr.Y+36, ui.FSmall, ui.White.Alpha(0.8), cr.W-24)
-			}
-		}
-		if a.tapped(s, tr) {
-			s.viewer = viewer{kind: vImage, idx: i}
+		} else if a.tapped(s, r) {
+			s.imgTo = float32(k)
 		}
 	}
-	a.u.PopHit()
-	g.Restore()
-	if u.Hover(view) {
-		if s.imgPos > 1 && roundBtn(a, ui.RectAround(x+24, y+h/2, 40, 40), ui.IChevronLeft, "Previous pictures") {
-			s.imgTo -= w * 0.8
-		}
-		if s.imgPos < maxOff-1 && roundBtn(a, ui.RectAround(view.R()-24, y+h/2, 40, 40), ui.IChevron, "More pictures") {
-			s.imgTo += w * 0.8
-		}
+	// under the stack: what the front picture shows and where it is from, then the arrows
+	im := s.Images[min(n-1, max(0, int(s.imgTo)))]
+	host := strings.TrimPrefix(core.Host(im.Page), "www.")
+	cap := im.Alt
+	if cap == "" {
+		cap = host
 	}
-	return y + h
-}
-
-func (s *Search) imgFrom(dx float32) float32 { return s.dragFrom - dx }
-
-func imageNote(s *Search) string {
-	if len(s.Images) == 0 {
-		return ""
+	cy := y + H + 14
+	ui.TextFit(g, cap, x, cy+16, ui.Font{Size: 15, Bold: true}, th.OnSurface, w-110)
+	if host != "" && host != cap {
+		ui.TextFit(g, host, x, cy+36, ui.FSmall, th.OnSurfaceVariant, w-110)
 	}
-	return strconv.Itoa(len(s.Images)) + " pictures · click one to see it at the side"
+	if roundBtn(a, ui.RectAround(x+w-74, cy+18, 38, 38), ui.IChevronLeft, "Previous picture") {
+		s.imgTo--
+	}
+	if roundBtn(a, ui.RectAround(x+w-26, cy+18, 38, 38), ui.IChevron, "Next picture") {
+		s.imgTo++
+	}
+	return y + H + 64
 }
 
 func (a *App) videoThumb(v core.VideoResult, r ui.Rect, rad float32) {
@@ -706,7 +827,7 @@ func (a *App) videoStack(s *Search, x, y, w, dt float32) float32 {
 		note = strconv.Itoa(int(s.vidTo)+1) + " of " + strconv.Itoa(n)
 	}
 	y = sectionTitle(a, ui.IVideo, "Videos", note, x, y, func() { s.viewer = viewer{kind: vVideos} }, w)
-	cw := min(w*0.72, 600)
+	cw := min(w-64, 620)
 	thH := cw * 9 / 16
 	ch := thH + 76
 	area := ui.Rect{X: x, Y: y, W: w, H: ch + 24}
@@ -744,7 +865,7 @@ func (a *App) videoStack(s *Search, x, y, w, dt float32) float32 {
 		shade := float32(0)
 		if d >= 0 {
 			sc := 1 - d*0.07
-			r = ui.Rect{X: x + d*(46+cw*0.04), Y: y + d*10, W: cw * sc, H: thH * sc}
+			r = ui.Rect{X: x + d*20 + cw*(1-sc), Y: y + d*10, W: cw * sc, H: thH * sc}
 			r.Y += (thH - r.H) / 2
 			shade = min(0.5, d*0.16)
 		} else {
@@ -808,63 +929,66 @@ func (a *App) videoStack(s *Search, x, y, w, dt float32) float32 {
 	return y + ch + 10
 }
 
-// aiCard draws the AI answer: a preview that opens in place, its sources, and
-// where it came from.
+// aiCard draws the AI answer as the head of the page: who it is for, tags for
+// the topic, the sources' quality and how complete it is, the answer with its
+// citations named by site, the sources as chips, and a follow-up.
 func (a *App) aiCard(s *Search, r ui.Rect) float32 {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	short := !s.aiOpen
-	pad := float32(22)
+	pad := float32(24)
 	tw := r.W - 2*pad
 	size := float32(15)
-	if short {
-		size = 14.5
-	}
-	lay := layoutAnswer(g, s.AI.Blocks, tw, size)
+	lay := layoutAnswer(g, s.AI.Blocks, tw, size, s.AI.Sources)
 	n := len(lay.lines)
-	long := n > 10 || len(s.AI.Sources) > 0
-	cut := short && n > 10
+	long := n > 12
+	cut := short && long
 	if cut {
-		n = 9
+		n = 11
 	}
 	textH := float32(0)
 	if n > 0 {
 		textH = lay.lines[n-1].y + size*1.6
 	}
-	cols := max(1, min(3, int(tw/250)))
-	srcH := float32(0)
-	if !short && len(s.AI.Sources) > 0 && s.aiSt != stLoading {
-		rows := (len(s.AI.Sources) + cols - 1) / cols
-		srcH = 26 + float32(rows)*62 + 10
+	chipsH := float32(0)
+	if len(s.AI.Sources) > 0 && s.aiSt != stLoading {
+		chipsH = a.sourceChips(s.AI.Sources, 0, 0, tw, "", true) + 10
 	}
-	h := float32(66)
+	h := float32(104)
 	switch {
 	case len(s.AI.Blocks) == 0 && s.aiSt == stLoading:
 		h += 4*26 + 8
 	case len(s.AI.Blocks) == 0:
 		h += 34
 	default:
-		h += textH + 12 + srcH + 48
+		h += textH + 14 + chipsH
+		if long {
+			h += 36
+		}
 	}
 	card := ui.Rect{X: r.X, Y: r.Y, W: r.W, H: h}
-	ui.Glass(g, card, 22, th, true, true)
-	ui.FillRound(g, card, 22, th.Primary.Alpha(0.035))
+	ui.Shadow(g, card, 24, th.Shadow, 1, 4)
+	ui.FillRound(g, card, 24, pageColor(th))
+	// a soft wash of the palette across the top, as on the active tab of Firefox Nova
+	g.FillPathGradient(ui.NewPath().RoundRect(ui.Rect{X: card.X, Y: card.Y, W: card.W, H: 90}, 24), th.Primary.Alpha(0.10), th.Primary.Alpha(0), card.Y, card.Y+90)
+	ui.StrokeRound(g, card.Inset(0.5), 24, 1, th.Primary.Alpha(0.18))
 
-	// header: badge, name, status, actions
-	aiBadge(g, th, ui.Rect{X: card.X + pad, Y: card.Y + 18, W: 28, H: 28})
-	g.Text("AI Mode", card.X+pad+38, card.Y+37, ui.FBodyBold, th.OnSurface)
-	sx := card.X + pad + 38 + g.Measure("AI Mode", ui.FBodyBold) + 14
-	switch {
-	case s.aiSt == stLoading:
-		a.writing(sx, card.Y+32)
-	case len(s.AI.Sources) > 0:
-		g.Text(strconv.Itoa(len(s.AI.Sources))+" sources", sx, card.Y+37, ui.FSmall, th.OnSurfaceVariant)
+	// header: badge, who it is for, status, actions
+	aiBadge(g, th, ui.Rect{X: card.X + pad, Y: card.Y + 18, W: 30, H: 30})
+	head := "AI answer"
+	if name := strings.TrimSpace(a.set.Name); name != "" {
+		head = "For " + name
+	}
+	g.Text(head, card.X+pad+42, card.Y+38, ui.Font{Size: 16, Bold: true}, th.OnSurface)
+	sx := card.X + pad + 42 + g.Measure(head, ui.Font{Size: 16, Bold: true}) + 14
+	if s.aiSt == stLoading {
+		a.writing(sx, card.Y+33)
 	}
 	ax := card.R() - pad + 6
 	act := func(id string, ic ui.Icon, tip string) bool {
 		ax -= 34
-		return u.IconButton(ui.Id(id), ui.Rect{X: ax, Y: card.Y + 15, W: 32, H: 32}, ic, tip, ui.IconOpt{})
+		return u.IconButton(ui.Id(id), ui.Rect{X: ax, Y: card.Y + 16, W: 32, H: 32}, ic, tip, ui.IconOpt{})
 	}
-	if act("ai-open", ui.IExternal, "Continue in AI Mode") {
+	if act("ai-open", ui.IExternal, "Continue in Google AI Mode") {
 		a.newTab(KNormal, "", core.ModeAI.URL(s.Q)+"&lite=0", true)
 	}
 	if s.aiSt != stLoading && act("ai-again", ui.IReload, "Ask again") {
@@ -874,7 +998,41 @@ func (a *App) aiCard(s *Search, r ui.Rect) float32 {
 		a.u.Clip.Set(s.AI.Text)
 		a.notify("Answer copied.")
 	}
-	y := card.Y + 62
+	// tags: the topic, the sources' quality, how complete the answer is
+	ty := card.Y + 58
+	tx := card.X + pad
+	tag := func(label string, col ui.Color, ic ui.Icon, tip string) {
+		f := ui.Font{Size: 11.5, Bold: true}
+		tw := g.Measure(label, f) + 34
+		tr := ui.Rect{X: tx, Y: ty, W: tw, H: 26}
+		ui.FillRound(g, tr, 13, col.Alpha(0.13))
+		ui.DrawIcon(g, ic, tr.X+9, tr.CY()-7, 14, ui.Mix(col, th.Ink, 0.2))
+		g.Text(label, tr.X+27, ui.Mid(g, tr.Y, tr.H, f), f, ui.Mix(col, th.Ink, 0.3))
+		u.Tooltip(tip, tr)
+		tx = tr.R() + 6
+	}
+	topic := core.TopicOf(s.Q)
+	tag(topic.Label, th.Primary, topicIcon(topic.Icon), "What this search is about")
+	if s.aiSt != stLoading && s.AI.Text != "" {
+		switch core.SourceQuality(s.AI.Sources, s.Q) {
+		case 2:
+			tag("Strong sources", tone(th, "green"), ui.IShield, "Most sources are references, documentation, research or official sites")
+		case 1:
+			tag("Mixed sources", tone(th, "yellow"), ui.IShield, "Some strong sources, some ordinary ones")
+		default:
+			tag("Few sources", tone(th, "red"), ui.IWarning, "Few or weak sources: check what matters")
+		}
+		switch core.Completeness(s.AI) {
+		case 2:
+			tag("Thorough", tone(th, "blue"), ui.ICheck, "A full answer with several parts and sources")
+		case 1:
+			tag("Overview", tone(th, "turquoise"), ui.IBook, "A good overview; ask a follow-up for depth")
+		default:
+			tag("Brief", tone(th, "orange"), ui.IInfo, "A short answer")
+		}
+	}
+
+	y := card.Y + 98
 	switch {
 	case len(s.AI.Blocks) == 0 && s.aiSt == stLoading:
 		for i, f := range []float32{1, 0.94, 0.98, 0.62} {
@@ -885,69 +1043,45 @@ func (a *App) aiCard(s *Search, r ui.Rect) float32 {
 	default:
 		y = a.drawAnswer(lay, card.X+pad, y, s.AI.Sources, n, "aic")
 		if cut {
-			// the preview fades into the card
 			fr := ui.Rect{X: card.X + 1, Y: y - 46, W: card.W - 2, H: 46}
-			bg := ui.Mix(pageColor(th), th.Primary, 0.035)
-			g.FillPathGradient(ui.NewPath().RoundRect(fr, 0), bg.Alpha(0), bg, fr.Y, fr.B())
+			g.FillPathGradient(ui.NewPath().RoundRect(fr, 0), pageColor(th).Alpha(0), pageColor(th), fr.Y, fr.B())
 		}
 		if s.aiSt == stLoading {
 			ui.FillRound(g, ui.Rect{X: card.X + pad, Y: y - 4, W: 9, H: 3}, 1.5, th.Primary.Alpha(0.5+0.5*float32(int(a.now()*2)%2)))
 			a.u.Redraw = true
 		}
-		y += 12
-		if srcH > 0 {
-			a.sourceCards(s.AI.Sources, card.X+pad, y, tw, cols, "aisrc")
-		}
-		// footer: open or close the full answer, and where it came from
-		by := card.B() - 46
-		fx := card.X + pad - 8
+		y += 8
 		if long {
-			lbl := "Show more"
+			lbl := "Read the whole answer"
 			if !short {
 				lbl = "Show less"
 			}
-			br := ui.Rect{X: fx, Y: by, W: g.Measure(lbl, ui.FSmallBold) + 40, H: 32}
+			br := ui.Rect{X: card.X + pad - 10, Y: y, W: g.Measure(lbl, ui.FSmallBold) + 44, H: 30}
 			if u.Hover(br) {
-				ui.FillRound(g, br, 16, th.Ink.Alpha(0.06))
+				ui.FillRound(g, br, 15, th.Ink.Alpha(0.06))
 			}
 			g.Text(lbl, br.X+12, ui.Mid(g, br.Y, br.H, ui.FSmallBold), ui.FSmallBold, th.Primary)
 			ic := ui.IChevronDown
 			if !short {
 				ic = ui.IChevron
 			}
-			ui.DrawIcon(g, ic, br.R()-24, br.CY()-7, 14, th.Primary)
+			ui.DrawIcon(g, ic, br.R()-26, br.CY()-7, 14, th.Primary)
 			if u.Clickable(ui.Id("aimore"), br) {
 				s.aiOpen = !s.aiOpen
 			}
-			fx = br.R() + 10
-			if short {
-				fx = a.sourceStack(s.AI.Sources, fx, by+1, "aistack", func() { s.aiOpen = true }) + 10
-			}
+			y += 36
 		}
-		lbl := "Answer by Google AI Mode"
-		lw := g.Measure(lbl, ui.FSmall) + 30
-		lr := ui.Rect{X: card.R() - pad - lw + 8, Y: by, W: lw, H: 32}
-		if lr.X > fx {
-			hot := u.Hover(lr)
-			col := th.OnSurfaceVariant
-			if hot {
-				col = th.Primary
-			}
-			g.Text(lbl, lr.X+4, ui.Mid(g, lr.Y, lr.H, ui.FSmall), ui.FSmall, col)
-			ui.DrawIcon(g, ui.IExternal, lr.R()-20, lr.CY()-7, 14, col)
-			u.Tooltip("Open this answer on Google AI Mode", lr)
-			if u.Clickable(ui.Id("aisource"), lr) {
-				a.newTab(KNormal, "", core.ModeAI.URL(s.Q)+"&lite=0", true)
-			}
+		if chipsH > 0 {
+			a.sourceChips(s.AI.Sources, card.X+pad, y+4, tw, "aisrc", false)
 		}
 	}
 	if s.AI.Text != "" {
 		// keep the conversation going in the side panel
-		fr := ui.Rect{X: card.X, Y: card.B() + 14, W: card.W, H: 48}
-		ui.FillRound(g, fr, 24, pageColor(th))
-		ui.StrokeRound(g, fr.Inset(0.5), 24, 1, th.Outline)
+		fr := ui.Rect{X: card.X, Y: card.B() + 12, W: card.W, H: 46}
+		ui.FillRound(g, fr, 23, pageColor(th))
+		ui.StrokeRound(g, fr.Inset(0.5), 23, 1, th.Outline)
 		if u.Hover(fr) {
-			ui.FillRound(g, fr, 24, th.Primary.Alpha(0.05))
+			ui.FillRound(g, fr, 23, th.Primary.Alpha(0.05))
 		}
 		ui.DrawIcon(g, ui.ISparkle, fr.X+18, fr.CY()-9, 18, th.Primary)
 		g.Text("Ask a follow-up", fr.X+46, ui.Mid(g, fr.Y, fr.H, ui.FBody), ui.FBody, th.Ink3)
@@ -959,11 +1093,48 @@ func (a *App) aiCard(s *Search, r ui.Rect) float32 {
 	return card.B()
 }
 
+// topicIcon maps a topic's icon name to an icon.
+func topicIcon(name string) ui.Icon {
+	switch name {
+	case "code":
+		return ui.ICode
+	case "heart":
+		return ui.IHeart
+	case "lab":
+		return ui.ILab
+	case "dollar":
+		return ui.IDollar
+	case "book":
+		return ui.IBook
+	case "globe":
+		return ui.IGlobe
+	case "cart":
+		return ui.ICart
+	case "gamepad":
+		return ui.IGamepad
+	case "star":
+		return ui.IStar
+	}
+	return ui.ISparkle
+}
+
+// aiPrompt is what Lite Go asks Google AI Mode for a search: the question,
+// with how to answer it (warm, to the point, insight over hype, by name).
+func (a *App) aiPrompt(q string) string {
+	who := "the reader"
+	if name := strings.TrimSpace(a.set.Name); name != "" {
+		who = name
+	}
+	return q + "\n\n(Answer for " + who + " in a warm, friendly tone" +
+		map[bool]string{true: ", greeting " + who + " by name once", false: ""}[who != "the reader"] +
+		": the direct answer first, then the most valuable insights and practical takeaways. Prefer solid, well-sourced facts over hype and trends, and cite your sources.)"
+}
+
 // regenAI asks AI Mode again for the search.
 func (a *App) regenAI(s *Search) {
 	s.AI, s.aiSt = core.AIResult{}, stLoading
 	aw := a.workerFor(s.private, true)
-	a.askGoogleAI(aw, "search", s.Q, s.Q, 35, func(r core.AIResult, done bool) {
+	a.askGoogleAI(aw, "search", a.aiPrompt(s.Q), s.Q, 35, func(r core.AIResult, done bool) {
 		if r.Text != "" {
 			s.AI = r
 		}

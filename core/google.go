@@ -352,13 +352,14 @@ func Unbold(s string) string { return strings.ReplaceAll(s, "**", "") }
 func cleanBlocks(in []AIBlock, prompt string, nsrc int) []AIBlock {
 	var out []AIBlock
 	q := strings.ToLower(strings.TrimSpace(prompt))
+	first, _, _ := strings.Cut(q, "\n") // the question itself, before any instructions
 	prev := ""
 	for _, b := range in {
 		t := strings.TrimSpace(b.Text)
 		plain := strings.TrimSpace(Unbold(t))
 		low := strings.ToLower(plain)
 		if plain == "" || aiChrome.MatchString(plain) || plain == prev || len([]rune(plain)) < 2 ||
-			q != "" && (low == q || len([]rune(low)) >= 12 && strings.Contains(q, low)) {
+			q != "" && (low == q || low == first || len([]rune(low)) >= 12 && strings.Contains(q, low)) {
 			continue
 		}
 		if b.Kind == "h" || strings.HasPrefix(t, "**") && strings.HasSuffix(t, "**") && strings.Count(t, "**") == 2 && len(plain) < 80 && b.Kind == "p" {
@@ -410,6 +411,7 @@ var aiChrome = regexp.MustCompile(`(?i)^(ai mode|all|images|videos|news|shopping
 func CleanAI(raw, query string) string {
 	var keep []string
 	q := strings.ToLower(strings.TrimSpace(query))
+	first, _, _ := strings.Cut(q, "\n")
 	prev := ""
 	for _, ln := range strings.Split(raw, "\n") {
 		ln = strings.TrimSpace(ln)
@@ -417,7 +419,7 @@ func CleanAI(raw, query string) string {
 		switch {
 		case ln == "", aiChrome.MatchString(ln), len([]rune(ln)) < 2, ln == prev:
 			continue
-		case q != "" && (low == q || len([]rune(low)) >= 12 && strings.Contains(q, low)):
+		case q != "" && (low == q || low == first || len([]rune(low)) >= 12 && strings.Contains(q, low)):
 			continue // the question (and the page text sent with it) echoed back
 		}
 		keep = append(keep, ln)

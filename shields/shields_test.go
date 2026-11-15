@@ -141,27 +141,3 @@ func itoa(i int) string {
 		}
 	}
 }
-
-func TestSafari(t *testing.T) {
-	e := engine()
-	js := e.SafariJSON(1000, []string{"tracker.example"})
-	for _, want := range []string{
-		`"url-filter":"^[a-z][a-z0-9.+-]*:(//)?([^/?#]+\\.)?doubleclick\\.net[/:?&=]"`,
-		`"load-type":["third-party"]`,
-		`"if-domain":["*news.com"]`,
-		`"type":"ignore-previous-rules"`,
-		`"if-domain":["*safe.org"]`,
-		`tracker\\.example[/:]`,
-	} {
-		if !strings.Contains(js, want) {
-			t.Errorf("missing %s in\n%s", want, js)
-		}
-	}
-	if strings.Contains(js, "adserv") {
-		t.Error("regular-expression rules cannot go to WebKit")
-	}
-	// blocks come before the exceptions that lift them
-	if strings.Index(js, "ignore-previous-rules") < strings.Index(js, `"block"`) {
-		t.Error("exceptions must follow blocks")
-	}
-}

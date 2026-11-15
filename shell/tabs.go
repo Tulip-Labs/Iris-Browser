@@ -5,6 +5,8 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"litego/core"
 	"litego/ui"
@@ -50,7 +52,6 @@ type Tab struct {
 	pageURL      string
 	last         float64 // when it was last the current tab
 	closed       bool
-	settings     bool    // the settings page (no web page)
 	zoom         float64 // 0 or 1 = the page's normal size
 	background   bool    // the engine was told nobody is looking at it
 	// adaptive shields: whether this page is being scanned, and what was found
@@ -58,17 +59,16 @@ type Tab struct {
 	scanURL  string
 	hidden   int     // what the hiding rules matched
 	loadedAt float64 // when the page finished loading (0 = not yet)
+	// opener is the tab this one was opened from (results, another site):
+	// Back from the first page, and closing it, return there
+	opener *Tab
+	// hydration: where the page was scrolled when it was let go, to restore
+	scrollY int
+	hydrate bool
 }
 
-// binding routes a view's events to its tab (a spare view gets its tab later).
+// binding routes a view's events to its tab.
 type binding struct{ t *Tab }
-
-// spare is a view made ahead of time, so the first page of a tab opens without waiting.
-type spare struct {
-	view   webview.View
-	bind   *binding
-	making bool
-}
 
 func (t *Tab) private() bool { return t.Kind == KPrivate || t.Kind == KTemp || t.Kind == KSandbox }
 
@@ -119,9 +119,6 @@ func (a *App) newTab(k Kind, container, url string, activate bool) *Tab {
 	} else if activate {
 		a.ntpQ.Set("")
 		a.st.Focus = ID("ntp")
-		if k == KNormal {
-			a.makeSpare() // made while the user types, so the page opens at once
-		}
 	}
 	return t
 }
@@ -197,17 +194,30 @@ func (a *App) closeTab(i int) {
 	if t == a.split.a || t == a.split.b {
 		a.split.a, a.split.b = nil, nil
 	}
+	wasCur := i == a.cur
 	a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
 	if len(a.tabs) == 0 {
 		a.cur = 0
 		a.newTab(KNormal, "", "", true)
 		return
 	}
+	if o := t.opener; wasCur && o != nil && !o.closed {
+		// back to the tab it came from
+		for j, x := range a.tabs {
+			if x == o {
+				a.cur = j
+				a.selectTab(j)
+				go debug.FreeOSMemory()
+				return
+			}
+		}
+	}
 	if i < a.cur || a.cur >= len(a.tabs) {
 		a.cur--
 	}
 	a.cur = max(0, min(a.cur, len(a.tabs)-1))
 	a.selectTab(a.cur)
+	go debug.FreeOSMemory() // the closed page's memory goes back at once
 }
 
 func (a *App) reopen() {
@@ -251,10 +261,8 @@ func (a *App) navigate(t *Tab, url string) {
 	if t.search != nil {
 		t.lastSearch = t.search
 	}
-	if t.settings {
-		t.Title = ""
-	}
-	t.search, t.settings = nil, false
+	t.search = nil
+	t.hydrate, t.scrollY = false, 0
 	t.URL, t.Loading, t.Crashed, t.Blocked = url, true, false, 0
 	if t.Title == "" {
 		t.Title = core.Display(url)
@@ -268,17 +276,9 @@ func (a *App) navigate(t *Tab, url string) {
 	a.ensureView(t)
 }
 
-// ensureView gives t a page: the spare view when it fits, or a new one.
+// ensureView gives t a page (made when it is needed, never ahead of time).
 func (a *App) ensureView(t *Tab) {
 	if t.view != nil || t.making || !a.ready || a.eng == nil {
-		return
-	}
-	if t.Kind == KNormal && t.popup == nil && a.spare != nil && a.spare.view != nil {
-		s := a.spare
-		a.spare = nil
-		s.bind.t = t
-		t.bind = s.bind
-		a.attach(t, s.view)
 		return
 	}
 	t.making = true
@@ -324,38 +324,6 @@ func (a *App) attach(t *Tab, v webview.View) {
 	if t == a.tab() && a.st.Focus != ID("addr") {
 		a.web(v.Focus)
 	}
-}
-
-// makeSpare prepares a default-container view in the background while a new tab
-// page waits for typing. Only one is ever kept, and Free memory closes it.
-func (a *App) makeSpare() {
-	if a.spare != nil || !a.ready || a.eng == nil {
-		return
-	}
-	s := &spare{bind: &binding{}, making: true}
-	a.spare = s
-	eng, ev := a.eng, a.events(s.bind)
-	a.web(func() {
-		eng.NewView(webview.Options{}, ev, func(v webview.View, err error) {
-			if err == nil {
-				v.SetVisible(false)
-			}
-			a.post(func() {
-				s.making = false
-				if err != nil {
-					if a.spare == s {
-						a.spare = nil
-					}
-					return
-				}
-				if a.spare != s {
-					a.web(v.Close)
-					return
-				}
-				s.view = v
-			})
-		})
-	})
 }
 
 // events wires a view's events to whichever tab the binding names.
@@ -413,6 +381,14 @@ func (a *App) events(b *binding) webview.Events {
 					if z, v := t.zoom, t.view; z != 0 && z != 1 && v != nil {
 						a.web(func() { v.SetZoom(z) })
 					}
+					if t.hydrate {
+						// back where it was before it rested
+						t.hydrate = false
+						if y, v := t.scrollY, t.view; y > 0 && v != nil {
+							js := "window.scrollTo(0," + strconv.Itoa(y) + ")"
+							a.web(func() { v.Eval(js) })
+						}
+					}
 				}
 				t.Loading = l
 				if l {
@@ -438,6 +414,11 @@ func (a *App) events(b *binding) webview.Events {
 		},
 		NewTab: func(url string, p *webview.Popup) {
 			on(func(t *Tab) {
+				if p == nil { // a link to another website: a new tab of its own
+					n := a.newTab(t.Kind, t.Container, url, true)
+					n.opener = t
+					return
+				}
 				n := a.newTab(t.Kind, t.Container, "", true)
 				n.popup = p
 				n.URL, n.Title, n.Loading = url, core.Display(url), true
@@ -531,7 +512,6 @@ func (a *App) tick() {
 	other, _ := a.splitWith()
 	a.settleScans()
 	a.rebalance()
-	a.linkTick()
 	a.updateTick()
 	live := 0
 	for _, t := range a.tabs {
@@ -565,15 +545,32 @@ func (a *App) tick() {
 	}
 }
 
-// unload closes a background page, keeping its address and title.
+// unload lets a background page go (its memory goes back to the system),
+// keeping what brings it back as it was: the address, the title and how far
+// it was scrolled (hydration).
 func (a *App) unload(t *Tab) {
 	if t.view == nil || a.downloadingIn(t.view) {
 		return
 	}
 	a.finishScan(t)
 	v := t.view
-	a.web(v.Close)
 	t.view, t.asleep, t.shown, t.Loading, t.background = nil, false, false, false, false
+	if t.URL == "" || t.search != nil || t.Crashed {
+		a.web(v.Close)
+		return
+	}
+	t.hydrate = true
+	var once sync.Once
+	closeIt := func() { once.Do(func() { a.post(func() { a.web(v.Close) }) }) }
+	a.web(func() {
+		v.Run("Math.round(window.scrollY)", func(res string) {
+			if n, err := strconv.Atoi(strings.TrimSpace(res)); err == nil && n > 0 {
+				a.post(func() { t.scrollY = n })
+			}
+			closeIt()
+		})
+		time.AfterFunc(1500*time.Millisecond, closeIt) // a page that does not answer still goes
+	})
 }
 
 // FreeMemory puts every background tab to sleep now and unloads the ones that can be reopened.
@@ -595,11 +592,6 @@ func (a *App) FreeMemory() {
 			a.unload(t)
 		}
 		n++
-	}
-	if a.spare != nil && a.spare.view != nil {
-		v := a.spare.view
-		a.web(v.Close)
-		a.spare = nil
 	}
 	for _, w := range a.workers {
 		if w != nil && w.view != nil && w.cur == nil && len(w.queue) == 0 {
@@ -636,7 +628,7 @@ func (a *App) sync(page, beside ui.Rect, other *Tab) {
 		if t == other {
 			r = beside
 		}
-		want := (t == cur || t == other) && t.URL != "" && !t.Crashed && t.search == nil && !r.Empty()
+		want := (t == cur || t == other) && t.URL != "" && !t.Crashed && t.search == nil && !r.Empty() && !a.tabsOpen
 		if want {
 			s := a.Scale
 			b := [4]int{int(r.X*s + 0.5), int(r.Y*s + 0.5), int(r.W*s + 0.5), int(r.H*s + 0.5)}
@@ -669,19 +661,15 @@ func (a *App) Counts() (live, asleep, unloaded int) {
 	return
 }
 
-// visitFromResults opens a link from the results page (Ctrl opens a background tab).
+// visitFromResults opens a link from the results in a new tab beside them
+// (Ctrl keeps it in the background); the results stay where they are.
 func (a *App) visitFromResults(url string) {
 	t := a.tab()
 	if t == nil {
 		return
 	}
-	if a.In.Ctrl {
-		a.newTab(t.Kind, t.Container, url, false)
-		return
-	}
-	t.Title = ""
-	t.awaitLanding, t.landing = true, url
-	a.navigate(t, url)
+	n := a.newTab(t.Kind, t.Container, url, !a.In.Ctrl)
+	n.opener = t
 }
 
 // back goes back in the page, or from the first page opened from results to the results.
@@ -690,6 +678,16 @@ func (a *App) back(t *Tab) {
 		t.pageURL = t.URL
 		t.search, t.lastSearch = t.lastSearch, nil
 		t.URL, t.Title, t.Loading = t.search.URL, t.search.Q, false
+		return
+	}
+	if !t.CanBack && t.search == nil && t.opener != nil && !t.opener.closed {
+		// the first page of a tab opened from another: Back returns there
+		for i, x := range a.tabs {
+			if x == t {
+				a.closeTab(i)
+				break
+			}
+		}
 		return
 	}
 	if v := t.view; v != nil && t.search == nil {
@@ -711,7 +709,7 @@ func (a *App) forward(t *Tab) {
 }
 
 func (t *Tab) canBack() bool {
-	return t.search == nil && (t.CanBack || t.lastSearch != nil)
+	return t.search == nil && (t.CanBack || t.lastSearch != nil || t.opener != nil && !t.opener.closed)
 }
 
 func (t *Tab) canForward() bool {

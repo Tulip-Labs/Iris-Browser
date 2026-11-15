@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync/atomic"
 
 	"context"
@@ -21,7 +22,6 @@ import (
 	"time"
 
 	"litego/core"
-	"litego/link"
 	"litego/ui"
 	"litego/webview"
 )
@@ -47,7 +47,8 @@ type Config struct {
 	TotalMB int            // system memory, for the tab sleep plan
 	Version string
 	SelfMB  func() float64 // this process's memory (nil = unknown)
-	// SetBoost turns starting with Windows on or off (nil where it does not apply).
+	// SetBoost turns starting with Windows on or off (nil where it does not apply);
+	// Lite Go keeps nothing running in the background, so it is only turned off.
 	SetBoost func(on bool)
 	// Core reuses preloaded settings, history and shield (the background mode).
 	Core *Core
@@ -117,16 +118,14 @@ type App struct {
 	dlSc      ui.Scroll
 	kindEdit  bool // the container editor on the new tab page
 	balance   balancer
-	phone     phoneLink
-	setSec    string // the settings page's section
-	setSc     ui.Scroll
-	kindOpen  bool // the + button's menu
-	apps      []*sideApp
-	syncSrv   *link.SyncServer
-	syncErr   string
-	appCur    int
-	appRect   ui.Rect
 	integrity Integrity
+	setSec    string // the menu's open section ("" = none)
+	nameEd    *ui.TextEdit
+	// the tab grid (mobile-style tabs) and its search
+	tabsOpen bool
+	tabQ     *ui.TextEdit
+	tabSc    ui.Scroll
+	tabSel   int
 
 	tabs    []*Tab
 	cur     int
@@ -134,9 +133,8 @@ type App struct {
 	closed  []closedTab
 	ready   bool  // engine started
 	engErr  error // engine could not start
-	spare   *spare
-	full    bool // the page asked for fullscreen (video)
-	winFull bool // F11
+	full    bool  // the page asked for fullscreen (video)
+	winFull bool  // F11
 
 	addr, ntpQ  *ui.TextEdit
 	addrWas     bool
@@ -144,9 +142,6 @@ type App struct {
 	sugSel      int
 	panel       bool
 	panelScroll ui.Scroll
-	tabScroll   ui.Scroll
-	railScroll  ui.Scroll
-	stripScroll float32
 	newCont     *ui.TextEdit
 	contName    *ui.TextEdit
 	editCont    int
@@ -204,19 +199,18 @@ func New(h Host, cfg Config) *App {
 		insecureOK: map[string]bool{}, start: time.Now(), lastMem: -10,
 		thumbs: map[string]*thumb{}, thumbSem: make(chan struct{}, 6), fetchImage: core.FetchImage, ytSearch: core.YouTubeSearch}
 	a.ai.input = ui.NewTextEdit("", false)
-	a.histQ, a.find.q = ui.NewTextEdit("", false), ui.NewTextEdit("", false)
+	a.histQ, a.find.q, a.tabQ = ui.NewTextEdit("", false), ui.NewTextEdit("", false), ui.NewTextEdit("", false)
 	a.split.ratio = 0.5
-	a.apps = defaultSideApps()
 	c := cfg.Core
 	if c == nil {
 		c = LoadCore(cfg.DataDir)
 	}
 	a.set, a.hist, a.shield, a.scan, a.core = c.Settings, c.History, c.Shield, c.Scan, c
-	c.OnLists = func() { a.post(a.applyPolicy) } // WebKit needs the new list compiled
+	// one way to search: everything on Lite results (no modes, no background part)
+	a.set.Mode, a.set.LiteResults, a.set.Boost, a.set.VerticalTabs = core.ModeWeb, true, false, false
 	a.plan = core.Plan(cfg.TotalMB, a.set.Memory)
 	a.newTab(KNormal, "", "", true)
 	a.restoreSession()
-	a.startSync()
 	if f := cfg.Sys.Integrity; f != nil {
 		go func() {
 			r := f()
@@ -262,18 +256,6 @@ func (a *App) Policy() webview.Policy {
 	sh, c := a.shield, a.core
 	return webview.Policy{
 		Rewrite: rewrite,
-		// WebKit (macOS, Linux) takes the shield as one compiled list
-		Blocklist: func() string {
-			if !sh.On {
-				return "[]"
-			}
-			f := c.Filters.Load()
-			var extra []string
-			if f == nil {
-				extra = sh.Domains(40000)
-			}
-			return f.SafariJSON(120000, extra)
-		},
 		// the built-in domain list and the filter lists together; exceptions
 		// in the lists (fixes for sites) lift blocks from both
 		Allow: func(u, page, kind string) bool {
@@ -291,6 +273,7 @@ func (a *App) Policy() webview.Policy {
 			}
 			return !f.Blocked(q)
 		},
+		NewTabFor: newSiteTab,
 		HTTPSOnly: a.set.HTTPSOnly,
 		AllowInsecure: func(u string) bool {
 			a.insecureMu.Lock()
@@ -311,6 +294,25 @@ func (a *App) Policy() webview.Policy {
 	}
 }
 
+// newSiteTab says whether a clicked link from page from to address to opens
+// in a new tab: another website does; sign-in steps (which must stay in their
+// tab to come back) and pages of the same site do not.
+func newSiteTab(from, to string) bool {
+	lt, lf := strings.ToLower(to), strings.ToLower(from)
+	if !strings.HasPrefix(lt, "http") || !strings.HasPrefix(lf, "http") {
+		return false
+	}
+	if core.SiteKey(from) == core.SiteKey(to) {
+		return false
+	}
+	for _, s := range []string{"accounts.", "login.", "auth.", "signin", "sign-in", "oauth", "sso.", "/login", "/auth", "consent.", "checkout", "pay."} {
+		if strings.Contains(lt, s) || strings.Contains(lf, "accounts.google.") {
+			return false
+		}
+	}
+	return true
+}
+
 // Started reports the engine's start (call from any thread).
 func (a *App) Started(err error) {
 	a.post(func() {
@@ -320,8 +322,6 @@ func (a *App) Started(err error) {
 		}
 		if t := a.tab(); t != nil && t.URL != "" {
 			a.ensureView(t)
-		} else if t != nil && t.Kind == KNormal {
-			a.makeSpare()
 		}
 	})
 }
@@ -364,11 +364,6 @@ func (a *App) Fullscreen() bool { return a.full || a.winFull }
 
 // Close flushes settings and closes every page (call before the window goes).
 func (a *App) Close() {
-	a.stopLink()
-	if a.syncSrv != nil {
-		a.syncSrv.Stop()
-		a.syncSrv = nil
-	}
 	a.saveSession()
 	for _, t := range a.tabs {
 		a.finishScan(t)
@@ -390,16 +385,12 @@ func (a *App) Close() {
 		}
 	}
 	a.closeSide()
-	a.closeApps()
 	for _, t := range a.tabs {
 		if t.view != nil {
 			v := t.view
 			a.web(v.Close)
 			t.view = nil
 		}
-	}
-	if a.spare != nil && a.spare.view != nil {
-		a.web(a.spare.view.Close)
 	}
 }
 
@@ -459,7 +450,6 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	}
 	a.sync(page, beside, other)
 	a.syncSide()
-	a.syncApps()
 	a.In.EndFrame()
 	if u.Redraw {
 		a.h.Invalidate()

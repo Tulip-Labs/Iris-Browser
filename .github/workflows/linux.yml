@@ -1,4 +1,4 @@
-# Lite Go for Linux: builds the .tar.gz, .deb, .rpm and Flatpak on every
+# Lite Go for Linux: builds the .tar.gz, .deb and .rpm on every
 # push, then installs them on several distributions and starts Lite Go on
 # each (in a virtual display) to check it opens. The release workflow calls
 # this too and publishes what it makes.
@@ -44,43 +44,6 @@ jobs:
           name: linux
           path: out/*
 
-  # The Flatpak waits for the Chromium engine to be packaged for Flatpak's
-  # sandbox (zypak); until then it is not built.
-  flatpak:
-    if: false
-    runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-49
-      options: --privileged
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build the Flatpak bundle
-        run: |
-          # the SDK in the image is used as it is (updating it in a container
-          # fails); the Go extension goes into the user installation
-          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y --noninteractive flathub org.freedesktop.Sdk.Extension.golang//25.08
-          flatpak-builder --disable-rofiles-fuse --force-clean --repo=repo build packaging/flatpak/io.github.tulip_labs.LiteGo.yml
-          flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo repo LiteGo-x86_64.flatpak io.github.tulip_labs.LiteGo
-          ls -l LiteGo-x86_64.flatpak
-      - uses: actions/upload-artifact@v4
-        with:
-          name: flatpak
-          path: LiteGo-x86_64.flatpak
-      - name: The Flatpak installs and starts
-        continue-on-error: true
-        run: |
-          set -x
-          flatpak install --user -y --noninteractive LiteGo-x86_64.flatpak
-          # Mesa for Flatpak apps (a desktop has it; this container does not)
-          flatpak install --user -y --noninteractive flathub org.freedesktop.Platform.GL.default//25.08 || true
-          (command -v xvfb-run || dnf install -y -q xorg-x11-server-Xvfb xorg-x11-xauth || true) >/dev/null 2>&1
-          export LIBGL_ALWAYS_SOFTWARE=1 LITEGO_GL_DEBUG=1
-          code=0
-          timeout 25 xvfb-run -a flatpak run io.github.tulip_labs.LiteGo about:blank > log.txt 2>&1 || code=$?
-          cat log.txt
-          [ $code = 124 ] && ! grep -q "no GPU drawing\|no OpenGL context" log.txt
-
   # Installs each package the way a reader would, then starts Lite Go in a
   # virtual display: it must still be running after 20 seconds.
   install:
@@ -95,7 +58,7 @@ jobs:
           - {distro: "ubuntu:22.04", kind: deb}
           - {distro: "ubuntu:24.04", kind: deb, shots: true}
           - {distro: "fedora:42", kind: rpm}
-          - {distro: "fedora:43", kind: rpm, shots: true}
+          - {distro: "fedora:43", kind: rpm, shots: true, scale: 2}
           - {distro: "opensuse/tumbleweed", kind: zypper}
           - {distro: "archlinux:latest", kind: tar}
     container:
@@ -158,8 +121,9 @@ jobs:
           id -u tester >/dev/null 2>&1 || useradd -m tester
           cat > /tmp/wl.sh <<'SH'
           export XDG_RUNTIME_DIR=$(mktemp -d) LIBGL_ALWAYS_SOFTWARE=1 LITEGO_GL_DEBUG=1 LITEGO_NO_SANDBOX=1
+          sc="--scale=${{ matrix.scale || 1 }}"
           for b in "--backend=headless --renderer=gl" "--backend=headless-backend.so --use-gl" "--backend=headless" "--backend=headless-backend.so"; do
-            weston $b --socket=wl-test --width=1280 --height=800 --debug > /tmp/weston.txt 2>&1 &
+            weston $b $sc --socket=wl-test --width=1280 --height=800 --debug > /tmp/weston.txt 2>&1 &
             for i in $(seq 1 30); do [ -S "$XDG_RUNTIME_DIR/wl-test" ] && break; sleep 0.2; done
             [ -S "$XDG_RUNTIME_DIR/wl-test" ] && break
           done
@@ -204,5 +168,5 @@ jobs:
       - name: nix build
         run: |
           nix build -L .#default
-          ls -l result/bin
-          ! ldd result/bin/.lite-go-wrapped | grep "not found"
+          ls -l result/bin result/lib/lite-go-browser
+          ! ldd result/lib/lite-go-browser/.lite-go-browser-wrapped result/lib/lite-go-browser/libcef.so | grep "not found"

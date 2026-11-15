@@ -5,10 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"litego/core"
-	"litego/link"
 	"litego/ui"
 	"litego/webview"
 )
@@ -39,17 +37,24 @@ func TestResultsClickStaysInItsColumn(t *testing.T) {
 	if tab.search == nil || len(tab.search.Images) == 0 {
 		t.Fatal("no results to click")
 	}
+	tab.search.aiOpen = false
+	tab.search.scroll.Y = 700 // down to the websites
+	d.frames(2)
 	opened := 0
-	for _, x := range []float32{880, 1100, 1400} {
-		for y := float32(190); y < 880; y += 58 {
+	for _, x := range []float32{120, 400, 800} {
+		for y := float32(200); y < 880; y += 58 {
+			n := len(d.a.tabs)
 			d.click(x, y)
 			d.frame()
-			if tab.search == nil { // a link opened: that is what a click here is for
+			if len(d.a.tabs) > n { // a link opened in a new tab: that is what a click here is for
 				opened++
-				d.a.do(actBack)
-				d.frames(2)
 				if tab.search == nil {
-					t.Fatalf("could not return to the results after the click at %v,%v", x, y)
+					t.Fatal("the results must stay in their tab")
+				}
+				d.a.closeTab(d.a.cur)
+				d.frames(2)
+				if d.a.tab() != tab {
+					t.Fatalf("closing the link's tab must return to the results (click at %v,%v)", x, y)
 				}
 				continue
 			}
@@ -326,6 +331,7 @@ func TestBalancer(t *testing.T) {
 	d := newDriver(t, 1280, 800, true)
 	free := 4000
 	d.a.cfg.Sys.FreeMB = func() int { return free }
+	d.a.plan.Live, d.a.plan.SleepAfter, d.a.plan.UnloadAfter = 6, 600, 6000 // the balancer alone decides here
 	d.frames(2)
 	var tabs []*Tab
 	for i := 0; i < 4; i++ {
@@ -468,41 +474,6 @@ func TestKindPickerAndSession(t *testing.T) {
 	}
 }
 
-func TestPhoneLink(t *testing.T) {
-	d := newDriver(t, 1280, 860, true)
-	d.frames(2)
-	tab := d.open("https://example.com/article")
-	tab.Title = "An article"
-	d.a.do(actPhone)
-	d.frames(2)
-	if st := d.a.tab(); !st.settings || d.a.setSec != "phone" {
-		t.Fatal("Ctrl+Shift+L should open the phone settings")
-	}
-	d.shot("phone-off")
-	d.a.startLink()
-	if d.a.phone.srv == nil {
-		t.Skip("no network here: " + d.a.phone.err)
-	}
-	defer d.a.stopLink()
-	if len(d.a.phone.qr) < 21 || !strings.HasPrefix(d.a.phone.srv.URL(), "http://") {
-		t.Fatalf("no code for %q", d.a.phone.srv.URL())
-	}
-	d.a.phone.srv.ShareText(tab.Title, tab.URL)
-	d.frames(2)
-	d.shot("phone")
-	// a file from the phone lands in the downloads list
-	d.a.linkEvent(d.a.phone.seq, link.Event{Kind: link.Receiving, ID: 1, Name: "IMG_0042.jpg", Path: "/home/u/Downloads/IMG_0042.jpg", Size: 4000, Got: 1000})
-	d.a.linkEvent(d.a.phone.seq, link.Event{Kind: link.Received, ID: 1, Name: "IMG_0042.jpg", Path: "/home/u/Downloads/IMG_0042.jpg", Size: 4000, Got: 4000})
-	if len(d.a.downloads) != 1 || d.a.downloads[0].name != "IMG_0042.jpg" || d.a.downloads[0].State != webview.DownloadDone {
-		t.Fatalf("received file not listed: %+v", d.a.downloads)
-	}
-	d.a.stopLink()
-	d.frames(2)
-	if d.a.phone.srv != nil || d.a.phone.qr != nil {
-		t.Fatal("closing the link must take the code away")
-	}
-}
-
 // The pastel palettes: every screen drawn in each, for the eye.
 func TestPastelThemes(t *testing.T) {
 	for _, id := range []string{"peach", "mint", "sorbet", "lagoon"} {
@@ -525,143 +496,60 @@ func TestPastelThemes(t *testing.T) {
 	}
 }
 
-func TestSideApps(t *testing.T) {
-	d := newDriver(t, 1440, 900, true)
-	d.frames(2)
-	tab := d.open("https://example.com/")
-	before := len(d.eng.views)
-	d.a.do(actPass)
-	d.frames(4)
-	if !d.a.panel || d.a.panelMode != panelApp || d.a.apps[0].view == nil {
-		t.Fatal("Proton Pass should open in the side panel")
-	}
-	pv2 := d.a.apps[0].view.(*fakeView)
-	if pv2.url != "https://pass.proton.me/" || !pv2.visible || len(d.eng.views) != before+1 {
-		t.Fatalf("Pass view: %q visible %v", pv2.url, pv2.visible)
-	}
-	pv := lastView(t, tab)
-	if !pv.visible || pv.bounds[0]+pv.bounds[2] > pv2.bounds[0] || pv2.bounds[2] < 380 {
-		t.Fatalf("the page and the side app must sit side by side: %v %v", pv.bounds, pv2.bounds)
-	}
-	d.shot("side-app")
-	d.a.do(actPass)
-	d.frames(2)
-	if d.a.panel || pv2.visible {
-		t.Fatal("closing the panel must hide the app")
-	}
-	d.a.do(actPass)
-	d.frames(3)
-	if d.a.apps[0].view != pv2 || !pv2.visible || len(d.eng.views) != before+1 {
-		t.Fatal("coming back should show the same page")
-	}
-	d.a.panel = false
-	d.frames(2)
-	d.advance(1000)
-	d.frames(2)
-	if d.a.apps[0].view != nil || !pv2.closed {
-		t.Fatal("a side app hidden for a long while should be closed")
-	}
-}
-
-func TestSyncExchange(t *testing.T) {
-	d := newDriver(t, 1280, 860, true)
-	d.frames(2)
-	d.open("https://example.com/desk")
-	d.a.newTab(KPrivate, "", "https://private.example.com/", true)
-	d.frames(2)
-	d.a.set.Sync.Device = "pc"
-	old := time.Now().Add(-time.Hour).Unix()
-	out := d.a.exchange(link.State{Device: "phone", Name: "Pixel 8", Theme: "mint", ThemeAt: time.Now().Unix() + 5,
-		Tabs:    []link.Tab{{URL: "https://news.example.org/", Title: "News"}},
-		History: []link.Visit{{URL: "https://go.dev/doc", Title: "Go docs", Visits: 4, Last: old}}})
-	if d.a.set.Theme != "mint" {
-		t.Fatal("the newer palette choice should win")
-	}
-	if p := d.a.set.Sync.Peers; len(p) != 1 || p[0].Name != "Pixel 8" || len(p[0].Tabs) != 1 {
-		t.Fatalf("peer %+v", p)
-	}
-	found := false
-	for _, e := range d.a.hist.Recent(50, "go.dev") {
-		found = found || e.URL == "https://go.dev/doc" && e.Visits == 4
-	}
-	if !found {
-		t.Fatal("the phone's history was not merged")
-	}
-	if len(out.Tabs) != 1 || out.Tabs[0].URL != "https://example.com/desk" {
-		t.Fatalf("the computer tells its ordinary tabs, never private ones: %+v", out.Tabs)
-	}
-	for _, v := range out.History {
-		if strings.Contains(v.URL, "private.example.com") {
-			t.Fatal("private history left the computer")
-		}
-	}
-	// an older palette choice from the phone does not undo a newer one here
-	d.a.set.Theme, d.a.set.ThemeAt = "peach", time.Now().Unix()+100
-	d.a.exchange(link.State{Device: "phone", Name: "Pixel 8", Theme: "night", ThemeAt: 1})
-	if d.a.set.Theme != "peach" {
-		t.Fatal("an older choice must not win")
-	}
-	d.a.set.Sync.On = true
-	d.a.openSettings("phone")
-	d.frames(2)
-	d.shot("sync")
-}
-
-func TestSettingsPageAndChrome(t *testing.T) {
+func TestMenuAndTabGrid(t *testing.T) {
 	d := newDriver(t, 1440, 900, true)
 	d.frames(2)
 	page := d.open("https://example.com/article")
 	v := lastView(t, page)
-	// the status bar keeps the page off the bottom edge
-	if b := v.bounds; b[1]+b[3] > 900-30 {
-		t.Fatalf("the page covers the status bar: %v", b)
+	// one slim bar: the page starts under it and reaches the bottom
+	if b := v.bounds; b[1] > barH+4 || b[1]+b[3] < 900-12 {
+		t.Fatalf("the page should take the window under the bar: %v", b)
 	}
-	d.shot("statusbar")
+	d.shot("bar")
 	n := len(d.a.tabs)
+	// the menu holds the settings, in sections that open in place
 	d.a.openSettings("look")
 	d.frames(2)
-	st := d.a.tab()
-	if !st.settings || len(d.a.tabs) != n+1 || st.view != nil {
-		t.Fatal("settings should open in a tab of its own, with no web page")
-	}
-	if v.visible {
-		t.Fatal("the page must hide behind the settings tab")
+	if !d.a.panel || d.a.panelMode != panelSettings || len(d.a.tabs) != n {
+		t.Fatal("settings open in the menu, not in a tab")
 	}
 	for _, s := range settingsSections {
 		d.a.setSec = s.id
 		d.frames(2)
-		d.shot("settings-" + s.id)
+		d.shot("menu-" + s.id)
 	}
-	// opening it again goes to the same tab
-	d.a.selectTab(0)
-	d.a.openSettings("shields")
-	if len(d.a.tabs) != n+1 || !d.a.tab().settings || d.a.setSec != "shields" {
-		t.Fatal("one settings tab")
-	}
-	// typing an address there leaves the settings
-	d.a.navigate(st, "https://example.org/")
-	d.frames(3)
-	if st.settings || st.view == nil {
-		t.Fatal("navigating must turn the settings tab into a page")
-	}
-	// the + menu opens tabs of each kind
-	d.a.do(actKinds)
-	d.frames(2)
-	if !d.a.kindOpen {
-		t.Fatal("the kind menu should open")
-	}
-	d.shot("kind-menu")
 	d.key(ui.KEscape, false, false)
 	d.frames(1)
-	if d.a.kindOpen {
-		t.Fatal("Esc closes the kind menu")
+	if d.a.panel {
+		t.Fatal("Esc closes the menu")
 	}
-	// narrow window: the settings page shrinks its column to icons
-	d2 := newDriver(t, 700, 760, true)
+	// the tab grid: every tab as a card; the pages hide behind it
+	d.open("https://news.example.org/")
+	d.a.do(actTabs)
+	d.frames(2)
+	if !d.a.tabsOpen || v.visible {
+		t.Fatal("the tab grid should open over the pages")
+	}
+	d.shot("tab-grid")
+	d.typeText("example.com")
+	if l := d.a.matching(); len(l) != 1 || d.a.tabs[l[0]] != page {
+		t.Fatalf("the search should find the article only: %v", l)
+	}
+	d.key(ui.KEnter, false, false)
+	d.frames(2)
+	if d.a.tabsOpen || d.a.tab() != page || !v.visible {
+		t.Fatal("Enter opens the found tab")
+	}
+	// a narrow window keeps back, the address, the tabs button and the menu
+	d2 := newDriver(t, 520, 760, true)
 	d2.frames(2)
+	d2.a.do(actTabs)
+	d2.frames(2)
+	d2.shot("tab-grid-narrow")
+	d2.a.do(actTabs)
 	d2.a.openSettings("containers")
 	d2.frames(2)
-	d2.shot("settings-narrow")
+	d2.shot("menu-narrow")
 }
 
 // A page that is downloading stays open when its tab goes to the background,

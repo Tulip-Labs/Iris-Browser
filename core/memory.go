@@ -18,22 +18,26 @@ type MemoryPlan struct {
 
 // Plan picks the plan for a machine with totalMB of RAM and a profile
 // ("saver", "balanced" or "speed").
+//
+// Memory goes back early: a background tab rests (its page closed, its
+// address, title and scroll kept, so it comes back where it was) within a
+// minute on the balanced plan, and only a few tabs hold a page at once.
 func Plan(totalMB int, profile string) MemoryPlan {
-	p := MemoryPlan{Live: 12, SleepAfter: 120, UnloadAfter: 900}
+	p := MemoryPlan{Live: 4, SleepAfter: 15, UnloadAfter: 60}
 	switch {
 	case totalMB > 0 && totalMB <= 4608:
-		p = MemoryPlan{Live: 4, SleepAfter: 60, UnloadAfter: 600, Low: true}
+		p = MemoryPlan{Live: 2, SleepAfter: 10, UnloadAfter: 30, Low: true}
 	case totalMB > 0 && totalMB <= 8704:
-		p.Live = 6
+		p.Live = 3
 	}
 	switch profile {
 	case "saver":
-		p.Live = max(2, p.Live/2)
-		p.SleepAfter, p.UnloadAfter = 30, 300
+		p.Live = 2
+		p.SleepAfter, p.UnloadAfter = 5, 20
 		p.Low = true
 	case "speed":
 		p.Live *= 2
-		p.SleepAfter, p.UnloadAfter = 600, 3600
+		p.SleepAfter, p.UnloadAfter = 120, 600
 	}
 	// the share of memory the pages may take together
 	share := 0.35

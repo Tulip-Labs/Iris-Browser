@@ -95,7 +95,7 @@ func (a *App) runWorker(w *worker, now float64) {
 	}
 	if w.cur == nil {
 		if len(w.queue) == 0 {
-			if w.view != nil && now-w.idle > 30 {
+			if w.view != nil && now-w.idle > 8 { // let the hidden page go soon after its last job
 				v := w.view
 				a.web(v.Close)
 				w.view = nil
