@@ -135,19 +135,21 @@ jobs:
           echo "$exe"
           ls -l "$dir"
           ! ldd "$exe" "$dir/libcef.so" "$dir/lite-go-helper" | grep "not found"
-      - name: Test pages (a VP9 video, made here)
-        if: matrix.shots
+      - name: Test pages (text, and a VP9 video made here where ffmpeg is at hand)
         run: |
           mkdir -p /tmp/page
-          ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime /tmp/page/v.webm
+          command -v ffmpeg >/dev/null && ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime /tmp/page/v.webm
           cat > /tmp/page/video.html <<'HTML'
           <!doctype html><body style="margin:0;background:#202020;font:24px sans-serif;color:#fff">
+          <h1 style="color:#f5a">Lite Go on Chromium</h1>
           <p id=s>video: loading</p>
+          <p id=ua></p>
           <video id=v src="v.webm" autoplay muted loop width=640 height=360></video>
           <script>
           const v = document.getElementById('v'), s = document.getElementById('s');
           v.addEventListener('playing', () => s.textContent = 'video: playing, VP9 ' + v.videoWidth + 'x' + v.videoHeight);
           v.addEventListener('error', () => s.textContent = 'video: error ' + (v.error && v.error.code));
+          document.getElementById('ua').textContent = navigator.userAgent;
           </script>
           HTML
           chmod -R a+rX /tmp/page

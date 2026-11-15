@@ -1328,7 +1328,7 @@ void lgxCall(int op, uintptr_t id, int a, int b, int c, int d, const char *s, ui
 static gboolean shotTick(gpointer d) {
 	static int n;
 	const char *pre = g_getenv("LITEGO_SHOT");
-	if (!pre || n >= 6) return G_SOURCE_REMOVE;
+	if (!pre || n >= 3) return G_SOURCE_REMOVE;
 	GHashTableIter it;
 	gpointer k, val;
 	g_hash_table_iter_init(&it, views);
@@ -1336,7 +1336,18 @@ static gboolean shotTick(gpointer d) {
 		LV *v = val;
 		if (v->shown && v->page) {
 			char *path = g_strdup_printf("%s-%d.png", pre, ++n);
-			cairo_surface_write_to_png(v->page, path);
+			// at half size, so the tests can print it into their log
+			int w = cairo_image_surface_get_width(v->page) / 2, h = cairo_image_surface_get_height(v->page) / 2;
+			cairo_surface_t *small = cairo_image_surface_create(CAIRO_FORMAT_RGB24, w, h);
+			cairo_t *cr = cairo_create(small);
+			double sx, sy;
+			cairo_surface_get_device_scale(v->page, &sx, &sy);
+			cairo_scale(cr, sx / 2, sy / 2);
+			cairo_set_source_surface(cr, v->page, 0, 0);
+			cairo_paint(cr);
+			cairo_destroy(cr);
+			cairo_surface_write_to_png(small, path);
+			cairo_surface_destroy(small);
 			g_printerr("Lite Go: page written to %s (%dx%d)\n", path, cairo_image_surface_get_width(v->page), cairo_image_surface_get_height(v->page));
 			g_free(path);
 			break;
