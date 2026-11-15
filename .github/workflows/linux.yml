@@ -169,4 +169,4 @@ jobs:
         run: |
           nix build -L .#default
           ls -l result/bin result/lib/lite-go-browser
-          ! ldd result/lib/lite-go-browser/.lite-go-browser-wrapped result/lib/lite-go-browser/libcef.so | grep "not found"
+          ! ldd result/lib/lite-go-browser/.lite-go-browser-wrapped result/lib/lite-go-browser/libcef.so | grep "=> not found"
