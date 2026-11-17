@@ -26,12 +26,6 @@ func (a *App) drawPanel(r ui.Rect) {
 	case panelHistory:
 		title = "History"
 		ui.DrawIcon(g, ui.IHistory, hr.X+19, hr.CY()-11, 22, th.Primary)
-	case panelTabs:
-		title = strconv.Itoa(len(a.tabs)) + " tabs"
-		if len(a.tabs) == 1 {
-			title = "1 tab"
-		}
-		ui.DrawIcon(g, ui.ITabsVertical, hr.X+19, hr.CY()-11, 22, th.Primary)
 	default:
 		logo(g, ui.RectAround(hr.X+30, hr.CY(), 26, 26), th, th.Primary)
 	}
@@ -51,9 +45,6 @@ func (a *App) drawPanel(r ui.Rect) {
 		return
 	case panelHistory:
 		a.drawHistory(body)
-		return
-	case panelTabs:
-		a.drawTabList(body)
 		return
 	}
 	sc := &a.panelScroll

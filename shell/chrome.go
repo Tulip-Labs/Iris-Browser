@@ -41,8 +41,18 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 	if a.st.Focus == ID("addr") && len(a.sugg) > 0 {
 		sugH = float32(len(a.sugg))*40 + 12
 	}
+	tabsH := float32(0)
+	if a.tabsDrop && a.st.Focus == ID("addr") {
+		a.tabsDrop = false // typing an address closes the list
+	}
+	if a.tabsDrop {
+		n := len(a.matching())
+		tabsH = 64 + float32(min(max(n, 1), 8))*48 + 12
+		tabsH = min(tabsH, full.H*0.7)
+		sugH = 0
+	}
 	sugTop := y
-	y += sugH
+	y += sugH + tabsH
 	if a.find.open {
 		a.findBar(ui.Rect{X: 8, Y: y, W: w - 16, H: 40})
 		y += 46
@@ -76,6 +86,13 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 	}
 	if sugH > 0 {
 		a.suggestions(ui.Rect{X: addr.X, Y: sugTop + 2, W: addr.W, H: sugH - 6}, ID("sugA"))
+	}
+	if tabsH > 0 {
+		lr := ui.Rect{X: addr.X, Y: sugTop + 2, W: addr.W, H: tabsH - 8}
+		if lr.W < 560 { // a narrow window: the list takes the width
+			lr.X, lr.W = 8, w-16
+		}
+		a.drawTabList(lr)
 	}
 	return ui.Rect{X: x, Y: y, W: max(0, right-x), H: max(0, full.H-y-8)}
 }

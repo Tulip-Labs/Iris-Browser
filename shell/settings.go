@@ -26,7 +26,7 @@ var settingsSections = []settingsSection{
 
 // openSettings opens the menu at section sec.
 func (a *App) openSettings(sec string) {
-	a.panel, a.panelMode = true, panelSettings
+	a.panel, a.panelMode, a.tabsDrop = true, panelSettings, false
 	a.ai.open = false
 	if sec != "" {
 		a.setSec = sec

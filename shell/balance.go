@@ -14,7 +14,6 @@ const (
 	panelSettings panelMode = iota
 	panelDownloads
 	panelHistory
-	panelTabs
 	panelPhone
 	panelApp // a side app: Muse, Proton Pass
 )

@@ -1,24 +1,25 @@
 package shell
 
 import (
+	"strconv"
 	"strings"
 
 	"litego/core"
 	"litego/ui"
 )
 
-// The tab list: the tabs button opens it at the side, like the menu, and the
-// page stays beside it. Type to find a tab; the arrows and Enter pick one;
+// The tab list: the tabs button opens it under the address bar, the way the
+// suggestions open, and closes it again. Type to find a tab; the arrows and Enter pick one;
 // the row at the top opens new tabs of every kind.
 
 // toggleTabs opens or closes the list.
 func (a *App) toggleTabs() {
-	if a.tabsOpen() {
-		a.panel = false
+	if a.tabsDrop {
+		a.tabsDrop = false
 		a.refocusPage()
 		return
 	}
-	a.panel, a.panelMode, a.ai.open = true, panelTabs, false
+	a.tabsDrop = true
 	a.tabQ.Set("")
 	a.tabSel = a.cur
 	a.tabSc.Y = max(0, float32(a.cur-4)*52)
@@ -27,7 +28,7 @@ func (a *App) toggleTabs() {
 }
 
 // tabsOpen says whether the list is showing.
-func (a *App) tabsOpen() bool { return a.panel && a.panelMode == panelTabs }
+func (a *App) tabsOpen() bool { return a.tabsDrop }
 
 // refocusPage gives the keyboard back to the current page.
 func (a *App) refocusPage() {
@@ -52,45 +53,47 @@ func (a *App) matching() []int {
 	return out
 }
 
-// drawTabList fills the side panel's body with the tabs.
+// drawTabList draws the list in r: a search and the new-tab buttons on one
+// row, then the tabs.
 func (a *App) drawTabList(r ui.Rect) {
 	u, g, th := &a.u, a.u.G, a.u.Th
-	x, w := r.X+12, r.W-24
-	y := r.Y
-
-	// new tabs of every kind, as small buttons
-	y = a.newTabRow(x, y, w) + 10
-
-	// the search
-	fr := ui.Rect{X: x, Y: y, W: w, H: 36}
-	ui.FillRound(g, fr, 18, addrFill(th))
-	ui.DrawIcon(g, ui.ISearch, fr.X+12, fr.CY()-8, 16, th.OnSurfaceVariant)
+	ui.Glass(g, r, 18, th, true, true)
+	u.PushHit(r)
+	defer u.PopHit()
+	x, w := r.X+10, r.W-20
+	y := r.Y + 10
 	list := a.matching()
 	pick := func(i int) {
-		a.panel = false
+		a.tabsDrop = false
 		a.st.Focus = ui.ID{}
 		a.selectTab(i)
 	}
-	u.TextField(ID("tabq"), ui.Rect{X: fr.X + 34, Y: fr.Y, W: fr.W - 44, H: fr.H}, a.tabQ, ui.FieldOpt{Bare: true, Placeholder: "Find a tab",
+	// the row: find, then New tab and the other kinds at the right
+	bx := a.newTabRow(x+w, y)
+	fr := ui.Rect{X: x, Y: y, W: max(120, bx-x-8), H: 40}
+	ui.FillRound(g, fr, 20, addrFill(th))
+	ui.DrawIcon(g, ui.ISearch, fr.X+12, fr.CY()-8, 16, th.OnSurfaceVariant)
+	u.TextField(ID("tabq"), ui.Rect{X: fr.X + 34, Y: fr.Y, W: fr.W - 44, H: fr.H}, a.tabQ, ui.FieldOpt{Bare: true,
+		Placeholder: "Find among " + strconv.Itoa(len(a.tabs)) + " tabs",
 		OnEnter: func() {
 			if len(list) > 0 {
 				pick(a.selIn(list))
 			}
 		}})
-	a.listKeys(list, r.B()-fr.B()-8)
-	y = fr.B() + 8
-
-	// the rows
-	area := ui.Rect{X: r.X, Y: y, W: r.W, H: r.B() - y}
-	const rh = 52
-	a.tabSc.Content = float32(len(list))*rh + 8
+	area := ui.Rect{X: r.X, Y: fr.B() + 10, W: r.W, H: r.B() - fr.B() - 16}
+	a.listKeys(list, area.H)
+	if a.In.Has(ui.KEscape, false) {
+		a.toggleTabs()
+		return
+	}
+	const rh = 48
+	a.tabSc.Content = float32(len(list)) * rh
 	u.Scroll(ID("tablist"), area, &a.tabSc)
 	g.Save()
 	g.Clip(area)
-	u.PushHit(area)
 	sel := a.selIn(list)
 	for k, i := range list {
-		row := ui.Rect{X: x - 4, Y: area.Y + float32(k)*rh - a.tabSc.Y, W: w + 8, H: rh - 4}
+		row := ui.Rect{X: x - 2, Y: area.Y + float32(k)*rh - a.tabSc.Y, W: w + 4, H: rh - 4}
 		if row.B() < area.Y || row.Y > area.B() {
 			continue
 		}
@@ -103,9 +106,8 @@ func (a *App) drawTabList(r ui.Rect) {
 		}
 	}
 	if len(list) == 0 {
-		g.Text("No tab matches.", x, area.Y+20, ui.FBody, th.OnSurfaceVariant)
+		g.Text("No tab matches.", x+8, area.Y+22, ui.FBody, th.OnSurfaceVariant)
 	}
-	u.PopHit()
 	g.Restore()
 }
 
@@ -154,8 +156,9 @@ func (a *App) listKeys(list []int, h float32) {
 	}
 }
 
-// newTabRow is a row of small buttons that open a new tab of each kind.
-func (a *App) newTabRow(x, y, w float32) float32 {
+// newTabRow draws, right-aligned to right at height y, the New tab button
+// and round buttons for the other kinds of tab; it returns its left edge.
+func (a *App) newTabRow(right, y float32) float32 {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	type item struct {
 		label, tip string
@@ -164,7 +167,6 @@ func (a *App) newTabRow(x, y, w float32) float32 {
 		open       func()
 	}
 	items := []item{
-		{"New tab", "Ctrl+T", ui.IPlus, th.Primary, func() { a.newTab(KNormal, "", "", true) }},
 		{"Private", "Nothing is kept  Ctrl+Shift+N", ui.IPrivate, privateColor(th), func() { a.newTab(KPrivate, "", "", true) }},
 		{"Temporary", "A fresh session for this tab alone, wiped when it closes", ui.IHourglass, ui.Mix(th.Hl, th.Ink, 0.25), func() { a.newTab(KTemp, "", "", true) }},
 		{"Sandbox", "For a site you do not trust: no downloads, no permissions, nothing kept", ui.IShield, sandboxColor(th), func() { a.newTab(KSandbox, "", "", true) }},
@@ -173,34 +175,31 @@ func (a *App) newTabRow(x, y, w float32) float32 {
 		name := c.Name
 		items = append(items, item{name, "Container: its own sign-ins", iconOf(c), tone(th, c.Color), func() { a.newTab(KContainer, name, "", true) }})
 	}
-	// the first is a full-width button; the others are round icon buttons with tips
-	nb := ui.Rect{X: x, Y: y, W: w, H: 38}
-	if u.Button(ID("listnew"), nb, "New tab", ui.ButtonOpt{Primary: true, Icon: ui.IPlus, HasIcon: true, Tip: "Ctrl+T"}) {
-		a.panel = false
-		items[0].open()
-		return y + 38
-	}
-	y = nb.B() + 8
-	cx := x
-	for i, it := range items[1:] {
-		if cx+38 > x+w {
-			cx, y = x, y+42
-		}
-		b := ui.Rect{X: cx, Y: y, W: 38, H: 38}
-		ui.FillRound(g, b, 19, it.col.Alpha(0.13))
+	cx := right
+	for i := len(items) - 1; i >= 0; i-- {
+		it := items[i]
+		cx -= 40
+		b := ui.Rect{X: cx, Y: y, W: 40, H: 40}
+		ui.FillOval(g, b, it.col.Alpha(0.13))
 		if u.Hover(b) {
-			ui.FillRound(g, b, 19, th.Ink.Alpha(0.06))
+			ui.FillOval(g, b, th.Ink.Alpha(0.06))
 		}
 		ui.DrawIcon(g, it.icon, b.CX()-9, b.CY()-9, 18, it.col)
 		u.Tooltip(it.label+": "+it.tip, b)
 		if u.Clickable(ui.IdN("listkind", i), b) {
-			a.panel = false
+			a.tabsDrop = false
 			it.open()
-			return y + 38
 		}
-		cx = b.R() + 6
+		cx -= 6
 	}
-	return y + 38
+	lbl := "New tab"
+	bw := g.Measure(lbl, ui.FSmallBold) + 46
+	cx -= bw
+	if u.Button(ID("listnew"), ui.Rect{X: cx, Y: y, W: bw, H: 40}, lbl, ui.ButtonOpt{Primary: true, Icon: ui.IPlus, HasIcon: true, Tip: "Ctrl+T"}) {
+		a.tabsDrop = false
+		a.newTab(KNormal, "", "", true)
+	}
+	return cx
 }
 
 // tabRow draws one tab in the list; it returns true when it was picked.

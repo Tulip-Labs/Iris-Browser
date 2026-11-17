@@ -90,7 +90,7 @@ a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
 </tr>
 <tr>
 <td align="center"><sub><b>Lite results.</b> The AI answer with named sources, goggles, stacks of pictures and videos.</sub></td>
-<td align="center"><sub><b>Tabs.</b> A list at the side, with a search and every kind of new tab.</sub></td>
+<td align="center"><sub><b>Tabs.</b> A list under the address bar, with a search and every kind of new tab.</sub></td>
 </tr>
 <tr>
 <td width="50%"><img src="assets/screens/menu.png" alt="The menu"></td>
@@ -133,7 +133,7 @@ and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 | **One slim bar** | Back, forward and reload at the left, the address in the middle, then the tabs button, the shield and the menu. It narrows to what is needed on a small window. A Sign in button shows only while Lite Go is not signed in to Google. |
 | **The menu** | Tools (private tab, history, downloads, reopen, split view, find, print, free memory), zoom, your name for the AI answers, and the settings in sections that open in place: appearance (the palettes, shared with Ember), shields and privacy, containers, memory, history and data, about and updates. |
 | **The usual** | Find in page, zoom, print, a searchable history by day, reopen a closed tab, and the last tabs brought back at start (unloaded until you open them). |
-| **Tabs** | A list at the side, opened like the menu (Ctrl+Shift+A or the tabs button), with the page still beside it: type to find a tab, Up, Down and Enter to pick one, and buttons that open new, private, temporary, sandbox and container tabs. Containers keep their own sign-ins, each with an icon and a color. |
+| **Tabs** | A list that drops down under the address bar (Ctrl+Shift+A or the tabs button), the way suggestions open: type to find a tab, Up, Down and Enter to pick one, and buttons that open new, private, temporary, sandbox and container tabs. Containers keep their own sign-ins, each with an icon and a color. |
 
 ### Memory
 
