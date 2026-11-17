@@ -104,23 +104,23 @@ type App struct {
 	scan   *core.SiteScan
 	plan   core.MemoryPlan
 
-	split     splitView
-	find      findBar
-	downloads []*download
-	upd       updater
-	keptPages []webview.View // pages of closed tabs that are still downloading
-	panelMode panelMode
-	histQ     *ui.TextEdit
-	histList  []core.Entry
-	histFor   string
-	histAt    float64
-	histSc    ui.Scroll
-	dlSc      ui.Scroll
-	kindEdit  bool // the container editor on the new tab page
-	balance   balancer
-	integrity Integrity
-	setSec    string // the menu's open section ("" = none)
-	nameEd    *ui.TextEdit
+	split       splitView
+	find        findBar
+	downloads   []*download
+	upd         updater
+	keptPages   []webview.View // pages of closed tabs that are still downloading
+	panelMode   panelMode
+	histQ       *ui.TextEdit
+	histList    []core.Entry
+	histFor     string
+	histAt      float64
+	histSc      ui.Scroll
+	dlSc        ui.Scroll
+	kindEdit    bool // the container editor on the new tab page
+	balance     balancer
+	integrity   Integrity
+	setSec      string // the menu's open section ("" = none)
+	nameEd      *ui.TextEdit
 	kindOpen    bool    // the row of other kinds of tab, under the bar
 	stripScroll float32 // the tab strip, when the tabs do not fit
 
