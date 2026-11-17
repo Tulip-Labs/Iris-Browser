@@ -312,7 +312,7 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 			a.set.Save()
 			a.applyPolicy()
 		}
-		if v := check("yt", "Clean YouTube (no ads before videos)", a.set.YouTube); v != a.set.YouTube {
+		if v := check("yt", "Skip YouTube ads (unseen by its ad blocker check)", a.set.YouTube); v != a.set.YouTube {
 			a.set.YouTube = v
 			a.set.Save()
 			a.applyPolicy()

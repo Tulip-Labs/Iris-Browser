@@ -246,6 +246,7 @@ func (a *App) Policy() webview.Policy {
 		scripts = append(scripts, shields.FarbleScript())
 	}
 	adaptive, scan := a.set.Adaptive, a.scan
+	ytPass := a.set.YouTube
 	var rewrite func(string) string
 	if a.set.CleanLinks {
 		rewrite = shields.Clean
@@ -257,6 +258,11 @@ func (a *App) Policy() webview.Policy {
 		// in the lists (fixes for sites) lift blocks from both
 		Allow: func(u, page, kind string) bool {
 			if sh.Exempt(u, page) {
+				return true
+			}
+			if ytPass && core.IsYouTube(page) {
+				// YouTube sees blocked requests as an ad blocker: its ads load,
+				// and the page script skips them (core.YouTubeScript)
 				return true
 			}
 			dom := sh.Allow(u, page)

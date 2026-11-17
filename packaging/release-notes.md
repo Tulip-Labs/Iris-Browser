@@ -1,5 +1,9 @@
 Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.11
+
+- **YouTube no longer sees an ad blocker.** On YouTube the shield now blocks nothing and Lite Go leaves the player's data alone (what YouTube checks). Instead, an ad that starts is muted, played at 16× to its end and skipped, and the video goes on as it was; the ad boxes are hidden, and YouTube's ad blocker notice, if it still comes, is closed.
+
 ## New in 1.0.10
 
 - **Sharper pages on Linux.** Chromium's frames are painted pixel for pixel at the screen's real scale, with no smoothing.

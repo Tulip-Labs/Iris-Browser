@@ -1,45 +1,74 @@
 package core
 
-// YouTubeScript removes ads from the YouTube player's data before the player
-// reads it (instead of blocking ad requests, which YouTube detects). It prunes
-// the ad fields from the initial player response, from JSON the page parses,
-// and from /youtubei/v1/player responses. It does nothing on other sites.
+import "strings"
+
+// YouTubeScript gets past YouTube's ads without YouTube seeing an ad
+// blocker. YouTube checks that its ad requests go through and that the ad
+// data reaches its player, so Lite Go no longer blocks or edits either on
+// youtube.com (the shield lets YouTube's requests through). Instead, when an
+// ad starts in the player, this script mutes it, plays it at 16x, jumps to its
+// end and presses Skip as soon as there is one; then the video goes on with
+// the sound and speed it had. Ad boxes around the videos are hidden, and if
+// YouTube still puts up its "ad blockers are not allowed" notice, it is closed
+// and the video resumes. It does nothing on other sites.
 const YouTubeScript = `(() => {
   if (!/(^|\.)youtube\.com$/.test(location.hostname) || window.__liteGoYT) return;
   window.__liteGoYT = true;
-  const KEYS = ['adPlacements', 'adSlots', 'playerAds', 'adBreakHeartbeatParams'];
-  const prune = (o) => {
-    try {
-      if (o && typeof o === 'object') {
-        for (const k of KEYS) if (k in o) delete o[k];
-        if (o.playerResponse && typeof o.playerResponse === 'object') prune(o.playerResponse);
-      }
-    } catch (e) {}
-    return o;
+  const css = 'ytd-ad-slot-renderer, ytd-in-feed-ad-layout-renderer, ytd-display-ad-renderer, ytd-promoted-sparkles-web-renderer,' +
+    ' ytd-promoted-video-renderer, ytd-banner-promo-renderer, ytd-statement-banner-renderer, ytd-companion-slot-renderer,' +
+    ' ytd-action-companion-ad-renderer, ytd-player-legacy-desktop-watch-ads-renderer, #player-ads, #masthead-ad,' +
+    ' ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer), ytd-merch-shelf-renderer,' +
+    ' .ytp-ad-overlay-container, .ytp-ad-overlay-slot, ytm-promoted-sparkles-web-renderer { display: none !important; }';
+  const style = () => {
+    if (document.getElementById('lite-go-yt')) return;
+    const s = document.createElement('style');
+    s.id = 'lite-go-yt';
+    s.textContent = css;
+    (document.head || document.documentElement).appendChild(s);
   };
-  const parse = JSON.parse;
-  JSON.parse = function () { return prune(parse.apply(this, arguments)); };
-  let initial;
-  try {
-    Object.defineProperty(window, 'ytInitialPlayerResponse', {
-      configurable: true,
-      get() { return initial; },
-      set(v) { initial = prune(v); },
-    });
-  } catch (e) {}
-  const fetch0 = window.fetch;
-  window.fetch = async function (input, init) {
-    const res = await fetch0.call(this, input, init);
-    try {
-      const u = typeof input === 'string' ? input : (input && input.url) || '';
-      if (/\/youtubei\/v1\/player\b/.test(u) && res.ok) {
-        const data = prune(parse(await res.clone().text()));
-        return new Response(JSON.stringify(data), { status: res.status, statusText: res.statusText, headers: res.headers });
+  let saved = null; // the video's own sound and speed, while an ad plays
+  const skipSel = '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-container button, button[id^="skip-button"]';
+  const tick = () => {
+    style();
+    const player = document.querySelector('#movie_player, .html5-video-player');
+    const v = player && player.querySelector('video');
+    if (!v) return;
+    const ad = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
+    if (ad) {
+      if (!saved) saved = { muted: v.muted, rate: v.playbackRate };
+      v.muted = true;
+      try { v.playbackRate = 16; } catch (e) {}
+      if (isFinite(v.duration) && v.duration > 0.5 && v.currentTime < v.duration - 0.3) {
+        try { v.currentTime = v.duration - 0.1; } catch (e) {}
       }
-    } catch (e) {}
-    return res;
+      const b = document.querySelector(skipSel);
+      if (b) b.click();
+      if (v.paused) v.play().catch(() => {});
+    } else if (saved) {
+      v.muted = saved.muted;
+      v.playbackRate = saved.rate || 1;
+      saved = null;
+    }
+    // YouTube's ad blocker notice, if it still comes: close it and play on
+    const wall = document.querySelector('ytd-enforcement-message-view-model');
+    if (wall) {
+      const dlg = wall.closest('tp-yt-paper-dialog, ytd-popup-container > *') || wall;
+      dlg.remove();
+      document.querySelectorAll('tp-yt-iron-overlay-backdrop').forEach((e) => e.remove());
+      document.body && (document.body.style.overflow = '');
+      if (v.paused) v.play().catch(() => {});
+    }
   };
+  setInterval(tick, 300);
+  new MutationObserver(tick).observe(document.documentElement, { attributes: true, attributeFilter: ['class'], subtree: true });
 })();`
+
+// IsYouTube says whether the page is YouTube, where the shield lets every
+// request through (see YouTubeScript).
+func IsYouTube(page string) bool {
+	h := strings.TrimPrefix(Host(page), "www.")
+	return h == "youtube.com" || strings.HasSuffix(h, ".youtube.com") || h == "youtube-nocookie.com"
+}
 
 // YouTubeLightScript makes YouTube lighter: it asks for H.264 video (decoded by
 // the graphics chip, with smaller buffers than VP9 and AV1) when the engine
