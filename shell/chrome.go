@@ -11,7 +11,8 @@ import (
 )
 
 const (
-	barH   = 52
+	stripH = 36
+	barH   = 46
 	ctlW   = 42 * 3
 	panelW = 360
 )
@@ -27,13 +28,19 @@ type suggestion struct {
 	url        string
 }
 
-// chrome draws the window's one slim bar (navigation, the address, the tabs
-// button and the menu) and returns where the page goes. Tabs live in the tab
-// grid, opened from the bar, as on a phone.
+// chrome draws the tabs (a compact strip on top, centered) and under them
+// the bar (navigation, the address, the shield and the menu), and returns
+// where the page goes.
 func (a *App) chrome(full ui.Rect) ui.Rect {
 	w := full.W
-	addr := a.toolbar(ui.Rect{W: w, H: barH})
-	y := float32(barH)
+	a.windowControls(ui.Rect{X: w - ctlW, W: ctlW, H: stripH})
+	a.tabStrip(ui.Rect{W: w - ctlW, H: stripH})
+	addr := a.toolbar(ui.Rect{Y: stripH, W: w, H: barH})
+	y := float32(stripH + barH)
+	if a.kindOpen {
+		a.kindRow(ui.Rect{X: 8, Y: y, W: w - 16, H: 34})
+		y += 42
+	}
 
 	// suggestions open under the address bar and push the page down (the page
 	// is a native surface and would cover anything drawn over it)
@@ -41,18 +48,8 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 	if a.st.Focus == ID("addr") && len(a.sugg) > 0 {
 		sugH = float32(len(a.sugg))*40 + 12
 	}
-	tabsH := float32(0)
-	if a.tabsDrop && a.st.Focus == ID("addr") {
-		a.tabsDrop = false // typing an address closes the list
-	}
-	if a.tabsDrop {
-		n := len(a.matching())
-		tabsH = 64 + float32(min(max(n, 1), 8))*48 + 12
-		tabsH = min(tabsH, full.H*0.7)
-		sugH = 0
-	}
 	sugTop := y
-	y += sugH + tabsH
+	y += sugH
 	if a.find.open {
 		a.findBar(ui.Rect{X: 8, Y: y, W: w - 16, H: 40})
 		y += 46
@@ -86,13 +83,6 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 	}
 	if sugH > 0 {
 		a.suggestions(ui.Rect{X: addr.X, Y: sugTop + 2, W: addr.W, H: sugH - 6}, ID("sugA"))
-	}
-	if tabsH > 0 {
-		lr := ui.Rect{X: addr.X, Y: sugTop + 2, W: addr.W, H: tabsH - 8}
-		if lr.W < 560 { // a narrow window: the list takes the width
-			lr.X, lr.W = 8, w-16
-		}
-		a.drawTabList(lr)
 	}
 	return ui.Rect{X: x, Y: y, W: max(0, right-x), H: max(0, full.H-y-8)}
 }
@@ -172,6 +162,185 @@ func (t *Tab) label() string {
 	return core.Display(t.URL)
 }
 
+// drawTab draws one tab; narrow tabs show only their icon.
+func (a *App) drawTab(i int, t *Tab, r ui.Rect) {
+	u, g, th := &a.u, a.u.G, a.u.Th
+	active := i == a.cur
+	id := ui.IdN("tab", t.ID)
+	hot := u.Hover(r)
+	if active {
+		ui.Glass(g, r, 11, th, true, true)
+	} else if hot {
+		ui.FillRound(g, r, 11, th.Ink.Alpha(0.06))
+	}
+	if t.Kind != KNormal {
+		// the kind's color runs along the bottom of the tab
+		_, col := a.kindIcon(t)
+		if active {
+			ui.FillRound(g, r, 11, col.Alpha(0.08))
+		}
+		bw := min(r.W-22, float32(28))
+		if active {
+			bw = r.W - 22
+		}
+		ui.FillRound(g, ui.Rect{X: r.CX() - bw/2, Y: r.B() - 3, W: bw, H: 2.5}, 1.25, col.Alpha(0.9))
+	}
+	if u.Clickable(id, r) && !active {
+		a.selectTab(i)
+	}
+	u.Tooltip(t.label(), r)
+	narrow := r.W < 76
+	ix := r.X + 10
+	if narrow {
+		ix = r.CX() - 8
+	}
+	a.tabIcon(t, ix, r.CY()-8)
+	if narrow {
+		return
+	}
+	tx := ix + 24
+	right := r.R() - 8
+	showClose := active || hot || r.W > 150
+	if showClose {
+		cr := ui.RectAround(right-11, r.CY(), 22, 22)
+		if u.Hover(cr) {
+			ui.FillOval(g, cr, th.Ink.Alpha(0.10))
+		}
+		ui.DrawIcon(g, ui.IClose, cr.CX()-7, cr.CY()-7, 14, th.OnSurfaceVariant)
+		if u.Clickable(id.Sub("x"), cr) {
+			a.closeTab(i)
+			return
+		}
+		right = cr.X - 2
+	}
+	if t.Audio || t.Muted {
+		mr := ui.RectAround(right-11, r.CY(), 22, 22)
+		ic := ui.IVolume
+		if t.Muted {
+			ic = ui.IMute
+		}
+		if u.Hover(mr) {
+			ui.FillOval(g, mr, th.Ink.Alpha(0.10))
+		}
+		ui.DrawIcon(g, ic, mr.CX()-7, mr.CY()-7, 14, th.Primary)
+		if u.Clickable(id.Sub("m"), mr) {
+			a.toggleMute(t)
+		}
+		u.Tooltip("Mute or unmute this tab", mr)
+		right = mr.X - 2
+	}
+	f := ui.FSmall
+	col := th.OnSurfaceVariant
+	if active {
+		f, col = ui.FSmallBold, th.OnSurface
+	}
+	if t.view == nil && t.URL != "" && !t.making {
+		col = col.Alpha(0.6) // unloaded: comes back when clicked
+	} else if t.asleep {
+		col = col.Alpha(0.8)
+	}
+	ui.TextFit(g, t.label(), tx, ui.Mid(g, r.Y, r.H, f), f, col, right-tx-2)
+}
+
+// tabStrip draws the tabs across the top, centered, with + after them and
+// the window's drag areas on both sides. Tabs shrink as more open; a narrow
+// tab shows only its icon, and past that the strip scrolls with the wheel.
+func (a *App) tabStrip(r ui.Rect) {
+	u, g := &a.u, a.u.G
+	n := float32(len(a.tabs))
+	const plusW, minW, maxW = 34 + 22, 40, 210
+	avail := r.W - plusW - 48 // keep room to drag the window
+	tw := min(maxW, max(minW, avail/n))
+	total := tw * n
+	over := total > avail
+	if over && u.Hover(r) {
+		a.stripScroll = a.stripScroll - u.In.WheelY*60 - u.In.WheelX*60
+	}
+	if !over {
+		a.stripScroll = 0
+	}
+	a.stripScroll = max(0, min(a.stripScroll, total-avail))
+	shown := min(total, avail)
+	start := max(r.X+24, r.CX()-(shown+plusW)/2) // centered
+	if start > r.X+2 {
+		a.MoveAreas = append(a.MoveAreas, ui.Rect{X: r.X, Y: r.Y, W: start - r.X - 2, H: r.H})
+	}
+	clip := ui.Rect{X: start, Y: r.Y, W: shown + 2, H: r.H}
+	g.Save()
+	g.Clip(clip)
+	u.PushHit(clip)
+	x := start - a.stripScroll
+	for i, t := range a.tabs {
+		tr := ui.Rect{X: x + 1.5, Y: r.Y + 4, W: tw - 3, H: r.H - 6}
+		if tr.R() > clip.X && tr.X < clip.R() {
+			a.drawTab(i, t, tr)
+		}
+		x += tw
+	}
+	u.PopHit()
+	g.Restore()
+	px := start + shown + 2
+	pr := ui.Rect{X: px, Y: r.Y + 3, W: 32, H: r.H - 6}
+	if u.IconButton(ID("newtab"), pr, ui.IPlus, "New tab  Ctrl+T", ui.IconOpt{}) {
+		a.newTab(KNormal, "", "", true)
+	}
+	if u.IconButton(ID("newkind"), ui.Rect{X: pr.R(), Y: pr.Y + 4, W: 20, H: pr.H - 8}, ui.IChevronDown, "Private, temporary, sandbox and container tabs", ui.IconOpt{Toggled: a.kindOpen}) {
+		a.kindOpen = !a.kindOpen
+	}
+	if end := pr.R() + 24; end < r.R() {
+		a.MoveAreas = append(a.MoveAreas, ui.Rect{X: end, Y: r.Y, W: r.R() - end, H: r.H})
+	}
+}
+
+// kindRow is the row under the bar that opens a tab of another kind.
+func (a *App) kindRow(r ui.Rect) {
+	u, g, th := &a.u, a.u.G, a.u.Th
+	type item struct {
+		label, tip string
+		icon       ui.Icon
+		col        ui.Color
+		open       func()
+	}
+	items := []item{
+		{"Private", "Nothing is kept  Ctrl+Shift+N", ui.IPrivate, privateColor(th), func() { a.newTab(KPrivate, "", "", true) }},
+		{"Temporary", "A fresh session for this tab alone, wiped when it closes", ui.IHourglass, ui.Mix(th.Hl, th.Ink, 0.25), func() { a.newTab(KTemp, "", "", true) }},
+		{"Sandbox", "For a site you do not trust: no downloads, no permissions, nothing kept", ui.IShield, sandboxColor(th), func() { a.newTab(KSandbox, "", "", true) }},
+	}
+	for _, c := range a.set.Containers {
+		name := c.Name
+		items = append(items, item{name, "Container: its own sign-ins", iconOf(c), tone(th, c.Color), func() { a.newTab(KContainer, name, "", true) }})
+	}
+	widths := make([]float32, len(items))
+	total := float32(0)
+	for i, it := range items {
+		widths[i] = g.Measure(it.label, ui.FSmallBold) + 40
+		total += widths[i] + 6
+	}
+	x := max(r.X, r.CX()-total/2)
+	for i, it := range items {
+		b := ui.Rect{X: x, Y: r.Y, W: widths[i], H: r.H}
+		if b.R() > r.R() {
+			break
+		}
+		ui.FillRound(g, b, r.H/2, it.col.Alpha(0.13))
+		if u.Hover(b) {
+			ui.FillRound(g, b, r.H/2, th.Ink.Alpha(0.06))
+		}
+		ui.DrawIcon(g, it.icon, b.X+11, b.CY()-8, 16, it.col)
+		g.Text(it.label, b.X+32, ui.Mid(g, b.Y, b.H, ui.FSmallBold), ui.FSmallBold, ui.Mix(it.col, th.Ink, 0.3))
+		u.Tooltip(it.tip, b)
+		if u.Clickable(ui.IdN("kind", i), b) {
+			a.kindOpen = false
+			it.open()
+			return
+		}
+		x = b.R() + 6
+	}
+	if a.In.Has(ui.KEscape, false) {
+		a.kindOpen = false
+	}
+}
+
 func (a *App) windowControls(r ui.Rect) {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	bw := r.W / 3
@@ -210,15 +379,14 @@ func (a *App) windowControls(r ui.Rect) {
 }
 
 // toolbar is the bar: back, forward and reload at the left (where the hand
-// and the mouse start), the address in the middle, then the tabs button, the
-// shield and the menu; on a narrow window only what is needed stays.
+// and the mouse start), the address in the middle, then the shield and the
+// menu; on a narrow window only what is needed stays.
 func (a *App) toolbar(r ui.Rect) ui.Rect {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	t := a.tab()
 	cy := r.CY()
 	compact := r.W < 640
-	a.windowControls(ui.Rect{X: r.R() - ctlW, Y: r.Y, W: ctlW, H: 40})
-	rx := r.R() - ctlW - 6
+	rx := r.R() - 6
 
 	// navigation: one soft pill
 	hasPage := t != nil && t.URL != ""
@@ -269,8 +437,6 @@ func (a *App) toolbar(r ui.Rect) ui.Rect {
 		rx -= 38
 		a.downloadButton(ui.Rect{X: rx, Y: cy - 18, W: 36, H: 36})
 	}
-	rx -= 44
-	a.tabsButton(ui.Rect{X: rx, Y: cy - 19, W: 42, H: 38})
 	if a.set.GoogleSignIn != "done" && !compact {
 		lbl := "Sign in"
 		bw := g.Measure(lbl, ui.FSmallBold) + 44
@@ -305,32 +471,6 @@ func (a *App) toolbar(r ui.Rect) ui.Rect {
 		g.Restore()
 	}
 	return ar
-}
-
-// tabsButton shows how many tabs are open and opens the tab list.
-func (a *App) tabsButton(r ui.Rect) {
-	u, g, th := &a.u, a.u.G, a.u.Th
-	hot := u.Hover(r)
-	if a.tabsOpen() {
-		ui.FillRound(g, r, 12, th.SecondaryContainer)
-	} else if hot {
-		ui.FillRound(g, r, 12, th.Ink.Alpha(0.07))
-	}
-	box := ui.RectAround(r.CX(), r.CY(), 24, 22)
-	col := th.OnSurface
-	if a.tabsOpen() {
-		col = th.OnSecondaryContainer
-	}
-	ui.StrokeRound(g, box, 7, 1.8, col)
-	s := strconv.Itoa(len(a.tabs))
-	if len(a.tabs) > 99 {
-		s = ":D"
-	}
-	ui.TextCenter(g, s, box, ui.Font{Size: 11.5, Bold: true}, col)
-	u.Tooltip("Tabs  Ctrl+Shift+A", r)
-	if u.Clickable(ID("tabsbtn"), r) {
-		a.toggleTabs()
-	}
 }
 
 func (a *App) shieldButton(r ui.Rect, t *Tab) {

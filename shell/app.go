@@ -121,11 +121,8 @@ type App struct {
 	integrity Integrity
 	setSec    string // the menu's open section ("" = none)
 	nameEd    *ui.TextEdit
-	// the tab list (mobile-style tabs) and its search
-	tabsDrop bool // the tab list under the address bar
-	tabQ     *ui.TextEdit
-	tabSc    ui.Scroll
-	tabSel   int
+	kindOpen    bool    // the row of other kinds of tab, under the bar
+	stripScroll float32 // the tab strip, when the tabs do not fit
 
 	tabs    []*Tab
 	cur     int
@@ -199,7 +196,7 @@ func New(h Host, cfg Config) *App {
 		insecureOK: map[string]bool{}, start: time.Now(), lastMem: -10,
 		thumbs: map[string]*thumb{}, thumbSem: make(chan struct{}, 6), fetchImage: core.FetchImage, ytSearch: core.YouTubeSearch}
 	a.ai.input = ui.NewTextEdit("", false)
-	a.histQ, a.find.q, a.tabQ = ui.NewTextEdit("", false), ui.NewTextEdit("", false), ui.NewTextEdit("", false)
+	a.histQ, a.find.q = ui.NewTextEdit("", false), ui.NewTextEdit("", false)
 	a.split.ratio = 0.5
 	c := cfg.Core
 	if c == nil {

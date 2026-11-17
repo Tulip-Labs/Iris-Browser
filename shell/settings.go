@@ -26,7 +26,7 @@ var settingsSections = []settingsSection{
 
 // openSettings opens the menu at section sec.
 func (a *App) openSettings(sec string) {
-	a.panel, a.panelMode, a.tabsDrop = true, panelSettings, false
+	a.panel, a.panelMode = true, panelSettings
 	a.ai.open = false
 	if sec != "" {
 		a.setSec = sec
@@ -39,7 +39,7 @@ func (a *App) containerSettings(x, y, w float32) float32 {
 	y += 10
 	g.Text("Containers", x, y+16, ui.FTitle, th.OnSurface)
 	y += 34
-	for _, ln := range wrap(g, "Each container keeps its own sign-ins, cookies and site data, apart from your other tabs: a work account and a personal one side by side. Open a tab in one from the tab list (the tabs button in the bar).", ui.FSmall, w) {
+	for _, ln := range wrap(g, "Each container keeps its own sign-ins, cookies and site data, apart from your other tabs: a work account and a personal one side by side. Open a tab in one from the arrow beside + in the tab strip.", ui.FSmall, w) {
 		g.Text(ln, x, y+14, ui.FSmall, th.OnSurfaceVariant)
 		y += 18
 	}
