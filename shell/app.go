@@ -124,8 +124,8 @@ type App struct {
 	// the tab list (mobile-style tabs) and its search
 	tabsDrop bool // the tab list under the address bar
 	tabQ     *ui.TextEdit
-	tabSc  ui.Scroll
-	tabSel int
+	tabSc    ui.Scroll
+	tabSel   int
 
 	tabs    []*Tab
 	cur     int
