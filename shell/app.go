@@ -120,6 +120,7 @@ type App struct {
 	balance     balancer
 	integrity   Integrity
 	setSec      string // the menu's open section ("" = none)
+	relay       *relay // plays H.264 videos where the engine cannot (Linux)
 	nameEd      *ui.TextEdit
 	kindOpen    bool    // the row of other kinds of tab, under the bar
 	stripScroll float32 // the tab strip, when the tabs do not fit
@@ -208,6 +209,9 @@ func New(h Host, cfg Config) *App {
 	a.plan = core.Plan(cfg.TotalMB, a.set.Memory)
 	a.newTab(KNormal, "", "", true)
 	a.restoreSession()
+	if runtime.GOOS == "linux" {
+		a.relay = startRelay() // Chromium here has no H.264: the system converts
+	}
 	if f := cfg.Sys.Integrity; f != nil {
 		go func() {
 			r := f()
@@ -241,6 +245,9 @@ func (a *App) Policy() webview.Policy {
 	}
 	if a.set.YouTubeLight {
 		scripts = append(scripts, core.YouTubeLightScript)
+	}
+	if a.relay != nil {
+		scripts = append(scripts, core.H264Script(a.relay.base))
 	}
 	if a.set.Farble {
 		scripts = append(scripts, shields.FarbleScript())

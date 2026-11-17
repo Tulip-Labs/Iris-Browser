@@ -1,5 +1,11 @@
 Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.12
+
+- **Sharp pages on fractional screen scales.** Chromium now draws at exactly the window's scale, so pages are no longer stretched (soft, or blocky in 1.0.10–1.0.11).
+- **H.264 videos play** (LinkedIn, X and many news sites). Lite Go's Chromium has no H.264, so when such a video cannot play, Lite Go converts it on the fly with the system's ffmpeg (or GStreamer) and plays that. It uses some processor while a video plays. Install ffmpeg if it is missing (Fedora Atomic: `rpm-ostree install ffmpeg-free`).
+- **New glass themes**, in the spirit of Apple's Liquid Glass, shared with Ember. **Liquid** is the new default: black, clear glass panes and glossy liquid icons. Also Graphite, Deep Sea, Ember and Aurora (dark), and Daylight, Mist, Rose, Sunrise and Mint (light). The old palettes are gone; a saved one switches to Liquid.
+
 ## New in 1.0.11
 
 - **YouTube no longer sees an ad blocker.** On YouTube the shield now blocks nothing and Lite Go leaves the player's data alone (what YouTube checks). Instead, an ad that starts is muted, played at 16× to its end and skipped, and the video goes on as it was; the ad boxes are hidden, and YouTube's ad blocker notice, if it still comes, is closed.

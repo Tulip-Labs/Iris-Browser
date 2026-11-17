@@ -203,6 +203,18 @@ static void CEF_CALLBACK onSchedulePump(cef_browser_process_handler_t *self, int
 
 static int noSandbox;
 
+// screenScale is the largest whole-number scale GTK uses on any screen (the
+// window's scale once it is on screen).
+static int screenScale(void) {
+	int sf = host && gtk_widget_get_realized(GTK_WIDGET(host)) ? gtk_widget_get_scale_factor(GTK_WIDGET(host)) : 1;
+	GdkDisplay *d = gdk_display_get_default();
+	for (int i = 0; d && i < gdk_display_get_n_monitors(d); i++) {
+		GdkMonitor *m = gdk_display_get_monitor(d, i);
+		if (m && gdk_monitor_get_scale_factor(m) > sf) sf = gdk_monitor_get_scale_factor(m);
+	}
+	return sf < 1 ? 1 : sf;
+}
+
 static int fileSays(const char *path, const char *want) {
 	char *b = NULL;
 	int r = g_file_get_contents(path, &b, NULL, NULL) && g_str_has_prefix(g_strstrip(b), want);
@@ -236,12 +248,24 @@ static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type
 	cl->append_switch_with_value(cl, &k, &val);
 	cef_string_clear(&k);
 	cef_string_clear(&val);
+	// Chromium draws at exactly the window's scale. On a fractional screen
+	// scale (1.25, 1.5) Chromium would otherwise take the screen's own and the
+	// page would be stretched to the window's whole-number scale, soft or
+	// blocky; at the window's scale it is drawn 1:1, sharp.
+	char sfs[16];
+	snprintf(sfs, sizeof sfs, "%d", screenScale());
+	setStr(&k, "force-device-scale-factor");
+	setStr(&val, g_getenv("LITEGO_SCALE") ? g_getenv("LITEGO_SCALE") : sfs);
+	cl->append_switch_with_value(cl, &k, &val);
+	cef_string_clear(&k);
+	cef_string_clear(&val);
 	// media keys and the like belong to the desktop, not to the pages
 	setStr(&k, "disable-features");
 	setStr(&val, "HardwareMediaKeyHandling,MediaSessionService,BackForwardCache,Translate,OptimizationHints,MediaRouter,"
 	             "DialMediaRouteProvider,AutofillServerCommunication,CertificateTransparencyComponentUpdater,InterestFeedContentSuggestions,"
 	             "IsolateOrigins,site-per-process,SpareRendererForSitePerProcess,PrefetchPrivacyChanges,Prerender2,LensOverlay,"
-	             "GlobalMediaControls,PrivacySandboxSettings4,FedCm");
+	             "GlobalMediaControls,PrivacySandboxSettings4,FedCm,LocalNetworkAccessChecks,PrivateNetworkAccessForWorkers,"
+	             "PrivateNetworkAccessRespectPreflightResults,BlockInsecurePrivateNetworkRequests");
 	cl->append_switch_with_value(cl, &k, &val);
 	cef_string_clear(&k);
 	cef_string_clear(&val);
@@ -317,11 +341,19 @@ static cef_browser_process_handler_t *CEF_CALLBACK getBPH(cef_app_t *self) { ret
 
 // ---- painting ----
 
+// oneToOne says whether a frame's pixels map one to one onto the screen's
+// (then it is drawn without smoothing; otherwise smoothly, never blocky).
+static int oneToOne(cairo_surface_t *f, GtkWidget *w) {
+	double sx, sy;
+	cairo_surface_get_device_scale(f, &sx, &sy);
+	return fabs(sx - gtk_widget_get_scale_factor(w)) < 0.01;
+}
+
 static gboolean onDraw(GtkWidget *w, cairo_t *cr, LV *v) {
 	if (v->page) {
 		// one page pixel to one screen pixel: no smoothing, so text stays sharp
 		cairo_set_source_surface(cr, v->page, 0, 0);
-		cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
+		cairo_pattern_set_filter(cairo_get_source(cr), oneToOne(v->page, w) ? CAIRO_FILTER_NEAREST : CAIRO_FILTER_GOOD);
 		cairo_paint(cr);
 	} else {
 		cairo_set_source_rgb(cr, 1, 1, 1);
@@ -330,7 +362,7 @@ static gboolean onDraw(GtkWidget *w, cairo_t *cr, LV *v) {
 	if (v->popup && v->popupShown) {
 		int sf = scaleOf();
 		cairo_set_source_surface(cr, v->popup, v->popupRect.x, v->popupRect.y);
-		cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
+		cairo_pattern_set_filter(cairo_get_source(cr), oneToOne(v->popup, w) ? CAIRO_FILTER_NEAREST : CAIRO_FILTER_GOOD);
 		cairo_rectangle(cr, v->popupRect.x, v->popupRect.y, (double)v->popupRect.width, (double)v->popupRect.height);
 		cairo_fill(cr);
 		(void)sf;

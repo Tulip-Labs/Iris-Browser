@@ -79,19 +79,21 @@ func (a *App) drawPanel(r ui.Rect) {
 	}
 	bw := (w - float32(cols-1)*8) / float32(cols)
 	for i, tl := range tools {
-		br := ui.Rect{X: x + float32(i%cols)*(bw+8), Y: y + float32(i/cols)*64, W: bw, H: 56}
-		ui.FillRound(g, br, 16, th.Primary.Alpha(0.08))
+		br := ui.Rect{X: x + float32(i%cols)*(bw+8), Y: y + float32(i/cols)*70, W: bw, H: 62}
 		if u.Hover(br) {
 			ui.FillRound(g, br, 16, th.Ink.Alpha(0.06))
 		}
 		u.Tooltip(tl.tip, br)
-		ui.DrawIcon(g, tl.icon, br.CX()-10, br.Y+8, 20, th.Primary)
-		ui.TextCenter(g, ui.Fit(g, tl.label, ui.FSmallBold, bw-6), ui.Rect{X: br.X, Y: br.Y + 32, W: br.W, H: 18}, ui.FSmallBold, th.OnSurface)
+		// a liquid glass drop with the icon in white, as on Apple's home screens
+		tile := ui.RectAround(br.CX(), br.Y+19, 34, 34)
+		ui.Liquid(g, tile, 11, liquidTones(th)[i%len(liquidTones(th))])
+		ui.DrawIcon(g, tl.icon, tile.CX()-9, tile.CY()-9, 18, ui.White)
+		ui.TextCenter(g, ui.Fit(g, tl.label, ui.FSmallBold, bw-6), ui.Rect{X: br.X, Y: br.Y + 40, W: br.W, H: 18}, ui.FSmallBold, th.OnSurface)
 		if u.Clickable(ui.IdN("ptool", i), br) {
 			a.do(tl.act)
 		}
 	}
-	y += float32((len(tools)+cols-1)/cols)*64 + 4
+	y += float32((len(tools)+cols-1)/cols)*70 + 4
 
 	// zoom
 	g.Text("Zoom", x, ui.Mid(g, y, 36, ui.FBody), ui.FBody, th.OnSurface)
@@ -574,4 +576,10 @@ func (a *App) pageFocus() {
 		v := t.view
 		a.web(v.Focus)
 	}
+}
+
+// liquidTones are the colors of the liquid icon tiles: the theme's accent
+// first, then Apple's system blue, indigo, teal, orange, pink, green and purple.
+func liquidTones(th *ui.Theme) []ui.Color {
+	return []ui.Color{th.Primary, ui.Hex("#5e5ce6"), ui.Hex("#30b0c7"), ui.Hex("#ff9f0a"), ui.Hex("#ff375f"), ui.Hex("#30d158"), ui.Hex("#bf5af2"), ui.Hex("#64d2ff")}
 }

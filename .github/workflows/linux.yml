@@ -75,7 +75,7 @@ jobs:
           case "${{ matrix.kind }}" in
           deb)
             apt-get update -qq
-            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./pkg/*.deb weston procps ffmpeg fonts-dejavu-core dbus
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./pkg/*.deb weston procps ffmpeg fonts-dejavu-core dbus python3
             ;;
           rpm)
             dnf install -y ./pkg/*.rpm weston procps-ng mesa-dri-drivers which ffmpeg-free dejavu-sans-fonts util-linux dbus-daemon
@@ -102,16 +102,23 @@ jobs:
         run: |
           mkdir -p /tmp/page
           command -v ffmpeg >/dev/null && ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime /tmp/page/v.webm
+          # an H.264 + AAC video, which Lite Go plays through its relay (where ffmpeg has x264)
+          command -v ffmpeg >/dev/null && ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=frequency=440 -t 20 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest /tmp/page/h.mp4 || true
           cat > /tmp/page/video.html <<'HTML'
           <!doctype html><body style="margin:0;background:#202020;font:24px sans-serif;color:#fff">
           <h1 style="color:#f5a">Lite Go on Chromium</h1>
           <p id=s>video: loading</p>
           <p id=ua></p>
-          <video id=v src="v.webm" autoplay muted loop width=640 height=360></video>
+          <p id=s2>h264: loading</p>
+          <video id=v src="v.webm" autoplay muted loop width=320 height=180></video>
+          <video id=h src="h.mp4" autoplay muted loop width=320 height=180></video>
           <script>
           const v = document.getElementById('v'), s = document.getElementById('s');
           v.addEventListener('playing', () => s.textContent = 'video: playing, VP9 ' + v.videoWidth + 'x' + v.videoHeight);
           v.addEventListener('error', () => s.textContent = 'video: error ' + (v.error && v.error.code));
+          const h = document.getElementById('h'), s2 = document.getElementById('s2');
+          h.addEventListener('playing', () => s2.textContent = 'h264: playing ' + h.videoWidth + 'x' + h.videoHeight + (h.currentSrc.includes('127.0.0.1') ? ' (relay)' : ''));
+          h.addEventListener('error', () => s2.textContent = 'h264: error ' + (h.error && h.error.code));
           document.getElementById('ua').textContent = navigator.userAgent;
           </script>
           HTML
@@ -130,7 +137,13 @@ jobs:
           [ -S "$XDG_RUNTIME_DIR/wl-test" ] || { echo "Weston did not start"; cat /tmp/weston.txt; exit 1; }
           export WAYLAND_DISPLAY=wl-test GDK_BACKEND=wayland
           page=about:blank
-          [ -f /tmp/page/video.html ] && page=file:///tmp/page/video.html
+          if [ -f /tmp/page/video.html ] && command -v python3 >/dev/null; then
+            (cd /tmp/page && python3 -m http.server 8765 --bind 127.0.0.2 >/dev/null 2>&1 &)
+            sleep 1
+            page=http://127.0.0.2:8765/video.html
+          elif [ -f /tmp/page/video.html ]; then
+            page=file:///tmp/page/video.html
+          fi
           mkdir -p /tmp/shots
           export LITEGO_CEF_VERBOSE=1 LITEGO_SHOT=/tmp/shots/page LITEGO_CEF_ARGS="--enable-logging=stderr --v=0"
           run=""; command -v dbus-run-session >/dev/null && run="dbus-run-session --"

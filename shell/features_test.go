@@ -476,7 +476,7 @@ func TestKindPickerAndSession(t *testing.T) {
 
 // The pastel palettes: every screen drawn in each, for the eye.
 func TestPastelThemes(t *testing.T) {
-	for _, id := range []string{"peach", "mint", "sorbet", "lagoon"} {
+	for _, id := range []string{"daylight", "mist", "rose", "sunrise", "mint"} {
 		th := ui.ThemeByID(id)
 		if th.ID != id || len(th.Grad) != 3 {
 			t.Fatalf("palette %s is missing its gradient", id)

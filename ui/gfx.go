@@ -406,9 +406,9 @@ func Glass(g Gfx, r Rect, rad float32, th *Theme, strong, shadow bool) {
 	}
 	g.FillPath(body, base)
 	// sheen: light pooled at the top, fading down (liquid highlight)
-	top := White.Alpha(0.34)
+	top := White.Alpha(0.36)
 	if th.Dark {
-		top = White.Alpha(0.07)
+		top = White.Alpha(0.10)
 	}
 	g.FillPathGradient(body, top, top.Alpha(0), r.Y, r.Y+min(r.H, 160)*0.6) // fade to clear white, not black
 	// inner rim: brighter along the top edge, like light caught in the glass
@@ -416,11 +416,24 @@ func Glass(g Gfx, r Rect, rad float32, th *Theme, strong, shadow bool) {
 	rimTop := White.Alpha(0.9)
 	rimBottom := White.Alpha(0.25)
 	if th.Dark {
-		rimTop, rimBottom = White.Alpha(0.16), White.Alpha(0.04)
+		rimTop, rimBottom = White.Alpha(0.30), White.Alpha(0.06)
 	}
 	strokeGradient(g, rim, 1.2, rimTop, rimBottom, r.Y, r.B())
 	// hairline outside, so glass stays visible on light backgrounds
 	g.StrokePath(NewPath().RoundRect(r, rad), 0.8, th.Ink.Alpha(0.07))
+}
+
+// Liquid draws a glossy "liquid glass" tile for an icon: the color as a
+// soft vertical gradient, a highlight pooled at the top like light on a
+// drop, a bright rim along the top edge and a faint shade at the bottom.
+// Draw the icon over it in white.
+func Liquid(g Gfx, r Rect, rad float32, base Color) {
+	body := NewPath().RoundRect(r, rad)
+	g.FillPathGradient(body, Mix(base, White, 0.22), Mix(base, Black, 0.12), r.Y, r.B())
+	hl := Rect{X: r.X + r.W*0.08, Y: r.Y + r.H*0.04, W: r.W * 0.84, H: r.H * 0.5}
+	g.FillPathGradient(NewPath().RoundRect(hl, min(rad, hl.H/2)), White.Alpha(0.42), White.Alpha(0), hl.Y, hl.B())
+	strokeGradient(g, NewPath().RoundRect(r.Inset(0.6), rad-0.6), 1.1, White.Alpha(0.75), White.Alpha(0.10), r.Y, r.B())
+	g.FillPathGradient(body, Black.Alpha(0), Black.Alpha(0.10), r.CY(), r.B())
 }
 
 // strokeGradient approximates a vertically graded stroke with two passes.

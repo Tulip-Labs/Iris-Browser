@@ -94,11 +94,11 @@ a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
 </tr>
 <tr>
 <td width="50%"><img src="assets/screens/menu.png" alt="The menu"></td>
-<td width="50%"><img src="assets/screens/sorbet.png" alt="Lite results in the Sorbet palette"></td>
+<td width="50%"><img src="assets/screens/glass.png" alt="Lite results in the Mist palette"></td>
 </tr>
 <tr>
 <td align="center"><sub><b>The menu.</b> Tools, then the settings in sections that open in place.</sub></td>
-<td align="center"><sub><b>Sorbet.</b> One of the palettes, shared with Ember.</sub></td>
+<td align="center"><sub><b>Glass themes.</b> Shared with Ember.</sub></td>
 </tr>
 </table>
 
@@ -150,6 +150,7 @@ and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 | **Adaptive** | A site is scanned on its first visits. Where three scans find nothing, the shield stands by and the site's requests go straight to the network; where something is found, it stays on. Clean sites are scanned again every 15 visits or three days. |
 | **What ads leave behind** | Empty boxes and cookie notices are hidden. Tracking parameters are cut from links, tracking redirects skipped, AMP pages opened at the source. |
 | **Fingerprinting** | Canvas, audio and hardware details vary slightly per site and session. Sign-in and human-check pages are left alone. |
+| **H.264 videos** | Lite Go's Chromium has no H.264 or AAC (the free builds leave them out). When a video in that format cannot play (LinkedIn, X, many news sites), Lite Go converts it on the fly with the system's ffmpeg, or GStreamer, through a small relay on the computer only, and the page plays that. |
 | **YouTube** | YouTube shows a warning when it sees an ad blocker, so on YouTube the shield blocks nothing and Lite Go does not touch the player's data. When an ad starts, Lite Go mutes it, plays it at 16× to its end and presses Skip; the video then goes on with its own sound and speed. The ad boxes around the videos are hidden, and if the warning still comes, it is closed and the video resumes. YouTube tabs never rest. |
 | **Never broken** | Sign-in, messaging, human checks and YouTube playback are never blocked. Pictures, video, style sheets and fonts always load: the shield checks scripts and data requests, where ads and trackers start, and never blocks a whole hosting network. |
 

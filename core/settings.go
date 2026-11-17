@@ -64,7 +64,7 @@ type Settings struct {
 
 // LoadSettings reads settings.json from dir ("" = defaults in memory only).
 func LoadSettings(dir string) *Settings {
-	s := &Settings{Theme: "crocus", Shield: true, HTTPSOnly: true, YouTube: true, Strict: false, Memory: "balanced",
+	s := &Settings{Theme: "liquid", Shield: true, HTTPSOnly: true, YouTube: true, Strict: false, Memory: "balanced",
 		LiteResults: true, Boost: true, YouTubeLight: true,
 		Lists: true, Cookies: true, CleanLinks: true, Farble: true,
 		Adaptive: true, Restore: true, AutoUpdate: true,

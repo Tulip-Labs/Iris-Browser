@@ -111,7 +111,11 @@ overrides:
       - libxrandr2
     recommends:
       - xdg-utils
+      - ffmpeg # plays H.264 videos (LinkedIn, X), which Chromium here leaves out
   rpm:
+    # H.264 videos play through the system's ffmpeg or GStreamer
+    recommends:
+      - (ffmpeg-free or ffmpeg)
     # library names, so one package fits Fedora, RHEL-likes and openSUSE
     depends:
       - libgtk-3.so.0()(64bit)

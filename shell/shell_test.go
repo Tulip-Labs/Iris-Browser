@@ -343,13 +343,13 @@ func TestLayouts(t *testing.T) {
 	d.a.editCont = -1
 	d.a.panel = false
 	d.a.set.VerticalTabs = true
-	d.a.set.Theme = "night"
+	d.a.set.Theme = "liquid"
 	d.frames(2)
 	d.shot("vertical-night")
 	// narrow windows still work
 	d.w, d.h = 600, 820
 	d.a.set.VerticalTabs = false
-	d.a.set.Theme = "meadow"
+	d.a.set.Theme = "daylight"
 	d.a.selectTab(0)
 	d.frames(2)
 	d.shot("narrow")
@@ -529,7 +529,7 @@ func TestLiteResults(t *testing.T) {
 		t.Fatal("Back from the link's first page should return to the results")
 	}
 	// night theme
-	d.a.set.Theme = "night"
+	d.a.set.Theme = "liquid"
 	d.frames(2)
 	d.shot("results-night")
 }

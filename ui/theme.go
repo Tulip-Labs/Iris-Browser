@@ -3,7 +3,7 @@ package ui
 // Sym colors one family of chart symbols.
 type SymStyle struct{ Fill, Stroke, Text Color }
 
-// Theme is one palette: the five spring palettes of Lite, Classic (paper) and Night.
+// Theme is one palette.
 // Every color the interface uses is derived here.
 type Theme struct {
 	ID, Label string
@@ -48,9 +48,10 @@ func (t *Theme) derive() *Theme {
 		}
 		return light
 	}
-	t.Card = pick(Mix(t.G5, Black, 0.1).Alpha(0.72), White.Alpha(0.58))
-	t.CardStrong = pick(Mix(t.G5, White, 0.06).Alpha(0.9), White.Alpha(0.78))
-	t.Rim = pick(White.Alpha(0.10), White.Alpha(0.75))
+	// glass: clear and bright-rimmed over the backdrop (Liquid Glass)
+	t.Card = pick(Mix(t.G5, White, 0.08).Alpha(0.55), White.Alpha(0.52))
+	t.CardStrong = pick(Mix(t.G5, White, 0.11).Alpha(0.86), White.Alpha(0.76))
+	t.Rim = pick(White.Alpha(0.16), White.Alpha(0.8))
 	t.Hover = t.Deep.Alpha(pf(0.18, 0.08))
 	t.Pressed = t.Deep.Alpha(pf(0.28, 0.16))
 	t.Divider = t.Ink.Alpha(pf(0.14, 0.08))
@@ -133,80 +134,47 @@ func spring(id, label, ink, body, ink2, ink3, deep, deep2, hl, danger string, g,
 		TBlue: ts[0], TGreen: ts[1], THoney: ts[2], TPink: ts[3], TLav: ts[4], Shadow: Hex(shc), Swatch: hexes(sw...), Fields: true}).derive()
 }
 
-// Themes lists the palettes; Crocus is the default.
+// Themes lists the palettes, in the spirit of Apple's Liquid Glass: frosted
+// panes over a deep or airy backdrop, one clear accent each. Liquid (black,
+// with glass and glossy icons) is the default.
 var Themes = []*Theme{
-	spring("crocus", "Crocus", "#2a1433", "#5a3d66", "#7d6487", "#b9a3c6", "#923993", "#9d60ab", "#ffae00", "#ca3404",
-		[]string{"#ffe2a0", "#ecc8f0", "#d9edd5", "#cca2e2", "#fffaf7", "#f4d6e6"},
-		[]string{"#ece5f9", "#e2f1df", "#fff0c6", "#f6e0f2", "#ecdcf6"}, "#4a1e50",
-		[]string{"#923993", "#9d60ab", "#cca2e2", "#ffae00", "#ca3404"}),
-	spring("tulip", "Tulip", "#2b0f2e", "#5b3560", "#85628a", "#c4a6c8", "#922b99", "#bb38bd", "#f69a2f", "#d2264f",
-		[]string{"#fed272", "#ffc4df", "#d6ecd3", "#f0b3ea", "#fff9f4", "#ffd2a8"},
-		[]string{"#f1e3f7", "#e0f0dc", "#fff1c9", "#fde0ee", "#f3dcf3"}, "#5a1950",
-		[]string{"#922b99", "#bb38bd", "#f04599", "#fed272", "#f69a2f"}),
-	spring("spring", "Spring Mix", "#241f4e", "#4c4674", "#78739e", "#a9a4cf", "#5145c9", "#8f7fe0", "#f7b2d5", "#c8424f",
-		[]string{"#fce38a", "#f8bbd9", "#d8f3dc", "#a9def9", "#fffdf5", "#cdb4f0"},
-		[]string{"#dce9fd", "#d9f6e5", "#fdf0c9", "#fbe3f1", "#e7e0fd"}, "#2b2054",
-		[]string{"#5145c9", "#f8bbd9", "#fce38a", "#d8f3dc", "#a9def9"}),
-	spring("sakura", "Sakura", "#33171f", "#63404b", "#8c6a74", "#d0aab6", "#c2457a", "#e48aae", "#8fbf6a", "#c0392b",
-		[]string{"#ffe1ea", "#ffd1df", "#e3f2d9", "#f6c4d6", "#fffafa", "#fbe7ef"},
-		[]string{"#f3e6f0", "#e5f2dc", "#fff0d8", "#fde2ea", "#f2e2ef"}, "#6e283c",
-		[]string{"#c2457a", "#e48aae", "#ffd1df", "#fffafa", "#8fbf6a"}),
-	spring("meadow", "Meadow", "#12291c", "#3b5745", "#66806f", "#a7c0ae", "#2f7d4f", "#5aa86f", "#f5c518", "#c43d2f",
-		[]string{"#fff1a8", "#d4f0ff", "#d5efc9", "#bfe6d0", "#fbfdf6", "#e8f6c8"},
-		[]string{"#e2f1fb", "#def2e2", "#fff3c4", "#fbe6ea", "#e9e8f8"}, "#1e462d",
-		[]string{"#2f7d4f", "#5aa86f", "#f5c518", "#d4f0ff", "#bfe6d0"}),
-	pastel(spring("peach", "Peach Sky", "#33172b", "#5f3d55", "#8a6880", "#cbaec2", "#a8487f", "#d47fae", "#f2a65a", "#c63d3d",
-		[]string{"#ffe9c9", "#fbd5e6", "#dcefe0", "#e3d3f5", "#fdf3f4", "#ffe0d2"},
-		[]string{"#e4e6fb", "#e0f2e2", "#fff0cf", "#fde1ec", "#efe0f7"}, "#5a2447",
-		[]string{"#ffe3d3", "#fbdcec", "#dfe3fb", "#a8487f", "#f2a65a"}), "#ffe3d3", "#fbdcec", "#dfe3fb"),
-	pastel(spring("mint", "Mint Lilac", "#1c2340", "#424a6b", "#6c7494", "#aab1cc", "#5a63b8", "#8b93dc", "#f0b35a", "#c8424f",
-		[]string{"#fff1c4", "#e6dcf8", "#d5f1e2", "#cfe4f8", "#f4f8fc", "#e9defa"},
-		[]string{"#dde8fc", "#d9f3e6", "#fdf1cd", "#f6e2f1", "#e9e0fb"}, "#27305c",
-		[]string{"#d9f3e6", "#dcecf9", "#e9defa", "#5a63b8", "#f0b35a"}), "#d9f3e6", "#dcecf9", "#e9defa"),
-	pastel(spring("sorbet", "Sorbet", "#33161f", "#623f49", "#8d6a74", "#d1b0b8", "#c4517a", "#e68aa6", "#f09a3e", "#c0392b",
-		[]string{"#fff0c9", "#fbd3e4", "#e2f1d6", "#f7cfdc", "#fff6f1", "#ffdcd2"},
-		[]string{"#ece4f7", "#e3f2dc", "#fff0cc", "#fde0e8", "#f5e0ee"}, "#6a2a40",
-		[]string{"#fff0c9", "#ffdcd2", "#f9d3e6", "#c4517a", "#f09a3e"}), "#fff0c9", "#ffdcd2", "#f9d3e6"),
-	pastel(spring("lagoon", "Lagoon", "#10283a", "#38566a", "#647f90", "#a6bdc9", "#2f7f97", "#63aebf", "#f3b24c", "#c4453a",
-		[]string{"#fff2c2", "#f2e3f5", "#d2f0e4", "#cfe9f3", "#f3f9fb", "#dfeaf9"},
-		[]string{"#dbeafb", "#d6f2e6", "#fdf1cb", "#f8e3ee", "#e8e3f8"}, "#17405a",
-		[]string{"#d6f1f5", "#dfeaf9", "#f2e3f5", "#2f7f97", "#f3b24c"}), "#d6f1f5", "#dfeaf9", "#f2e3f5"),
-	// warm and strong
-	pastel(spring("glow", "Ember Glow", "#3a1608", "#6b3a22", "#946450", "#d0a995", "#d9480f", "#f27a3a", "#ffc233", "#b3261e",
-		[]string{"#ffd59e", "#ffb59e", "#ffe7b3", "#ffc7a8", "#fff6ee", "#ffd9c2"},
-		[]string{"#ffe5d6", "#fdf0d0", "#ffe9c2", "#fde0e4", "#f6e1d6"}, "#5c2410",
-		[]string{"#ffd8a8", "#ffbfa0", "#ffb3b8", "#d9480f", "#ffc233"}), "#ffd8a8", "#ffbfa0", "#ffb3b8"),
-	pastel(spring("sunset", "Sunset", "#2e0f1e", "#5c2c42", "#86566c", "#c79fb2", "#c2185b", "#e64a6f", "#ff9f1c", "#b71c1c",
-		[]string{"#ffc98c", "#ff9fb2", "#ffd6a5", "#d7a8f2", "#fff2ef", "#ffb4a2"},
-		[]string{"#f3dcf2", "#ffe3d3", "#ffedc7", "#ffd9e2", "#ead8f8"}, "#5a1030",
-		[]string{"#ffb88c", "#ff8fa3", "#c79bf2", "#c2185b", "#ff9f1c"}), "#ffb88c", "#ff8fa3", "#c79bf2"),
-	pastel(spring("terracotta", "Terracotta", "#2f1a12", "#5e3e30", "#86685a", "#c4a99b", "#b5532a", "#d77a4c", "#e9b44c", "#a83224",
-		[]string{"#f6d5b8", "#efc0a0", "#e6dcc2", "#e8b4a6", "#fbf4ec", "#f3cdb0"},
-		[]string{"#efe2d6", "#e6ecd6", "#f8ebcc", "#f6dcd4", "#ece0dc"}, "#4e2516",
-		[]string{"#f6d5b8", "#efc0a0", "#e8b4a6", "#b5532a", "#e9b44c"}), "#f6d5b8", "#efc0a0", "#e8b4a6"),
-	(&Theme{ID: "classic", Label: "Classic", Ink: Hex("#1d1d24"), Body: Hex("#3c3c48"), Ink2: Hex("#6b6b78"), Ink3: Hex("#a8a8b4"),
-		Deep: Hex("#3a5bc7"), Deep2: Hex("#6f86d6"), Hl: Hex("#f0a500"), Danger: Hex("#c62828"),
-		G1: White, G2: White, G3: White, G4: White, G5: Hex("#f7f7f9"), G6: White,
-		TBlue: Hex("#e8eefc"), TGreen: Hex("#e3f4e1"), THoney: Hex("#fff3cf"), TPink: Hex("#fbe4ef"), TLav: Hex("#efe7fb"),
-		Shadow: Hex("#20203a"), Swatch: hexes("#3a5bc7", "#e8eefc", "#e3f4e1", "#fff3cf", "#f0a500")}).derive(),
-	(&Theme{ID: "night", Label: "Night", Dark: true, Ink: Hex("#f3e9f7"), Body: Hex("#d9c8e1"), Ink2: Hex("#b29fbd"), Ink3: Hex("#7c6a87"),
-		Deep: Hex("#c07ad0"), Deep2: Hex("#9d60ab"), Hl: Hex("#ffae00"), Danger: Hex("#ff6b4a"),
-		G1: Hex("#3a2a14"), G2: Hex("#3d1f44"), G3: Hex("#1f3324"), G4: Hex("#2f2140"), G5: Hex("#17111c"), G6: Hex("#2e1b2a"),
-		TBlue: Hex("#3a3357"), TGreen: Hex("#2b4430"), THoney: Hex("#4a3d17"), TPink: Hex("#4a2a43"), TLav: Hex("#3c2c4f"),
-		Shadow: Black, Swatch: hexes("#17111c", "#c07ad0", "#9d60ab", "#ffae00", "#ff6b4a"), Fields: true}).derive(),
-	// more nights
-	dark("midnight", "Midnight", "#e6ecff", "#c4cdec", "#97a3c9", "#5e6990", "#6b93ff", "#4a6fd6", "#ffc857", "#ff6b6b",
-		[]string{"#1b2747", "#21234a", "#16303a", "#262049", "#0b1120", "#1a1d3d"},
-		[]string{"#24305a", "#1f3a3a", "#3b3420", "#3a2440", "#2d2852"}),
-	dark("embernight", "Ember Night", "#fbe9df", "#e8cbbb", "#bf9886", "#7d5f52", "#ff7a3d", "#e0592a", "#ffc233", "#ff5a5a",
-		[]string{"#3a1d10", "#3b1622", "#2a2414", "#3a2016", "#140c09", "#33130f"},
-		[]string{"#3d2a22", "#2e3322", "#45351a", "#46231f", "#3a2630"}),
-	dark("aurora", "Aurora", "#e3fbf2", "#bfe6d8", "#8fbfae", "#58806f", "#3ddc97", "#22b07a", "#b388ff", "#ff6b7a",
-		[]string{"#0f3329", "#1c2448", "#133a33", "#26204a", "#08130f", "#0e2a33"},
+	// dark: a black or deep base with soft fields of colored light behind the glass
+	dark("liquid", "Liquid", "#f5f5f7", "#e5e5ea", "#aeaeb2", "#6e6e73", "#0a84ff", "#5e5ce6", "#ff9f0a", "#ff453a",
+		[]string{"#071a3a", "#170d33", "#04201f", "#1b0f2c", "#000000", "#0d0f1c"},
+		[]string{"#132a4d", "#12332c", "#3a2e12", "#3a1726", "#251c46"}),
+	dark("graphite", "Graphite", "#f2f2f7", "#d8d8de", "#a1a1a8", "#68686e", "#bf5af2", "#8e8aff", "#ffd60a", "#ff453a",
+		[]string{"#2a1838", "#1b1f2e", "#22252b", "#2a1d33", "#141416", "#1f1d26"},
+		[]string{"#2b2d3d", "#24332c", "#3b3420", "#3b2232", "#33284a"}),
+	dark("deepsea", "Deep Sea", "#e6f7ff", "#c2e3f2", "#8fb6c9", "#567a8c", "#64d2ff", "#30b0c7", "#ffd60a", "#ff6961",
+		[]string{"#06324a", "#0b1d45", "#03302c", "#16153f", "#020a12", "#05243a"},
+		[]string{"#123049", "#0f3a35", "#3a3418", "#3a1d2c", "#211f4a"}),
+	dark("ember", "Ember", "#fff1e8", "#f0d2c2", "#c09a87", "#7f6253", "#ff9f0a", "#ff6b3d", "#ffd60a", "#ff453a",
+		[]string{"#3d1806", "#3a0f1c", "#2b230b", "#36130e", "#0a0503", "#2e1208"},
+		[]string{"#3f2a20", "#2f3320", "#47371a", "#47211f", "#3a2530"}),
+	dark("aurora", "Aurora", "#ecfff7", "#c8f0e0", "#90c4b0", "#577f70", "#30d158", "#66d4cf", "#bf5af2", "#ff6b7a",
+		[]string{"#0b3a2a", "#1a1f4a", "#0d3a36", "#2a1648", "#030b08", "#0b2a33"},
 		[]string{"#17323f", "#183a2c", "#3a3622", "#3c2335", "#2b2648"}),
-	dark("abyss", "Abyss", "#e2f6fb", "#bcdde6", "#8bb3bf", "#55788a", "#22d3ee", "#0ea5c4", "#fbbf24", "#f87171",
-		[]string{"#0c2a38", "#10193a", "#0b302f", "#1a1840", "#050b12", "#0a2236"},
-		[]string{"#13304a", "#123a33", "#3a3418", "#3a1d2c", "#221e45"}),
+	// light: white glass over an airy wash of color
+	pastel(spring("daylight", "Daylight", "#1d1d1f", "#3a3a3c", "#6e6e73", "#a1a1a6", "#007aff", "#5856d6", "#ff9500", "#ff3b30",
+		[]string{"#e8f1ff", "#f1ecff", "#e9f7f1", "#f6eefe", "#f5f5f7", "#eef2fb"},
+		[]string{"#e5efff", "#e3f5ea", "#fff3d6", "#ffe5ec", "#efe8ff"}, "#1c2a44",
+		[]string{"#f5f5f7", "#d6e6ff", "#007aff", "#5856d6", "#ff9500"}), "#eaf2ff", "#f6f3ff", "#f5f5f7"),
+	pastel(spring("mist", "Mist", "#1c1c2e", "#3b3b55", "#6b6b85", "#a3a3bd", "#5856d6", "#7d7aff", "#ff9f0a", "#ff3b30",
+		[]string{"#dfe8ff", "#eadfff", "#e1f3f7", "#efe2ff", "#f3f4fb", "#e6eaff"},
+		[]string{"#e0e8ff", "#dff3ef", "#fff2d4", "#fde3ef", "#ebe3ff"}, "#22224a",
+		[]string{"#dfe8ff", "#eadfff", "#5856d6", "#7d7aff", "#ff9f0a"}), "#dbe6ff", "#ece2ff", "#f6f0fb"),
+	pastel(spring("rose", "Rose", "#2d1520", "#55323f", "#86606f", "#c4a2af", "#ff2d55", "#ff6482", "#ff9f0a", "#d70015",
+		[]string{"#ffe0e9", "#ffeadf", "#f2e3ff", "#ffd9e4", "#fff6f8", "#ffe6ee"},
+		[]string{"#f3e3f7", "#e6f2e3", "#fff0d4", "#ffe0e8", "#f1e1fb"}, "#5a1830",
+		[]string{"#ffe0e9", "#ffeadf", "#f2e3ff", "#ff2d55", "#ff9f0a"}), "#ffe2ea", "#fff0e8", "#f4e9ff"),
+	pastel(spring("sunrise", "Sunrise", "#2b1a0c", "#553c26", "#86684f", "#c4a68c", "#ff9500", "#ff6b3d", "#ffcc00", "#ff3b30",
+		[]string{"#ffe7c7", "#ffdcd6", "#fff2d2", "#ffe0cc", "#fff9f2", "#ffebd9"},
+		[]string{"#f3e6f2", "#e8f2e0", "#fff0c9", "#ffe2dc", "#f1e3f3"}, "#5a3110",
+		[]string{"#ffe7c7", "#ffdcd6", "#fff2d2", "#ff9500", "#ff6b3d"}), "#ffe8cc", "#ffdfd9", "#fff6e6"),
+	pastel(spring("mint", "Mint", "#0f2a26", "#2f514b", "#5f7f79", "#9dbdb6", "#00a99d", "#30b0c7", "#ff9f0a", "#ff3b30",
+		[]string{"#d9f8ef", "#dfefff", "#e8fbe4", "#d9f2f8", "#f4fbf9", "#e3f5ff"},
+		[]string{"#ddedfb", "#d9f5ea", "#fff2d1", "#fde4ec", "#e6e4fb"}, "#123c36",
+		[]string{"#d9f8ef", "#dfefff", "#00a99d", "#30b0c7", "#ff9f0a"}), "#d8f7ee", "#e2efff", "#f4fbf9"),
 }
 
 // dark makes a night palette: light ink on a deep base with soft color
@@ -237,7 +205,8 @@ func FillGradient3(g Gfx, r Rect, rad float32, c []Color) {
 	g.Restore()
 }
 
-// ThemeByID returns the palette with id, or Crocus.
+// ThemeByID returns the palette with id, or Liquid (themes that no longer
+// exist fall back to it).
 func ThemeByID(id string) *Theme {
 	for _, t := range Themes {
 		if t.ID == id {

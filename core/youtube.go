@@ -1,6 +1,9 @@
 package core
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // YouTubeScript gets past YouTube's ads without YouTube seeing an ad
 // blocker. YouTube checks that its ad requests go through and that the ad
@@ -110,3 +113,38 @@ const YouTubeLightScript = `(() => {
   };
   if (document.documentElement) add(); else document.addEventListener('DOMContentLoaded', add);
 })();`
+
+// H264Script lets a page's H.264 videos play where the engine cannot decode
+// them (Lite Go's Chromium on Linux): it says MP4 may play, so players offer
+// their MP4 file, and when a video then fails as unplayable it is pointed at
+// Lite Go's video relay (relay, which ends in "u="), which converts it.
+// Videos made of pieces in the page (blob: addresses) are left alone.
+func H264Script(relay string) string {
+	return `(() => {
+  if (window.__liteGoH264) return;
+  window.__liteGoH264 = true;
+  const RELAY = ` + strconv.Quote(relay) + `;
+  const cpt = HTMLMediaElement.prototype.canPlayType;
+  HTMLMediaElement.prototype.canPlayType = function (t) {
+    const r = cpt.call(this, t);
+    return !r && /video\/mp4|audio\/mp4|avc1|mp4a|video\/quicktime/i.test(t || '') ? 'maybe' : r;
+  };
+  const fix = (v) => {
+    if (!v || v.__lgRelay) return;
+    let src = v.currentSrc || v.src;
+    if (!src) { const s = v.querySelector('source[src]'); src = s && s.src; }
+    if (!src || !/^https?:/.test(src) || src.startsWith(RELAY.slice(0, 30))) return;
+    v.__lgRelay = true;
+    const play = !v.paused || v.autoplay || v.hasAttribute('autoplay');
+    v.querySelectorAll('source').forEach((s) => s.remove());
+    v.src = RELAY + encodeURIComponent(src) + '&r=' + encodeURIComponent(location.href);
+    v.load();
+    if (play) v.play().catch(() => {});
+  };
+  document.addEventListener('error', (e) => {
+    const t = e.target;
+    if (t instanceof HTMLVideoElement && t.error && t.error.code === 4) fix(t);
+    else if (t instanceof HTMLSourceElement && t.parentElement instanceof HTMLVideoElement && !t.nextElementSibling) fix(t.parentElement);
+  }, true);
+})();`
+}
