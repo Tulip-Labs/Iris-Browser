@@ -146,5 +146,12 @@ func H264Script(relay string) string {
     if (t instanceof HTMLVideoElement && t.error && t.error.code === 4) fix(t);
     else if (t instanceof HTMLSourceElement && t.parentElement instanceof HTMLVideoElement && !t.nextElementSibling) fix(t.parentElement);
   }, true);
+  // videos that failed before this script ran, or whose error was caught by
+  // their player: look again now and then
+  const sweep = () => document.querySelectorAll('video').forEach((v) => {
+    if (v.error && v.error.code === 4) fix(v);
+  });
+  sweep();
+  setInterval(sweep, 1500);
 })();`
 }
