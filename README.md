@@ -50,7 +50,7 @@ A background tab rests within a minute: its page closes and its memory goes back
 
 **Fast**
 
-One slim bar, tabs in a grid like a phone's, and a new tab page drawn by Lite Go itself:
+Compact tabs on top, one slim bar under them, and a new tab page drawn by Lite Go itself:
 the name and a search, nothing else.
 
 </td>
@@ -86,11 +86,11 @@ a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
 </tr>
 <tr>
 <td width="50%"><img src="assets/screens/results.png" alt="Lite results: the AI answer, goggles, websites, pictures and videos"></td>
-<td width="50%"><img src="assets/screens/tab-grid.png" alt="The tab grid"></td>
+<td width="50%"><img src="assets/screens/tabs.png" alt="The tabs on top"></td>
 </tr>
 <tr>
 <td align="center"><sub><b>Lite results.</b> The AI answer with named sources, goggles, stacks of pictures and videos.</sub></td>
-<td align="center"><sub><b>Tabs.</b> A grid of cards, with a search and every kind of new tab.</sub></td>
+<td align="center"><sub><b>Tabs.</b> A compact strip on top, centered.</sub></td>
 </tr>
 <tr>
 <td width="50%"><img src="assets/screens/menu.png" alt="The menu"></td>
@@ -130,16 +130,16 @@ and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 | **Ask AI** (Ctrl+J) | On any page, a side panel sends your question and the page's text (or your selection) to Google AI Mode and writes the answer with its sources. No API key. |
 | **Split view** | Two pages side by side. The pane you click takes the keyboard and the address bar. |
 | **Downloads** | A toolbar icon with a progress ring; a list with speed, time left, pause, resume, cancel, open and show in folder. |
-| **One slim bar** | Back, forward and reload at the left, the address in the middle, then the tabs button, the shield and the menu. It narrows to what is needed on a small window. A Sign in button shows only while Lite Go is not signed in to Google. |
+| **One slim bar** | Back, forward and reload at the left, the address in the middle, then the shield and the menu. It narrows to what is needed on a small window. A Sign in button shows only while Lite Go is not signed in to Google. |
 | **The menu** | Tools (private tab, history, downloads, reopen, split view, find, print, free memory), zoom, your name for the AI answers, and the settings in sections that open in place: appearance (the palettes, shared with Ember), shields and privacy, containers, memory, history and data, about and updates. |
 | **The usual** | Find in page, zoom, print, a searchable history by day, reopen a closed tab, and the last tabs brought back at start (unloaded until you open them). |
-| **Tabs** | A grid of cards, as on a phone (Ctrl+Shift+A or the tabs button): type to find a tab, arrows and Enter to pick one, and a row that opens new, private, temporary, sandbox and container tabs. Containers keep their own sign-ins, each with an icon and a color. |
+| **Tabs** | A compact strip on top, centered, above the bar; tabs shrink to their icons as more open, and the strip scrolls with the wheel when they do not fit. The arrow beside + opens private, temporary, sandbox and container tabs. Containers keep their own sign-ins, each with an icon and a color. |
 
 ### Memory
 
 | | |
 |---|---|
-| **The plan** | Background tabs are hidden at once and rest soon after (20 seconds on Saver, a minute on Balanced, ten on Speed): the page closes and gives its memory back, keeping its address, title and scroll position, so it comes back where it was (hydration). A closed tab frees its memory at once. Tabs playing sound stay awake. Nothing is prepared ahead of time and nothing keeps running once the window closes. |
+| **The plan** | Background tabs are hidden at once and rest soon after (20 seconds on Saver, a minute on Balanced, ten on Speed): the page closes and gives its memory back, keeping its address, title and scroll position, so it comes back where it was (hydration). A closed tab frees its memory at once. Tabs playing sound or video (and for ten minutes after they pause) and YouTube tabs never rest. Chromium itself is trimmed: pages of one site share a process, at most three page processes run on 8 GB or less (five above), the back-and-forward page cache and Chromium's background services (updates, translate, media routing, crash reports) are off, and only the changed part of each frame is copied. Nothing is prepared ahead of time and nothing keeps running once the window closes. |
 | **The balancer** | The tab in front (both, in split view) has priority. Every other page is told at once that nobody is looking, so the engine gives memory back. When the pages pass the budget, or the computer runs short, background pages sleep and then unload, oldest first. |
 
 ### Lite Shields
@@ -174,7 +174,7 @@ and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 | `Ctrl` `Tab` | Next tab | `Ctrl` `M` | Mute tab |
 | `Ctrl` `1`...`9` | Go to tab | `Alt` `Left` / `Right` | Back, forward |
 | `Ctrl` `R` / `F5` | Reload | `F11` | Full screen |
-| `Ctrl` `Shift` `A` | Tab grid | `Ctrl` `,` | Menu |
+| `Ctrl` `,` | Menu | | |
 
 They work while a page has the keyboard too.
 
@@ -182,7 +182,7 @@ They work while a page has the keyboard too.
 
 | System | Web engine | Status |
 |---|---|---|
-| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, the tab grid) are covered by tests with a stand-in engine and still need a pass on a real PC. |
+| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, the menu) are covered by tests with a stand-in engine and still need a pass on a real PC. |
 | Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Chromium, through CEF (the Chromium Embedded Framework), which Lite Go carries | Built and started on Wayland on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora 42 and 43, openSUSE Tumbleweed and Arch on every push, with a VP9 video playing. Packages: .deb, .rpm, AUR, Nix and .tar.gz. (The Flatpak is paused until Chromium is packaged for its sandbox.) |
 | Android 8 and newer | Android System WebView | **Lite for Android**, a separate app in Kotlin (`android/`): shields, Lite results for Web searches, tabs, containers (WebView 123 or newer), eleven palettes, phone and tablet layouts, and sync with the computer. `Lite-android.apk` is in each release. |
 

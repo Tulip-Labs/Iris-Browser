@@ -238,17 +238,48 @@ static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type
 	cef_string_clear(&val);
 	// media keys and the like belong to the desktop, not to the pages
 	setStr(&k, "disable-features");
-	setStr(&val, "HardwareMediaKeyHandling,MediaSessionService");
+	setStr(&val, "HardwareMediaKeyHandling,MediaSessionService,BackForwardCache,Translate,OptimizationHints,MediaRouter,"
+	             "DialMediaRouteProvider,AutofillServerCommunication,CertificateTransparencyComponentUpdater,InterestFeedContentSuggestions,"
+	             "IsolateOrigins,site-per-process,SpareRendererForSitePerProcess,PrefetchPrivacyChanges,Prerender2,LensOverlay,"
+	             "GlobalMediaControls,PrivacySandboxSettings4,FedCm");
 	cl->append_switch_with_value(cl, &k, &val);
 	cef_string_clear(&k);
 	cef_string_clear(&val);
-	if (memTotalMB > 0 && memTotalMB <= 8192) {
-		// on smaller computers, renderers are shared between pages of a site
-		setStr(&k, "renderer-process-limit");
-		setStr(&val, "6");
-		cl->append_switch_with_value(cl, &k, &val);
+	// Lighter Chromium. Pages of one site share a process, and at most a few
+	// page processes run (on 8 GB and less, three), at the cost of the strict
+	// one-process-per-site isolation Chrome uses. Nothing runs that a browser
+	// without Google's services and extensions does not need: background
+	// networking, component updates, translate, the page-to-page cache that
+	// keeps old pages in memory, media routing, crash reports.
+	struct {
+		const char *k, *v;
+	} flags[] = {
+		{"process-per-site", NULL},
+		{"renderer-process-limit", memTotalMB > 0 && memTotalMB <= 8192 ? "3" : "5"},
+		{"disable-background-networking", NULL},
+		{"disable-component-update", NULL},
+		{"disable-default-apps", NULL},
+		{"disable-sync", NULL},
+		{"disable-breakpad", NULL},
+		{"disable-domain-reliability", NULL},
+		{"no-pings", NULL},
+		{"no-first-run", NULL},
+		{"disable-spell-checking", NULL},
+		{"disable-gpu-shader-disk-cache", NULL},
+		{"disk-cache-size", "104857600"},
+		{"js-flags", memTotalMB > 0 && memTotalMB <= 8192 ? "--optimize-for-size" : NULL},
+	};
+	for (size_t i = 0; i < sizeof flags / sizeof flags[0]; i++) {
+		if (strcmp(flags[i].k, "js-flags") == 0 && !flags[i].v) continue;
+		setStr(&k, flags[i].k);
+		if (flags[i].v) {
+			setStr(&val, flags[i].v);
+			cl->append_switch_with_value(cl, &k, &val);
+			cef_string_clear(&val);
+		} else {
+			cl->append_switch(cl, &k);
+		}
 		cef_string_clear(&k);
-		cef_string_clear(&val);
 	}
 	const char *extra = g_getenv("LITEGO_CEF_ARGS"); // for diagnosis: --name or --name=value, separated by spaces
 	if (extra) {
@@ -288,7 +319,9 @@ static cef_browser_process_handler_t *CEF_CALLBACK getBPH(cef_app_t *self) { ret
 
 static gboolean onDraw(GtkWidget *w, cairo_t *cr, LV *v) {
 	if (v->page) {
+		// one page pixel to one screen pixel: no smoothing, so text stays sharp
 		cairo_set_source_surface(cr, v->page, 0, 0);
+		cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
 		cairo_paint(cr);
 	} else {
 		cairo_set_source_rgb(cr, 1, 1, 1);
@@ -297,6 +330,7 @@ static gboolean onDraw(GtkWidget *w, cairo_t *cr, LV *v) {
 	if (v->popup && v->popupShown) {
 		int sf = scaleOf();
 		cairo_set_source_surface(cr, v->popup, v->popupRect.x, v->popupRect.y);
+		cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_NEAREST);
 		cairo_rectangle(cr, v->popupRect.x, v->popupRect.y, (double)v->popupRect.width, (double)v->popupRect.height);
 		cairo_fill(cr);
 		(void)sf;
@@ -304,25 +338,46 @@ static gboolean onDraw(GtkWidget *w, cairo_t *cr, LV *v) {
 	return TRUE;
 }
 
-// copyInto copies a frame; scale is pixels per GTK unit of that frame (taken
+// copyInto copies a frame, only the parts that changed when the frame is the
+// same size as the last one; scale is pixels per GTK unit of that frame (taken
 // from the frame itself, so a frame made before a scale change still fits).
-static void copyInto(cairo_surface_t **dst, const void *buf, int w, int h, double scale) {
+// It returns whether the whole frame was copied.
+static int copyInto(cairo_surface_t **dst, const void *buf, int w, int h, double scale, size_t n, const cef_rect_t *dirty) {
 	double sf = scale > 0 ? scale : scaleOf();
+	// a scale a hair off a whole number is that number (no resampling)
+	if (fabs(sf - round(sf)) < 0.02) sf = round(sf);
+	int whole = 0;
 	if (!*dst || cairo_image_surface_get_width(*dst) != w || cairo_image_surface_get_height(*dst) != h) {
 		if (*dst) cairo_surface_destroy(*dst);
 		*dst = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
+		whole = 1;
 	}
 	cairo_surface_set_device_scale(*dst, sf, sf);
 	cairo_surface_flush(*dst);
 	unsigned char *d = cairo_image_surface_get_data(*dst);
 	int stride = cairo_image_surface_get_stride(*dst);
 	const unsigned char *s = buf;
-	if (stride == w * 4) {
-		memcpy(d, s, (size_t)w * h * 4);
+	if (whole || n == 0 || !dirty) {
+		if (stride == w * 4) {
+			memcpy(d, s, (size_t)w * h * 4);
+		} else {
+			for (int y = 0; y < h; y++) memcpy(d + (size_t)y * stride, s + (size_t)y * w * 4, (size_t)w * 4);
+		}
+		whole = 1;
 	} else {
-		for (int y = 0; y < h; y++) memcpy(d + (size_t)y * stride, s + (size_t)y * w * 4, (size_t)w * 4);
+		for (size_t i = 0; i < n; i++) {
+			cef_rect_t r = dirty[i];
+			if (r.x < 0) r.width += r.x, r.x = 0;
+			if (r.y < 0) r.height += r.y, r.y = 0;
+			if (r.x + r.width > w) r.width = w - r.x;
+			if (r.y + r.height > h) r.height = h - r.y;
+			if (r.width <= 0 || r.height <= 0) continue;
+			for (int y = r.y; y < r.y + r.height; y++)
+				memcpy(d + (size_t)y * stride + (size_t)r.x * 4, s + ((size_t)y * w + r.x) * 4, (size_t)r.width * 4);
+		}
 	}
 	cairo_surface_mark_dirty(*dst);
+	return whole;
 }
 
 static void CEF_CALLBACK onPaint(cef_render_handler_t *self, cef_browser_t *b, cef_paint_element_type_t type, size_t n, cef_rect_t const *dirty,
@@ -330,11 +385,21 @@ static void CEF_CALLBACK onPaint(cef_render_handler_t *self, cef_browser_t *b, c
 	LV *v = of(b);
 	if (!v || !v->area) return;
 	if (type == PET_POPUP) {
-		copyInto(&v->popup, buf, w, h, v->popupRect.width > 0 ? (double)w / v->popupRect.width : 0);
-	} else {
-		copyInto(&v->page, buf, w, h, v->w > 0 ? (double)w / v->w : 0);
+		copyInto(&v->popup, buf, w, h, v->popupRect.width > 0 ? (double)w / v->popupRect.width : 0, 0, NULL);
+		gtk_widget_queue_draw(v->area);
+		return;
 	}
-	gtk_widget_queue_draw(v->area);
+	double sf = v->w > 0 ? (double)w / v->w : 0;
+	if (copyInto(&v->page, buf, w, h, sf, n, dirty) || sf <= 0 || v->popupShown) {
+		gtk_widget_queue_draw(v->area);
+		return;
+	}
+	// redraw only what changed (in GTK units, rounded outward)
+	for (size_t i = 0; i < n; i++) {
+		int x0 = (int)floor(dirty[i].x / sf), y0 = (int)floor(dirty[i].y / sf);
+		int x1 = (int)ceil((dirty[i].x + dirty[i].width) / sf), y1 = (int)ceil((dirty[i].y + dirty[i].height) / sf);
+		gtk_widget_queue_draw_area(v->area, x0, y0, x1 - x0, y1 - y0);
+	}
 }
 
 static void CEF_CALLBACK getViewRect(cef_render_handler_t *self, cef_browser_t *b, cef_rect_t *r) {
@@ -345,8 +410,10 @@ static void CEF_CALLBACK getViewRect(cef_render_handler_t *self, cef_browser_t *
 }
 
 static int CEF_CALLBACK getScreenInfo(cef_render_handler_t *self, cef_browser_t *b, cef_screen_info_t *si) {
-	RELEASE(b);
-	si->device_scale_factor = (float)scaleOf();
+	LV *v = of(b);
+	// the scale of the page's own area once it is on screen (the window's before)
+	int sf = v && v->area && gtk_widget_get_realized(v->area) ? gtk_widget_get_scale_factor(v->area) : scaleOf();
+	si->device_scale_factor = (float)(sf < 1 ? 1 : sf);
 	return 1;
 }
 
@@ -1416,7 +1483,7 @@ static void setup(const char *dir) {
 	started = cef_initialize(&args, &s, &app, NULL);
 	if (!started) g_printerr("Lite Go: Chromium (CEF) could not start\n");
 	// a steady beat as well, for work CEF does not schedule
-	g_timeout_add(30, pumpTick, NULL);
+	g_timeout_add(250, pumpTick, NULL); // CEF schedules its own work; this beat only catches what it did not
 	if (g_getenv("LITEGO_SHOT")) g_timeout_add_seconds(5, shotTick, NULL);
 	g_free(bin);
 	g_free(helper);

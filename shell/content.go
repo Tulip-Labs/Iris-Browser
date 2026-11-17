@@ -17,8 +17,6 @@ func (a *App) content(r ui.Rect) {
 		return
 	}
 	switch {
-	case a.tabsOpen:
-		a.tabGrid(r)
 	case t.URL == "":
 		a.ntp(r, t)
 	case t.search != nil:

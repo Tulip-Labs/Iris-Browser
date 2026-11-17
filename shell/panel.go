@@ -32,11 +32,11 @@ func (a *App) drawPanel(r ui.Rect) {
 	g.Text(title, hr.X+52, ui.Mid(g, hr.Y, hr.H, ui.FTitle), ui.FTitle, th.OnSurface)
 	if u.IconButton(ID("pclose"), ui.Rect{X: hr.R() - 46, Y: hr.CY() - 19, W: 38, H: 38}, ui.IClose, "Close  Esc", ui.IconOpt{}) {
 		a.panel = false
-		a.refocusPage()
+		a.pageFocus()
 	}
 	if a.st.Focus != ID("histq") && a.In.Has(ui.KEscape, false) {
 		a.panel = false
-		a.refocusPage()
+		a.pageFocus()
 	}
 	body := ui.Rect{X: r.X, Y: hr.B(), W: r.W, H: r.H - hr.H - 8}
 	switch a.panelMode {
@@ -515,7 +515,7 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 			y += 48
 			divider()
 		}
-		note("Shortcuts: Ctrl+T new tab, Ctrl+Shift+A the tab grid, Ctrl+Shift+N private, Ctrl+W close, Ctrl+Shift+T reopen, Ctrl+L address, Ctrl+Tab next, Alt+Left back, Ctrl+F find, Ctrl+P print, Ctrl+H history, Ctrl+Shift+D downloads, Ctrl+Shift+S split view, Ctrl+plus and Ctrl+minus zoom, F11 full screen.")
+		note("Shortcuts: Ctrl+T new tab, Ctrl+Shift+N private, Ctrl+W close, Ctrl+Shift+T reopen, Ctrl+L address, Ctrl+Tab next, Alt+Left back, Ctrl+F find, Ctrl+P print, Ctrl+H history, Ctrl+Shift+D downloads, Ctrl+Shift+S split view, Ctrl+plus and Ctrl+minus zoom, F11 full screen.")
 		y += 16
 	}
 	return y
@@ -566,4 +566,12 @@ func ago(t time.Time) string {
 		return "yesterday"
 	}
 	return strconv.Itoa(n) + " days ago"
+}
+
+// pageFocus gives the keyboard back to the current page.
+func (a *App) pageFocus() {
+	if t := a.tab(); t != nil && t.view != nil && t.URL != "" {
+		v := t.view
+		a.web(v.Focus)
+	}
 }

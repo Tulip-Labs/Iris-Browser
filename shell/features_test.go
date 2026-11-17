@@ -496,16 +496,24 @@ func TestPastelThemes(t *testing.T) {
 	}
 }
 
-func TestMenuAndTabGrid(t *testing.T) {
+func TestMenuAndTabStrip(t *testing.T) {
 	d := newDriver(t, 1440, 900, true)
 	d.frames(2)
 	page := d.open("https://example.com/article")
 	v := lastView(t, page)
-	// one slim bar: the page starts under it and reaches the bottom
-	if b := v.bounds; b[1] > barH+4 || b[1]+b[3] < 900-12 {
+	// the tabs and the bar on top: the page starts under them and reaches the bottom
+	if b := v.bounds; b[1] > stripH+barH+4 || b[1]+b[3] < 900-12 {
 		t.Fatalf("the page should take the window under the bar: %v", b)
 	}
+	d.open("https://news.example.org/")
+	d.frames(2)
 	d.shot("bar")
+	// the tabs sit in the middle of the strip
+	d.click(720, stripH/2)
+	d.frame()
+	if d.a.cur != 0 && d.a.cur != 1 {
+		t.Fatalf("a click in the middle of the strip should pick a tab, got %d", d.a.cur)
+	}
 	n := len(d.a.tabs)
 	// the menu holds the settings, in sections that open in place
 	d.a.openSettings("look")
@@ -523,30 +531,19 @@ func TestMenuAndTabGrid(t *testing.T) {
 	if d.a.panel {
 		t.Fatal("Esc closes the menu")
 	}
-	// the tab grid: every tab as a card; the pages hide behind it
-	d.open("https://news.example.org/")
-	d.a.do(actTabs)
+	// the other kinds of tab, under the bar
+	d.a.do(actKinds)
 	d.frames(2)
-	if !d.a.tabsOpen || v.visible {
-		t.Fatal("the tab grid should open over the pages")
-	}
-	d.shot("tab-grid")
-	d.typeText("example.com")
-	if l := d.a.matching(); len(l) != 1 || d.a.tabs[l[0]] != page {
-		t.Fatalf("the search should find the article only: %v", l)
-	}
-	d.key(ui.KEnter, false, false)
-	d.frames(2)
-	if d.a.tabsOpen || d.a.tab() != page || !v.visible {
-		t.Fatal("Enter opens the found tab")
-	}
-	// a narrow window keeps back, the address, the tabs button and the menu
+	d.shot("kinds")
+	d.a.do(actKinds)
+	// a narrow window keeps back, the address and the menu
 	d2 := newDriver(t, 520, 760, true)
 	d2.frames(2)
-	d2.a.do(actTabs)
+	for i := 0; i < 6; i++ {
+		d2.open("https://site" + string(rune('a'+i)) + ".example.com/")
+	}
 	d2.frames(2)
-	d2.shot("tab-grid-narrow")
-	d2.a.do(actTabs)
+	d2.shot("strip-narrow")
 	d2.a.openSettings("containers")
 	d2.frames(2)
 	d2.shot("menu-narrow")

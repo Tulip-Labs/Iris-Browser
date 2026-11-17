@@ -14,7 +14,7 @@ import (
 	"litego/shell"
 )
 
-const version = "1.0.9"
+const version = "1.0.10"
 
 func main() {
 	// a small, steady footprint: collect garbage sooner and keep the Go heap
