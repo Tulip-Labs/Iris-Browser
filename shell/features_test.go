@@ -523,21 +523,21 @@ func TestMenuAndTabGrid(t *testing.T) {
 	if d.a.panel {
 		t.Fatal("Esc closes the menu")
 	}
-	// the tab grid: every tab as a card; the pages hide behind it
+	// the tab list: at the side, like the menu; the page stays beside it
 	d.open("https://news.example.org/")
 	d.a.do(actTabs)
 	d.frames(2)
-	if !d.a.tabsOpen || v.visible {
-		t.Fatal("the tab grid should open over the pages")
+	if !d.a.tabsOpen() || !d.a.tab().view.(*fakeView).visible {
+		t.Fatal("the tab list should open beside the page")
 	}
-	d.shot("tab-grid")
+	d.shot("tab-list")
 	d.typeText("example.com")
 	if l := d.a.matching(); len(l) != 1 || d.a.tabs[l[0]] != page {
 		t.Fatalf("the search should find the article only: %v", l)
 	}
 	d.key(ui.KEnter, false, false)
 	d.frames(2)
-	if d.a.tabsOpen || d.a.tab() != page || !v.visible {
+	if d.a.tabsOpen() || d.a.tab() != page || !v.visible {
 		t.Fatal("Enter opens the found tab")
 	}
 	// a narrow window keeps back, the address, the tabs button and the menu
@@ -545,7 +545,7 @@ func TestMenuAndTabGrid(t *testing.T) {
 	d2.frames(2)
 	d2.a.do(actTabs)
 	d2.frames(2)
-	d2.shot("tab-grid-narrow")
+	d2.shot("tab-list-narrow")
 	d2.a.do(actTabs)
 	d2.a.openSettings("containers")
 	d2.frames(2)

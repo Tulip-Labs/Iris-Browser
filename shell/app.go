@@ -121,8 +121,7 @@ type App struct {
 	integrity Integrity
 	setSec    string // the menu's open section ("" = none)
 	nameEd    *ui.TextEdit
-	// the tab grid (mobile-style tabs) and its search
-	tabsOpen bool
+	// the tab list (mobile-style tabs) and its search
 	tabQ     *ui.TextEdit
 	tabSc    ui.Scroll
 	tabSel   int

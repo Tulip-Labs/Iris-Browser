@@ -26,6 +26,12 @@ func (a *App) drawPanel(r ui.Rect) {
 	case panelHistory:
 		title = "History"
 		ui.DrawIcon(g, ui.IHistory, hr.X+19, hr.CY()-11, 22, th.Primary)
+	case panelTabs:
+		title = strconv.Itoa(len(a.tabs)) + " tabs"
+		if len(a.tabs) == 1 {
+			title = "1 tab"
+		}
+		ui.DrawIcon(g, ui.ITabsVertical, hr.X+19, hr.CY()-11, 22, th.Primary)
 	default:
 		logo(g, ui.RectAround(hr.X+30, hr.CY(), 26, 26), th, th.Primary)
 	}
@@ -45,6 +51,9 @@ func (a *App) drawPanel(r ui.Rect) {
 		return
 	case panelHistory:
 		a.drawHistory(body)
+		return
+	case panelTabs:
+		a.drawTabList(body)
 		return
 	}
 	sc := &a.panelScroll
@@ -515,7 +524,7 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 			y += 48
 			divider()
 		}
-		note("Shortcuts: Ctrl+T new tab, Ctrl+Shift+A the tab grid, Ctrl+Shift+N private, Ctrl+W close, Ctrl+Shift+T reopen, Ctrl+L address, Ctrl+Tab next, Alt+Left back, Ctrl+F find, Ctrl+P print, Ctrl+H history, Ctrl+Shift+D downloads, Ctrl+Shift+S split view, Ctrl+plus and Ctrl+minus zoom, F11 full screen.")
+		note("Shortcuts: Ctrl+T new tab, Ctrl+Shift+A the tab list, Ctrl+Shift+N private, Ctrl+W close, Ctrl+Shift+T reopen, Ctrl+L address, Ctrl+Tab next, Alt+Left back, Ctrl+F find, Ctrl+P print, Ctrl+H history, Ctrl+Shift+D downloads, Ctrl+Shift+S split view, Ctrl+plus and Ctrl+minus zoom, F11 full screen.")
 		y += 16
 	}
 	return y

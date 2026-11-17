@@ -1,5 +1,12 @@
 Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.10
+
+- **Sharper pages on Linux.** Chromium's frames are painted pixel for pixel at the screen's real scale, with no smoothing.
+- **Tabs as a list.** The tabs button (Ctrl+Shift+A) opens a list at the side, like the menu, with the page still beside it, in place of the full-page grid.
+- **YouTube and tabs playing sound or video never rest**, nor for ten minutes after they pause.
+- **Less memory and less work.** Pages of one site share a process and fewer page processes run; Chromium's back-and-forward page cache and its background services are off; only the changed part of each frame is copied; Lite Go wakes up less often when idle.
+
 ## New in 1.0.9
 
 - **A new look, lighter on the screen.** One slim bar: back, forward and reload at the left, a compact address in the middle, the tabs button, the shield and the menu at the right. The tab strip, the corner mark and the status bar are gone, and it fits any window size.

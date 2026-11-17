@@ -65,6 +65,8 @@ type Tab struct {
 	// hydration: where the page was scrolled when it was let go, to restore
 	scrollY int
 	hydrate bool
+	// when its sound last stopped
+	audioEnd float64
 }
 
 // binding routes a view's events to its tab.
@@ -397,8 +399,15 @@ func (a *App) events(b *binding) webview.Events {
 				}
 			})
 		},
-		History:  func(b, f bool) { on(func(t *Tab) { t.CanBack, t.CanFwd = b, f }) },
-		Audio:    func(p bool) { on(func(t *Tab) { t.Audio = p }) },
+		History: func(b, f bool) { on(func(t *Tab) { t.CanBack, t.CanFwd = b, f }) },
+		Audio: func(p bool) {
+			on(func(t *Tab) {
+				if t.Audio && !p {
+					t.audioEnd = a.now() // paused: it may play on, so it stays a while
+				}
+				t.Audio = p
+			})
+		},
 		Blocked:  func(string) { on(func(t *Tab) { t.Blocked++; a.blockedTotal++ }) },
 		Crashed:  func() { on(func(t *Tab) { t.Crashed = true; t.Loading = false; t.scanning = false }) },
 		Focus:    func() { on(func(t *Tab) { a.pageFocused(t) }) },
@@ -628,7 +637,7 @@ func (a *App) sync(page, beside ui.Rect, other *Tab) {
 		if t == other {
 			r = beside
 		}
-		want := (t == cur || t == other) && t.URL != "" && !t.Crashed && t.search == nil && !r.Empty() && !a.tabsOpen
+		want := (t == cur || t == other) && t.URL != "" && !t.Crashed && t.search == nil && !r.Empty()
 		if want {
 			s := a.Scale
 			b := [4]int{int(r.X*s + 0.5), int(r.Y*s + 0.5), int(r.W*s + 0.5), int(r.H*s + 0.5)}

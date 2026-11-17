@@ -290,18 +290,18 @@ func (a *App) toolbar(r ui.Rect) ui.Rect {
 	return ar
 }
 
-// tabsButton shows how many tabs are open and opens the tab grid.
+// tabsButton shows how many tabs are open and opens the tab list.
 func (a *App) tabsButton(r ui.Rect) {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	hot := u.Hover(r)
-	if a.tabsOpen {
+	if a.tabsOpen() {
 		ui.FillRound(g, r, 12, th.SecondaryContainer)
 	} else if hot {
 		ui.FillRound(g, r, 12, th.Ink.Alpha(0.07))
 	}
 	box := ui.RectAround(r.CX(), r.CY(), 24, 22)
 	col := th.OnSurface
-	if a.tabsOpen {
+	if a.tabsOpen() {
 		col = th.OnSecondaryContainer
 	}
 	ui.StrokeRound(g, box, 7, 1.8, col)

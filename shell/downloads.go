@@ -91,7 +91,19 @@ func (a *App) downloadingIn(v webview.View) bool {
 }
 
 // keepAwake: tabs playing sound or downloading stay awake in the background.
-func (a *App) keepAwake(t *Tab) bool { return t.Audio || a.downloadingIn(t.view) }
+// keepAwake says whether a tab must keep its page: it is playing sound or
+// video (or paused it in the last ten minutes), it is YouTube, or it is
+// downloading. Such tabs never rest.
+func (a *App) keepAwake(t *Tab) bool {
+	if t.Audio || t.audioEnd > 0 && a.now()-t.audioEnd < 600 || a.downloadingIn(t.view) {
+		return true
+	}
+	switch strings.TrimPrefix(core.Host(t.URL), "www.") {
+	case "youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be", "youtube-nocookie.com":
+		return true
+	}
+	return false
+}
 
 // reapPages closes the pages of closed tabs whose downloads have ended.
 func (a *App) reapPages() {
