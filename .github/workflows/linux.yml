@@ -103,7 +103,7 @@ jobs:
           mkdir -p /tmp/page
           command -v ffmpeg >/dev/null && ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime /tmp/page/v.webm
           # an H.264 + AAC video, which Lite Go plays through its relay (where ffmpeg has x264)
-          command -v ffmpeg >/dev/null && ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=frequency=440 -t 20 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest /tmp/page/h.mp4 || true
+          command -v ffmpeg >/dev/null && ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=frequency=440 -t 20 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -movflags +faststart /tmp/page/h.mp4 || true
           cat > /tmp/page/video.html <<'HTML'
           <!doctype html><body style="margin:0;background:#202020;font:24px sans-serif;color:#fff">
           <h1 style="color:#f5a">Lite Go on Chromium</h1>
