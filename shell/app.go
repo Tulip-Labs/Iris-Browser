@@ -122,9 +122,9 @@ type App struct {
 	setSec    string // the menu's open section ("" = none)
 	nameEd    *ui.TextEdit
 	// the tab list (mobile-style tabs) and its search
-	tabQ     *ui.TextEdit
-	tabSc    ui.Scroll
-	tabSel   int
+	tabQ   *ui.TextEdit
+	tabSc  ui.Scroll
+	tabSel int
 
 	tabs    []*Tab
 	cur     int

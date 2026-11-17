@@ -257,4 +257,3 @@ func (a *App) tabRow(i int, t *Tab, r ui.Rect, sel bool) bool {
 	u.Tooltip(t.URL, r)
 	return u.Clickable(id, r)
 }
-
