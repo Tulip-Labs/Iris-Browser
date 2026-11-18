@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Iris packages</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem;color:#241f4e;background:#fdfaf3}
+pre{background:#f1ecfb;padding:.8rem 1rem;border-radius:10px;overflow-x:auto}h1{font-size:1.6rem}</style></head><body>
+<h1>Iris for Linux</h1>
+<p>Packages for Iris, the light browser by Tulip Labs. Downloads and source:
+<a href="https://github.com/Tulip-Labs/Iris-Browser/releases">GitHub releases</a>.</p>
+<h2>Debian, Ubuntu, Linux Mint</h2>
+<pre>curl -fsSL https://tulip-labs.github.io/Iris-Browser/iris-browser.gpg | sudo tee /usr/share/keyrings/iris-browser.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/iris-browser.gpg] https://github.com/Tulip-Labs/Iris-Browser/releases/latest download/" | sudo tee /etc/apt/sources.list.d/iris-browser.list
+sudo apt update && sudo apt install iris-browser</pre>
+<h2>Fedora</h2>
+<pre>sudo dnf config-manager addrepo --from-repofile=https://tulip-labs.github.io/Iris-Browser/iris-browser.repo
+sudo dnf install iris-browser</pre>
+<h2>openSUSE</h2>
+<pre>sudo zypper addrepo https://tulip-labs.github.io/Iris-Browser/iris-browser.repo
+sudo zypper install iris-browser</pre>
+<h2>Fedora Atomic (Silverblue, Kinoite)</h2>
+<pre>sudo curl -fsSLo /etc/yum.repos.d/iris-browser.repo https://tulip-labs.github.io/Iris-Browser/iris-browser.repo
+rpm-ostree install iris-browser</pre>
+</body></html>

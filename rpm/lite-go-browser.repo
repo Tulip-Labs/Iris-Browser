@@ -1,0 +1,8 @@
+[lite-go-browser]
+name=Iris
+baseurl=https://tulip-labs.github.io/Iris-Browser/rpm
+enabled=1
+metadata_expire=1h
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://tulip-labs.github.io/Iris-Browser/iris-browser.asc
