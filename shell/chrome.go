@@ -29,7 +29,7 @@ type suggestion struct {
 }
 
 // chrome draws the tabs (a compact strip on top, centered) and under them
-// the bar (navigation, the address, the shield and the menu), and returns
+// the bar (navigation, the address and the menu), and returns
 // where the page goes.
 func (a *App) chrome(full ui.Rect) ui.Rect {
 	w := full.W
@@ -370,7 +370,7 @@ func (a *App) windowControls(r ui.Rect) {
 }
 
 // toolbar is the bar: back, forward and reload at the left (where the hand
-// and the mouse start), the address in the middle, then the shield and the
+// and the mouse start), the address in the middle, then the
 // menu; on a narrow window only what is needed stays.
 func (a *App) toolbar(r ui.Rect) ui.Rect {
 	u, g, th := &a.u, a.u.G, a.u.Th
@@ -412,17 +412,13 @@ func (a *App) toolbar(r ui.Rect) ui.Rect {
 	}
 	left := nav.R() + 10
 
-	// right: menu, shield, downloads, tabs, and Sign in until Google knows you
+	// right: menu, downloads, tabs, and Sign in until Google knows you
 	icon := func(id string, ic ui.Icon, tip string, on bool) bool {
 		rx -= 38
 		return u.IconButton(ID(id), ui.Rect{X: rx, Y: cy - 18, W: 36, H: 36}, ic, tip, ui.IconOpt{Toggled: on})
 	}
-	if icon("panel", ui.IMore, "Menu: tools, look, shields, memory and more  Ctrl+,", a.panel && a.panelMode == panelSettings) {
+	if icon("panel", ui.IMore, "Menu: tools, look, memory and more  Ctrl+,", a.panel && a.panelMode == panelSettings) {
 		a.togglePanel(panelSettings)
-	}
-	if !compact {
-		rx -= 38
-		a.shieldButton(ui.Rect{X: rx, Y: cy - 18, W: 36, H: 36}, t)
 	}
 	if len(a.downloads) > 0 {
 		rx -= 38
@@ -462,38 +458,6 @@ func (a *App) toolbar(r ui.Rect) ui.Rect {
 		g.Restore()
 	}
 	return ar
-}
-
-func (a *App) shieldButton(r ui.Rect, t *Tab) {
-	u, g, th := &a.u, a.u.G, a.u.Th
-	host := ""
-	if t != nil {
-		host = core.Host(t.URL)
-	}
-	on := a.shield.On && !a.siteOff(host)
-	col := th.OnSurfaceVariant.Alpha(0.6)
-	if on {
-		col = th.Primary
-	}
-	tip := "Shield is off"
-	if on {
-		tip = "Shield blocks ads and trackers"
-	}
-	if u.IconButton(ID("shield"), r, ui.IShield, tip, ui.IconOpt{Accent: col}) {
-		a.panel, a.panelMode = true, panelSettings
-		a.panelScroll.Y = 0
-	}
-	if on && t != nil && t.Blocked > 0 {
-		s := strconv.Itoa(t.Blocked)
-		if t.Blocked > 999 {
-			s = "999+"
-		}
-		f := ui.Font{Size: 9.5, Bold: true}
-		bw := max(16, g.Measure(s, f)+8)
-		br := ui.Rect{X: r.R() - bw + 2, Y: r.Y + 3, W: bw, H: 15}
-		ui.FillRound(g, br, 7.5, th.Primary)
-		ui.TextCenter(g, s, br, f, th.OnPrimary)
-	}
 }
 
 func (a *App) siteOff(host string) bool {

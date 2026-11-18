@@ -165,7 +165,7 @@ class Pages(private val act: Activity, private val set: Settings, private val ev
     private fun scripts(): List<String> {
         val out = ArrayList<String>()
         if (set.shields && set.farble) out.add(asset("farble.js").replace("SEED", seed.toString()))
-        if (set.shields && set.youtube) out.add(asset("youtube.js"))
+        out.add(asset("youtube.js"))
         if (set.youtubeLight) out.add(asset("youtube-light.js"))
         return out.filter { it.isNotBlank() }
     }
@@ -209,7 +209,10 @@ class Pages(private val act: Activity, private val set: Settings, private val ev
         return w
     }
 
-    fun shieldOn(page: String): Boolean = set.shields && hostOf(page).removePrefix("www.") !in set.shieldOff
+    /** the shield blocks everywhere but YouTube, whose ads load and are skipped (youtube.js) */
+    fun shieldOn(page: String): Boolean = !isYouTube(hostOf(page))
+
+    private fun isYouTube(h: String): Boolean = h == "youtube.com" || h.endsWith(".youtube.com") || h == "youtube-nocookie.com" || h.endsWith(".youtube-nocookie.com")
 
     /** The style sheet that hides what ads leave behind on this page. */
     fun hide(w: Page, page: String) {

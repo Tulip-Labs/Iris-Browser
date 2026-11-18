@@ -481,11 +481,11 @@ func TestLiteResults(t *testing.T) {
 	if tab.view != nil && tab.shown {
 		t.Fatal("the Google page must not be shown under the results")
 	}
-	if len(s.Web) != 4 || len(s.Images) != 24 || len(s.Videos) != 6 || s.aiSt != stDone {
-		t.Fatalf("web %d images %d videos %d ai %v %q", len(s.Web), len(s.Images), len(s.Videos), s.aiSt, s.AI.Text)
+	if len(s.Web) != 4 || len(s.Images) != 24 || len(s.Videos) != 6 {
+		t.Fatalf("web %d images %d videos %d", len(s.Web), len(s.Images), len(s.Videos))
 	}
-	if strings.Contains(s.AI.Text, "Show more") || strings.HasPrefix(s.AI.Text, "red pandas") {
-		t.Fatalf("AI text not cleaned: %q", s.AI.Text)
+	if s.AI.Text != "" {
+		t.Fatal("the results page asks no AI any more")
 	}
 	if r := core.Rank(s.Web, s.Q, nil); r[0].Label != "Reference" {
 		t.Fatalf("the reference should lead: %+v", r[0])
@@ -497,10 +497,6 @@ func TestLiteResults(t *testing.T) {
 	d.settle(4)
 	d.shot("results-media")
 	s.scroll.Y = 0
-	s.aiOpen = true
-	d.frames(2)
-	d.shot("results-ai")
-	s.aiOpen = false
 	// a picture and a video open beside the results
 	s.scroll.Y = 0
 	s.viewer = viewer{kind: vImage, idx: 3}

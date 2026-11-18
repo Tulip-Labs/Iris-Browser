@@ -43,7 +43,9 @@ func (a *App) imageFor(src string, maxW int) image.Image {
 	if maxW <= 320 {
 		return a.thumbFor(src)
 	}
-	maxW = int(min(1600, float32(maxW)*max(1, a.Scale)/1.25))
+	// the picture's size on the screen's real pixels (maxW is in points), so it
+	// is never drawn larger than it was fetched
+	maxW = int(min(2400, float32(maxW)*max(1, a.Scale)))
 	key := "big:" + src
 	t := a.thumbs[key]
 	if t == nil {

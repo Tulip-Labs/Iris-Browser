@@ -1,5 +1,12 @@
 Iris (formerly Lite Go): a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.18
+
+- **The shield just works.** No shield button and no switches: Iris blocks ads, trackers and cookie notices on every site, with the filter lists always on. YouTube is the one exception: nothing is blocked there, so YouTube sees no ad blocker; when an ad starts, Iris mutes it, skips it at once and hides the ad boxes around the videos.
+- **YouTube no longer lags.** The ad skipper used to wake up on every change YouTube made to the page (thousands a second); it now watches only the player.
+- **Search results are just the web.** No AI answer and no follow-up on the results page: the websites, ranked by Iris's quality filters, with pictures and videos beside them. An **AI Mode** button opens Google AI Mode in its own tab when you want it.
+- **Sharp pictures in the results.** Iris finds each picture's full-size original in Google's page and loads it at your screen's real pixel size, instead of stretching Google's small thumbnail.
+
 ## New in 1.0.17
 
 - **Sharp on fractionally scaled screens.** GTK 3, which holds Iris's window, draws only at whole scales; on a screen scaled by 1.25, 1.5 or 1.75 the compositor told it 1 and stretched the window up, so everything looked blocky. Iris now asks niri, Sway or Hyprland for the screen's real scale and draws at the next whole scale, which the compositor shrinks cleanly. `GDK_SCALE` set by hand still wins.

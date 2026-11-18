@@ -4,6 +4,11 @@
   const heavy = /vp0?9|av01/i;
   try {
     const ms = window.MediaSource;
+    // only where H.264 really plays: some systems (Fedora without OpenH264 or
+    // RPM Fusion, for one) have VP9 and AV1 but no H.264, and hiding those
+    // would leave YouTube with nothing it can play
+    const h264 = !!(ms && ms.isTypeSupported && ms.isTypeSupported('video/mp4; codecs="avc1.4d401f"'));
+    if (!h264) throw 0;
     if (ms && ms.isTypeSupported) {
       const orig = ms.isTypeSupported.bind(ms);
       ms.isTypeSupported = (t) => heavy.test(t) ? false : orig(t);

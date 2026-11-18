@@ -27,13 +27,14 @@ class Settings(ctx: Context) {
     private fun flag(key: String, def: Boolean) = p.getBoolean(key, def)
     private fun setFlag(key: String, v: Boolean) = p.edit().putBoolean(key, v).apply()
 
-    var shields: Boolean get() = flag("shields", true); set(v) = setFlag("shields", v)
-    var lists: Boolean get() = flag("lists", true); set(v) = setFlag("lists", v)
-    var cookies: Boolean get() = flag("cookies", true); set(v) = setFlag("cookies", v)
-    var cleanLinks: Boolean get() = flag("cleanLinks", true); set(v) = setFlag("cleanLinks", v)
+    // the shield has no switches: always on (YouTube aside, see Pages.shieldOn)
+    val shields: Boolean get() = true
+    val lists: Boolean get() = true
+    val cookies: Boolean get() = true
+    val cleanLinks: Boolean get() = true
     var httpsOnly: Boolean get() = flag("httpsOnly", true); set(v) = setFlag("httpsOnly", v)
     var farble: Boolean get() = flag("farble", true); set(v) = setFlag("farble", v)
-    var youtube: Boolean get() = flag("youtube", true); set(v) = setFlag("youtube", v)
+    val youtube: Boolean get() = true
     var youtubeLight: Boolean get() = flag("youtubeLight", true); set(v) = setFlag("youtubeLight", v)
     var desktop: Boolean get() = flag("desktop", false); set(v) = setFlag("desktop", v)
 

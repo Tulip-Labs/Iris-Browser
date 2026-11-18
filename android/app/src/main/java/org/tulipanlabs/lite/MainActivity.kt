@@ -266,7 +266,8 @@ class MainActivity : Activity(), PageEvents {
         badge.background = rounded(pal.primary, dp(8).toFloat())
         badge.visibility = View.GONE
         shieldBox.addView(badge, flp(WRAP, dp(15), Gravity.TOP or Gravity.END).also { it.topMargin = dp(4); it.rightMargin = dp(2) })
-        top.addView(shieldBox, lp(dp(48), dp(48)))
+        // no shield button: the shield is always on
+        top.addView(View(this), lp(dp(8), dp(48)))
 
         pill = LinearLayout(this)
         pill.orientation = LinearLayout.HORIZONTAL
@@ -1103,34 +1104,6 @@ class MainActivity : Activity(), PageEvents {
         col.addView(note("Google opens in the mode you pick. Type \"yt \" before words to search YouTube."))
         col.addView(toggle("Iris results for Web searches", set.liteResults) { set.liteResults = it })
         col.addView(note("Web searches are read in the background and shown on Iris's own page, in your palette, without ads."))
-
-        // shields
-        col.addView(section("Iris Shields"))
-        col.addView(toggle("Block ads and trackers", set.shields) { set.shields = it; pages.clearCache(); updateBars() })
-        val host = t?.url?.let { hostOf(it).removePrefix("www.") } ?: ""
-        if (host.isNotEmpty() && Search.query(t!!.url) == null) {
-            col.addView(toggle("On for $host", host !in set.shieldOff) { on ->
-                set.shieldOff = if (on) set.shieldOff - host else set.shieldOff + host
-                pages.clearCache()
-                tab()?.web?.reload()
-            })
-        }
-        col.addView(toggle("Filter lists (EasyList, EasyPrivacy, uBlock)", set.lists) { set.lists = it; loadShields(refresh = true) })
-        col.addView(toggle("Hide cookie notices", set.cookies) { set.cookies = it; loadShields(refresh = true) })
-        col.addView(toggle("Clean links of tracking", set.cleanLinks) { set.cleanLinks = it })
-        col.addView(toggle("HTTPS only", set.httpsOnly) { set.httpsOnly = it })
-        col.addView(toggle("Fingerprinting protection", set.farble) { set.farble = it })
-        col.addView(toggle("YouTube without ads", set.youtube) { set.youtube = it })
-        col.addView(toggle("Lighter YouTube (H.264, no previews)", set.youtubeLight) { set.youtubeLight = it })
-        val e = pages.shields
-        val at = FilterLists.updatedAt(File(filesDir, "lists"))
-        col.addView(note(if (e != null && e.rules > 0) "${"%,d".format(e.rules)} blocking rules and ${"%,d".format(e.hiding)} hiding rules" + (if (at > 0) ", updated " + ago(at) else "") + "."
-            else "The filter lists download in the background; a built-in list blocks the commonest ads until then."))
-        col.addView(button(pal, "Update filter lists", false) {
-            File(filesDir, "lists").listFiles()?.forEach { it.setLastModified(0) }
-            loadShields(refresh = true)
-            Toast.makeText(this, "Updating the filter lists", Toast.LENGTH_SHORT).show()
-        }, lp(WRAP, dp(40)).also { it.topMargin = dp(8) })
 
         // sync
         col.addView(section("Sync with your computer"))

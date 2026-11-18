@@ -76,6 +76,10 @@ func LoadSettings(dir string) *Settings {
 	if b, err := os.ReadFile(s.path); err == nil {
 		_ = json.Unmarshal(b, s)
 	}
+	// The shield has no switches: it blocks everywhere but YouTube, where
+	// the ads load and are skipped (core.YouTubeScript)
+	s.Shield, s.Lists, s.Cookies, s.CleanLinks, s.YouTube = true, true, true, true, true
+	s.ShieldOff = nil
 	return s
 }
 

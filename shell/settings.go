@@ -17,7 +17,6 @@ type settingsSection struct {
 
 var settingsSections = []settingsSection{
 	{"look", "Appearance", "Palettes", ui.IPalette},
-	{"shields", "Shields and privacy", "Ads, trackers, cookie notices and fingerprinting", ui.IShield},
 	{"containers", "Containers", "Separate sign-ins: their names, icons and colors", ui.IContainer},
 	{"memory", "Memory", "How soon tabs rest, and freeing memory now", ui.IMemory2},
 	{"data", "History and data", "Reopening tabs and clearing history", ui.IHistory},

@@ -7,7 +7,7 @@ import (
 
 // YouTubeScript gets past YouTube's ads without YouTube seeing an ad
 // blocker. YouTube checks that its ad requests go through and that the ad
-// data reaches its player, so Lite Go no longer blocks or edits either on
+// data reaches its player, so Iris no longer blocks or edits either on
 // youtube.com (the shield lets YouTube's requests through). Instead, when an
 // ad starts in the player, this script mutes it, plays it at 16x, jumps to its
 // end and presses Skip as soon as there is one; then the video goes on with
@@ -62,8 +62,25 @@ const YouTubeScript = `(() => {
       if (v.paused) v.play().catch(() => {});
     }
   };
-  setInterval(tick, 300);
-  new MutationObserver(tick).observe(document.documentElement, { attributes: true, attributeFilter: ['class'], subtree: true });
+  // Watch only the player's own class (YouTube marks ads there), not every
+  // class change on the page: YouTube changes thousands a second, and running
+  // on each one made it lag. A slow check covers the rest.
+  let watched = null, queued = false;
+  const soon = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; tick(); });
+  };
+  const watch = new MutationObserver(soon);
+  setInterval(() => {
+    const p = document.querySelector('#movie_player, .html5-video-player');
+    if (p && p !== watched) {
+      watch.disconnect();
+      watch.observe(p, { attributes: true, attributeFilter: ['class'] });
+      watched = p;
+    }
+    tick();
+  }, 500);
 })();`
 
 // IsYouTube says whether the page is YouTube, where the shield lets every
@@ -115,9 +132,9 @@ const YouTubeLightScript = `(() => {
 })();`
 
 // H264Script lets a page's H.264 videos play where the engine cannot decode
-// them (Lite Go's Chromium on Linux): it says MP4 may play, so players offer
+// them (Iris's Chromium on Linux): it says MP4 may play, so players offer
 // their MP4 file, and when a video then fails as unplayable it is pointed at
-// Lite Go's video relay (relay, which ends in "u="), which converts it.
+// Iris's video relay (relay, which ends in "u="), which converts it.
 // Videos made of pieces in the page (blob: addresses) are left alone.
 func H264Script(relay string) string {
 	return `(() => {

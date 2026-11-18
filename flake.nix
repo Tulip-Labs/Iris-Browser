@@ -19,7 +19,7 @@
 
         lite-go-browser = pkgs.buildGoModule {
           pname = "lite-go-browser";
-          version = "1.0.17";
+          version = "1.0.18";
           src = self;
           vendorHash = "sha256-DUuIMLR+RLt5e6kRZcxRdGo4Q4i9ZGR7ia629F8Vp2o=";
           subPackages = [ "cmd/litego" ];

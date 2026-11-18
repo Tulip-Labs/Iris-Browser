@@ -64,8 +64,6 @@ func (a *App) startSearch(q string, m core.Mode, url string, private bool) *Sear
 	s := &Search{Q: q, Mode: m, URL: url, private: private, moreSt: stDone}
 	w := a.workerFor(private, false)
 	w.cancel(func(j *job) bool { return true }) // a new search replaces waiting ones
-	aw := a.workerFor(private, true)
-	aw.cancel(func(j *job) bool { return j.tag == "search" })
 	a.enqueue(w, &job{url: core.ModeWeb.URL(q), script: core.WebScript, timeout: 15, every: 0.4,
 		handle: func(js string) bool {
 			web, captcha := core.ParseWeb(js)
@@ -101,19 +99,6 @@ func (a *App) startSearch(q string, m core.Mode, url string, private bool) *Sear
 				s.imgSt = stFailed
 			}
 		}})
-	a.askGoogleAI(aw, "search", a.aiPrompt(q), q, 35, func(r core.AIResult, done bool) {
-		s.captcha = s.captcha || r.Captcha
-		if r.Text != "" {
-			s.AI = r
-		}
-		if done {
-			if s.AI.Text == "" {
-				s.aiSt = stFailed
-			} else {
-				s.aiSt = stDone
-			}
-		}
-	})
 	yt := a.ytSearch
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
@@ -231,7 +216,17 @@ func (a *App) results(r ui.Rect, t *Tab) {
 		a.openOriginal(t)
 		return
 	}
-	ui.TextFit(g, s.Q, hx, y+30, ui.Font{Size: 26, Bold: true}, th.OnSurface, ob.X-hx-12)
+	// Google's AI Mode, only when asked for: a tab of its own
+	ab := ui.Rect{X: ob.X - 8 - 104, Y: ob.Y, W: 104, H: 32}
+	ui.Glass(g, ab, 16, th, u.Hover(ab), false)
+	g.Text("AI Mode", ab.X+14, ui.Mid(g, ab.Y, ab.H, ui.FSmallBold), ui.FSmallBold, th.OnSurfaceVariant)
+	ui.DrawIcon(g, ui.IExternal, ab.R()-26, ab.CY()-7, 14, th.OnSurfaceVariant)
+	u.Tooltip("Ask Google AI Mode in a new tab", ab)
+	if u.Clickable(ID("aimode"), ab) {
+		a.newTab(KNormal, "", core.ModeAI.URL(s.Q)+"&lite=0", true)
+		return
+	}
+	ui.TextFit(g, s.Q, hx, y+30, ui.Font{Size: 26, Bold: true}, th.OnSurface, ab.X-hx-12)
 	y += 46
 	info := "Ads removed"
 	if len(ranked) > 0 {
@@ -242,7 +237,7 @@ func (a *App) results(r ui.Rect, t *Tab) {
 	g.FillRect(ui.Rect{X: r.X + pad, Y: y, W: r.W - 2*pad, H: 1}, th.Divider)
 	body := ui.Rect{X: r.X, Y: y + 1, W: r.W, H: r.B() - y - 1}
 
-	if s.captcha && len(s.Web) == 0 && s.AI.Text == "" {
+	if s.captcha && len(s.Web) == 0 {
 		y := body.Y + 22
 		y = a.resultNote(ui.Rect{X: hx, Y: y, W: min(640, r.W-2*pad)}, "Google asked to confirm you are human. Signing in to Google once stops this; or open the search on Google.", "Sign in to Google", func() { a.signIn(t) })
 		a.resultNote(ui.Rect{X: hx, Y: y, W: 400}, "", "Open on Google", func() { a.openOriginal(t) })
@@ -260,7 +255,6 @@ func (a *App) results(r ui.Rect, t *Tab) {
 		a.u.PushHit(body)
 		y := body.Y + 20 - s.scroll.Y
 		x, w := r.X+pad, r.W-2*pad
-		y = a.aiCard(s, ui.Rect{X: x, Y: y, W: w}) + 26
 		y = a.media(s, x, y, w, dt)
 		y = sectionTitle(a, ui.IGlobe, "Websites", "", x, y, nil) + 4
 		y = a.websites(s, t, ranked, x, y, w, body.B())
@@ -282,7 +276,6 @@ func (a *App) results(r ui.Rect, t *Tab) {
 	g.Clip(left)
 	a.u.PushHit(left)
 	y = body.Y + 20 - s.scroll.Y
-	y = a.aiCard(s, ui.Rect{X: r.X + pad, Y: y, W: lw}) + 30
 	y = sectionTitle(a, ui.IGlobe, "Websites", "", r.X+pad, y, nil) + 4
 	y = a.websites(s, t, ranked, r.X+pad, y, lw, left.B())
 	s.scroll.Content = y + 30 - (body.Y - s.scroll.Y)
@@ -849,158 +842,4 @@ func (a *App) videoStack(s *Search, x, y, w, dt float32) float32 {
 		ui.FillOval(g, r, c)
 	}
 	return y + ch + 10
-}
-
-// aiCard draws the AI answer as the head of the page: who it is for, tags for
-// the topic, the sources' quality and how complete it is, the answer with its
-// citations named by site, the sources as chips, and a follow-up.
-func (a *App) aiCard(s *Search, r ui.Rect) float32 {
-	u, g, th := &a.u, a.u.G, a.u.Th
-	short := !s.aiOpen
-	pad := float32(24)
-	tw := r.W - 2*pad
-	size := float32(15)
-	lay := layoutAnswer(g, s.AI.Blocks, tw, size, s.AI.Sources)
-	n := len(lay.lines)
-	long := n > 12
-	cut := short && long
-	if cut {
-		n = 11
-	}
-	textH := float32(0)
-	if n > 0 {
-		textH = lay.lines[n-1].y + size*1.6
-	}
-	chipsH := float32(0)
-	if len(s.AI.Sources) > 0 && s.aiSt != stLoading {
-		chipsH = a.sourceChips(s.AI.Sources, 0, 0, tw, "", true) + 10
-	}
-	h := float32(72)
-	switch {
-	case len(s.AI.Blocks) == 0 && s.aiSt == stLoading:
-		h += 4*26 + 8
-	case len(s.AI.Blocks) == 0:
-		h += 34
-	default:
-		h += textH + 14 + chipsH
-		if long {
-			h += 36
-		}
-	}
-	card := ui.Rect{X: r.X, Y: r.Y, W: r.W, H: h}
-	// the answer on a pane of glass, solid enough to read at length
-	ui.Shadow(g, card, 24, th.Shadow, 0.8, 4)
-	ui.FillRound(g, card, 24, pageColor(th))
-	ui.Glass(g, card, 24, th, true, false)
-
-	// header: badge, who it is for, status, actions
-	aiBadge(g, th, ui.Rect{X: card.X + pad, Y: card.Y + 18, W: 30, H: 30})
-	head := "AI answer"
-	if name := strings.TrimSpace(a.set.Name); name != "" {
-		head = "For " + name
-	}
-	g.Text(head, card.X+pad+42, card.Y+38, ui.Font{Size: 16, Bold: true}, th.OnSurface)
-	sx := card.X + pad + 42 + g.Measure(head, ui.Font{Size: 16, Bold: true}) + 14
-	if s.aiSt == stLoading {
-		a.writing(sx, card.Y+33)
-	}
-	ax := card.R() - pad + 6
-	act := func(id string, ic ui.Icon, tip string) bool {
-		ax -= 34
-		return u.IconButton(ui.Id(id), ui.Rect{X: ax, Y: card.Y + 16, W: 32, H: 32}, ic, tip, ui.IconOpt{})
-	}
-	if act("ai-open", ui.IExternal, "Continue in Google AI Mode") {
-		a.newTab(KNormal, "", core.ModeAI.URL(s.Q)+"&lite=0", true)
-	}
-	if s.aiSt != stLoading && act("ai-again", ui.IReload, "Ask again") {
-		a.regenAI(s)
-	}
-	if s.AI.Text != "" && act("ai-copy", ui.ICopy, "Copy the answer") {
-		a.u.Clip.Set(s.AI.Text)
-		a.notify("Answer copied.")
-	}
-	y := card.Y + 64
-	switch {
-	case len(s.AI.Blocks) == 0 && s.aiSt == stLoading:
-		for i, f := range []float32{1, 0.94, 0.98, 0.62} {
-			shimmer(a, ui.Rect{X: card.X + pad, Y: y + float32(i)*26 + 6, W: tw * f, H: 12}, 6)
-		}
-	case len(s.AI.Blocks) == 0:
-		g.Text("No AI answer for this search.", card.X+pad, y+18, ui.FBody, th.OnSurfaceVariant)
-	default:
-		y = a.drawAnswer(lay, card.X+pad, y, s.AI.Sources, n, "aic")
-		if cut {
-			fr := ui.Rect{X: card.X + 1, Y: y - 46, W: card.W - 2, H: 46}
-			g.FillPathGradient(ui.NewPath().RoundRect(fr, 0), pageColor(th).Alpha(0), pageColor(th), fr.Y, fr.B())
-		}
-		if s.aiSt == stLoading {
-			ui.FillRound(g, ui.Rect{X: card.X + pad, Y: y - 4, W: 9, H: 3}, 1.5, th.Primary.Alpha(0.5+0.5*float32(int(a.now()*2)%2)))
-			a.u.Redraw = true
-		}
-		y += 8
-		if long {
-			lbl := "Read the whole answer"
-			if !short {
-				lbl = "Show less"
-			}
-			br := ui.Rect{X: card.X + pad - 10, Y: y, W: g.Measure(lbl, ui.FSmallBold) + 44, H: 30}
-			if u.Hover(br) {
-				ui.FillRound(g, br, 15, th.Ink.Alpha(0.06))
-			}
-			g.Text(lbl, br.X+12, ui.Mid(g, br.Y, br.H, ui.FSmallBold), ui.FSmallBold, th.Primary)
-			ic := ui.IChevronDown
-			if !short {
-				ic = ui.IChevron
-			}
-			ui.DrawIcon(g, ic, br.R()-26, br.CY()-7, 14, th.Primary)
-			if u.Clickable(ui.Id("aimore"), br) {
-				s.aiOpen = !s.aiOpen
-			}
-			y += 36
-		}
-		if chipsH > 0 {
-			a.sourceChips(s.AI.Sources, card.X+pad, y+4, tw, "aisrc", false)
-		}
-	}
-	if s.AI.Text != "" {
-		// keep the conversation going in the side panel
-		fr := ui.Rect{X: card.X, Y: card.B() + 12, W: card.W, H: 46}
-		ui.Glass(g, fr, 23, th, u.Hover(fr), false)
-		ui.DrawIcon(g, ui.ISparkle, fr.X+18, fr.CY()-9, 18, th.Primary)
-		g.Text("Ask a follow-up", fr.X+46, ui.Mid(g, fr.Y, fr.H, ui.FBody), ui.FBody, th.Ink3)
-		if u.Clickable(ui.Id("followup"), fr) {
-			a.openAI("")
-		}
-		return fr.B()
-	}
-	return card.B()
-}
-
-// aiPrompt is what Iris asks Google AI Mode for a search: the question,
-// with how to answer it (warm, to the point, insight over hype, by name).
-func (a *App) aiPrompt(q string) string {
-	who := "the reader"
-	if name := strings.TrimSpace(a.set.Name); name != "" {
-		who = name
-	}
-	return q + "\n\n(Answer for " + who + " in a warm, friendly tone" +
-		map[bool]string{true: ", greeting " + who + " by name once", false: ""}[who != "the reader"] +
-		": the direct answer first, then the most valuable insights and practical takeaways. Prefer solid, well-sourced facts over hype and trends, and cite your sources.)"
-}
-
-// regenAI asks AI Mode again for the search.
-func (a *App) regenAI(s *Search) {
-	s.AI, s.aiSt = core.AIResult{}, stLoading
-	aw := a.workerFor(s.private, true)
-	a.askGoogleAI(aw, "search", a.aiPrompt(s.Q), s.Q, 35, func(r core.AIResult, done bool) {
-		if r.Text != "" {
-			s.AI = r
-		}
-		if done {
-			s.aiSt = stDone
-			if s.AI.Text == "" {
-				s.aiSt = stFailed
-			}
-		}
-	})
 }
