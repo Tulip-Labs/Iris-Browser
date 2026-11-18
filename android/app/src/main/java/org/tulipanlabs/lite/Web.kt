@@ -66,7 +66,7 @@ interface PageEvents {
 class Page(ctx: Context, val b: CefriumBrowser) : FrameLayout(ctx) {
     private val ui = Handler(Looper.getMainLooper())
     private val pending = HashMap<Int, (String?) -> Unit>()
-    private var next = 0
+    private var next = SecureRandom().nextInt(1 shl 20) // tokens a page cannot guess
     var back = false
     var forward = false
     /** called when a load ends (the WebView's onPageFinished), for the results reader */
@@ -74,15 +74,22 @@ class Page(ctx: Context, val b: CefriumBrowser) : FrameLayout(ctx) {
 
     init {
         addView(b.surfaceContainer, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        // a script's answer comes back through window.cefriumQuery
-        b.setQueryHandler { _, request, _, cb ->
+    }
+
+    /**
+     * Lets scripts answer: their value comes back through window.cefriumQuery,
+     * which only pages whose address passes allow may call (the results
+     * reader allows Google alone; tabs never get it).
+     */
+    fun answers(allow: (String) -> Boolean) {
+        b.setQueryHandler({ _, request, _, cb ->
             cb.success("")
             val i = request.indexOf(",\"v\":")
-            val tok = request.substring(5, if (i > 5) i else 5).toIntOrNull()
+            val tok = if (i > 5) request.substring(5, i).toIntOrNull() else null
             val raw = if (i > 0) request.substring(i + 5, request.length - 1) else null
             ui.post { tok?.let { pending.remove(it) }?.invoke(raw) }
             true
-        }
+        }, CefriumBrowser.QueryOriginPolicy { url -> allow(url) })
     }
 
     fun canGoBack() = back || b.canGoBack()
@@ -186,6 +193,7 @@ class Pages(private val act: Activity, private val set: Settings, private val ev
     /** a plain page with no tab, for reading Google's results off screen */
     fun plain(): Page {
         val w = Page(ctx, CefriumBrowser.createWithSurface(act, CefriumProfile.getDefault()))
+        w.answers { u -> hostOf(u).let { it == "google.com" || it.endsWith(".google.com") } }
         w.b.setNavigationClient(object : CefriumNavigationClient {
             override fun onLoadingStateChanged(browser: CefriumBrowser, loading: Boolean, canGoBack: Boolean, canGoForward: Boolean) {
                 if (!loading) w.onFinished?.invoke(browser.url ?: "")
