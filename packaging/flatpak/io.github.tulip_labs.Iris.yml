@@ -7,7 +7,7 @@
 # source instead, with every download listed: see README.md here.
 app-id: io.github.tulip_labs.Iris
 runtime: org.gnome.Platform # GTK 4 (the freedesktop runtime has no GTK)
-runtime-version: "48" # on freedesktop 24.08
+runtime-version: "50" # on freedesktop 25.08
 sdk: org.gnome.Sdk
 command: iris
 separate-locales: false
@@ -31,7 +31,7 @@ finish-args:
 add-extensions:
   org.freedesktop.Platform.ffmpeg-full:
     directory: lib/ffmpeg
-    version: "24.08"
+    version: "25.08"
     add-ld-path: .
     autodelete: false
 
@@ -40,7 +40,10 @@ cleanup-commands:
 
 modules:
   # Chromium's sandbox inside Flatpak's (no setuid helper or user namespaces
-  # here): zypak runs the sandboxed processes through flatpak-spawn
+  # here): zypak runs the sandboxed processes through flatpak-spawn. The
+  # Electron engine starts through it; the current engine (CEF, with its
+  # own helper program) cannot yet, and runs its pages inside Flatpak's
+  # sandbox only (IRIS_NO_SANDBOX in the launcher below)
   - name: zypak
     sources:
       - type: git
@@ -59,7 +62,8 @@ modules:
         dest-filename: iris.sh
         commands:
           - export TMPDIR="$XDG_RUNTIME_DIR/app/$FLATPAK_ID"
-          - exec zypak-wrapper /app/lib/iris-browser/iris "$@"
+          - export IRIS_NO_SANDBOX=1
+          - exec /app/lib/iris-browser/iris "$@"
     build-commands:
       - mkdir -p /app/lib/iris-browser
       - cp -a . /app/lib/iris-browser/

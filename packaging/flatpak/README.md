@@ -6,7 +6,7 @@ job `flatpak`) and each release carries the bundle, `Iris-x86_64.flatpak`:
 
     flatpak install --user Iris-x86_64.flatpak
 
-The bundle needs the GNOME 48 runtime, which Flatpak installs from Flathub
+The bundle needs the GNOME 50 runtime, which Flatpak installs from Flathub
 when the Flathub remote is set up (`flatpak remote-add --if-not-exists --user
 flathub https://dl.flathub.org/repo/flathub.flatpakrepo`).
 
@@ -20,3 +20,11 @@ packaging/flatpak/go-sources.json` writes the Go part: each module's .info,
 .mod and .zip from the Go module proxy with its SHA-256, laid out as a module
 proxy (`GOPROXY=file://$PWD/goproxy`), so `go build` runs offline and still
 checks go.sum.
+
+## Chromium's sandbox
+
+The pages run inside Flatpak's sandbox. Chromium's own sandbox inside it
+needs zypak, which the bundle carries: the Electron engine starts through it.
+The current engine (CEF) starts its page processes through a helper program
+of its own, which zypak cannot run yet, so it starts with `IRIS_NO_SANDBOX=1`
+(Flatpak's sandbox only) until the Electron engine replaces it.

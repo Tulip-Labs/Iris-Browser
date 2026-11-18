@@ -221,7 +221,7 @@ flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/fl
 flatpak install --user Iris-x86_64.flatpak
 ```
 
-(The first line lets Flatpak fetch the GNOME runtime Iris runs on.) Iris on Flathub is planned; until then a new release is installed the same way.
+(The first line lets Flatpak fetch the GNOME 50 runtime Iris runs on.) Iris on Flathub is planned; until then a new release is installed the same way.
 
 **Snap** (Ubuntu and other systems with Snap): download `Iris-x86_64.snap` from the latest release and run `sudo snap install --dangerous Iris-x86_64.snap` (the Snap Store listing is planned).
 
