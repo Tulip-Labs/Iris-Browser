@@ -204,7 +204,8 @@ jobs:
           name: linux
           path: pkg
       - name: Install Iris and sway
-        run: dnf install -y -q ./pkg/iris-browser-*.rpm sway grim mesa-dri-drivers python3 dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype
+        run: |
+          dnf install -y -q ./pkg/iris-browser-*.rpm sway grim mesa-dri-drivers python3 dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype
           # a copy without the file capabilities a container cannot grant
           cp /usr/bin/sway /usr/local/bin/sway-plain
       - name: Iris at 1.25, resized
