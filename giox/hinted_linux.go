@@ -3,8 +3,6 @@
 package giox
 
 import (
-	"image"
-	"image/color"
 	"math"
 	"sync"
 	"unicode/utf8"
@@ -21,9 +19,10 @@ import (
 	"iris/ui"
 )
 
-// Text on Linux: the glyphs as FreeType's autohinter draws them (stems on
-// whole pixels, as in GTK and in the pages), at the places Gio's shaping
-// gives them. Each line becomes one picture, drawn pixel for pixel.
+// Text on Linux: each glyph's outline as FreeType's autohinter shapes it
+// (stems and edges on whole pixels, as in GTK and in the pages), at the place
+// Gio's shaping gives it, its dot on a whole pixel. Gio fills the outlines
+// like any other shape, so colors and fades work as before.
 
 var (
 	hintOnce  sync.Once
@@ -43,16 +42,9 @@ func hintFace(f ui.Font) *hint.Face {
 	return hintFaces[0]
 }
 
-type lineKey struct {
-	s    string
-	f    ui.Font
-	ppem int32
-	c    color.NRGBA
-}
-
-type lineImg struct {
-	op         paint.ImageOp
-	x, y, w, h int // the picture's corner from the line's dot, and its size (pixels)
+type placed struct {
+	gl *hint.Glyph
+	x  float32 // the dot, in whole pixels from the line's
 }
 
 // hinted draws the line g.glyphs (shaped from s at ppem device pixels) with
@@ -67,45 +59,48 @@ func (g *Gfx) hinted(s string, f ui.Font, ppem float32, dx, dy float32, c ui.Col
 	if face == nil {
 		return false
 	}
-	nc := nrgba(c)
-	k := lineKey{s, f, int32(math.Round(float64(ppem) * 64)), nc}
-	li, ok := g.lines[k]
+	ps, ok := g.placeLine(face, s, int32(math.Round(float64(ppem)*64)))
 	if !ok {
-		var built bool
-		li, built = g.buildLine(face, s, k.ppem, nc)
-		if !built {
-			g.lines[k] = nil
-			g.linesUsed[k] = true
-			return false
-		}
-		g.lines[k] = li
-	}
-	g.linesUsed[k] = true
-	if li == nil {
 		return false
 	}
-	if li.w == 0 || li.h == 0 {
-		return true // only spaces
-	}
-	// one picture pixel on one screen pixel: back from device pixels to the
-	// current (logical) units
+	// device pixels from here: one unit is one screen pixel
 	k1 := 1 / g.scale
-	lx, ly := (dx+float32(li.x)-g.tx)*k1, (dy+float32(li.y)-g.ty)*k1
-	defer op.Affine(f32.Affine2D{}.Scale(f32.Point{}, f32.Pt(k1, k1)).Offset(f32.Pt(lx, ly))).Push(g.ops).Pop()
-	defer clip.Rect{Max: image.Pt(li.w, li.h)}.Push(g.ops).Pop()
-	li.op.Add(g.ops)
-	paint.PaintOp{}.Add(g.ops)
+	defer op.Affine(f32.Affine2D{}.Scale(f32.Point{}, f32.Pt(k1, k1)).Offset(f32.Pt((dx-g.tx)*k1, (dy-g.ty)*k1))).Push(g.ops).Pop()
+	var p clip.Path
+	p.Begin(g.ops)
+	open := false // a contour is being drawn
+	for _, pl := range ps {
+		for _, sg := range pl.gl.Segs {
+			at := func(i int) f32.Point { return f32.Pt(pl.x+sg.P[i][0], sg.P[i][1]) }
+			switch sg.Op {
+			case hint.Move:
+				if open {
+					p.Close() // each contour is a closed shape
+				}
+				p.MoveTo(at(0))
+				open = true
+			case hint.Line:
+				p.LineTo(at(0))
+			case hint.Quad:
+				p.QuadTo(at(0), at(1))
+			case hint.Cubic:
+				p.CubeTo(at(0), at(1), at(2))
+			}
+		}
+	}
+	if open {
+		p.Close()
+	}
+	spec := p.End()
+	if open {
+		paint.FillShape(g.ops, nrgba(c), clip.Outline{Path: spec}.Op())
+	}
 	return true
 }
 
-// buildLine renders the shaped line into one picture; built is false when a
-// glyph cannot be drawn here.
-func (g *Gfx) buildLine(face *hint.Face, s string, ppem64 int32, c color.NRGBA) (*lineImg, bool) {
-	type placed struct {
-		gl *hint.Glyph
-		x  int
-	}
-	var ps []placed
+// placeLine finds each character's hinted glyph and its place; ok is false
+// when one cannot be drawn here.
+func (g *Gfx) placeLine(face *hint.Face, s string, ppem64 int32) (ps []placed, ok bool) {
 	x0 := g.glyphs[0].X
 	rest := s
 	var cl []text.Glyph // the glyphs of the cluster being read
@@ -139,7 +134,7 @@ func (g *Gfx) buildLine(face *hint.Face, s string, ppem64 int32, c color.NRGBA) 
 				}
 				return nil, false
 			}
-			ps = append(ps, placed{hg, int(math.Round(float64(pen) / 64))})
+			ps = append(ps, placed{hg, float32(math.Round(float64(pen) / 64))})
 			if len(cl) != int(gl.Runes) {
 				pen += fixed.Int26_6(hg.Adv)
 			}
@@ -149,51 +144,5 @@ func (g *Gfx) buildLine(face *hint.Face, s string, ppem64 int32, c color.NRGBA) 
 	if len(cl) > 0 || rest != "" {
 		return nil, false // the clusters did not account for every character
 	}
-	minX, minY, maxX, maxY := 1<<30, 1<<30, -(1 << 30), -(1 << 30)
-	for _, p := range ps {
-		if p.gl.W == 0 || p.gl.H == 0 {
-			continue
-		}
-		minX, maxX = min(minX, p.x+p.gl.Left), max(maxX, p.x+p.gl.Left+p.gl.W)
-		minY, maxY = min(minY, -p.gl.Top), max(maxY, -p.gl.Top+p.gl.H)
-	}
-	if maxX <= minX || maxY <= minY {
-		return &lineImg{}, true
-	}
-	w, h := maxX-minX, maxY-minY
-	cov := make([]uint16, w*h)
-	for _, p := range ps {
-		ox, oy := p.x+p.gl.Left-minX, -p.gl.Top-minY
-		for y := 0; y < p.gl.H; y++ {
-			row := cov[(oy+y)*w+ox:]
-			src := p.gl.A[y*p.gl.W : (y+1)*p.gl.W]
-			for x, v := range src {
-				row[x] += uint16(v)
-			}
-		}
-	}
-	img := image.NewNRGBA(image.Rect(0, 0, w, h))
-	for i, v := range cov {
-		if v == 0 {
-			continue
-		}
-		v = min(v, 255)
-		img.Pix[i*4], img.Pix[i*4+1], img.Pix[i*4+2] = c.R, c.G, c.B
-		img.Pix[i*4+3] = uint8(uint32(v) * uint32(c.A) / 255)
-	}
-	io := paint.NewImageOp(img)
-	io.Filter = paint.FilterNearest
-	return &lineImg{op: io, x: minX, y: minY, w: w, h: h}, true
-}
-
-// endLines lets go of the lines not drawn this frame.
-func (g *Gfx) endLines() {
-	if len(g.lines) > len(g.linesUsed) || len(g.lines) > 3000 {
-		for k := range g.lines {
-			if !g.linesUsed[k] {
-				delete(g.lines, k)
-			}
-		}
-	}
-	clear(g.linesUsed)
+	return ps, true
 }

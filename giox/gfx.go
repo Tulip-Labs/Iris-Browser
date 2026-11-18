@@ -34,9 +34,6 @@ type Gfx struct {
 	metric map[ui.Font][2]float32
 	images map[image.Image]paint.ImageOp
 	used   map[image.Image]bool
-	// lines of hinted text (Linux), kept while drawn
-	lines     map[lineKey]*lineImg
-	linesUsed map[lineKey]bool
 }
 
 type mark struct {
@@ -70,8 +67,7 @@ func newShaper() *text.Shaper {
 
 // NewGfx makes the Gio drawing surface.
 func NewGfx() *Gfx {
-	return &Gfx{shaper: newShaper(), meas: map[measKey]float32{}, metric: map[ui.Font][2]float32{}, images: map[image.Image]paint.ImageOp{}, used: map[image.Image]bool{},
-		lines: map[lineKey]*lineImg{}, linesUsed: map[lineKey]bool{}}
+	return &Gfx{shaper: newShaper(), meas: map[measKey]float32{}, metric: map[ui.Font][2]float32{}, images: map[image.Image]paint.ImageOp{}, used: map[image.Image]bool{}}
 }
 
 // Begin starts a frame on ops with the device scale.
@@ -109,7 +105,6 @@ func (g *Gfx) Image(img image.Image, r ui.Rect, radius float32) {
 }
 
 func (g *Gfx) End() {
-	g.endLines()
 	if len(g.images) > len(g.used) {
 		for k := range g.images {
 			if !g.used[k] {
