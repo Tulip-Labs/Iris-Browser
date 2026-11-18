@@ -1,12 +1,11 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("com.cefrium") version "0.21.0"
 }
 
 android {
     namespace = "org.tulipanlabs.lite"
-    compileSdk = 35
+    compileSdk = 37 // what Cefrium is built against
 
     defaultConfig {
         // the id stays, so Iris installs over Lite and keeps its tabs and settings
@@ -41,9 +40,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
