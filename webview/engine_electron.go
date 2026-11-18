@@ -47,9 +47,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/cgo"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unsafe"
 )
@@ -118,6 +120,13 @@ type elxEngine struct {
 	views   map[uintptr]*elxView
 	pending map[uintptr]bool // popups Electron opened, waiting for Iris's view
 	dark    *bool
+	// the memory watch
+	watching   bool
+	procs      int       // the helper's processes at the last reading
+	overSince  time.Time // over the budget since (zero: not over)
+	restartAt  time.Time // the last restart for memory
+	restarting bool      // the helper is being restarted (not a crash)
+	afterMB    float64   // the memory a minute after that restart
 }
 
 type elxView struct {
@@ -125,6 +134,7 @@ type elxView struct {
 	x, y, w, h int // in the window, real pixels
 	shown      bool
 	opened     bool // the running helper has it
+	audio      bool // it plays sound
 	url        string
 	opts       Options
 	pid        int // the helper's popup it shows (0: none)
@@ -142,6 +152,12 @@ func (e *elxEngine) Start(window uintptr, dataDir string, low bool, ready func(e
 	cs := C.CString(dataDir)
 	C.lgxAttach(C.uintptr_t(window), cs)
 	C.free(unsafe.Pointer(cs))
+	e.mu.Lock()
+	if !e.watching {
+		e.watching = true
+		go e.watch()
+	}
+	e.mu.Unlock()
 	ready(nil)
 }
 
@@ -318,7 +334,22 @@ func (e *elxEngine) helperGone() {
 		delete(e.replies, n)
 		go f(json.RawMessage("null"))
 	}
+	restart := e.restarting
+	e.restarting = false
 	e.mu.Unlock()
+	if restart {
+		// a restart for memory: the tabs in front come back at once, from
+		// their last address; the others when they are next shown
+		onMain(func() {
+			e.ensure()
+			for _, ev := range open {
+				if ev.shown && !ev.v.closed {
+					e.reopen(ev.v)
+				}
+			}
+		})
+		return
+	}
 	for _, ev := range open {
 		if ev.v.ev.Crashed != nil && !ev.v.closed {
 			ev.v.ev.Crashed()
@@ -516,10 +547,6 @@ func (e *elxEngine) handle(p []byte) {
 		if f != nil {
 			f(m.R)
 		}
-	case "mem":
-		e.mu.Lock()
-		e.memMB = m.MB
-		e.mu.Unlock()
 	case "url":
 		if v, ev := e.view(m.ID); v != nil {
 			v.url = m.URL
@@ -554,7 +581,13 @@ func (e *elxEngine) handle(p []byte) {
 			v.ev.Crashed()
 		}
 	case "audio":
-		if v, _ := e.view(m.ID); v != nil && v.ev.Audio != nil {
+		v, ev := e.view(m.ID)
+		if ev != nil {
+			e.mu.Lock()
+			ev.audio = m.On
+			e.mu.Unlock()
+		}
+		if v != nil && v.ev.Audio != nil {
 			v.ev.Audio(m.On)
 		}
 	case "full":
@@ -788,9 +821,21 @@ func (e *elxEngine) bounds(id uintptr, x, y, w, h int) {
 	}
 }
 
+// wakes are the operations that bring back a page the helper does not have
+// (it quit, or restarted for memory); the others wait for it.
+var wakes = map[string]bool{"nav": true, "reload": true, "back": true, "fwd": true, "show": true}
+
 // do sends a page operation, starting a helper (and reopening the page) when needed.
 func (e *elxEngine) do(v *wkView, m msg) {
 	if v.closed {
+		return
+	}
+	t, _ := m["t"].(string)
+	e.mu.Lock()
+	ev := e.views[v.id]
+	asleep := ev != nil && !ev.opened && !ev.shown
+	e.mu.Unlock()
+	if asleep && !wakes[t] {
 		return
 	}
 	e.ensure()
@@ -827,6 +872,12 @@ func (v *wkView) SetBounds(x, y, w, h int) {
 		return
 	}
 	C.elxPlace(C.uintptr_t(v.id), C.int(x), C.int(y), C.int(w), C.int(h))
+	elx.mu.Lock()
+	live := ev != nil && (ev.opened || ev.shown)
+	elx.mu.Unlock()
+	if !live {
+		return // it gets its size when it comes back
+	}
 	elx.ensure()
 	elx.reopen(v)
 	elx.bounds(v.id, x, y, w, h)
@@ -867,6 +918,14 @@ func (v *wkView) Focus() {
 func (v *wkView) Eval(js string) { elx.do(v, msg{"t": "eval", "js": js}) }
 func (v *wkView) Run(js string, done func(string)) {
 	if v.closed {
+		done("null")
+		return
+	}
+	elx.mu.Lock()
+	ev := elx.views[v.id]
+	asleep := ev != nil && !ev.opened && !ev.shown
+	elx.mu.Unlock()
+	if asleep {
 		done("null")
 		return
 	}
@@ -1043,6 +1102,188 @@ func totalMemMB() int {
 		}
 	}
 	return 0
+}
+
+// ---- the memory watch ----
+//
+// One helper serves every page and extension (never one per tab), and it
+// quits two minutes after nothing needs it. While it runs, Iris reads the
+// memory of all its processes from /proc every few seconds: that is
+// MemoryMB, which Iris's balancer compares with the memory setting's budget
+// to rest background tabs, the one used longest ago first (never the tab in
+// front, tabs playing sound or video, YouTube, or a tab downloading). When
+// the helper stays over the budget with no background page left to rest, it
+// is restarted, and the tabs come back from their last address: the tab in
+// front at once, the others when shown.
+
+const (
+	overFor      = 20 * time.Second // over the budget this long before a restart
+	restartEvery = 2 * time.Minute  // at most one restart in this time
+)
+
+func (e *elxEngine) watch() {
+	for range time.Tick(3 * time.Second) {
+		e.checkMemory()
+	}
+}
+
+// budgetMB is the helper's memory budget: the memory setting's, or
+// IRIS_ENGINE_BUDGET_MB, or a quarter of the computer's memory.
+func (e *elxEngine) budgetMB() float64 {
+	if s := os.Getenv("IRIS_ENGINE_BUDGET_MB"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n > 0 {
+			return float64(n)
+		}
+	}
+	wkEng.mu.Lock()
+	b := wkEng.policy.MemoryBudgetMB
+	wkEng.mu.Unlock()
+	if b > 0 {
+		return float64(b)
+	}
+	if t := totalMemMB(); t > 0 {
+		return float64(t) / 4
+	}
+	return 2048
+}
+
+// treeRSS is the memory (resident set) of process pid and all its
+// descendants, in MB, and how many processes that is.
+func treeRSS(pid int) (float64, int) {
+	ents, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0, 0
+	}
+	parent := map[int]int{}
+	for _, d := range ents {
+		p, err := strconv.Atoi(d.Name())
+		if err != nil {
+			continue
+		}
+		b, err := os.ReadFile("/proc/" + d.Name() + "/stat")
+		if err != nil {
+			continue
+		}
+		// pid (comm) state ppid ...: comm may hold spaces, so after the last ")"
+		s := string(b)
+		if i := strings.LastIndexByte(s, ')'); i > 0 {
+			if f := strings.Fields(s[i+1:]); len(f) > 1 {
+				parent[p], _ = strconv.Atoi(f[1])
+			}
+		}
+	}
+	in := map[int]bool{pid: true}
+	for changed := true; changed; {
+		changed = false
+		for p, pp := range parent {
+			if !in[p] && in[pp] {
+				in[p], changed = true, true
+			}
+		}
+	}
+	page := float64(os.Getpagesize())
+	var mb float64
+	for p := range in {
+		b, err := os.ReadFile("/proc/" + strconv.Itoa(p) + "/statm")
+		if err != nil {
+			continue
+		}
+		if f := strings.Fields(string(b)); len(f) > 1 {
+			n, _ := strconv.ParseFloat(f[1], 64)
+			mb += n * page / (1 << 20)
+		}
+	}
+	return mb, len(in)
+}
+
+func youTube(u string) bool {
+	h := u
+	if i := strings.Index(h, "://"); i >= 0 {
+		h = h[i+3:]
+	}
+	if i := strings.IndexAny(h, "/?#"); i >= 0 {
+		h = h[:i]
+	}
+	h = strings.TrimPrefix(h, "www.")
+	return h == "youtube.com" || strings.HasSuffix(h, ".youtube.com") || h == "youtu.be"
+}
+
+func (e *elxEngine) checkMemory() {
+	e.mu.Lock()
+	cmd, running := e.cmd, e.running && e.conn != nil
+	e.mu.Unlock()
+	if !running || cmd == nil || cmd.Process == nil {
+		e.mu.Lock()
+		e.memMB, e.procs = 0, 0
+		e.mu.Unlock()
+		return
+	}
+	mb, n := treeRSS(cmd.Process.Pid)
+	budget := e.budgetMB()
+	now := time.Now()
+	e.mu.Lock()
+	e.memMB, e.procs = mb, n
+	// what the pages are doing: the balancer has work left while a
+	// background page it may rest still holds memory
+	restable := 0
+	type st struct {
+		id    uintptr
+		state string
+		url   string
+	}
+	var tabs []st
+	for id, ev := range e.views {
+		state := "rested"
+		switch {
+		case ev.opened && ev.shown:
+			state = "shown"
+		case ev.opened:
+			state = "hidden"
+			if !ev.audio && !youTube(ev.url) {
+				restable++
+			}
+		}
+		if ev.audio {
+			state += "+audio"
+		}
+		tabs = append(tabs, st{id, state, ev.url})
+	}
+	if budget > 0 && mb > budget {
+		if e.overSince.IsZero() {
+			e.overSince = now
+		}
+	} else {
+		e.overSince = time.Time{}
+	}
+	if !e.restartAt.IsZero() && e.afterMB == 0 && now.Sub(e.restartAt) > time.Minute {
+		e.afterMB = mb
+	}
+	// a restart helps when memory grew since the last one (a leak, a heavy
+	// page left behind); right after one that did not help, it waits
+	grown := e.afterMB == 0 || mb > e.afterMB*1.5
+	restart := !e.overSince.IsZero() && now.Sub(e.overSince) >= overFor && restable == 0 && !e.restarting &&
+		(e.restartAt.IsZero() || now.Sub(e.restartAt) >= restartEvery && grown)
+	if restart {
+		e.restarting, e.restartAt, e.afterMB, e.overSince = true, now, 0, time.Time{}
+	}
+	e.mu.Unlock()
+	if os.Getenv("IRIS_GL_DEBUG") != "" {
+		sort.Slice(tabs, func(i, j int) bool { return tabs[i].id < tabs[j].id })
+		var b strings.Builder
+		for _, t := range tabs {
+			u := t.url
+			if len(u) > 60 {
+				u = u[:60] + "…"
+			}
+			fmt.Fprintf(&b, " [%d %s %s]", t.id, t.state, u)
+		}
+		fmt.Fprintf(os.Stderr, "Iris: engine %.0f MB in %d processes (budget %.0f MB); tabs:%s\n", mb, n, budget, b.String())
+	}
+	if restart {
+		fmt.Fprintf(os.Stderr, "Iris: the page engine stayed over its memory budget (%.0f of %.0f MB) with nothing left to rest: restarting it\n", mb, budget)
+		_ = cmd.Process.Signal(syscall.SIGTERM)
+		time.AfterFunc(5*time.Second, func() { _ = cmd.Process.Kill() })
+	}
 }
 
 var _ ExtensionHost = (*elxEngine)(nil)

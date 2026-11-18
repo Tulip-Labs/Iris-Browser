@@ -11,6 +11,12 @@ CGO_ENABLED=1 go build -tags "webkit electron novulkan" -trimpath -ldflags "-s -
 
 helper=webview/electron/helper
 (cd "$helper" && npm install --no-audit --no-fund --loglevel=error)
+# Electron's binary comes from its own installer, which npm may skip
+if [ ! -x "$helper/node_modules/electron/dist/electron" ]; then
+	(cd "$helper/node_modules/electron" && node install.js)
+fi
+[ -x "$helper/node_modules/electron/dist/electron" ] || { ls -la "$helper/node_modules/electron"; echo "Electron's binary is missing"; exit 1; }
+echo "Electron $(cat "$helper/node_modules/electron/dist/version" 2>/dev/null)"
 rm -rf "$out/electron" "$out/electron-helper"
 cp -a "$helper/node_modules/electron/dist" "$out/electron"
 # only the strings Iris's readers use (Chromium falls back to English)

@@ -119,10 +119,21 @@ jobs:
           pgrep -x iris >/dev/null || touch /tmp/fs/exited
           ps -eo rss,args | grep -E "electron|iris" | grep -v grep | awk '{s+=$1} END {print "memory (all Iris and Electron processes): " int(s/1024) " MB"}' > /tmp/fs/mem.txt
           ps -eo rss,args | grep -E "electron" | grep -v grep | awk '{printf "  %6d MB  %s\n", $1/1024, substr($0, index($0,$2), 120)}' >> /tmp/fs/mem.txt
+          # the memory budget: a tiny one makes the engine restart itself, and
+          # the page in front must come back
+          pkill -x iris; sleep 3; pkill -9 -x iris; pkill -9 -f electron; sleep 1
+          IRIS_ENGINE_BUDGET_MB=60 dbus-run-session -- /opt/linux-electron/iris http://127.0.0.2:8766/ > /tmp/fs/log-budget.txt 2>&1 &
+          sleep 75
+          grim /tmp/fs/3-after-restart.png
+          pkill -x iris
           SH
           su tester -c "sh /tmp/run.sh"
-          grep -v dbus /tmp/fs/log.txt | tail -80
+          grep -v dbus /tmp/fs/log.txt | grep -v "Iris: engine " | tail -80
+          echo "== the engine's memory and tabs, as Iris sees them"
+          grep "Iris: engine " /tmp/fs/log.txt | tail -6
           cat /tmp/fs/mem.txt
+          echo "== budget test"
+          grep -E "Iris: engine |restarting|IRIS-DPR|Iris pages:" /tmp/fs/log-budget.txt | tail -20
           for f in /tmp/fs/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
           python3 - <<'PY'
           from PIL import Image
@@ -141,6 +152,9 @@ jobs:
           grep -q "IRIS-CLICK" /tmp/fs/log.txt || { echo "FAIL: the click did not reach the page"; ok=0; }
           grep -q "IRIS-TYPED hello" /tmp/fs/log.txt || { echo "FAIL: typing did not reach the page"; ok=0; }
           [ "$(cat /tmp/fs/colors)" -gt 20 ] || { echo "FAIL: no page drawn"; ok=0; }
+          grep -q "Iris: engine [0-9]* MB in [0-9]* processes" /tmp/fs/log.txt || { echo "FAIL: no memory readings"; ok=0; }
+          grep -q "restarting it" /tmp/fs/log-budget.txt || { echo "FAIL: the engine did not restart over its budget"; ok=0; }
+          sed -n '/restarting it/,$p' /tmp/fs/log-budget.txt | grep -q 'IRIS-DPR' || { echo "FAIL: the page did not come back after the restart"; ok=0; }
           [ $ok = 1 ]
       - uses: actions/upload-artifact@v4
         if: always()

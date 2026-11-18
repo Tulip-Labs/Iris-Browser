@@ -103,6 +103,34 @@ Electron is Chromium plus Node.js; Iris keeps both on a diet:
   no Electron sample apps, the helper as one plain script (no bundler; the
   only npm dependency is `electron-chrome-extensions`, see Extensions).
 
+#### Never a resource hog
+
+Neither engine may take over the computer. For Electron:
+
+1. **One helper.** A single shared helper process serves every heavy tab and
+   every extension; never one per tab.
+2. **Gone when unneeded.** It quits two minutes after no page, pop-up,
+   download or extension needs it.
+3. **A hard memory budget.** Every 3 seconds Iris reads the memory (resident
+   set) of the helper and all its processes from /proc. That number is the
+   engine's memory in Iris's memory panel, and Iris's balancer compares it
+   with the budget of the memory setting (Saver, Balanced, Speed: 22, 35 or
+   55% of the computer's memory; `IRIS_ENGINE_BUDGET_MB` overrides it). Over
+   the budget, background tabs rest, the one used longest ago first, and
+   never the tab in front, tabs playing sound or video, YouTube or a tab
+   downloading. If the helper stays over the budget for 20 seconds with no
+   background page left to rest, it is restarted: the tabs come back from
+   their last address, the tab in front at once and the others when shown.
+   At most one restart every two minutes, and none again while a restart
+   did not help.
+4. **Shared, capped caches.** One HTTP disk cache per session (the default
+   container and each named container), kept across restarts in Iris's data
+   folder and capped at 100 MB each; private and sandbox tabs keep theirs in
+   memory only.
+5. **Visible.** With `IRIS_GL_DEBUG=1` Iris logs the engine's memory, its
+   number of processes, the budget and each tab's state (shown, hidden,
+   rested, playing) every reading; CI prints them and checks a restart.
+
 What the diet never touches, because pages break without it: the graphics
 chip (GPU compositing, WebGL, WebGPU), JIT-compiled JavaScript, workers and
 service workers (offline pages, YouTube), WebRTC (calls, Meet), notifications

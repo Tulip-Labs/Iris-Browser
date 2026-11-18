@@ -268,7 +268,8 @@ func (a *App) Policy() webview.Policy {
 	}
 	sh, c := a.shield, a.core
 	return webview.Policy{
-		Rewrite: rewrite,
+		MemoryBudgetMB: a.plan.BudgetMB,
+		Rewrite:        rewrite,
 		// the built-in domain list and the filter lists together; exceptions
 		// in the lists (fixes for sites) lift blocks from both
 		Allow: func(u, page, kind string) bool {
