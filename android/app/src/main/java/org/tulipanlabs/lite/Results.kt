@@ -1,27 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package org.tulipanlabs.lite
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import org.json.JSONObject
 
-// Lite results, as on the desktop: a Google search is read by a hidden page
-// and shown on Lite's own page, in the palette, without ads or clutter. The
+// Iris results, as on the desktop: a Google search is read by a hidden page
+// and shown on Iris's own page, in the palette, without ads or clutter. The
 // scripts that read Google's page are the desktop's own (assets/js/google-*.js).
 
 class WebHit(val title: String, val url: String, val snippet: String, val site: String)
 class ImageHit(val src: String, val page: String)
 
-class Results(private val ctx: Context) {
+class Results(private val ctx: Context, private val make: () -> Page) {
     private val ui = Handler(Looper.getMainLooper())
-    private var worker: WebView? = null
+    private var worker: Page? = null
     private var seq = 0
 
     private fun asset(name: String) = try {
@@ -39,12 +36,9 @@ class Results(private val ctx: Context) {
      * size). done gets null when Google asked for a human check or did not
      * answer in time: the caller then shows Google's own page.
      */
-    @SuppressLint("SetJavaScriptEnabled")
     fun fetch(host: ViewGroup, q: String, done: (List<WebHit>?, List<ImageHit>) -> Unit) {
         val my = ++seq
-        val w = worker ?: WebView(ctx).also { v ->
-            v.settings.javaScriptEnabled = true
-            v.settings.domStorageEnabled = true
+        val w = worker ?: make().also { v ->
             v.visibility = View.INVISIBLE
             host.addView(v, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
             worker = v
@@ -70,8 +64,8 @@ class Results(private val ctx: Context) {
         }, 15000)
 
         // first the links, then the pictures
-        w.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(v: WebView, url: String) {
+        val v = w
+        w.onFinished = fun(url: String) {
                 if (my != seq || finished) return
                 val st = stage
                 ui.postDelayed({
@@ -117,7 +111,6 @@ class Results(private val ctx: Context) {
                         }
                     }
                 }, if (st == 0) 250 else 900)
-            }
         }
         again = { raw ->
             val (hits, captcha) = parseWeb(raw)
@@ -181,28 +174,33 @@ class Results(private val ctx: Context) {
 
         private fun css(c: Int) = String.format("#%06x", c and 0xffffff)
 
+        /** a color with its own opacity, for glass */
+        private fun rgba(c: Int) = String.format(java.util.Locale.ROOT, "rgba(%d,%d,%d,%.3f)", (c shr 16) and 0xff, (c shr 8) and 0xff, c and 0xff, ((c ushr 24) and 0xff) / 255f)
+
         /** the page itself: plain HTML in the palette, no script */
         fun page(q: String, web: List<WebHit>, images: List<ImageHit>, p: Palette): String {
-            val bg = if (p.grad != null) "linear-gradient(180deg,${p.grad.joinToString(",") { css(Palette.mix(it, Palette.WHITE, 0.55f)) }}) fixed" else css(p.surface)
+            val bg = "linear-gradient(180deg,${p.pageColors.joinToString(",") { css(it) }}) fixed"
+            val glass = if (p.dark) "rgba(255,255,255,.08)" else "rgba(255,255,255,.62)"
+            val rim = if (p.dark) "rgba(255,255,255,.16)" else "rgba(255,255,255,.9)"
             val chip = { label: String, href: String, on: Boolean ->
                 "<a class=\"chip${if (on) " on" else ""}\" href=\"${esc(href)}\">${esc(label)}</a>"
             }
             val b = StringBuilder()
             b.append("<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
-            b.append("<title>").append(esc(q)).append(" · Lite</title><style>")
-            b.append(":root{--ink:${css(p.onSurface)};--ink2:${css(p.onSurfaceVariant)};--pri:${css(p.primary)};--card:${css(if (p.dark) p.surfaceHigh else Palette.WHITE)};--line:${css(p.outlineVariant)};--chip:${css(p.primaryContainer)};--onchip:${css(p.onPrimaryContainer)}}")
+            b.append("<title>").append(esc(q)).append(" · Iris</title><style>")
+            b.append(":root{color-scheme:${if (p.dark) "dark" else "light"};--ink:${rgba(p.onSurface)};--ink2:${rgba(p.onSurfaceVariant)};--pri:${rgba(p.primary)};--card:$glass;--rim:$rim;--line:${rgba(p.outlineVariant)};--chip:${rgba(p.primary)};--onchip:${css(p.onPrimary)}}")
             b.append("*{box-sizing:border-box}html,body{margin:0}body{font:16px/1.45 system-ui,Roboto,sans-serif;color:var(--ink);background:$bg;min-height:100vh}")
             b.append("main{max-width:760px;margin:0 auto;padding:14px 14px 40px}")
             b.append("h1{font-size:20px;margin:4px 4px 12px;font-weight:600;overflow-wrap:anywhere}")
             b.append(".chips{display:flex;gap:8px;overflow-x:auto;padding:0 2px 12px;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}")
-            b.append(".chip{flex:none;padding:8px 14px;border-radius:999px;border:1px solid var(--line);color:var(--ink);text-decoration:none;font-size:14px;font-weight:600;background:var(--card)}")
+            b.append(".chip{flex:none;padding:8px 14px;border-radius:999px;border:1px solid var(--line);border-top-color:var(--rim);color:var(--ink);text-decoration:none;font-size:14px;font-weight:600;background:var(--card);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}")
             b.append(".chip.on{background:var(--chip);color:var(--onchip);border-color:transparent}")
             b.append(".pics{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 14px;scrollbar-width:none}.pics::-webkit-scrollbar{display:none}")
             b.append(".pics a{flex:none;width:132px;height:100px;border-radius:16px;overflow:hidden;background:var(--line)}.pics img{width:100%;height:100%;object-fit:cover;display:block}")
-            b.append(".r{display:block;background:var(--card);border-radius:20px;padding:14px 16px;margin:0 0 10px;text-decoration:none;color:inherit;box-shadow:0 1px 2px rgba(0,0,0,.06)}")
+            b.append(".r{display:block;background:linear-gradient(180deg,rgba(255,255,255,${if (p.dark) ".05" else ".25"}),rgba(255,255,255,0) 60%),var(--card);border:1px solid var(--line);border-top-color:var(--rim);border-radius:20px;padding:14px 16px;margin:0 0 10px;text-decoration:none;color:inherit;box-shadow:0 6px 18px rgba(0,0,0,${if (p.dark) ".35" else ".07"});-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}")
             b.append(".r:active{opacity:.75}.site{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink2);margin-bottom:4px}")
-            b.append(".mono{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:700;flex:none}")
-            b.append(".t{font-size:17px;font-weight:600;color:var(--pri);margin:0 0 4px;overflow-wrap:anywhere}.s{font-size:14px;color:var(--ink2);margin:0}")
+            b.append(".mono{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;color:var(--ink);font-size:11px;font-weight:700;flex:none;background:linear-gradient(180deg,rgba(255,255,255,${if (p.dark) ".22" else ".75"}),rgba(255,255,255,${if (p.dark) ".07" else ".4"}));border:1px solid var(--rim)}")
+            b.append(".t{font-size:17px;font-weight:600;color:var(--ink);margin:0 0 4px;overflow-wrap:anywhere}.s{font-size:14px;color:var(--ink2);margin:0}")
             b.append(".foot{text-align:center;margin-top:18px}.foot a{color:var(--pri);font-weight:600;text-decoration:none}")
             b.append("@media(min-width:900px){main{max-width:1000px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid .r{margin:0}}")
             b.append("</style></head><body><main>")
@@ -225,7 +223,7 @@ class Results(private val ctx: Context) {
             for (h in web) {
                 // a sealed Google link (/goto) names its site only in the text
                 val host = hostOf(h.url).let { if (it.contains("google.")) h.site else it }
-                b.append("<a class=\"r\" href=\"${esc(h.url)}\"><div class=\"site\"><span class=\"mono\" style=\"background:${css(siteColor(host))}\">${esc(monogram(host))}</span>${esc(h.site)}</div>")
+                b.append("<a class=\"r\" href=\"${esc(h.url)}\"><div class=\"site\"><span class=\"mono\">${esc(monogram(host))}</span>${esc(h.site)}</div>")
                 b.append("<p class=\"t\">${esc(h.title)}</p>")
                 if (h.snippet.isNotEmpty()) b.append("<p class=\"s\">${esc(h.snippet)}</p>")
                 b.append("</a>")

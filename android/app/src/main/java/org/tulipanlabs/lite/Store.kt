@@ -18,7 +18,7 @@ class Settings(ctx: Context) {
     private val p: SharedPreferences = ctx.getSharedPreferences("lite", Context.MODE_PRIVATE)
 
     var theme: String
-        get() = p.getString("theme", "crocus") ?: "crocus"
+        get() = p.getString("theme", "liquid") ?: "liquid"
         set(v) = p.edit().putString("theme", v).apply()
     var mode: Mode
         get() = try { Mode.valueOf(p.getString("mode", "AI") ?: "AI") } catch (e: Exception) { Mode.AI }

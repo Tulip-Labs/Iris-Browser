@@ -1,5 +1,11 @@
 Iris (formerly Lite Go): a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.14
+
+- **Iris for Android runs on its own Chromium.** The phone app now carries Chromium 156, the same engine as Iris on the computer (CEF for Android, through Cefrium), in place of the system WebView. Pages, YouTube and Google look and behave the same as on the computer, H.264 and AAC videos play, and containers keep their sign-ins apart on every phone.
+- **The phone app is Iris too**: the new name and icon, the ten clear glass themes of the desktop (the theme choice still syncs), and glass result cards.
+- The Android app needs Android 10 or newer on a 64-bit phone, and is larger (Chromium is inside).
+
 ## New in 1.0.13
 
 - **Lite Go is now Iris**, after the Greek goddess of the rainbow, who carries light between worlds. A new icon to match: an iris of light in a drop of smoked glass. Your settings, tabs, history and sign-ins stay where they were, the package keeps its name (`lite-go-browser`) so updates come as before, and the command `iris` starts it besides `lite-go`.

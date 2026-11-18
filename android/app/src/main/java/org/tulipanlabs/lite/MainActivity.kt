@@ -15,7 +15,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.Message
 import android.text.Editable
 import android.text.InputType
 import android.text.TextUtils
@@ -28,11 +27,9 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.webkit.CookieManager
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebStorage
-import android.webkit.WebView
+import com.cefrium.Cefrium
+import com.cefrium.CefriumBrowser
+import com.cefrium.CefriumProfile
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -78,16 +75,14 @@ class MainActivity : Activity(), PageEvents {
     private var suggest: ScrollView? = null
     private var grid: View? = null
     private var sheet: View? = null
-    private var full: View? = null
-    private var fullDone: WebChromeClient.CustomViewCallback? = null
-    private var fileCb: ValueCallback<Array<Uri>>? = null
+    private var full: View? = null // the page that is in full screen (a video)
     private var insetTop = 0
     private var insetBottom = 0
     private var keyboard = false
     private var suggestSeq = 0
     private var wide = false // a tablet, or a phone on its side: the buttons sit beside the address
     private lateinit var pill: LinearLayout
-    private val results by lazy { Results(this) }
+    private val results by lazy { Results(this) { pages.plain() } }
 
     // ---- lifecycle ----
 
@@ -118,7 +113,7 @@ class MainActivity : Activity(), PageEvents {
         tab()?.web?.onPause()
         // only once a page exists: before that, asking for the cookie store starts
         // the web engine at a bad moment (seen crashing on a relaunch)
-        if (tabs.any { it.web != null }) CookieManager.getInstance().flush()
+        if (tabs.any { it.web != null }) try { CefriumProfile.getDefault().cookieManager.flush {} } catch (e: Exception) {}
     }
 
     override fun onResume() {
@@ -181,7 +176,7 @@ class MainActivity : Activity(), PageEvents {
     override fun onBackPressed() {
         val t = tab()
         when {
-            full != null -> onFullscreen(null, null)
+            full != null -> tab()?.web?.b?.exitFullscreen()
             sheet != null -> closeSheet()
             grid != null -> closeGrid()
             addr.hasFocus() -> unfocusAddress()
@@ -194,10 +189,7 @@ class MainActivity : Activity(), PageEvents {
     @Deprecated("file uploads")
     override fun onActivityResult(req: Int, res: Int, data: Intent?) {
         super.onActivityResult(req, res, data)
-        if (req == FILES) {
-            fileCb?.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res, data))
-            fileCb = null
-        }
+        tab()?.web?.b?.onActivityResult(req, res, data) // the page's file chooser
     }
 
     // ---- the window ----
@@ -265,7 +257,7 @@ class MainActivity : Activity(), PageEvents {
         top.gravity = Gravity.CENTER_VERTICAL
         top.setPadding(dp(4), dp(4), dp(4), dp(4))
         val shieldBox = FrameLayout(this)
-        shieldBtn = iconButton(pal, R.drawable.ic_shield, "Lite Shields", pal.primary) { shieldDialog() }
+        shieldBtn = iconButton(pal, R.drawable.ic_shield, "Iris Shields", pal.primary) { shieldDialog() }
         shieldBox.addView(shieldBtn, flp(dp(48), dp(48)))
         badge = text("", 9.5f, pal.onPrimary, bold = true)
         badge.gravity = Gravity.CENTER
@@ -431,7 +423,7 @@ class MainActivity : Activity(), PageEvents {
         trim()
     }
 
-    /** the page's WebView, made again from its saved history */
+    /** the page's browser, made again from its saved history */
     private fun wake(t: Tab) {
         val w = pages.make(t)
         content.addView(w, 0, flp(MATCH, MATCH))
@@ -442,7 +434,7 @@ class MainActivity : Activity(), PageEvents {
         }
     }
 
-    /** puts a background page to sleep: its WebView goes, its history stays */
+    /** puts a background page to sleep: its browser goes, its history stays */
     private fun shelve(t: Tab) {
         val w = t.web ?: return
         val b = Bundle()
@@ -509,7 +501,7 @@ class MainActivity : Activity(), PageEvents {
         open(t, url)
     }
 
-    /** a web search shown on Lite's own page (see Results.kt) */
+    /** a web search shown on Iris's own page (see Results.kt) */
     private fun liteSearch(t: Tab, q: String) {
         val g = Search.url(q, Mode.WEB)
         t.lite = g
@@ -567,7 +559,6 @@ class MainActivity : Activity(), PageEvents {
                 focusAddress()
             }
         }
-        if (!pages.containersWork) col.addView(note("Containers need Android System WebView 123 or newer: update it from the Play Store. Until then their tabs share sign-ins with the others."))
         val m = button(pal, "Manage containers", false) { closeSheet(); openSheet(scrollTo = "containers") }
         col.addView(m, lp(WRAP, dp(40)).also { it.topMargin = dp(10); it.leftMargin = dp(8) })
         openSheet(col)
@@ -801,7 +792,7 @@ class MainActivity : Activity(), PageEvents {
         val title = text(when {
             t?.private == true -> "Private tab"
             t != null && t.container.isNotEmpty() -> t.container
-            else -> "Lite"
+            else -> "Iris"
         }, 28f, pal.onSurface, bold = true)
         if (t != null && t.container.isNotEmpty()) title.setTextColor(pal.tone(set.containers.firstOrNull { it.name == t.container }?.color ?: "blue"))
         col.addView(title, lp(WRAP, WRAP).also { it.topMargin = dp(14) })
@@ -837,7 +828,7 @@ class MainActivity : Activity(), PageEvents {
         val spacer = View(this)
         col.addView(spacer, lp(1, 0, 1f))
         val blocked = set.blockedTotal + blockedSession
-        val foot = text(if (set.shields) "Lite Shields on · ${"%,d".format(blocked)} ads and trackers blocked" else "Lite Shields off", 12.5f, pal.onSurfaceVariant)
+        val foot = text(if (set.shields) "Iris Shields on · ${"%,d".format(blocked)} ads and trackers blocked" else "Iris Shields off", 12.5f, pal.onSurfaceVariant)
         foot.gravity = Gravity.CENTER
         col.addView(foot, lp(WRAP, WRAP).also { it.topMargin = dp(32) })
         sv.addView(col, FrameLayout.LayoutParams(MATCH, MATCH))
@@ -936,7 +927,7 @@ class MainActivity : Activity(), PageEvents {
         } else {
             val m = text(monogram(host), 22f, Palette.WHITE, bold = true)
             m.gravity = Gravity.CENTER
-            m.background = rounded(siteColor(host), dp(13).toFloat())
+            m.background = rounded(pal.tone(""), dp(13).toFloat())
             body.addView(m, flp(dp(46), dp(46), Gravity.CENTER).also { it.bottomMargin = dp(14) })
             val h = text(host.removePrefix("www."), 11.5f, pal.onSurfaceVariant)
             h.setSingleLine(true)
@@ -1037,7 +1028,7 @@ class MainActivity : Activity(), PageEvents {
         }
         action(R.drawable.ic_desktop, if (set.desktop) "Mobile site" else "Desktop site", page) {
             set.desktop = !set.desktop
-            for (o in tabs) o.web?.let { w -> w.settings.userAgentString = if (set.desktop) pages.desktopAgent(WebSettingsDefault.agent(this)) else null }
+            for (o in tabs) o.web?.desktop(set.desktop)
             tab()?.web?.reload()
         }
         col.addView(acts, lp(MATCH, WRAP).also { it.bottomMargin = dp(8) })
@@ -1102,8 +1093,7 @@ class MainActivity : Activity(), PageEvents {
             col.addView(r, lp(MATCH, WRAP))
         }
         col.addView(button(pal, "New container", false) { containerDialog(null) }, lp(WRAP, dp(40)).also { it.topMargin = dp(6) })
-        col.addView(note(if (pages.containersWork) "Each container keeps its own sign-ins and cookies. Hold the + button to open a tab in one; tap a container here to rename it or change its color."
-            else "Containers need Android System WebView 123 or newer: update it from the Play Store. Until then their tabs share sign-ins with the others."))
+        col.addView(note("Each container keeps its own sign-ins and cookies. Hold the + button to open a tab in one; tap a container here to rename it."))
 
         // search
         col.addView(section("Search"))
@@ -1111,11 +1101,11 @@ class MainActivity : Activity(), PageEvents {
         for (m in Mode.values()) modes.addView(chip(pal, m.label, modeIcon(m), m == set.mode) { set.mode = m; closeSheet(); openSheet() })
         col.addView(modes, lp(MATCH, WRAP))
         col.addView(note("Google opens in the mode you pick. Type \"yt \" before words to search YouTube."))
-        col.addView(toggle("Lite results for Web searches", set.liteResults) { set.liteResults = it })
-        col.addView(note("Web searches are read in the background and shown on Lite's own page, in your palette, without ads."))
+        col.addView(toggle("Iris results for Web searches", set.liteResults) { set.liteResults = it })
+        col.addView(note("Web searches are read in the background and shown on Iris's own page, in your palette, without ads."))
 
         // shields
-        col.addView(section("Lite Shields"))
+        col.addView(section("Iris Shields"))
         col.addView(toggle("Block ads and trackers", set.shields) { set.shields = it; pages.clearCache(); updateBars() })
         val host = t?.url?.let { hostOf(it).removePrefix("www.") } ?: ""
         if (host.isNotEmpty() && Search.query(t!!.url) == null) {
@@ -1166,8 +1156,8 @@ class MainActivity : Activity(), PageEvents {
                 Toast.makeText(this, "This phone no longer syncs", Toast.LENGTH_SHORT).show()
             }, lp(WRAP, dp(40)).also { it.topMargin = dp(8) })
         } else {
-            col.addView(note("Lite Go on your computer can keep history, open tabs and the palette the same as here, with no account and no server. " +
-                "On the computer open Menu, Phone, turn sync on and scan its code with this phone's camera; then tap \"Pair with Lite\" on the page that opens."))
+            col.addView(note("Iris on your computer can keep history, open tabs and the palette the same as here, with no account and no server. " +
+                "On the computer open Menu, Phone, turn sync on and scan its code with this phone's camera; then tap \"Pair with Iris\" on the page that opens."))
         }
 
         // data
@@ -1176,17 +1166,18 @@ class MainActivity : Activity(), PageEvents {
         col.addView(button(pal, "Clear cookies and site data", false) {
             AlertDialog.Builder(this).setMessage("Sign out of every site and delete what sites stored?")
                 .setPositiveButton("Clear") { _, _ ->
-                    CookieManager.getInstance().removeAllCookies(null)
-                    WebStorage.getInstance().deleteAllData()
-                    for (o in tabs) o.web?.clearCache(true)
+                    try {
+                        CefriumProfile.getDefault().cookieManager.removeAllCookies {}
+                        CefriumProfile.getDefault().listSiteData { sites -> for (d in sites) CefriumProfile.getDefault().clearSiteData(d.site, null) }
+                    } catch (e: Exception) {}
+                    for (o in tabs) o.web?.clearCache()
                     Toast.makeText(this, "Cookies and site data cleared", Toast.LENGTH_SHORT).show()
                 }.setNegativeButton("Cancel", null).show()
         }, lp(WRAP, dp(40)).also { it.topMargin = dp(8) })
 
         // about
         col.addView(section("About"))
-        val wv = WebView.getCurrentWebViewPackage()?.versionName ?: ""
-        col.addView(note("Lite 1.0.3 for Android · pages by Android System WebView $wv\nTulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · GPL 3.0"))
+        col.addView(note("Iris ${BuildConfig.VERSION_NAME} for Android · pages by Chromium ${Cefrium.getChromiumVersion()} (Cefrium ${Cefrium.getVersion()})\nTulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · GPL 3.0"))
         return col
     }
 
@@ -1237,8 +1228,8 @@ class MainActivity : Activity(), PageEvents {
         }
         val host = hostOf(t.url).removePrefix("www.")
         val on = pages.shieldOn(t.url)
-        val msg = if (on) "${t.blocked} ads and trackers blocked on this page." else "Lite Shields is off for $host."
-        AlertDialog.Builder(this).setTitle("Lite Shields").setMessage(msg)
+        val msg = if (on) "${t.blocked} ads and trackers blocked on this page." else "Iris Shields is off for $host."
+        AlertDialog.Builder(this).setTitle("Iris Shields").setMessage(msg)
             .setPositiveButton(if (on) "Turn off for this site" else "Turn on for this site") { _, _ ->
                 set.shieldOff = if (on) set.shieldOff + host else set.shieldOff - host
                 pages.clearCache()
@@ -1293,35 +1284,37 @@ class MainActivity : Activity(), PageEvents {
         }
     }
 
-    override fun onNewTab(from: Tab, url: String, transport: Message?) {
-        val t = Tab(nextId++, from.private)
+    override fun onNewTab(from: Tab, url: String, popup: CefriumBrowser?) {
+        val t = Tab(nextId++, from.private, from.container)
         tabs.add(cur + 1, t)
-        val w = pages.make(t)
+        val w = pages.make(t, popup)
         content.addView(w, 0, flp(MATCH, MATCH))
         t.url = url
-        if (transport != null) {
-            (transport.obj as WebView.WebViewTransport).webView = w
-            transport.sendToTarget()
-        } else if (url.isNotEmpty()) w.loadUrl(url)
+        if (popup == null && url.isNotEmpty()) w.loadUrl(url)
         selectTab(cur + 1)
     }
 
-    override fun onFullscreen(view: View?, done: WebChromeClient.CustomViewCallback?) {
-        if (view != null) {
-            full?.let { root.removeView(it) }
-            full = view
-            fullDone = done
-            view.setBackgroundColor(Palette.BLACK)
-            root.addView(view, flp(MATCH, MATCH))
+    override fun onClosePopup(popup: CefriumBrowser) {
+        val i = tabs.indexOfFirst { it.web?.b === popup }
+        if (i >= 0) closeTab(i)
+    }
+
+    override fun onFullscreen(t: Tab, on: Boolean) {
+        val w = t.web ?: return
+        if (on) {
+            if (full === w) return
+            full = w
+            content.removeView(w)
+            w.setBackgroundColor(Palette.BLACK)
+            root.addView(w, flp(MATCH, MATCH))
             systemBars(false)
             requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_FULL_USER
             return
         }
-        val v = full ?: return
+        if (full !== w) return
         full = null
-        root.removeView(v)
-        fullDone?.onCustomViewHidden()
-        fullDone = null
+        root.removeView(w)
+        content.addView(w, 0, flp(MATCH, MATCH))
         systemBars(true)
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         root.requestApplyInsets()
@@ -1329,20 +1322,9 @@ class MainActivity : Activity(), PageEvents {
 
     override fun onCrashed(t: Tab) {
         Toast.makeText(this, "A page stopped working and was reloaded", Toast.LENGTH_SHORT).show()
+        t.web?.let { content.removeView(it); it.destroy() }
+        t.web = null
         if (t === tab()) wake(t)
-    }
-
-    override fun onFileChooser(cb: ValueCallback<Array<Uri>>, params: WebChromeClient.FileChooserParams): Boolean {
-        fileCb?.onReceiveValue(null)
-        fileCb = cb
-        return try {
-            @Suppress("DEPRECATION")
-            startActivityForResult(params.createIntent(), FILES)
-            true
-        } catch (e: Exception) {
-            fileCb = null
-            false
-        }
     }
 
     override fun onLongPress(t: Tab, link: String, image: String) {
@@ -1453,12 +1435,4 @@ class MainActivity : Activity(), PageEvents {
         selectTab(set.sessionIndex.coerceIn(0, tabs.size - 1))
     }
 
-    companion object {
-        private const val FILES = 7
-    }
-}
-
-/** the WebView's own user agent, for switching back from the desktop site */
-object WebSettingsDefault {
-    fun agent(ctx: Context): String = android.webkit.WebSettings.getDefaultUserAgent(ctx)
 }

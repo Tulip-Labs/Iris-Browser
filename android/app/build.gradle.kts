@@ -1,22 +1,33 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
+    id("com.cefrium") version "0.21.0"
 }
 
 android {
     namespace = "org.tulipanlabs.lite"
-    compileSdk = 35
+    compileSdk = 37 // what Cefrium is built against
 
     defaultConfig {
+        // the id stays, so Iris installs over Lite and keeps its tabs and settings
         applicationId = "org.tulipanlabs.lite"
-        minSdk = 26
+        minSdk = 29 // Cefrium's Chromium needs Android 10
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.0.7"
+        versionCode = 14
+        versionName = "1.0.14"
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {
+        debug {
+            // the emulator (screenshots) and phones
+            ndk { abiFilters += listOf("x86_64", "arm64-v8a") }
+        }
         release {
+            // phones: 64-bit ARM only, so the APK carries one Chromium
+            ndk { abiFilters += listOf("arm64-v8a") }
             // smaller and faster: unused code and resources are removed
             isMinifyEnabled = true
             isShrinkResources = true
@@ -30,15 +41,16 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 }
 
 dependencies {
-    // only for scripts that run before a page's own (YouTube without ads, fingerprinting protection)
-    implementation("androidx.webkit:webkit:1.12.1")
+    // the page engine: Chromium (CEF) built for Android, with H.264 and AAC
+    implementation("com.cefrium:cefrium-sdk:0.21.0")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.mediarouter:mediarouter:1.7.0")
+    implementation("androidx.core:core:1.16.0")
+    implementation("androidx.browser:browser:1.8.0")
 }
