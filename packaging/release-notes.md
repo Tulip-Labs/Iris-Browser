@@ -1,5 +1,9 @@
 Iris (formerly Lite Go): a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.17
+
+- **Right-click works on pages.** Chromium's own menu needs a window, which pages drawn by Iris do not have, so right-clicking did nothing. Iris now shows the menu itself: back, forward, reload, cut, copy, paste, select all, saving and copying images, and on a link or a picture, opening it in a new tab and copying its address.
+
 ## New in 1.0.16
 
 - **Pages open again on every setup.** In 1.0.15, Chromium handed its frames straight to the graphics chip; on some computers (inside a toolbox, with some drivers) it could not allocate those buffers and sent no frame at all, so pages stayed blank. Pages are now uploaded to the graphics chip from the processor by default, which works everywhere; the direct hand-off is opt-in with `LITEGO_GPU=1`.

@@ -281,6 +281,14 @@ func lgxGoPopup(id C.uintptr_t, u *C.char) C.uintptr_t {
 	return C.uintptr_t(nid)
 }
 
+//export lgxGoOpenTab
+func lgxGoOpenTab(id C.uintptr_t, u *C.char) {
+	// "Open link in new tab" from the right-click menu
+	if v := wkGet(uintptr(id)); v != nil && v.ev.NewTab != nil {
+		v.ev.NewTab(C.GoString(u), nil)
+	}
+}
+
 //export lgxGoFullscreen
 func lgxGoFullscreen(id C.uintptr_t, on C.int) {
 	if v := wkGet(uintptr(id)); v != nil && v.ev.Fullscreen != nil {

@@ -59,6 +59,7 @@ extern char *lgxGoDecide(uintptr_t id, char *u, int gesture);
 extern uintptr_t lgxGoPopup(uintptr_t id, char *u);
 extern void lgxGoFullscreen(uintptr_t id, int on);
 extern void lgxGoCrashed(uintptr_t id);
+extern void lgxGoOpenTab(uintptr_t id, char *u);
 extern void lgxGoAudio(uintptr_t id, int on);
 extern int lgxGoKey(uintptr_t id, int ch, int vk, int ctrl, int shift, int alt);
 extern void lgxGoResult(uintptr_t cb, char *res);
@@ -1095,6 +1096,154 @@ static void makeArea(LV *v) {
 	}
 }
 
+
+// ---- the right-click menu ----
+//
+// Chromium's own menu needs a window, and pages here are drawn off screen,
+// so Iris shows the menu: a GTK menu with Chromium's items (back, forward,
+// reload, cut, copy, paste, select all, save or copy an image…) and, on a
+// link or a picture, opening it in a new tab and copying its address.
+
+enum {
+	CMD_LINK_TAB = MENU_ID_USER_FIRST,
+	CMD_LINK_COPY,
+	CMD_IMAGE_TAB,
+	CMD_IMAGE_COPY_URL,
+};
+
+static cef_run_context_menu_callback_t *menuCb; // the menu on screen
+static char *menuLink, *menuImage;
+
+static void menuFinish(int cmd) {
+	if (!menuCb) return;
+	cef_run_context_menu_callback_t *cb = menuCb;
+	menuCb = NULL;
+	if (cmd >= 0) cb->cont(cb, cmd, EVENTFLAG_NONE);
+	else cb->cancel(cb);
+	RELEASE(cb);
+}
+
+static void onMenuItem(GtkMenuItem *it, gpointer cmd) { menuFinish(GPOINTER_TO_INT(cmd)); }
+
+static gboolean menuCancel(gpointer _) {
+	menuFinish(-1); // closed without a choice (an item's choice came first)
+	return G_SOURCE_REMOVE;
+}
+
+static void onMenuClosed(GtkMenuShell *m, gpointer _) { g_idle_add(menuCancel, NULL); }
+
+// label turns Chromium's label ("&Copy") into GTK's ("_Copy").
+static char *menuLabel(cef_menu_model_t *model, size_t i) {
+	cef_string_userfree_t l = model->get_label_at(model, i);
+	char *s = l ? getStr(l) : g_strdup("");
+	if (l) cef_string_userfree_free(l);
+	GString *o = g_string_new(NULL);
+	for (char *p = s; *p; p++) {
+		if (*p == '&') {
+			if (p[1] == '&') o = g_string_append_c(o, '&'), p++;
+			else o = g_string_append_c(o, '_');
+		} else if (*p == '_') {
+			g_string_append(o, "__");
+		} else {
+			g_string_append_c(o, *p);
+		}
+	}
+	g_free(s);
+	return g_string_free(o, FALSE);
+}
+
+static void CEF_CALLBACK onBeforeMenu(cef_context_menu_handler_t *self, cef_browser_t *b, cef_frame_t *f, cef_context_menu_params_t *params,
+                                      cef_menu_model_t *model) {
+	RELEASE(b);
+	RELEASE(f);
+	g_free(menuLink);
+	g_free(menuImage);
+	cef_string_userfree_t l = params->get_link_url(params);
+	menuLink = l ? getStr(l) : NULL;
+	if (l) cef_string_userfree_free(l);
+	cef_string_userfree_t src = params->get_source_url(params);
+	menuImage = src && params->get_media_type(params) == CM_MEDIATYPE_IMAGE ? getStr(src) : NULL;
+	if (src) cef_string_userfree_free(src);
+	cef_string_t t = {0};
+	size_t at = 0;
+	if (menuLink && *menuLink) {
+		setStr(&t, "Open link in new tab");
+		model->insert_item_at(model, at++, CMD_LINK_TAB, &t);
+		setStr(&t, "Copy link address");
+		model->insert_item_at(model, at++, CMD_LINK_COPY, &t);
+	}
+	if (menuImage && *menuImage) {
+		setStr(&t, "Open image in new tab");
+		model->insert_item_at(model, at++, CMD_IMAGE_TAB, &t);
+		setStr(&t, "Copy image address");
+		model->insert_item_at(model, at++, CMD_IMAGE_COPY_URL, &t);
+	}
+	if (at && model->get_count(model) > at) model->insert_separator_at(model, at);
+	cef_string_clear(&t);
+	RELEASE(params);
+	RELEASE(model);
+}
+
+static int CEF_CALLBACK onRunMenu(cef_context_menu_handler_t *self, cef_browser_t *b, cef_frame_t *f, cef_context_menu_params_t *params,
+                                  cef_menu_model_t *model, cef_run_context_menu_callback_t *cb) {
+	LV *v = of(b);
+	RELEASE(f);
+	if (!v || !v->area || !gtk_widget_get_realized(v->area) || model->get_count(model) == 0) {
+		cb->cancel(cb);
+		RELEASE(cb);
+		RELEASE(params);
+		RELEASE(model);
+		return 1;
+	}
+	if (menuCb) menuFinish(-1);
+	menuCb = cb; // kept until a choice or the menu closes
+	GtkWidget *menu = gtk_menu_new();
+	int lastSep = 1;
+	for (size_t i = 0; i < model->get_count(model); i++) {
+		cef_menu_item_type_t type = model->get_type_at(model, i);
+		if (type == MENUITEMTYPE_SEPARATOR) {
+			if (!lastSep) gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+			lastSep = 1;
+			continue;
+		}
+		if (type != MENUITEMTYPE_COMMAND && type != MENUITEMTYPE_CHECK) continue; // no submenus
+		if (!model->is_visible_at(model, i)) continue;
+		char *label = menuLabel(model, i);
+		GtkWidget *it = gtk_menu_item_new_with_mnemonic(label);
+		g_free(label);
+		gtk_widget_set_sensitive(it, model->is_enabled_at(model, i));
+		g_signal_connect(it, "activate", G_CALLBACK(onMenuItem), GINT_TO_POINTER(model->get_command_id_at(model, i)));
+		gtk_menu_shell_append(GTK_MENU_SHELL(menu), it);
+		lastSep = 0;
+	}
+	g_signal_connect(menu, "deactivate", G_CALLBACK(onMenuClosed), NULL);
+	gtk_menu_attach_to_widget(GTK_MENU(menu), v->area, NULL);
+	gtk_widget_show_all(menu);
+	GdkRectangle at = {params->get_xcoord(params), params->get_ycoord(params), 1, 1};
+	gtk_menu_popup_at_rect(GTK_MENU(menu), gtk_widget_get_window(v->area), &at, GDK_GRAVITY_NORTH_WEST, GDK_GRAVITY_NORTH_WEST, NULL);
+	RELEASE(params);
+	RELEASE(model);
+	return 1;
+}
+
+static int CEF_CALLBACK onMenuCommand(cef_context_menu_handler_t *self, cef_browser_t *b, cef_frame_t *f, cef_context_menu_params_t *params,
+                                      int cmd, cef_event_flags_t flags) {
+	LV *v = of(b);
+	RELEASE(f);
+	RELEASE(params);
+	const char *u = cmd == CMD_LINK_TAB || cmd == CMD_LINK_COPY ? menuLink : cmd == CMD_IMAGE_TAB || cmd == CMD_IMAGE_COPY_URL ? menuImage : NULL;
+	if (!u || !*u) return 0; // Chromium's own command
+	if (cmd == CMD_LINK_TAB || cmd == CMD_IMAGE_TAB) {
+		if (v) lgxGoOpenTab(v->id, (char *)u);
+	} else {
+		gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), u, -1);
+	}
+	return 1;
+}
+
+static cef_context_menu_handler_t menuH;
+static cef_context_menu_handler_t *CEF_CALLBACK getMenu(cef_client_t *self) { return &menuH; }
+
 // ---- the page's events ----
 
 static void CEF_CALLBACK onAddress(cef_display_handler_t *self, cef_browser_t *b, cef_frame_t *f, const cef_string_t *url) {
@@ -1600,6 +1749,10 @@ static void initHandlers(void) {
 	STATIC_BASE(keyH);
 	STATIC_BASE(permH);
 	permH.on_show_permission_prompt = onPermissionPrompt;
+	STATIC_BASE(menuH);
+	menuH.on_before_context_menu = onBeforeMenu;
+	menuH.run_context_menu = onRunMenu;
+	menuH.on_context_menu_command = onMenuCommand;
 
 	STATIC_BASE(client);
 	client.get_render_handler = getRender;
@@ -1609,6 +1762,7 @@ static void initHandlers(void) {
 	client.get_request_handler = getRequest;
 	client.get_download_handler = getDownload;
 	client.get_permission_handler = getPerm;
+	client.get_context_menu_handler = getMenu;
 }
 
 // ---- containers: each profile is a request context with its own storage ----
