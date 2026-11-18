@@ -99,8 +99,13 @@ jobs:
           sleep 1
           export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CONSOLE=1 IRIS_MEM_LOG=1 ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1
           # Electron alone first: does it start here at all?
-          timeout 20 /opt/linux-electron/electron/electron --no-sandbox --enable-logging=stderr -e 'console.log("electron ok", process.versions.electron)' > /tmp/fs/smoke.txt 2>&1; echo "smoke exit $?" >> /tmp/fs/smoke.txt
-          timeout 15 env IRIS_SOCK=/tmp/none.sock /opt/linux-electron/electron/electron --no-sandbox --enable-logging=stderr /opt/linux-electron/electron-helper >> /tmp/fs/smoke.txt 2>&1; echo "helper exit $?" >> /tmp/fs/smoke.txt
+          E=/opt/linux-electron/electron/electron
+          { echo "-- missing libraries:"; ldd $E | grep "not found"; echo "-- version:"; $E --version; echo "exit $?"; } > /tmp/fs/smoke.txt 2>&1
+          for oz in "" "--ozone-platform=wayland" "--ozone-platform=headless" "--disable-gpu"; do
+            echo "-- helper with: $oz" >> /tmp/fs/smoke.txt
+            timeout 15 env IRIS_SOCK=/tmp/none.sock $E --no-sandbox $oz --enable-logging=stderr --v=0 /opt/linux-electron/electron-helper >> /tmp/fs/smoke.txt 2>&1
+            echo "exit $?" >> /tmp/fs/smoke.txt
+          done
           dbus-run-session -- /opt/linux-electron/iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 25
           grim /tmp/fs/1-full.png
@@ -131,7 +136,7 @@ jobs:
           pkill -x iris
           SH
           su tester -c "sh /tmp/run.sh"
-          echo "== Electron alone"; tail -40 /tmp/fs/smoke.txt
+          echo "== Electron alone"; grep -v "dbus/bus.cc" /tmp/fs/smoke.txt | tail -60
           grep -v dbus /tmp/fs/log.txt | grep -v "Iris: engine \|portal\|fuse" | tail -80
           echo "== the engine's memory and tabs, as Iris sees them"
           grep "Iris: engine " /tmp/fs/log.txt | tail -6
