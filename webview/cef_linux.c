@@ -1943,7 +1943,9 @@ static void setup(const char *dir) {
 	s.multi_threaded_message_loop = 0;
 	s.windowless_rendering_enabled = 1;
 	s.persist_session_cookies = 1;
-	s.log_severity = g_getenv("LITEGO_CEF_VERBOSE") ? LOGSEVERITY_INFO : LOGSEVERITY_ERROR;
+	// Chromium speaks only when asked (LITEGO_CEF_VERBOSE=1): its messages about the
+	// system bus, the battery or VA-API inside a toolbox are noise, not errors
+	s.log_severity = g_getenv("LITEGO_CEF_VERBOSE") ? LOGSEVERITY_INFO : LOGSEVERITY_FATAL;
 	s.background_color = 0xFFFFFFFF;
 	setStr(&s.browser_subprocess_path, helper);
 	setStr(&s.root_cache_path, root);
