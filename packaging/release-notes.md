@@ -1,5 +1,12 @@
 Iris (formerly Lite Go): a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.19
+
+- **Native GTK 4 on Linux: sharp and fast at any scale.** Iris's window moved from GTK 3 to GTK 4. GTK 3 could only draw at whole scales, so on a screen scaled by 1.25, 1.5 or 1.75 Iris had to draw at 2 and let the compositor shrink it: sharp, but up to two and a half times the pixels to render, which made pages lag on smaller computers. Now Iris and the pages are drawn at the screen's exact scale, one page pixel on one screen pixel, as Firefox does: sharp text and no wasted work. Only the parts of a page that change go to the graphics chip again.
+- One window, one drawing: the interface and the pages are composed by GTK in a single pass, which also ends the brief flicker when switching tabs or resizing.
+- The right-click menu is a GTK 4 menu.
+- Installing Iris now pulls in GTK 4 (`gtk4` on Fedora and Arch, `libgtk-4-1` on Debian and Ubuntu) instead of GTK 3.
+
 ## New in 1.0.18
 
 - **The shield just works.** No shield button and no switches: Iris blocks ads, trackers and cookie notices on every site, with the filter lists always on. YouTube is the one exception: nothing is blocked there, so YouTube sees no ad blocker; when an ad starts, Iris mutes it, skips it at once and hides the ad boxes around the videos.

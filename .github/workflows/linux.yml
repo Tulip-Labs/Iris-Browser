@@ -25,7 +25,7 @@ jobs:
       - name: Build tools and GTK development files
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc pkg-config libgtk-3-dev libepoxy-dev curl bzip2
+          sudo apt-get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev curl bzip2
       - name: Chromium (CEF), from the cache when it is there
         uses: actions/cache@v4
         with:
@@ -84,7 +84,7 @@ jobs:
             zypper --non-interactive install --allow-unsigned-rpm ./pkg/*.rpm weston procps Mesa-dri which dbus-1
             ;;
           tar)
-            pacman -Syu --noconfirm --needed gtk3 libepoxy libglvnd mesa nss alsa-lib libdrm libxkbcommon at-spi2-core libcups libxcomposite libxdamage libxrandr weston procps-ng which tar gzip ttf-dejavu dbus
+            pacman -Syu --noconfirm --needed gtk4 libepoxy libglvnd mesa nss alsa-lib libdrm libxkbcommon at-spi2-core libcups libxcomposite libxdamage libxrandr weston procps-ng which tar gzip ttf-dejavu dbus
             tar -xzf pkg/LiteGo-linux-x86_64.tar.gz -C /tmp
             useradd -m tester
             su tester -c "/tmp/LiteGo-linux-x86_64/install.sh"

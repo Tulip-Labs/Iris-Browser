@@ -3,12 +3,12 @@
 // The Linux side of Lite Go's web engine on Chromium, through CEF (the
 // Chromium Embedded Framework).
 //
-// Lite Go's window is a GTK window (cmd/litego/gtk_linux.c) with a GtkLayout:
-// the interface is drawn by Gio in a GL area, and each page is a GtkDrawingArea
-// in the layout, over it. CEF renders the pages off screen ("windowless"): it
-// hands over the pixels of each page, and this file paints them and passes
-// the pointer, wheel and keys back. Nothing here needs X11: it runs on
-// Wayland (and on X11 too).
+// Iris's window is a GTK 4 window (cmd/litego/gtk_linux.c) with one view:
+// the interface is drawn there by Gio, and each page over it. CEF renders the
+// pages off screen ("windowless") at the window's exact scale: it hands over
+// the pixels of each page, this file turns them into textures the view draws
+// (lgxSnapshotPages), and passes the pointer, wheel and keys back. Nothing
+// here needs X11: it runs on Wayland (and on X11 too).
 //
 // It speaks the same small protocol to Go as the WebKitGTK engine
 // (webview_linux.c): lgxCall with an operation, and lgxGo* callbacks. CEF's
@@ -16,8 +16,7 @@
 // here runs there, except the resource checks, which CEF makes on its IO
 // thread (views are found under a lock).
 
-#include <epoxy/egl.h>
-#include <epoxy/gl.h>
+#include <dlfcn.h>
 #include <gtk/gtk.h>
 #include <math.h>
 #include <stdint.h>
@@ -74,19 +73,14 @@ typedef struct {
 	uintptr_t id;
 	cef_browser_t *browser; // NULL until created
 	int bid;                // the browser's identifier
-	GtkWidget *area;        // where the page is painted, in the layout
-	GtkIMContext *im;       // dead keys and input methods
-	cairo_surface_t *page, *popup; // the frames, on the processor (when the area is not GL, or for the tests' pictures)
-	// the area is a GtkGLArea (gl): the frames are textures on the graphics
-	// chip, drawn pixel for pixel
-	int gl;
-	GLuint tex, popTex, prog, fbo, readFbo;
-	int texW, texH, popW, popH;
-	int texSwap, popSwap; // the texture holds BGRA bytes uploaded as RGBA: red and blue swap when drawn
+	GdkTexture *tex, *popTex; // the last frames (the page's, a select box's), ready for the screen
+	cairo_surface_t *page;    // the last frame on the processor, for the tests' pictures (LITEGO_SHOT)
 	cef_rect_t popupRect;
 	int popupShown;
-	int w, h;      // size in GTK units
-	int sf;        // the scale Chromium was last told
+	int px[4];     // where the page is in the view, in real pixels: x, y, width, height
+	int w, h;      // its size in GTK units (Chromium's)
+	double scale;  // the scale Chromium was last told
+	const char *cursor; // the pointer's shape over the page
 	int shown;
 	char *profile;
 	int priv, sandbox;
@@ -99,7 +93,7 @@ typedef struct {
 	int closing;
 } LV;
 
-static GtkLayout *host;
+static GtkWidget *host; // the window's view
 static char *dataDir;
 static GHashTable *views;    // id -> LV*
 static GHashTable *byBrowser; // browser identifier -> LV*
@@ -178,9 +172,57 @@ static LV *of(cef_browser_t *b) {
 
 static cef_browser_host_t *hostOf(LV *v) { return v && v->browser ? v->browser->get_host(v->browser) : NULL; }
 
-static int scaleOf(void) {
-	int sf = host ? gtk_widget_get_scale_factor(GTK_WIDGET(host)) : 1;
-	return sf < 1 ? 1 : sf;
+#if !GTK_CHECK_VERSION(4, 8, 0)
+typedef enum { GDK_SCROLL_UNIT_WHEEL, GDK_SCROLL_UNIT_SURFACE } GdkScrollUnit;
+#endif
+typedef struct _GdkMemoryTextureBuilder MemBuilder;
+static GdkScrollUnit (*p_scroll_unit)(GdkEvent *);
+static MemBuilder *(*p_mtb_new)(void);
+static void (*p_mtb_set_bytes)(MemBuilder *, GBytes *);
+static void (*p_mtb_set_stride)(MemBuilder *, gsize);
+static void (*p_mtb_set_width)(MemBuilder *, int);
+static void (*p_mtb_set_height)(MemBuilder *, int);
+static void (*p_mtb_set_format)(MemBuilder *, GdkMemoryFormat);
+static void (*p_mtb_set_update_texture)(MemBuilder *, GdkTexture *);
+static void (*p_mtb_set_update_region)(MemBuilder *, cairo_region_t *);
+static GdkTexture *(*p_mtb_build)(MemBuilder *);
+static double (*p_surface_get_scale)(GdkSurface *);
+static double (*p_monitor_get_scale)(GdkMonitor *);
+static void (*p_append_scaled)(GtkSnapshot *, GdkTexture *, GskScalingFilter, const graphene_rect_t *);
+
+static void loadSyms(void) {
+	static int done;
+	if (done) return;
+	done = 1;
+#define SYM(p, n) p = dlsym(RTLD_DEFAULT, n)
+	SYM(p_mtb_new, "gdk_memory_texture_builder_new");
+	SYM(p_mtb_set_bytes, "gdk_memory_texture_builder_set_bytes");
+	SYM(p_mtb_set_stride, "gdk_memory_texture_builder_set_stride");
+	SYM(p_mtb_set_width, "gdk_memory_texture_builder_set_width");
+	SYM(p_mtb_set_height, "gdk_memory_texture_builder_set_height");
+	SYM(p_mtb_set_format, "gdk_memory_texture_builder_set_format");
+	SYM(p_mtb_set_update_texture, "gdk_memory_texture_builder_set_update_texture");
+	SYM(p_mtb_set_update_region, "gdk_memory_texture_builder_set_update_region");
+	SYM(p_mtb_build, "gdk_memory_texture_builder_build");
+	SYM(p_surface_get_scale, "gdk_surface_get_scale");
+	SYM(p_monitor_get_scale, "gdk_monitor_get_scale");
+	SYM(p_append_scaled, "gtk_snapshot_append_scaled_texture");
+	SYM(p_scroll_unit, "gdk_scroll_event_get_unit");
+#undef SYM
+	if (!p_mtb_new || !p_mtb_set_bytes || !p_mtb_set_stride || !p_mtb_set_width || !p_mtb_set_height || !p_mtb_set_format ||
+	    !p_mtb_set_update_texture || !p_mtb_set_update_region || !p_mtb_build)
+		p_mtb_new = NULL;
+}
+
+// scaleOf is the window's scale: real pixels per GTK unit, fractional where
+// the system draws fractionally (1.25, 1.5…).
+static double scaleOf(void) {
+	loadSyms();
+	GtkNative *n = host ? gtk_widget_get_native(host) : NULL;
+	GdkSurface *s = n ? gtk_native_get_surface(n) : NULL;
+	if (!s) return host ? gtk_widget_get_scale_factor(host) : 1;
+	double sc = p_surface_get_scale ? p_surface_get_scale(s) : gdk_surface_get_scale_factor(s);
+	return sc > 0.25 ? sc : 1;
 }
 
 // ---- the message pump: CEF's work runs from GTK's main loop ----
@@ -212,16 +254,21 @@ static void CEF_CALLBACK onSchedulePump(cef_browser_process_handler_t *self, int
 
 static int noSandbox;
 
-// screenScale is the largest whole-number scale GTK uses on any screen (the
-// window's scale once it is on screen).
-static int screenScale(void) {
-	int sf = host && gtk_widget_get_realized(GTK_WIDGET(host)) ? gtk_widget_get_scale_factor(GTK_WIDGET(host)) : 1;
+// screenScale is the window's scale once it is on screen, else the largest
+// scale of the screens (fractional ones included, on GTK 4.14 and later).
+static double screenScale(void) {
+	loadSyms();
+	if (host && gtk_widget_get_realized(host)) return scaleOf();
+	double sf = 1;
 	GdkDisplay *d = gdk_display_get_default();
-	for (int i = 0; d && i < gdk_display_get_n_monitors(d); i++) {
-		GdkMonitor *m = gdk_display_get_monitor(d, i);
-		if (m && gdk_monitor_get_scale_factor(m) > sf) sf = gdk_monitor_get_scale_factor(m);
+	GListModel *ms = d ? gdk_display_get_monitors(d) : NULL;
+	for (guint i = 0; ms && i < g_list_model_get_n_items(ms); i++) {
+		GdkMonitor *m = g_list_model_get_item(ms, i);
+		double s = p_monitor_get_scale ? p_monitor_get_scale(m) : gdk_monitor_get_scale_factor(m);
+		if (s > sf) sf = s;
+		g_object_unref(m);
 	}
-	return sf < 1 ? 1 : sf;
+	return sf;
 }
 
 static int fileSays(const char *path, const char *want) {
@@ -257,14 +304,19 @@ static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type
 	cl->append_switch_with_value(cl, &k, &val);
 	cef_string_clear(&k);
 	cef_string_clear(&val);
-	// Chromium draws at exactly the window's scale. On a fractional screen
-	// scale (1.25, 1.5) Chromium would otherwise take the screen's own and the
-	// page would be stretched to the window's whole-number scale, soft or
-	// blocky; at the window's scale it is drawn 1:1, sharp.
+	// Chromium draws at exactly the window's scale, fractional ones (1.25,
+	// 1.5) included: one page pixel is one screen pixel, sharp.
 	char sfs[16];
-	snprintf(sfs, sizeof sfs, "%d", screenScale());
+	g_ascii_formatd(sfs, sizeof sfs, "%.4g", screenScale());
 	setStr(&k, "force-device-scale-factor");
 	setStr(&val, g_getenv("LITEGO_SCALE") ? g_getenv("LITEGO_SCALE") : sfs);
+	cl->append_switch_with_value(cl, &k, &val);
+	cef_string_clear(&k);
+	cef_string_clear(&val);
+	// GTK 4, as Iris's window: Chromium loads GTK itself (file pickers,
+	// printing) and would take GTK 3 first, which cannot live beside GTK 4
+	setStr(&k, "gtk-version");
+	setStr(&val, "4");
 	cl->append_switch_with_value(cl, &k, &val);
 	cef_string_clear(&k);
 	cef_string_clear(&val);
@@ -358,398 +410,120 @@ static cef_browser_process_handler_t bph;
 static cef_browser_process_handler_t *CEF_CALLBACK getBPH(cef_app_t *self) { return &bph; }
 
 // ---- painting ----
+//
+// Each page's frames become a texture that the window's view draws over
+// the interface (lgxSnapshotPages), on whole pixels of the screen. Chromium
+// draws at the screen's exact scale, so one page pixel is one screen pixel:
+// sharp at 1.25 or 1.5 as at 1 or 2, and never larger than the screen needs.
+// Only the parts of a frame that changed go to the graphics chip again
+// (GTK 4.16 and later; older ones take the whole frame).
 
-// oneToOne says whether a frame's pixels map one to one onto the screen's
-// (then it is drawn without smoothing; otherwise smoothly, never blocky).
-static int oneToOne(cairo_surface_t *f, GtkWidget *w) {
-	double sx, sy;
-	cairo_surface_get_device_scale(f, &sx, &sy);
-	return fabs(sx - gtk_widget_get_scale_factor(w)) < 0.01;
-}
-
-static gboolean onDraw(GtkWidget *w, cairo_t *cr, LV *v) {
-	if (v->page) {
-		// one page pixel to one screen pixel: no smoothing, so text stays sharp
-		cairo_set_source_surface(cr, v->page, 0, 0);
-		cairo_pattern_set_filter(cairo_get_source(cr), oneToOne(v->page, w) ? CAIRO_FILTER_NEAREST : CAIRO_FILTER_GOOD);
-		cairo_paint(cr);
+// frameTexture makes a texture of a frame Chromium handed over (BGRA,
+// premultiplied); with old, the texture it replaces, only the changed parts
+// are uploaded.
+static GdkTexture *frameTexture(GdkTexture *old, const void *buf, int w, int h, size_t n, const cef_rect_t *dirty) {
+	GBytes *bytes = g_bytes_new(buf, (gsize)w * h * 4);
+	GdkTexture *t;
+	if (p_mtb_new) {
+		MemBuilder *b = p_mtb_new();
+		p_mtb_set_bytes(b, bytes);
+		p_mtb_set_stride(b, (gsize)w * 4);
+		p_mtb_set_width(b, w);
+		p_mtb_set_height(b, h);
+		p_mtb_set_format(b, GDK_MEMORY_B8G8R8A8_PREMULTIPLIED);
+		if (old && gdk_texture_get_width(old) == w && gdk_texture_get_height(old) == h && n > 0 && dirty) {
+			cairo_region_t *r = cairo_region_create();
+			for (size_t i = 0; i < n; i++) {
+				cairo_rectangle_int_t c = {dirty[i].x, dirty[i].y, dirty[i].width, dirty[i].height};
+				cairo_region_union_rectangle(r, &c);
+			}
+			cairo_rectangle_int_t all = {0, 0, w, h};
+			cairo_region_intersect_rectangle(r, &all);
+			p_mtb_set_update_texture(b, old);
+			p_mtb_set_update_region(b, r);
+			cairo_region_destroy(r);
+		}
+		t = p_mtb_build(b);
+		g_object_unref(b);
 	} else {
-		cairo_set_source_rgb(cr, 1, 1, 1);
-		cairo_paint(cr);
+		t = gdk_memory_texture_new(w, h, GDK_MEMORY_B8G8R8A8_PREMULTIPLIED, bytes, (gsize)w * 4);
 	}
-	if (v->popup && v->popupShown) {
-		int sf = scaleOf();
-		cairo_set_source_surface(cr, v->popup, v->popupRect.x, v->popupRect.y);
-		cairo_pattern_set_filter(cairo_get_source(cr), oneToOne(v->popup, w) ? CAIRO_FILTER_NEAREST : CAIRO_FILTER_GOOD);
-		cairo_rectangle(cr, v->popupRect.x, v->popupRect.y, (double)v->popupRect.width, (double)v->popupRect.height);
-		cairo_fill(cr);
-		(void)sf;
-	}
-	return TRUE;
+	g_bytes_unref(bytes);
+	return t;
 }
 
-// copyInto copies a frame, only the parts that changed when the frame is the
-// same size as the last one; scale is pixels per GTK unit of that frame (taken
-// from the frame itself, so a frame made before a scale change still fits).
-// It returns whether the whole frame was copied.
-static int copyInto(cairo_surface_t **dst, const void *buf, int w, int h, double scale, size_t n, const cef_rect_t *dirty) {
-	double sf = scale > 0 ? scale : scaleOf();
-	// a scale a hair off a whole number is that number (no resampling)
-	if (fabs(sf - round(sf)) < 0.02) sf = round(sf);
-	int whole = 0;
+// copyInto copies a frame for the tests' page pictures (LITEGO_SHOT).
+static void copyInto(cairo_surface_t **dst, const void *buf, int w, int h) {
 	if (!*dst || cairo_image_surface_get_width(*dst) != w || cairo_image_surface_get_height(*dst) != h) {
 		if (*dst) cairo_surface_destroy(*dst);
 		*dst = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
-		whole = 1;
 	}
-	cairo_surface_set_device_scale(*dst, sf, sf);
 	cairo_surface_flush(*dst);
 	unsigned char *d = cairo_image_surface_get_data(*dst);
 	int stride = cairo_image_surface_get_stride(*dst);
-	const unsigned char *s = buf;
-	if (whole || n == 0 || !dirty) {
-		if (stride == w * 4) {
-			memcpy(d, s, (size_t)w * h * 4);
-		} else {
-			for (int y = 0; y < h; y++) memcpy(d + (size_t)y * stride, s + (size_t)y * w * 4, (size_t)w * 4);
-		}
-		whole = 1;
-	} else {
-		for (size_t i = 0; i < n; i++) {
-			cef_rect_t r = dirty[i];
-			if (r.x < 0) r.width += r.x, r.x = 0;
-			if (r.y < 0) r.height += r.y, r.y = 0;
-			if (r.x + r.width > w) r.width = w - r.x;
-			if (r.y + r.height > h) r.height = h - r.y;
-			if (r.width <= 0 || r.height <= 0) continue;
-			for (int y = r.y; y < r.y + r.height; y++)
-				memcpy(d + (size_t)y * stride + (size_t)r.x * 4, s + ((size_t)y * w + r.x) * 4, (size_t)r.width * 4);
-		}
-	}
+	for (int y = 0; y < h; y++) memcpy(d + (size_t)y * stride, (const unsigned char *)buf + (size_t)y * w * 4, (size_t)w * 4);
 	cairo_surface_mark_dirty(*dst);
-	return whole;
 }
 
-
-// ---- painting on the graphics chip ----
-//
-// Each page is a GtkGLArea. Chromium's frames become a texture there:
-// shared straight from Chromium's graphics process as a dmabuf when the
-// computer has a GPU that can (no copy through the processor at all), else
-// uploaded from the frame Chromium hands over, only the parts that changed.
-// The texture is drawn pixel for pixel when it matches the area (sharp), and
-// smoothly when it does not (never blocky). Without GL the old cairo drawing
-// stays (onDraw).
-
-static int gpuShared = -1; // -1 not known yet, 0 frames come through the processor, 1 as dmabufs
-
-#define FOURCC(a, b, c, d) ((uint32_t)(a) | ((uint32_t)(b) << 8) | ((uint32_t)(c) << 16) | ((uint32_t)(d) << 24))
-#define DRM_ARGB8888 FOURCC('A', 'R', '2', '4')
-#define DRM_ABGR8888 FOURCC('A', 'B', '2', '4')
-#define DRM_MOD_INVALID 0x00ffffffffffffffULL
-
-static const char *vertSrc = "#version 300 es\n"
-                             "uniform vec4 r;\n"
-                             "out vec2 uv;\n"
-                             "void main() {\n"
-                             "  vec2 p = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));\n"
-                             "  uv = vec2(p.x, 1.0 - p.y);\n"
-                             "  gl_Position = vec4(r.xy + p * r.zw, 0.0, 1.0);\n"
-                             "}\n";
-static const char *fragSrc = "#version 300 es\n"
-                             "precision mediump float;\n"
-                             "in vec2 uv;\n"
-                             "uniform sampler2D t;\n"
-                             "uniform int swapRB;\n"
-                             "out vec4 c;\n"
-                             "void main() {\n"
-                             "  vec4 x = texture(t, uv);\n"
-                             "  c = vec4(swapRB == 1 ? x.bgr : x.rgb, 1.0);\n"
-                             "}\n";
-
-static GLuint shader(GLenum kind, const char *src) {
-	GLuint s = glCreateShader(kind);
-	glShaderSource(s, 1, &src, NULL);
-	glCompileShader(s);
-	GLint ok = 0;
-	glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
-	if (!ok) {
-		char log[512] = {0};
-		glGetShaderInfoLog(s, sizeof log - 1, NULL, log);
-		g_printerr("Iris: page shader: %s\n", log);
-		glDeleteShader(s);
-		return 0;
-	}
-	return s;
-}
-
-static GLuint program(void) {
-	GLuint v = shader(GL_VERTEX_SHADER, vertSrc), f = shader(GL_FRAGMENT_SHADER, fragSrc);
-	if (!v || !f) return 0;
-	GLuint p = glCreateProgram();
-	glAttachShader(p, v);
-	glAttachShader(p, f);
-	glLinkProgram(p);
-	glDeleteShader(v);
-	glDeleteShader(f);
-	GLint ok = 0;
-	glGetProgramiv(p, GL_LINK_STATUS, &ok);
-	if (!ok) {
-		glDeleteProgram(p);
-		return 0;
-	}
-	return p;
-}
-
-// glCurrent makes the page's GL area current; 0 when it cannot draw now.
-static int glCurrent(LV *v) {
-	if (!v || !v->gl || !v->area || !gtk_widget_get_realized(v->area)) return 0;
-	gtk_gl_area_make_current(GTK_GL_AREA(v->area));
-	return gtk_gl_area_get_error(GTK_GL_AREA(v->area)) == NULL;
-}
-
-// sized gives *t a w by h RGBA texture, making it again when the size changed.
-static void sized(GLuint *t, int *tw, int *th, int w, int h) {
-	if (*t && *tw == w && *th == h) return;
-	if (*t) glDeleteTextures(1, t);
-	glGenTextures(1, t);
-	glBindTexture(GL_TEXTURE_2D, *t);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	*tw = w, *th = h;
-}
-
-// glUpload puts a frame from the processor into the page's texture (or the
-// popup's), only the parts that changed when the size is the same.
-static void glUpload(LV *v, int popup, const void *buf, int w, int h, size_t n, const cef_rect_t *dirty) {
-	GLuint *t = popup ? &v->popTex : &v->tex;
-	int *tw = popup ? &v->popW : &v->texW, *th = popup ? &v->popH : &v->texH;
-	int whole = !*t || *tw != w || *th != h || n == 0 || !dirty;
-	sized(t, tw, th, w, h);
-	glBindTexture(GL_TEXTURE_2D, *t);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-	glPixelStorei(GL_UNPACK_ROW_LENGTH, w);
-	if (whole) {
-		glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-		glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf);
-	} else {
-		for (size_t i = 0; i < n; i++) {
-			cef_rect_t r = dirty[i];
-			if (r.x < 0) r.width += r.x, r.x = 0;
-			if (r.y < 0) r.height += r.y, r.y = 0;
-			if (r.x + r.width > w) r.width = w - r.x;
-			if (r.y + r.height > h) r.height = h - r.y;
-			if (r.width <= 0 || r.height <= 0) continue;
-			glPixelStorei(GL_UNPACK_SKIP_PIXELS, r.x);
-			glPixelStorei(GL_UNPACK_SKIP_ROWS, r.y);
-			glTexSubImage2D(GL_TEXTURE_2D, 0, r.x, r.y, r.width, r.height, GL_RGBA, GL_UNSIGNED_BYTE, buf);
-		}
-	}
-	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-	glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
-	glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
-	if (popup) v->popSwap = 1;
-	else v->texSwap = 1; // Chromium's bytes are BGRA
-}
-
-// glImport copies a frame Chromium shares as a dmabuf (only called once
-// gpuCanShare found the EGL and GL extensions it uses) into the page's
-// texture (or the popup's), on the graphics chip. The dmabuf goes back to
-// Chromium when the callback returns, so it is copied, never kept.
-static int glImport(LV *v, int popup, const cef_accelerated_paint_info_t *info) {
-	EGLDisplay d = eglGetCurrentDisplay();
-	if (d == EGL_NO_DISPLAY || info->plane_count < 1 || info->plane_count > kAcceleratedPaintMaxPlanes) return 0;
-	int w = info->extra.coded_size.width, h = info->extra.coded_size.height;
-	int vw = info->extra.visible_rect.width > 0 ? info->extra.visible_rect.width : w;
-	int vh = info->extra.visible_rect.height > 0 ? info->extra.visible_rect.height : h;
-	if (w <= 0 || h <= 0) return 0;
-	EGLint a[64];
-	int k = 0;
-	a[k++] = EGL_WIDTH, a[k++] = w;
-	a[k++] = EGL_HEIGHT, a[k++] = h;
-	a[k++] = EGL_LINUX_DRM_FOURCC_EXT, a[k++] = (EGLint)(info->format == CEF_COLOR_TYPE_RGBA_8888 ? DRM_ABGR8888 : DRM_ARGB8888);
-	static const EGLint fdA[] = {EGL_DMA_BUF_PLANE0_FD_EXT, EGL_DMA_BUF_PLANE1_FD_EXT, EGL_DMA_BUF_PLANE2_FD_EXT, EGL_DMA_BUF_PLANE3_FD_EXT};
-	static const EGLint offA[] = {EGL_DMA_BUF_PLANE0_OFFSET_EXT, EGL_DMA_BUF_PLANE1_OFFSET_EXT, EGL_DMA_BUF_PLANE2_OFFSET_EXT, EGL_DMA_BUF_PLANE3_OFFSET_EXT};
-	static const EGLint pitchA[] = {EGL_DMA_BUF_PLANE0_PITCH_EXT, EGL_DMA_BUF_PLANE1_PITCH_EXT, EGL_DMA_BUF_PLANE2_PITCH_EXT, EGL_DMA_BUF_PLANE3_PITCH_EXT};
-	static const EGLint loA[] = {EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_LO_EXT};
-	static const EGLint hiA[] = {EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT, EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_HI_EXT};
-	for (int p = 0; p < info->plane_count; p++) {
-		a[k++] = fdA[p], a[k++] = info->planes[p].fd;
-		a[k++] = offA[p], a[k++] = (EGLint)info->planes[p].offset;
-		a[k++] = pitchA[p], a[k++] = (EGLint)info->planes[p].stride;
-		if (info->modifier != DRM_MOD_INVALID) {
-			a[k++] = loA[p], a[k++] = (EGLint)(info->modifier & 0xffffffff);
-			a[k++] = hiA[p], a[k++] = (EGLint)(info->modifier >> 32);
-		}
-	}
-	a[k++] = EGL_NONE;
-	EGLImageKHR img = eglCreateImageKHR(d, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, NULL, a);
-	if (img == EGL_NO_IMAGE_KHR) return 0;
-	GLuint src = 0;
-	glGenTextures(1, &src);
-	glBindTexture(GL_TEXTURE_2D, src);
-	glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, (GLeglImageOES)img);
-	GLuint *t = popup ? &v->popTex : &v->tex;
-	int *tw = popup ? &v->popW : &v->texW, *th = popup ? &v->popH : &v->texH;
-	sized(t, tw, th, vw, vh);
-	if (!v->fbo) glGenFramebuffers(1, &v->fbo);
-	if (!v->readFbo) glGenFramebuffers(1, &v->readFbo);
-	GLint oldRead = 0, oldDraw = 0;
-	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oldRead);
-	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &oldDraw);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, v->readFbo);
-	glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, src, 0);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, v->fbo);
-	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, *t, 0);
-	int ok = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE &&
-	         glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
-	if (ok) {
-		int x = info->extra.visible_rect.x, y = info->extra.visible_rect.y;
-		glBlitFramebuffer(x, y, x + vw, y + vh, 0, 0, vw, vh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-	}
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)oldRead);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)oldDraw);
-	glDeleteTextures(1, &src);
-	eglDestroyImageKHR(d, img);
-	if (popup) v->popSwap = 0;
-	else v->texSwap = 0; // the import keeps the channels in order
-	return ok;
-}
-
-// drawTex draws texture t (tw by th pixels) into the area at x, y (pixels,
-// from the top left), w by h pixels, aw by ah being the area.
-static void drawTex(LV *v, GLuint t, int tw, int th, int swap, int x, int y, int w, int h, int aw, int ah) {
-	if (!t || aw <= 0 || ah <= 0) return;
-	glBindTexture(GL_TEXTURE_2D, t);
-	// one texel to one pixel: no smoothing, so text stays sharp; otherwise smooth
-	GLint f = tw == w && th == h ? GL_NEAREST : GL_LINEAR;
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, f);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, f);
-	glUniform1i(glGetUniformLocation(v->prog, "t"), 0);
-	glUniform1i(glGetUniformLocation(v->prog, "swapRB"), swap);
-	// clip space: x to the right, y up
-	float cx = 2.0f * x / aw - 1.0f, cy = 1.0f - 2.0f * (y + h) / ah;
-	glUniform4f(glGetUniformLocation(v->prog, "r"), cx, cy, 2.0f * w / aw, 2.0f * h / ah);
-	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-}
-
-static gboolean onGLRender(GtkGLArea *a, GdkGLContext *c, LV *v) {
-	int sf = gtk_widget_get_scale_factor(GTK_WIDGET(a));
-	int aw = gtk_widget_get_allocated_width(GTK_WIDGET(a)) * sf, ah = gtk_widget_get_allocated_height(GTK_WIDGET(a)) * sf;
-	glViewport(0, 0, aw, ah);
-	glDisable(GL_BLEND);
-	glDisable(GL_SCISSOR_TEST);
-	glDisable(GL_DEPTH_TEST);
-	if (!v->tex) {
-		glClearColor(1, 1, 1, 1);
-		glClear(GL_COLOR_BUFFER_BIT);
-		return TRUE;
-	}
-	if (!v->prog) v->prog = program();
-	if (!v->prog) return TRUE;
-	glUseProgram(v->prog);
-	glActiveTexture(GL_TEXTURE0);
-	// the page fills the area (pixel for pixel when it was drawn at this size)
-	drawTex(v, v->tex, v->texW, v->texH, v->texSwap, 0, 0, aw, ah, aw, ah);
-	if (v->popTex && v->popupShown) {
-		drawTex(v, v->popTex, v->popW, v->popH, v->popSwap, v->popupRect.x * sf, v->popupRect.y * sf, v->popupRect.width * sf,
-		        v->popupRect.height * sf, aw, ah);
-	}
-	glUseProgram(0);
-	return TRUE;
-}
-
-// The area's GL context went away (the area left the screen for good, or
-// the driver reset it): its textures went with it, the next frame makes
-// them again.
-static void onGLUnrealize(GtkWidget *w, LV *v) {
-	if (glCurrent(v)) {
-		if (v->tex) glDeleteTextures(1, &v->tex);
-		if (v->popTex) glDeleteTextures(1, &v->popTex);
-		if (v->fbo) glDeleteFramebuffers(1, &v->fbo);
-		if (v->readFbo) glDeleteFramebuffers(1, &v->readFbo);
-		if (v->prog) glDeleteProgram(v->prog);
-	}
-	v->tex = v->popTex = v->prog = v->fbo = v->readFbo = 0;
-	v->texW = v->texH = v->popW = v->popH = 0;
-}
-
-// gpuCanShare decides, once, whether pages share their frames as dmabufs:
-// asked for (LITEGO_GPU=1), a real graphics chip (not software GL), EGL that
-// imports dmabufs, and GL that turns them into textures.
-static int gpuCanShare(void) {
-	if (gpuShared >= 0) return gpuShared;
-	gpuShared = 0;
-	// opt-in for now (LITEGO_GPU=1): on some setups (a toolbox, some
-	// drivers) Chromium cannot allocate the shared buffers and sends no frame
-	// at all, so by default frames come through the processor and are
-	// uploaded to the graphics chip
-	const char *env = g_getenv("LITEGO_GPU");
-	if (!env || strcmp(env, "1") != 0) return 0;
-	if (g_getenv("LIBGL_ALWAYS_SOFTWARE") || access("/dev/dri/renderD128", R_OK | W_OK) != 0) return 0;
-	EGLDisplay d = eglGetCurrentDisplay();
-	if (d == EGL_NO_DISPLAY) return 0;
-	const char *egl = eglQueryString(d, EGL_EXTENSIONS);
-	const char *gl = (const char *)glGetString(GL_EXTENSIONS);
-	const char *rend = (const char *)glGetString(GL_RENDERER);
-	if (!egl || !strstr(egl, "EGL_EXT_image_dma_buf_import") || !gl || !strstr(gl, "GL_OES_EGL_image")) return 0;
-	if (rend && (strstr(rend, "llvmpipe") || strstr(rend, "softpipe") || strstr(rend, "SwiftShader"))) return 0;
-	gpuShared = 1;
-	if (g_getenv("LITEGO_GL_DEBUG")) g_printerr("Iris: pages share frames with the graphics chip (%s)\n", rend ? rend : "?");
-	return 1;
-}
-
-static void CEF_CALLBACK onAcceleratedPaint(cef_render_handler_t *self, cef_browser_t *b, cef_paint_element_type_t type, size_t n,
-                                            cef_rect_t const *dirty, const cef_accelerated_paint_info_t *info) {
-	LV *v = of(b);
-	if (!v || !v->area || !info) return;
-	if (!glCurrent(v)) return;
-	if (glImport(v, type == PET_POPUP, info)) {
-		gtk_gl_area_queue_render(GTK_GL_AREA(v->area));
-		return;
-	}
-	// this computer could not take the shared frame: from now on pages hand
-	// their frames over through the processor, and this one starts again
-	if (gpuShared == 1) {
-		gpuShared = 0;
-		g_printerr("Iris: the graphics chip could not take a page's frame; pages are drawn through the processor\n");
-		lgxGoCrashed(v->id);
-	}
+static void redrawView(void) {
+	if (host) gtk_widget_queue_draw(host);
 }
 
 static void CEF_CALLBACK onPaint(cef_render_handler_t *self, cef_browser_t *b, cef_paint_element_type_t type, size_t n, cef_rect_t const *dirty,
                                  const void *buf, int w, int h) {
 	LV *v = of(b);
-	if (!v || !v->area) return;
-	if (v->gl) {
-		// on the graphics chip: the changed parts go into the texture
-		if (glCurrent(v)) {
-			glUpload(v, type == PET_POPUP, buf, w, h, n, dirty);
-			gtk_gl_area_queue_render(GTK_GL_AREA(v->area));
-		}
-		// the tests' page pictures read the frame on the processor
-		if (type != PET_POPUP && g_getenv("LITEGO_SHOT")) copyInto(&v->page, buf, w, h, v->w > 0 ? (double)w / v->w : 0, n, dirty);
-		return;
-	}
+	if (!v || w <= 0 || h <= 0) return;
 	if (type == PET_POPUP) {
-		copyInto(&v->popup, buf, w, h, v->popupRect.width > 0 ? (double)w / v->popupRect.width : 0, 0, NULL);
-		gtk_widget_queue_draw(v->area);
-		return;
+		GdkTexture *t = frameTexture(NULL, buf, w, h, 0, NULL);
+		if (v->popTex) g_object_unref(v->popTex);
+		v->popTex = t;
+	} else {
+		GdkTexture *t = frameTexture(v->tex, buf, w, h, n, dirty);
+		if (v->tex) g_object_unref(v->tex);
+		v->tex = t;
+		if (g_getenv("LITEGO_SHOT")) copyInto(&v->page, buf, w, h);
 	}
-	double sf = v->w > 0 ? (double)w / v->w : 0;
-	if (copyInto(&v->page, buf, w, h, sf, n, dirty) || sf <= 0 || v->popupShown) {
-		gtk_widget_queue_draw(v->area);
-		return;
-	}
-	// redraw only what changed (in GTK units, rounded outward)
-	for (size_t i = 0; i < n; i++) {
-		int x0 = (int)floor(dirty[i].x / sf), y0 = (int)floor(dirty[i].y / sf);
-		int x1 = (int)ceil((dirty[i].x + dirty[i].width) / sf), y1 = (int)ceil((dirty[i].y + dirty[i].height) / sf);
-		gtk_widget_queue_draw_area(v->area, x0, y0, x1 - x0, y1 - y0);
+	if (v->shown) redrawView();
+}
+
+static void CEF_CALLBACK onAcceleratedPaint(cef_render_handler_t *self, cef_browser_t *b, cef_paint_element_type_t type, size_t n,
+                                            cef_rect_t const *dirty, const cef_accelerated_paint_info_t *info) {
+	RELEASE(b); // frames come through the processor (shared_texture_enabled is off)
+}
+
+static void appendTexture(GtkSnapshot *s, GdkTexture *t, const graphene_rect_t *r, int sharp) {
+	if (p_append_scaled) p_append_scaled(s, t, sharp ? GSK_SCALING_FILTER_NEAREST : GSK_SCALING_FILTER_LINEAR, r);
+	else gtk_snapshot_append_texture(s, t, r);
+}
+
+// lgxSnapshotPages draws the pages on screen into the window's view, whose
+// scale is s (the view has already been put on whole pixels).
+void lgxSnapshotPages(GtkSnapshot *sn, double s) {
+	if (!views || s <= 0) return;
+	GHashTableIter it;
+	gpointer k, val;
+	g_hash_table_iter_init(&it, views);
+	while (g_hash_table_iter_next(&it, &k, &val)) {
+		LV *v = val;
+		if (!v->shown || v->closing || v->px[2] <= 0 || v->px[3] <= 0) continue;
+		graphene_rect_t r = GRAPHENE_RECT_INIT(v->px[0] / s, v->px[1] / s, v->px[2] / s, v->px[3] / s);
+		gtk_snapshot_push_clip(sn, &r);
+		if (v->tex) {
+			int tw = gdk_texture_get_width(v->tex), th = gdk_texture_get_height(v->tex);
+			GdkRGBA white = {1, 1, 1, 1};
+			if (tw < v->px[2] || th < v->px[3]) gtk_snapshot_append_color(sn, &white, &r); // the frame for the next size is on its way
+			// one texel on one pixel: sharp
+			appendTexture(sn, v->tex, &GRAPHENE_RECT_INIT(r.origin.x, r.origin.y, tw / s, th / s), 1);
+			if (v->popTex && v->popupShown) {
+				int pw = gdk_texture_get_width(v->popTex), ph = gdk_texture_get_height(v->popTex);
+				double x = round(v->px[0] + v->popupRect.x * s) / s, y = round(v->px[1] + v->popupRect.y * s) / s;
+				appendTexture(sn, v->popTex, &GRAPHENE_RECT_INIT(x, y, pw / s, ph / s), 1);
+			}
+		} else {
+			GdkRGBA white = {1, 1, 1, 1};
+			gtk_snapshot_append_color(sn, &white, &r);
+		}
+		gtk_snapshot_pop(sn);
 	}
 }
 
@@ -762,9 +536,9 @@ static void CEF_CALLBACK getViewRect(cef_render_handler_t *self, cef_browser_t *
 
 static int CEF_CALLBACK getScreenInfo(cef_render_handler_t *self, cef_browser_t *b, cef_screen_info_t *si) {
 	LV *v = of(b);
-	// the scale of the page's own area once it is on screen (the window's before)
-	int sf = v && v->area && gtk_widget_get_realized(v->area) ? gtk_widget_get_scale_factor(v->area) : scaleOf();
-	si->device_scale_factor = (float)(sf < 1 ? 1 : sf);
+	// the window's scale, exactly (fractional ones included)
+	double sf = v && v->scale > 0 ? v->scale : scaleOf();
+	si->device_scale_factor = (float)sf;
 	return 1;
 }
 
@@ -779,16 +553,8 @@ static void CEF_CALLBACK onPopupShow(cef_render_handler_t *self, cef_browser_t *
 	LV *v = of(b);
 	if (!v) return;
 	v->popupShown = show;
-	if (!show && v->popup) {
-		cairo_surface_destroy(v->popup);
-		v->popup = NULL;
-	}
-	if (!show && v->gl && v->popTex && glCurrent(v)) {
-		glDeleteTextures(1, &v->popTex);
-		v->popTex = 0;
-		v->popW = v->popH = 0;
-	}
-	if (v->area) gtk_widget_queue_draw(v->area);
+	if (!show && v->popTex) g_clear_object(&v->popTex);
+	redrawView();
 }
 
 static void CEF_CALLBACK onPopupSize(cef_render_handler_t *self, cef_browser_t *b, const cef_rect_t *r) {
@@ -799,12 +565,24 @@ static void CEF_CALLBACK onPopupSize(cef_render_handler_t *self, cef_browser_t *
 static cef_render_handler_t renderH;
 
 // ---- input ----
+//
+// The window's view hands each pointer event here first (lgxPagePointer):
+// the page under the pointer takes it, or the page a button was pressed on
+// until it is released. Keys go to the focused page (lgxPageKey).
+
+static LV *focusPage; // the page that has the keyboard (NULL: the interface)
+static LV *hoverPage; // the page under the pointer
+static LV *grabPage;  // the page a button is held on
+static GtkIMContext *pageIM; // dead keys and input methods, for the pages
+static guint32 lastClickTime;
+static double lastClickX, lastClickY;
+static int lastClickButton, clickCount;
 
 static uint32_t modsOf(guint state) {
 	uint32_t m = 0;
 	if (state & GDK_SHIFT_MASK) m |= EVENTFLAG_SHIFT_DOWN;
 	if (state & GDK_CONTROL_MASK) m |= EVENTFLAG_CONTROL_DOWN;
-	if (state & GDK_MOD1_MASK) m |= EVENTFLAG_ALT_DOWN;
+	if (state & GDK_ALT_MASK) m |= EVENTFLAG_ALT_DOWN;
 	if (state & GDK_BUTTON1_MASK) m |= EVENTFLAG_LEFT_MOUSE_BUTTON;
 	if (state & GDK_BUTTON2_MASK) m |= EVENTFLAG_MIDDLE_MOUSE_BUTTON;
 	if (state & GDK_BUTTON3_MASK) m |= EVENTFLAG_RIGHT_MOUSE_BUTTON;
@@ -812,77 +590,146 @@ static uint32_t modsOf(guint state) {
 	return m;
 }
 
-static gboolean onButton(GtkWidget *w, GdkEventButton *e, LV *v) {
-	cef_browser_host_t *h = hostOf(v);
-	if (!h) return FALSE;
-	if (e->type == GDK_BUTTON_PRESS) {
-		gtk_widget_grab_focus(w);
-		h->set_focus(h, 1);
-		lgxGoFocus(v->id);
+// pageAt is the page shown at (x, y) in the view's units.
+static LV *pageAt(double x, double y) {
+	double s = scaleOf();
+	double px = x * s, py = y * s;
+	GHashTableIter it;
+	gpointer k, val;
+	g_hash_table_iter_init(&it, views);
+	while (g_hash_table_iter_next(&it, &k, &val)) {
+		LV *v = val;
+		if (v->shown && !v->closing && v->browser && px >= v->px[0] && py >= v->px[1] && px < v->px[0] + v->px[2] && py < v->px[1] + v->px[3])
+			return v;
 	}
-	cef_mouse_button_type_t bt = MBT_LEFT;
-	if (e->button == 2) bt = MBT_MIDDLE;
-	if (e->button == 3) bt = MBT_RIGHT;
-	if (e->button == 8 || e->button == 9) {
-		// the mouse's back and forward buttons
-		if (e->type == GDK_BUTTON_PRESS && v->browser) {
-			if (e->button == 8) v->browser->go_back(v->browser);
-			else v->browser->go_forward(v->browser);
-		}
-		RELEASE(h);
-		return TRUE;
-	}
-	int clicks = 1;
-	if (e->type == GDK_2BUTTON_PRESS) clicks = 2;
-	if (e->type == GDK_3BUTTON_PRESS) clicks = 3;
-	cef_mouse_event_t me = {(int)e->x, (int)e->y, modsOf(e->state)};
-	h->send_mouse_click_event(h, &me, bt, e->type == GDK_BUTTON_RELEASE, clicks);
-	RELEASE(h);
-	return TRUE;
+	return NULL;
 }
 
-static gboolean onMotion(GtkWidget *w, GdkEventMotion *e, LV *v) {
-	cef_browser_host_t *h = hostOf(v);
-	if (!h) return FALSE;
-	cef_mouse_event_t me = {(int)e->x, (int)e->y, modsOf(e->state)};
-	h->send_mouse_move_event(h, &me, 0);
-	RELEASE(h);
-	return TRUE;
+// inPage is (x, y) in the page's own units.
+static cef_mouse_event_t inPage(LV *v, double x, double y, guint state) {
+	double s = scaleOf();
+	cef_mouse_event_t me = {(int)floor((x * s - v->px[0]) / s), (int)floor((y * s - v->px[1]) / s), modsOf(state)};
+	return me;
 }
 
-static gboolean onLeave(GtkWidget *w, GdkEventCrossing *e, LV *v) {
+static void setCursor(const char *name) {
+	if (host) gtk_widget_set_cursor_from_name(host, name);
+}
+
+static void leavePage(LV *v, double x, double y, guint state) {
 	cef_browser_host_t *h = hostOf(v);
-	if (!h) return FALSE;
-	cef_mouse_event_t me = {(int)e->x, (int)e->y, modsOf(e->state)};
+	if (!h) return;
+	cef_mouse_event_t me = inPage(v, x, y, state);
 	h->send_mouse_move_event(h, &me, 1);
 	RELEASE(h);
-	return FALSE;
 }
 
-static gboolean onScroll(GtkWidget *w, GdkEventScroll *e, LV *v) {
+// focusOn gives the keyboard to page v (NULL: to the interface).
+static void focusOn(LV *v) {
+	if (focusPage == v) return;
+	if (focusPage) {
+		cef_browser_host_t *h = hostOf(focusPage);
+		if (h) {
+			h->set_focus(h, 0);
+			RELEASE(h);
+		}
+		if (pageIM) gtk_im_context_focus_out(pageIM);
+	}
+	focusPage = v;
+	if (v) {
+		cef_browser_host_t *h = hostOf(v);
+		if (h) {
+			h->set_focus(h, 1);
+			RELEASE(h);
+		}
+		if (pageIM) gtk_im_context_focus_in(pageIM);
+	}
+}
+
+void lgxUIFocus(void) { focusOn(NULL); }
+
+void lgxPagesLeave(void) {
+	if (hoverPage && !grabPage) {
+		leavePage(hoverPage, -1, -1, 0);
+		hoverPage = NULL;
+		setCursor(NULL);
+	}
+}
+
+int lgxPagePointer(GdkEvent *e, double x, double y) {
+	if (!views) return 0;
+	GdkEventType t = gdk_event_get_event_type(e);
+	guint state = gdk_event_get_modifier_state(e);
+	LV *v = grabPage ? grabPage : pageAt(x, y);
+	if (hoverPage && hoverPage != v && g_hash_table_lookup(views, (gpointer)hoverPage->id) == hoverPage) leavePage(hoverPage, x, y, state);
+	if (v != hoverPage) {
+		hoverPage = v;
+		setCursor(v ? v->cursor : NULL);
+	}
+	if (!v) return 0;
 	cef_browser_host_t *h = hostOf(v);
-	if (!h) return FALSE;
-	int dx = 0, dy = 0;
-	const int tick = 40; // pixels for one notch of the wheel
-	switch (e->direction) {
-	case GDK_SCROLL_UP: dy = tick; break;
-	case GDK_SCROLL_DOWN: dy = -tick; break;
-	case GDK_SCROLL_LEFT: dx = tick; break;
-	case GDK_SCROLL_RIGHT: dx = -tick; break;
-	case GDK_SCROLL_SMOOTH:
-		dx = (int)lround(-e->delta_x * tick);
-		dy = (int)lround(-e->delta_y * tick);
+	if (!h) return 0;
+	cef_mouse_event_t me = inPage(v, x, y, state);
+	switch (t) {
+	case GDK_BUTTON_PRESS:
+	case GDK_BUTTON_RELEASE: {
+		guint button = gdk_button_event_get_button(e);
+		int press = t == GDK_BUTTON_PRESS;
+		if (button == 8 || button == 9) { // the mouse's back and forward buttons
+			if (press && v->browser) {
+				if (button == 8) v->browser->go_back(v->browser);
+				else v->browser->go_forward(v->browser);
+			}
+			break;
+		}
+		cef_mouse_button_type_t bt = button == 2 ? MBT_MIDDLE : button == 3 ? MBT_RIGHT : MBT_LEFT;
+		if (press) {
+			focusOn(v);
+			lgxGoFocus(v->id);
+			guint32 now = gdk_event_get_time(e);
+			double dx = x - lastClickX, dy = y - lastClickY;
+			if ((int)button == lastClickButton && now - lastClickTime < 400 && dx * dx + dy * dy < 25) clickCount = clickCount % 3 + 1;
+			else clickCount = 1;
+			lastClickTime = now, lastClickX = x, lastClickY = y, lastClickButton = (int)button;
+			grabPage = v;
+		} else {
+			grabPage = NULL;
+		}
+		h->send_mouse_click_event(h, &me, bt, !press, press ? clickCount : (clickCount ? clickCount : 1));
 		break;
 	}
-	uint32_t m = modsOf(e->state);
-	if ((m & EVENTFLAG_SHIFT_DOWN) && dx == 0) {
-		dx = dy; // Shift + wheel scrolls sideways
-		dy = 0;
+	case GDK_MOTION_NOTIFY:
+		h->send_mouse_move_event(h, &me, 0);
+		break;
+	case GDK_SCROLL: {
+		double dx = 0, dy = 0;
+		const double tick = 40; // pixels for one notch of the wheel
+		switch (gdk_scroll_event_get_direction(e)) {
+		case GDK_SCROLL_UP: dy = tick; break;
+		case GDK_SCROLL_DOWN: dy = -tick; break;
+		case GDK_SCROLL_LEFT: dx = tick; break;
+		case GDK_SCROLL_RIGHT: dx = -tick; break;
+		case GDK_SCROLL_SMOOTH: {
+			double ex = 0, ey = 0;
+			gdk_scroll_event_get_deltas(e, &ex, &ey);
+			// a wheel's deltas are in notches, a touchpad's in pixels
+			double k = p_scroll_unit && p_scroll_unit(e) == 1 ? 1 : tick;
+			dx = -ex * k, dy = -ey * k;
+			break;
+		}
+		}
+		if ((me.modifiers & EVENTFLAG_SHIFT_DOWN) && dx == 0) {
+			dx = dy; // Shift + wheel scrolls sideways
+			dy = 0;
+		}
+		h->send_mouse_wheel_event(h, &me, (int)lround(dx), (int)lround(dy));
+		break;
 	}
-	cef_mouse_event_t me = {(int)e->x, (int)e->y, m};
-	h->send_mouse_wheel_event(h, &me, dx, dy);
+	default:
+		break;
+	}
 	RELEASE(h);
-	return TRUE;
+	return 1;
 }
 
 // winKey maps a GDK key to the Windows key code Chromium works with.
@@ -964,36 +811,42 @@ static void sendChars(LV *v, const char *text, uint32_t mods) {
 	RELEASE(h);
 }
 
-static void onCommit(GtkIMContext *im, const char *text, LV *v) { sendChars(v, text, 0); }
+static void onCommit(GtkIMContext *im, const char *text, gpointer d) {
+	if (focusPage) sendChars(focusPage, text, 0);
+}
 
-static gboolean onKey(GtkWidget *w, GdkEventKey *e, LV *v) {
+int lgxPageKey(GdkEvent *e) {
+	LV *v = focusPage;
+	if (!v || !views || g_hash_table_lookup(views, (gpointer)v->id) != v || !v->shown) return 0;
 	cef_browser_host_t *h = hostOf(v);
-	if (!h) return FALSE;
-	int ctrl = (e->state & GDK_CONTROL_MASK) != 0, shift = (e->state & GDK_SHIFT_MASK) != 0, alt = (e->state & GDK_MOD1_MASK) != 0;
-	int vk = winKey(e->keyval);
-	if (e->type == GDK_KEY_PRESS) {
-		// Lite Go's own shortcuts first (Ctrl+T, Ctrl+L, F5, Alt+Left and so on)
-		gunichar lc = gdk_keyval_to_unicode(gdk_keyval_to_lower(e->keyval));
+	if (!h) return 0;
+	GdkEventType type = gdk_event_get_event_type(e);
+	guint state = gdk_event_get_modifier_state(e), kv = gdk_key_event_get_keyval(e);
+	int ctrl = (state & GDK_CONTROL_MASK) != 0, shift = (state & GDK_SHIFT_MASK) != 0, alt = (state & GDK_ALT_MASK) != 0;
+	int vk = winKey(kv);
+	if (type == GDK_KEY_PRESS) {
+		// Iris's own shortcuts first (Ctrl+T, Ctrl+L, F5, Alt+Left and so on)
+		gunichar lc = gdk_keyval_to_unicode(gdk_keyval_to_lower(kv));
 		int special = vk == 0x25 || vk == 0x27 || vk == 0x74 || vk == 0x75 || vk == 0x7A || vk == 0x09 || vk == 0x21 || vk == 0x22 || vk == 0xA6 ||
 		              vk == 0xA7;
 		if ((ctrl || alt || special) && lgxGoKey(v->id, (int)lc, special ? vk : 0, ctrl, shift, alt)) {
 			RELEASE(h);
-			return TRUE;
+			return 1;
 		}
 	}
 	cef_key_event_t k = {0};
 	k.size = sizeof k;
-	k.modifiers = modsOf(e->state);
+	k.modifiers = modsOf(state);
 	k.windows_key_code = vk;
-	k.native_key_code = e->hardware_keycode;
-	gunichar ch = gdk_keyval_to_unicode(e->keyval);
-	if (e->type == GDK_KEY_PRESS) {
+	k.native_key_code = (int)gdk_key_event_get_keycode(e);
+	gunichar ch = gdk_keyval_to_unicode(kv);
+	if (type == GDK_KEY_PRESS) {
 		k.type = KEYEVENT_RAWKEYDOWN;
 		h->send_key_event(h, &k);
 		// typed text goes through the input method (dead keys: ´ then e is é)
-		if (!ctrl && !alt && v->im && gtk_im_context_filter_keypress(v->im, e)) {
+		if (!ctrl && !alt && pageIM && gtk_im_context_filter_keypress(pageIM, e)) {
 			RELEASE(h);
-			return TRUE;
+			return 1;
 		}
 		if (ch && !(ctrl && !alt)) {
 			k.type = KEYEVENT_CHAR;
@@ -1008,99 +861,26 @@ static gboolean onKey(GtkWidget *w, GdkEventKey *e, LV *v) {
 			h->send_key_event(h, &k);
 		}
 	} else {
-		if (v->im) gtk_im_context_filter_keypress(v->im, e);
+		if (pageIM) gtk_im_context_filter_keypress(pageIM, e);
 		k.type = KEYEVENT_KEYUP;
 		h->send_key_event(h, &k);
 	}
 	RELEASE(h);
-	return TRUE;
+	return 1;
 }
 
-static gboolean onFocusIn(GtkWidget *w, GdkEvent *e, LV *v) {
-	cef_browser_host_t *h = hostOf(v);
-	if (h) {
-		h->set_focus(h, 1);
-		RELEASE(h);
-	}
-	if (v->im) gtk_im_context_focus_in(v->im);
-	lgxGoFocus(v->id);
-	return FALSE;
-}
-
-static gboolean onFocusOut(GtkWidget *w, GdkEvent *e, LV *v) {
-	cef_browser_host_t *h = hostOf(v);
-	if (h) {
-		h->set_focus(h, 0);
-		RELEASE(h);
-	}
-	if (v->im) gtk_im_context_focus_out(v->im);
-	return FALSE;
-}
-
-static gboolean onRealize(GtkWidget *w, LV *v) {
-	if (v->im) gtk_im_context_set_client_window(v->im, gtk_widget_get_window(w));
-	return FALSE;
-}
-
-static int glBroken; // GL areas do not work here: pages are drawn with cairo
-
-static void makeArea(LV *v) {
-	if (v->area || !host) return;
-	v->gl = !glBroken && !g_getenv("LITEGO_NO_GL");
-	if (v->gl) {
-		v->area = gtk_gl_area_new();
-		gtk_gl_area_set_use_es(GTK_GL_AREA(v->area), TRUE);
-		gtk_gl_area_set_required_version(GTK_GL_AREA(v->area), 3, 0);
-		gtk_gl_area_set_has_alpha(GTK_GL_AREA(v->area), FALSE);
-		g_signal_connect(v->area, "render", G_CALLBACK(onGLRender), v);
-		g_signal_connect(v->area, "unrealize", G_CALLBACK(onGLUnrealize), v);
-	} else {
-		v->area = gtk_drawing_area_new();
-		g_signal_connect(v->area, "draw", G_CALLBACK(onDraw), v);
-	}
-	gtk_widget_set_can_focus(v->area, TRUE);
-	gtk_widget_add_events(v->area, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK |
-	                                   GDK_LEAVE_NOTIFY_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK | GDK_FOCUS_CHANGE_MASK);
-	g_signal_connect(v->area, "button-press-event", G_CALLBACK(onButton), v);
-	g_signal_connect(v->area, "button-release-event", G_CALLBACK(onButton), v);
-	g_signal_connect(v->area, "motion-notify-event", G_CALLBACK(onMotion), v);
-	g_signal_connect(v->area, "leave-notify-event", G_CALLBACK(onLeave), v);
-	g_signal_connect(v->area, "scroll-event", G_CALLBACK(onScroll), v);
-	g_signal_connect(v->area, "key-press-event", G_CALLBACK(onKey), v);
-	g_signal_connect(v->area, "key-release-event", G_CALLBACK(onKey), v);
-	g_signal_connect(v->area, "focus-in-event", G_CALLBACK(onFocusIn), v);
-	g_signal_connect(v->area, "focus-out-event", G_CALLBACK(onFocusOut), v);
-	g_signal_connect(v->area, "realize", G_CALLBACK(onRealize), v);
-	if (!v->im) {
-		v->im = gtk_im_context_simple_new();
-		g_signal_connect(v->im, "commit", G_CALLBACK(onCommit), v);
-	}
-	gtk_widget_set_no_show_all(v->area, TRUE);
-	gtk_layout_put(host, v->area, 0, 0);
-	gtk_widget_set_size_request(v->area, 1, 1);
-	gtk_widget_realize(v->area);
-	if (v->gl) {
-		gtk_gl_area_make_current(GTK_GL_AREA(v->area));
-		GError *err = gtk_gl_area_get_error(GTK_GL_AREA(v->area));
-		if (err) {
-			// no GL here (or no GLES 3): this page and the next ones use cairo
-			g_printerr("Iris: pages drawn without GL: %s\n", err->message);
-			glBroken = 1;
-			gtk_widget_destroy(v->area);
-			v->area = NULL;
-			v->gl = 0;
-			makeArea(v);
-			return;
-		}
-		gpuCanShare(); // decided once, with a GL context of the page's own
-	}
+// forget drops a page that is going away from the input's memory.
+static void forget(LV *v) {
+	if (focusPage == v) focusPage = NULL;
+	if (hoverPage == v) hoverPage = NULL, setCursor(NULL);
+	if (grabPage == v) grabPage = NULL;
 }
 
 
 // ---- the right-click menu ----
 //
 // Chromium's own menu needs a window, and pages here are drawn off screen,
-// so Iris shows the menu: a GTK menu with Chromium's items (back, forward,
+// so Iris shows the menu: a GTK popover menu with Chromium's items (back, forward,
 // reload, cut, copy, paste, select all, save or copy an image…) and, on a
 // link or a picture, opening it in a new tab and copying its address.
 
@@ -1126,14 +906,23 @@ static void menuFinish(int cmd) {
 	RELEASE(cb);
 }
 
-static void onMenuItem(GtkMenuItem *it, gpointer cmd) { menuFinish(GPOINTER_TO_INT(cmd)); }
+static void onMenuAction(GSimpleAction *a, GVariant *p, gpointer cmd) { menuFinish(GPOINTER_TO_INT(cmd)); }
 
 static gboolean menuCancel(gpointer _) {
 	menuFinish(-1); // closed without a choice (an item's choice came first)
 	return G_SOURCE_REMOVE;
 }
 
-static void onMenuClosed(GtkMenuShell *m, gpointer _) { g_idle_add(menuCancel, NULL); }
+static gboolean menuDrop(gpointer pop) {
+	if (gtk_widget_get_parent(pop)) gtk_widget_unparent(pop);
+	g_object_unref(pop);
+	return G_SOURCE_REMOVE;
+}
+
+static void onMenuClosed(GtkPopover *p, gpointer _) {
+	g_idle_add(menuCancel, NULL);
+	g_idle_add(menuDrop, g_object_ref(p));
+}
 
 // label turns Chromium's label ("&Copy") into GTK's ("_Copy").
 static char *menuLabel(cef_menu_model_t *model, size_t i) {
@@ -1216,7 +1005,7 @@ static int CEF_CALLBACK onRunMenu(cef_context_menu_handler_t *self, cef_browser_
                                   cef_menu_model_t *model, cef_run_context_menu_callback_t *cb) {
 	LV *v = of(b);
 	RELEASE(f);
-	if (!v || !v->area || !gtk_widget_get_realized(v->area) || model->get_count(model) == 0) {
+	if (!v || !host || !gtk_widget_get_realized(host) || model->get_count(model) == 0) {
 		cb->cancel(cb);
 		RELEASE(cb);
 		RELEASE(params);
@@ -1225,30 +1014,50 @@ static int CEF_CALLBACK onRunMenu(cef_context_menu_handler_t *self, cef_browser_
 	}
 	if (menuCb) menuFinish(-1);
 	menuCb = cb; // kept until a choice or the menu closes
-	GtkWidget *menu = gtk_menu_new();
-	int lastSep = 1;
+	// a GTK popover menu: one section per group (sections are what draws
+	// the separators), one action per item
+	GMenu *menu = g_menu_new(), *sec = g_menu_new();
+	GSimpleActionGroup *acts = g_simple_action_group_new();
 	for (size_t i = 0; i < model->get_count(model); i++) {
 		cef_menu_item_type_t type = model->get_type_at(model, i);
 		if (type == MENUITEMTYPE_SEPARATOR) {
-			if (!lastSep) gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
-			lastSep = 1;
+			if (g_menu_model_get_n_items(G_MENU_MODEL(sec)) > 0) {
+				g_menu_append_section(menu, NULL, G_MENU_MODEL(sec));
+				g_object_unref(sec);
+				sec = g_menu_new();
+			}
 			continue;
 		}
 		if (type != MENUITEMTYPE_COMMAND && type != MENUITEMTYPE_CHECK) continue; // no submenus
 		if (!model->is_visible_at(model, i)) continue;
+		int cmd = model->get_command_id_at(model, i);
+		char name[24], detailed[32];
+		snprintf(name, sizeof name, "c%zu", i);
+		snprintf(detailed, sizeof detailed, "ctx.%s", name);
+		GSimpleAction *a = g_simple_action_new(name, NULL);
+		g_simple_action_set_enabled(a, model->is_enabled_at(model, i));
+		g_signal_connect(a, "activate", G_CALLBACK(onMenuAction), GINT_TO_POINTER(cmd));
+		g_action_map_add_action(G_ACTION_MAP(acts), G_ACTION(a));
+		g_object_unref(a);
 		char *label = menuLabel(model, i);
-		GtkWidget *it = gtk_menu_item_new_with_mnemonic(label);
+		g_menu_append(sec, label, detailed);
 		g_free(label);
-		gtk_widget_set_sensitive(it, model->is_enabled_at(model, i));
-		g_signal_connect(it, "activate", G_CALLBACK(onMenuItem), GINT_TO_POINTER(model->get_command_id_at(model, i)));
-		gtk_menu_shell_append(GTK_MENU_SHELL(menu), it);
-		lastSep = 0;
 	}
-	g_signal_connect(menu, "deactivate", G_CALLBACK(onMenuClosed), NULL);
-	gtk_menu_attach_to_widget(GTK_MENU(menu), v->area, NULL);
-	gtk_widget_show_all(menu);
-	GdkRectangle at = {params->get_xcoord(params), params->get_ycoord(params), 1, 1};
-	gtk_menu_popup_at_rect(GTK_MENU(menu), gtk_widget_get_window(v->area), &at, GDK_GRAVITY_NORTH_WEST, GDK_GRAVITY_NORTH_WEST, NULL);
+	if (g_menu_model_get_n_items(G_MENU_MODEL(sec)) > 0) g_menu_append_section(menu, NULL, G_MENU_MODEL(sec));
+	g_object_unref(sec);
+	gtk_widget_insert_action_group(host, "ctx", G_ACTION_GROUP(acts));
+	g_object_unref(acts);
+	GtkWidget *pop = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
+	g_object_unref(menu);
+	gtk_widget_set_parent(pop, host);
+	gtk_popover_set_has_arrow(GTK_POPOVER(pop), FALSE);
+	gtk_popover_set_position(GTK_POPOVER(pop), GTK_POS_BOTTOM);
+	gtk_widget_set_halign(pop, GTK_ALIGN_START);
+	double s = scaleOf();
+	GdkRectangle at = {(int)(v->px[0] / s) + params->get_xcoord(params), (int)(v->px[1] / s) + params->get_ycoord(params), 1, 1};
+	gtk_popover_set_pointing_to(GTK_POPOVER(pop), &at);
+	g_signal_connect(pop, "closed", G_CALLBACK(onMenuClosed), NULL);
+	gtk_popover_popup(GTK_POPOVER(pop));
 	RELEASE(params);
 	RELEASE(model);
 	return 1;
@@ -1285,7 +1094,7 @@ static int CEF_CALLBACK onMenuCommand(cef_context_menu_handler_t *self, cef_brow
 			RELEASE(host2);
 		}
 	} else {
-		gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), u, -1);
+		gdk_clipboard_set_text(gdk_display_get_clipboard(gdk_display_get_default()), u);
 	}
 	return 1;
 }
@@ -1362,9 +1171,7 @@ static int CEF_CALLBACK onConsole(cef_display_handler_t *self, cef_browser_t *b,
 
 static int CEF_CALLBACK onCursor(cef_display_handler_t *self, cef_browser_t *b, cef_cursor_handle_t c, cef_cursor_type_t type, const cef_cursor_info_t *info) {
 	LV *v = of(b);
-	if (!v || !v->area) return 1;
-	GdkWindow *win = gtk_widget_get_window(v->area);
-	if (!win) return 1;
+	if (!v) return 1;
 	const char *name = "default";
 	switch (type) {
 	case CT_HAND: name = "pointer"; break;
@@ -1384,9 +1191,8 @@ static int CEF_CALLBACK onCursor(cef_display_handler_t *self, cef_browser_t *b, 
 	case CT_NONE: name = "none"; break;
 	default: break;
 	}
-	GdkCursor *cur = gdk_cursor_new_from_name(gdk_window_get_display(win), name);
-	gdk_window_set_cursor(win, cur);
-	if (cur) g_object_unref(cur);
+	v->cursor = name; // names are constants
+	if (v == hoverPage) setCursor(name);
 	return 1;
 }
 
@@ -1419,7 +1225,7 @@ static cef_load_handler_t loadH;
 static void applyState(LV *v) {
 	cef_browser_host_t *h = hostOf(v);
 	if (!h) return;
-	v->sf = scaleOf();
+	v->scale = scaleOf();
 	h->notify_screen_info_changed(h);
 	h->was_resized(h);
 	h->was_hidden(h, !v->shown);
@@ -1466,10 +1272,11 @@ static void CEF_CALLBACK onBeforeClose(cef_life_span_handler_t *self, cef_browse
 	g_mutex_unlock(&lock);
 	if (!v) return;
 	if (v->browser) RELEASE(v->browser);
-	if (v->area) gtk_widget_destroy(v->area);
-	if (v->im) g_object_unref(v->im);
+	forget(v);
+	if (v->tex) g_object_unref(v->tex);
+	if (v->popTex) g_object_unref(v->popTex);
 	if (v->page) cairo_surface_destroy(v->page);
-	if (v->popup) cairo_surface_destroy(v->popup);
+	redrawView();
 	g_slist_free_full(v->scripts, g_free);
 	g_free(v->profile);
 	g_free(v->startURL);
@@ -1848,12 +1655,10 @@ static cef_request_context_t *contextFor(const char *profile, int priv) {
 }
 
 static void createBrowser(LV *v) {
-	makeArea(v);
 	cef_window_info_t wi = {0};
 	wi.size = sizeof wi;
 	wi.windowless_rendering_enabled = 1;
-	// frames shared with the graphics chip as dmabufs, when it can take them
-	wi.shared_texture_enabled = v->gl && gpuShared == 1;
+	wi.shared_texture_enabled = 0; // frames come through the processor: they work everywhere
 	wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
 	cef_browser_settings_t bs = {0};
 	bs.size = sizeof bs;
@@ -1998,19 +1803,19 @@ static gboolean runOp(gpointer data) {
 		break;
 	case OP_BOUNDS:
 		if (v) {
-			int sf = scaleOf();
-			int w = op->c / sf, hh = op->d / sf;
+			// where the page goes, in the view's real pixels
+			double sf = scaleOf();
+			v->px[0] = op->a, v->px[1] = op->b, v->px[2] = op->c, v->px[3] = op->d;
+			int w = (int)lround(op->c / sf), hh = (int)lround(op->d / sf);
 			if (w < 1) w = 1;
 			if (hh < 1) hh = 1;
-			makeArea(v);
-			gtk_layout_move(host, v->area, op->a / sf, op->b / sf);
-			gtk_widget_set_size_request(v->area, w, hh);
-			if (h && sf != v->sf) {
+			if (h && fabs(sf - v->scale) > 0.001) {
 				// the window moved to a screen with another scale (or the first
 				// size arrived before the window knew its scale)
-				v->sf = sf;
+				v->scale = sf;
 				h->notify_screen_info_changed(h);
 			}
+			redrawView();
 			if (w != v->w || hh != v->h) {
 				v->w = w, v->h = hh;
 				if (h) h->was_resized(h);
@@ -2020,9 +1825,8 @@ static gboolean runOp(gpointer data) {
 	case OP_SHOW:
 		if (v) {
 			v->shown = op->a;
-			makeArea(v);
-			if (op->a) gtk_widget_show(v->area);
-			else gtk_widget_hide(v->area);
+			if (!op->a) forget(v);
+			redrawView();
 			if (h) h->was_hidden(h, !op->a);
 		}
 		break;
@@ -2046,8 +1850,8 @@ static gboolean runOp(gpointer data) {
 		case OP_RELOAD: v->browser->reload(v->browser); break;
 		case OP_STOP: v->browser->stop_load(v->browser); break;
 		case OP_FOCUS:
-			if (v->area) gtk_widget_grab_focus(v->area);
-			if (h) h->set_focus(h, 1);
+			if (host) gtk_widget_grab_focus(host);
+			focusOn(v);
 			break;
 		case OP_MUTE:
 			v->muted = op->a;
@@ -2059,7 +1863,8 @@ static gboolean runOp(gpointer data) {
 			break;
 		case OP_CLOSE:
 			v->closing = 1;
-			if (v->area) gtk_widget_hide(v->area);
+			forget(v);
+			redrawView();
 			if (h) h->close_browser(h, 1);
 			break;
 		}
@@ -2172,18 +1977,23 @@ static void setup(const char *dir) {
 	g_free(locales);
 }
 
-// lgxAttach starts the engine in Lite Go's GTK window (on GTK's thread).
-void lgxAttach(uintptr_t layout, const char *dir) {
-	host = GTK_LAYOUT((GtkWidget *)layout);
+// lgxAttach starts the engine in Iris's GTK window (on GTK's thread); view
+// is the widget the pages are drawn in.
+void lgxAttach(uintptr_t view, const char *dir) {
+	loadSyms();
+	host = (GtkWidget *)view;
 	g_object_add_weak_pointer(G_OBJECT(host), (gpointer *)&host);
+	pageIM = gtk_im_context_simple_new();
+	gtk_im_context_set_client_widget(pageIM, host);
+	g_signal_connect(pageIM, "commit", G_CALLBACK(onCommit), NULL);
 	setup(dir);
 }
 
 // lgxMain is the Gio-window variant, which the Chromium engine does not use.
 void lgxMain(unsigned long parent, const char *dir) {
-	gtk_init(NULL, NULL);
+	gtk_init();
 	setup(dir);
-	gtk_main();
+	g_main_loop_run(g_main_loop_new(NULL, FALSE));
 }
 
 char *lgxVersion(void) {

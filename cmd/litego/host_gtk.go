@@ -1,13 +1,15 @@
 //go:build linux && webkit
 
-// The Linux window: GTK owns it (native on Wayland and on X11), Gio's GPU
-// renderer draws our interface into a GtkGLArea inside it, and the pages are
-// the pages (Chromium, drawn off screen) in the same window. See gtk_linux.c.
+// The Linux window: GTK 4 owns it (native on Wayland and on X11), Gio's GPU
+// renderer draws our interface into a texture at the screen's exact scale,
+// and the pages (Chromium, drawn off screen at that scale) go over it in the
+// same window. See gtk_linux.c.
 
 package main
 
 /*
-#cgo pkg-config: gtk+-3.0 epoxy
+#cgo pkg-config: gtk4 epoxy
+#cgo LDFLAGS: -ldl
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -96,7 +98,7 @@ type host struct {
 	exit  bool
 	start time.Time
 
-	sf        int     // GTK's integer scale (device pixels per GTK unit)
+	sf        float64 // the screen's scale (real pixels per GTK unit; 1.25, 1.5 and the like included)
 	text      float64 // the desktop's text scale
 	lastClick time.Time
 	lastX     float64
@@ -128,7 +130,7 @@ func (h *host) later(f func()) { h.after = append(h.after, f); h.Invalidate() }
 
 // scale is Gio's pixels per dp: GTK's scale times the desktop's text scale.
 func (h *host) scale() float32 {
-	s := float64(h.sf)
+	s := h.sf
 	if h.text > 0.5 && h.text < 4 {
 		s *= h.text
 	}
@@ -137,7 +139,7 @@ func (h *host) scale() float32 {
 
 // dp turns a GTK position into our units.
 func (h *host) dp(x, y float64) (float32, float32) {
-	k := float64(h.sf) / float64(h.scale())
+	k := h.sf / float64(h.scale())
 	return float32(x * k), float32(y * k)
 }
 
@@ -176,19 +178,19 @@ func (r *resident) makeWindow(urls []string) {
 }
 
 //export lgwGoScale
-func lgwGoScale(sf C.int, text C.double) {
+func lgwGoScale(sf C.double, text C.double) {
 	if h := win; h != nil {
-		h.sf, h.text = max(int(sf), 1), float64(text)
+		h.sf, h.text = max(float64(sf), 0.5), float64(text)
 	}
 }
 
 //export lgwGoRender
-func lgwGoRender(w, ht C.int, sf C.int, fbo C.uint) {
+func lgwGoRender(w, ht C.int, sf C.double, fbo C.uint) {
 	h := win
 	if h == nil || w <= 0 || ht <= 0 {
 		return
 	}
-	h.sf = max(int(sf), 1)
+	h.sf = max(float64(sf), 0.5)
 	if glr == nil {
 		g, err := newGPU()
 		if err != nil {

@@ -262,13 +262,13 @@ something is missing:
 
 ```sh
 # Fedora
-sudo dnf install gcc pkgconf gtk3-devel libepoxy-devel curl bzip2
+sudo dnf install gcc pkgconf gtk4-devel libepoxy-devel curl bzip2
 # Fedora Atomic (Silverblue, Kinoite): build inside a toolbox
 toolbox create && toolbox enter   # then the Fedora line above
 # Debian, Ubuntu
-sudo apt install gcc pkg-config libgtk-3-dev libepoxy-dev curl bzip2
+sudo apt install gcc pkg-config libgtk-4-dev libepoxy-dev curl bzip2
 # Arch
-sudo pacman -S gcc pkgconf gtk3 libepoxy curl bzip2
+sudo pacman -S gcc pkgconf gtk4 libepoxy curl bzip2
 
 ./build-litego.sh             # Linux (dist/linux, dist/LiteGo-linux-x86_64.tar.gz), then Windows
 ./build-litego.sh linux       # Linux only
@@ -278,7 +278,7 @@ sudo pacman -S gcc pkgconf gtk3 libepoxy curl bzip2
 ```
 
 Each release also has `LiteGo-linux-x86_64.tar.gz`: unpack it and run `./install.sh`. It carries
-Chromium and needs only GTK 3 and the libraries every desktop has.
+Chromium and needs only GTK 4 and the libraries every desktop has.
 
 **Tests.**
 

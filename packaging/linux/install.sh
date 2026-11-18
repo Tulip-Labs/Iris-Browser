@@ -4,7 +4,7 @@
 # its menu entry and icon to ~/.local/share.
 #   ./install.sh            install (from the unpacked LiteGo-linux folder)
 #   ./install.sh --remove   remove it again
-# Lite Go carries its own Chromium; it needs GTK 3 and the libraries every
+# Lite Go carries its own Chromium; it needs GTK 4 and the libraries every
 # desktop has (NSS, ALSA, libdrm, libgbm, libxkbcommon).
 set -eu
 cd "$(dirname "$0")"

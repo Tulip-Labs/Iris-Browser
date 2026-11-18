@@ -21,7 +21,7 @@ need_linux_deps() {
 	command -v curl >/dev/null 2>&1 || missing="$missing curl"
 	command -v bzip2 >/dev/null 2>&1 || missing="$missing bzip2"
 	if command -v pkg-config >/dev/null 2>&1; then
-		for p in gtk+-3.0 epoxy; do
+		for p in gtk4 epoxy; do
 			pkg-config --exists "$p" || missing="$missing $p"
 		done
 	fi
@@ -29,10 +29,10 @@ need_linux_deps() {
 	cat >&2 <<MSG
 Lite Go for Linux cannot be built yet. Missing:$missing
 Install the build tools and development files, then run this again:
-  Fedora:        sudo dnf install gcc pkgconf gtk3-devel libepoxy-devel curl bzip2
+  Fedora:        sudo dnf install gcc pkgconf gtk4-devel libepoxy-devel curl bzip2
   Fedora Atomic: toolbox create && toolbox enter, then the Fedora line above
-  Debian/Ubuntu: sudo apt install gcc pkg-config libgtk-3-dev libepoxy-dev curl bzip2
-  Arch:          sudo pacman -S gcc pkgconf gtk3 libepoxy curl bzip2
+  Debian/Ubuntu: sudo apt install gcc pkg-config libgtk-4-dev libepoxy-dev curl bzip2
+  Arch:          sudo pacman -S gcc pkgconf gtk4 libepoxy curl bzip2
 MSG
 	return 1
 }
