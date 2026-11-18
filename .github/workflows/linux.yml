@@ -217,7 +217,7 @@ jobs:
           <div id=s style="font-size:40px;padding:20px;background:#fff;border:4px solid #e33">?</div>
           <p style="padding:0 20px">The quick brown fox jumps over the lazy dog. 0123456789</p>
           <div style="position:fixed;right:0;bottom:0;width:120px;height:60px;background:#3a3">right-bottom</div>
-          <script>const f=()=>document.getElementById('s').textContent=innerWidth+' x '+innerHeight+' @ '+devicePixelRatio;f();addEventListener('resize',f)</script>
+          <script>const f=()=>{document.getElementById('s').textContent=innerWidth+' x '+innerHeight+' @ '+devicePixelRatio;console.log('IRIS-DPR '+devicePixelRatio)};f();addEventListener('resize',f)</script>
           HTML
           chmod -R a+rX /tmp/page
           cat > /tmp/sway.conf <<'CONF'
@@ -232,7 +232,7 @@ jobs:
           export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           sleep 1
-          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland
+          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CEF_VERBOSE=1 IRIS_CEF_ARGS="--enable-logging=stderr --v=0"
           dbus-run-session -- iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 18
           grim /tmp/fs/1-full.png
@@ -263,7 +263,8 @@ jobs:
           for f in /tmp/fs/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
           [ ! -e /tmp/fs/exited ] || { echo "Iris exited"; exit 1; }
           for f in 1.25 1.5 2; do echo "== forced $f"; grep -i "scale\|dsf\|device" /tmp/fs/log-$f.txt | grep -v dbus | head -12; done
-          grep -q "pages at scale 1.25" /tmp/fs/log.txt || { echo "the pages are not at the screen's scale (1.25)"; exit 1; }
+          grep -a -o "IRIS-DPR [0-9.]*" /tmp/fs/log*.txt | sort | uniq -c
+          grep -q "IRIS-DPR 1.25" /tmp/fs/log.txt || { echo "the page is not drawn at the screen's scale (1.25)"; exit 1; }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
