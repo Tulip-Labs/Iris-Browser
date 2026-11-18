@@ -423,17 +423,26 @@ func Glass(g Gfx, r Rect, rad float32, th *Theme, strong, shadow bool) {
 	g.StrokePath(NewPath().RoundRect(r, rad), 0.8, th.Ink.Alpha(0.07))
 }
 
-// Liquid draws a glossy "liquid glass" tile for an icon: the color as a
-// soft vertical gradient, a highlight pooled at the top like light on a
-// drop, a bright rim along the top edge and a faint shade at the bottom.
-// Draw the icon over it in white.
+// Liquid draws a colorless "liquid glass" tile for an icon: a clear pane
+// that only lets the backdrop show, a highlight pooled at the top like light
+// on a drop, a bright rim along the top edge and a faint shade at the bottom.
+// base only says whether the glass sits on a dark or a light backdrop (pass
+// the theme's Ink); draw the icon over it in the theme's Ink.
 func Liquid(g Gfx, r Rect, rad float32, base Color) {
 	body := NewPath().RoundRect(r, rad)
-	g.FillPathGradient(body, Mix(base, White, 0.22), Mix(base, Black, 0.12), r.Y, r.B())
+	light := base.R()+base.G()+base.B() > 3*128 // light ink: a dark backdrop
+	fillT, fillB, hlA, rimT, rimB := White.Alpha(0.20), White.Alpha(0.07), float32(0.30), White.Alpha(0.55), White.Alpha(0.08)
+	if !light {
+		fillT, fillB, hlA, rimT, rimB = White.Alpha(0.70), White.Alpha(0.38), 0.65, White.Alpha(0.95), Black.Alpha(0.06)
+	}
+	g.FillPathGradient(body, fillT, fillB, r.Y, r.B())
 	hl := Rect{X: r.X + r.W*0.08, Y: r.Y + r.H*0.04, W: r.W * 0.84, H: r.H * 0.5}
-	g.FillPathGradient(NewPath().RoundRect(hl, min(rad, hl.H/2)), White.Alpha(0.42), White.Alpha(0), hl.Y, hl.B())
-	strokeGradient(g, NewPath().RoundRect(r.Inset(0.6), rad-0.6), 1.1, White.Alpha(0.75), White.Alpha(0.10), r.Y, r.B())
-	g.FillPathGradient(body, Black.Alpha(0), Black.Alpha(0.10), r.CY(), r.B())
+	g.FillPathGradient(NewPath().RoundRect(hl, min(rad, hl.H/2)), White.Alpha(hlA), White.Alpha(0), hl.Y, hl.B())
+	strokeGradient(g, NewPath().RoundRect(r.Inset(0.6), rad-0.6), 1.1, rimT, rimB, r.Y, r.B())
+	g.FillPathGradient(body, Black.Alpha(0), Black.Alpha(0.06), r.CY(), r.B())
+	if !light {
+		g.StrokePath(body, 0.8, Black.Alpha(0.06)) // keeps the edge on white
+	}
 }
 
 // strokeGradient approximates a vertically graded stroke with two passes.

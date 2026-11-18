@@ -5,7 +5,7 @@ const page = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#f4eefb">
-<title>Lite Go link</title>
+<title>Iris link</title>
 <style>
 :root{--bg:#f6f1fb;--card:#ffffffcc;--ink:#231b2e;--soft:#6c6078;--pri:#7a4bb5;--line:#e6dcf1;--ok:#2e8a5c;--bad:#b3403a}
 @media(prefers-color-scheme:dark){:root{--bg:#17131d;--card:#241d2ecc;--ink:#efe8f7;--soft:#a79bb5;--pri:#c7a5f2;--line:#3a3046;--ok:#7fd4a6;--bad:#f09a94}}
@@ -36,7 +36,7 @@ a.btn,button.btn{flex:none;border:0;border-radius:999px;background:var(--pri);co
 .empty{color:var(--soft);font-size:14px;margin:4px 0 0}
 footer{color:var(--soft);font-size:12.5px;text-align:center;margin-top:18px}
 </style></head><body><main>
-<h1>Lite Go link</h1>
+<h1>Iris link</h1>
 <p class="sub">Connected to <b>{{PC}}</b> over this network.</p>
 <section id="pairbox" style="display:none">
 <h2>Lite for Android</h2>
@@ -52,7 +52,7 @@ footer{color:var(--soft);font-size:12.5px;text-align:center;margin-top:18px}
 <section>
 <h2>From the computer</h2>
 <ul id="items"></ul>
-<p class="empty" id="none">Nothing shared yet. Files sent from Lite Go appear here by themselves.</p>
+<p class="empty" id="none">Nothing shared yet. Files sent from Iris appear here by themselves.</p>
 </section>
 <footer>Files travel only inside your network. Close this page when you are done.</footer>
 </main>

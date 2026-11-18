@@ -38,7 +38,7 @@ func (r *resident) window(urls []string) {
 		if ws.W < 480 || ws.H < 420 {
 			ws.W, ws.H = 1280, 820
 		}
-		w.Option(app.Title("Lite Go"), app.Size(unit.Dp(ws.W), unit.Dp(ws.H)), app.MinSize(unit.Dp(480), unit.Dp(420)), app.Decorated(false))
+		w.Option(app.Title("Iris"), app.Size(unit.Dp(ws.W), unit.Dp(ws.H)), app.MinSize(unit.Dp(480), unit.Dp(420)), app.Decorated(false))
 		if !ws.Windowed {
 			w.Option(app.Maximized.Option())
 		}

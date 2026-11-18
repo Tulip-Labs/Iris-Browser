@@ -25,12 +25,12 @@ func (a *App) content(r ui.Rect) {
 		why := "Its process ended (it may have run out of memory). Reload to open it again."
 		a.message(r, ui.IWarning, "This page stopped working", why, "Reload", func() { a.reload(t) })
 	case a.engErr != nil || a.eng == nil:
-		msg := "Lite Go shows pages with Microsoft Edge WebView2, which is not installed. Run the Lite Go installer again, or get the runtime from Microsoft."
+		msg := "Iris shows pages with Microsoft Edge WebView2, which is not installed. Run the Iris installer again, or get the runtime from Microsoft."
 		if a.engErr != nil && !strings.Contains(a.engErr.Error(), "not available") {
 			msg = "The web engine did not start: " + a.engErr.Error()
 		}
 		if runtime.GOOS == "linux" {
-			msg = "Chromium, which shows the pages, did not start. Install Lite Go again, or run lite-go from a terminal to see why."
+			msg = "Chromium, which shows the pages, did not start. Install Iris again, or run lite-go from a terminal to see why."
 		}
 		a.message(r, ui.IGlobe, "The web engine is not available", msg, "", nil)
 	case t.view == nil:
@@ -120,7 +120,7 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 	colW := min(640, r.W-32)
 	cx := r.CX()
 
-	title, sub := "Lite Go", ""
+	title, sub := "Iris", ""
 	switch t.Kind {
 	case KPrivate:
 		title, sub = "Private tab", "Nothing from this tab is kept: no history, cookies or cache."
@@ -142,12 +142,13 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 	// the mark (or the kind's icon in its color), centered, the name under it
 	mr := ui.RectAround(cx, y+ms/2, ms, ms)
 	if t.Kind == KNormal {
-		logo(g, mr, th, th.Primary)
+		logo(g, mr, th)
 	} else {
 		ic, col := a.kindIcon(t)
-		ui.Shadow(g, mr, ms*0.3, th.Shadow, 0.6, 1.5)
-		ui.FillRoundAccent(g, mr, ms*0.3, col)
-		ui.DrawIcon(g, ic, mr.CX()-ms*0.27, mr.CY()-ms*0.27, ms*0.54, ui.White)
+		_ = col
+		ui.Shadow(g, mr, ms*0.3, th.Shadow, 0.5, 1.5)
+		ui.Liquid(g, mr, ms*0.3, th.Ink)
+		ui.DrawIcon(g, ic, mr.CX()-ms*0.27, mr.CY()-ms*0.27, ms*0.54, th.Ink)
 	}
 	y += ms + 18
 	tf := ui.Font{Size: 30, Bold: true}

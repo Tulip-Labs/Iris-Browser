@@ -30,9 +30,9 @@ func main() {
 	}
 	go func() {
 		w := new(app.Window)
-		title := "Lite Go Setup"
+		title := "Iris Setup"
 		if uninstallMode {
-			title = "Remove Lite Go"
+			title = "Remove Iris"
 		}
 		w.Option(app.Title(title), app.Size(unit.Dp(600), unit.Dp(480)), app.MinSize(unit.Dp(600), unit.Dp(480)), app.MaxSize(unit.Dp(600), unit.Dp(480)), app.Decorated(false))
 		w.Perform(system.ActionCenter)

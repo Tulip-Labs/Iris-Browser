@@ -1,4 +1,11 @@
-Lite Go: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
+Iris (formerly Lite Go): a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
+
+## New in 1.0.13
+
+- **Lite Go is now Iris**, after the Greek goddess of the rainbow, who carries light between worlds. A new icon to match: an iris of light in a drop of smoked glass. Your settings, tabs, history and sign-ins stay where they were, the package keeps its name (`lite-go-browser`) so updates come as before, and the command `iris` starts it besides `lite-go`.
+- **Colorless liquid glass.** Icons, buttons, cards and text are clear glass with no color of their own; only the backdrop keeps the theme's color. Containers and tab kinds tell apart by their icons.
+- **Pages follow the theme**: a dark theme shows pages in their dark mode, a light theme in their light mode.
+- **Cleaner search results**: no tags or goggles; the websites are glass cards, and the AI answer starts right under its title.
 
 ## New in 1.0.12
 

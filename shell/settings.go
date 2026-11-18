@@ -51,9 +51,8 @@ func (a *App) containerSettings(x, y, w float32) float32 {
 		}
 		row := ui.Rect{X: x, Y: y, W: w, H: 52}
 		ui.FillRound(g, row, 16, th.SurfaceHigh)
-		col := tone(th, c.Color)
-		ui.FillRound(g, ui.Rect{X: row.X + 12, Y: row.CY() - 15, W: 30, H: 30}, 10, col)
-		ui.DrawIcon(g, iconOf(c), row.X+18, row.CY()-9, 18, ui.White)
+		ui.Liquid(g, ui.Rect{X: row.X + 12, Y: row.CY() - 15, W: 30, H: 30}, 10, th.Ink)
+		ui.DrawIcon(g, iconOf(c), row.X+18, row.CY()-9, 18, th.Ink)
 		ui.TextFit(g, c.Name, row.X+54, ui.Mid(g, row.Y, row.H, ui.FBodyBold), ui.FBodyBold, th.OnSurface, row.W-180)
 		n := 0
 		for _, t := range a.tabs {

@@ -1,5 +1,5 @@
 {
-  description = "Lite Go, a light and fast browser with shields built in";
+  description = "Iris (formerly Lite Go), a light and fast browser with shields built in";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -19,7 +19,7 @@
 
         lite-go-browser = pkgs.buildGoModule {
           pname = "lite-go-browser";
-          version = "1.0.12";
+          version = "1.0.13";
           src = self;
           vendorHash = "sha256-DUuIMLR+RLt5e6kRZcxRdGo4Q4i9ZGR7ia629F8Vp2o=";
           subPackages = [ "cmd/litego" ];
@@ -54,6 +54,7 @@
             cp third_party/cef/Resources/locales/*.pak $lib/locales/
             ln -s $lib/lite-go-browser $out/bin/lite-go
             ln -s $lib/lite-go-browser $out/bin/lite-go-browser
+            ln -s $lib/lite-go-browser $out/bin/iris
             install -Dm644 assets/icon.png $out/share/icons/hicolor/256x256/apps/lite-go.png
             install -Dm644 packaging/linux/lite-go.desktop $out/share/applications/lite-go.desktop
           '';

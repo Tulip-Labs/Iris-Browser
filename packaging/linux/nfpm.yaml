@@ -12,7 +12,7 @@ homepage: https://github.com/Tulip-Labs/Lite-Go-Browser
 license: GPL-3.0-only
 description: |-
   A light, fast browser with shields built in.
-  Lite Go shows pages with Chromium (through CEF, which it carries) and adds
+  Iris (formerly Lite Go) shows pages with Chromium (through CEF, which it carries) and adds
   ad and tracker blocking, containers, split view and tabs that sleep to
   save memory. It runs on Wayland.
 
@@ -67,6 +67,9 @@ contents:
     type: symlink
   - src: /usr/lib/lite-go-browser/lite-go-browser
     dst: /usr/bin/lite-go-browser
+    type: symlink
+  - src: /usr/lib/lite-go-browser/lite-go-browser
+    dst: /usr/bin/iris
     type: symlink
   - src: packaging/linux/lite-go.desktop
     dst: /usr/share/applications/lite-go.desktop

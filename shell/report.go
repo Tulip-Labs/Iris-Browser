@@ -21,7 +21,7 @@ func (a *App) memoryReport() (string, error) {
 	runtime.ReadMemStats(&m)
 	live, asleep, unloaded := a.Counts()
 	mb := func(b uint64) string { return fmt.Sprintf("%.1f MB", float64(b)/(1<<20)) }
-	txt := fmt.Sprintf(`Lite Go %s memory report, %s
+	txt := fmt.Sprintf(`Iris %s memory report, %s
 Process (Windows private bytes): %.1f MB
 Pages (WebView2 processes): %.1f MB
 Go heap in use: %s  idle: %s  released: %s  total from Windows: %s

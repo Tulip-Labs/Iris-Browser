@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>io.github.tulip_labs.LiteGo</id>
-  <name>Lite Go</name>
+  <name>Iris</name>
   <summary>A light, fast browser with shields built in</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
@@ -9,12 +9,12 @@
     <name>Tulip Labs</name>
   </developer>
   <description>
-    <p>Lite Go is a small browser written in Go. Pages are shown by the system's web engine (WebKitGTK), and Lite Go adds what keeps browsing light and private.</p>
+    <p>Iris (formerly Lite Go) is a small browser written in Go. Pages are shown by Chromium, and Iris adds what keeps browsing light and private.</p>
     <ul>
       <li>Lite Shields: ads, trackers, cookie notices and fingerprinting blocked</li>
       <li>Containers for separate sign-ins, private tabs and split view</li>
       <li>Background tabs that sleep and unload to save memory</li>
-      <li>Eleven palettes, including pastel gradients</li>
+      <li>Ten palettes of clear liquid glass, dark and light</li>
       <li>Sync with Lite for Android over your own network, with no servers</li>
     </ul>
   </description>

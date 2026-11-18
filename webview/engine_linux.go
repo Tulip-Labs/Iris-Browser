@@ -6,7 +6,7 @@ package webview
 #include <stdlib.h>
 #include <stdint.h>
 
-enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST, OP_ZOOM, OP_DLCANCEL };
+enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST, OP_ZOOM, OP_DLCANCEL, OP_SCHEME };
 
 void lgxMain(unsigned long parent, const char *dataDir);
 void lgxAttach(uintptr_t layout, const char *dataDir);
@@ -180,6 +180,17 @@ func (v *wkView) SetMuted(on bool) {
 	}
 	v.op(C.OP_MUTE, m, 0, 0, 0, "", 0)
 }
+
+// SetColorScheme makes the pages light or dark (prefers-color-scheme), to
+// match the browser's palette.
+func SetColorScheme(dark bool) {
+	mode := 1
+	if dark {
+		mode = 2
+	}
+	call(C.OP_SCHEME, 0, mode, 0, 0, 0, "", 0)
+}
+
 func (v *wkView) SetZoom(f float64) { v.op(C.OP_ZOOM, int(f*100+0.5), 0, 0, 0, "", 0) }
 
 // SetBackground: a hidden page is told so (was_hidden), and Chromium lowers its memory.

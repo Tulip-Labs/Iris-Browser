@@ -1,6 +1,6 @@
 //go:build ignore
 
-// icongen draws Lite Go's icon with the shared renderer and writes the Windows
+// icongen draws Iris's icon with the shared renderer and writes the Windows
 // resource objects (icon and version info) that go build links automatically:
 //
 //	go run tools/icongen.go
@@ -22,27 +22,20 @@ import (
 	"litego/ui"
 )
 
-func icon(size int, base ui.Color) image.Image {
+func icon(size int) image.Image {
 	c := raster.New(24, 24, float32(size)/24, raster.NewFonts())
-	th := ui.ThemeByID("crocus")
-	r := ui.Rect{X: 1, Y: 1, W: 22, H: 22}
-	ui.FillRoundAccent(c, r, 6.4, base)
-	s := r.W / 24
-	ui.Pen(c, ui.NewPath().Arc(r.CX(), r.CY(), 6.6*s, 140, 470, true), 2.1*s, ui.White)
-	ui.FillOval(c, ui.RectAround(r.X+17.2*s, r.Y+7.4*s, 4.6*s, 4.6*s), th.Hl)
-	ui.FillOval(c, ui.RectAround(r.CX(), r.CY(), 3.2*s, 3.2*s), ui.White)
+	ui.IrisIcon(c, ui.Rect{X: 1, Y: 1, W: 22, H: 22})
 	return c.Img
 }
 
 func main() {
-	th := ui.ThemeByID("crocus")
 	for _, t := range []struct{ dir, name, desc string }{
-		{"cmd/litego", "Lite Go", "Lite Go browser"},
-		{"cmd/litego-setup", "Lite Go Setup", "Lite Go installer"},
+		{"cmd/litego", "Iris", "Iris browser"},
+		{"cmd/litego-setup", "Iris Setup", "Iris installer"},
 	} {
 		var imgs []image.Image
 		for _, s := range []int{256, 64, 48, 32, 24, 16} {
-			imgs = append(imgs, icon(s, th.Primary))
+			imgs = append(imgs, icon(s))
 		}
 		ic, err := winres.NewIconFromImages(imgs)
 		if err != nil {
@@ -53,7 +46,7 @@ func main() {
 		v := version.Info{}
 		v.SetFileVersion("1.0.3.0")
 		v.SetProductVersion("1.0.3.0")
-		v.Set(0, version.ProductName, "Lite Go")
+		v.Set(0, version.ProductName, "Iris")
 		v.Set(0, version.FileDescription, t.desc)
 		v.Set(0, version.CompanyName, "Tulipan Labs")
 		v.Set(0, version.LegalCopyright, "Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez). GNU GPL 3.0")
@@ -73,7 +66,7 @@ func main() {
 		}
 	}
 	// a PNG of the icon for the README
-	raster256 := icon(256, th.Primary)
+	raster256 := icon(256)
 	f, _ := os.Create("assets/icon.png")
 	defer f.Close()
 	if err := png.Encode(f, raster256); err != nil {

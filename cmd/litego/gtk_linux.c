@@ -76,10 +76,10 @@ void lgwAfterFrame(void) { g_idle_add_full(G_PRIORITY_DEFAULT, afterFrame, NULL,
 static void onRealize(GtkGLArea *a, gpointer d) {
 	gtk_gl_area_make_current(a);
 	GError *err = gtk_gl_area_get_error(a);
-	if (err) g_printerr("Lite Go: no OpenGL context: %s\n", err->message);
+	if (err) g_printerr("Iris: no OpenGL context: %s\n", err->message);
 	if (g_getenv("LITEGO_GL_DEBUG")) {
 		GdkGLContext *c = gtk_gl_area_get_context(a);
-		g_printerr("Lite Go: GL %s | GLSL %s | %s | es=%d legacy=%d\n", (const char *)glGetString(GL_VERSION),
+		g_printerr("Iris: GL %s | GLSL %s | %s | es=%d legacy=%d\n", (const char *)glGetString(GL_VERSION),
 		           (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION), (const char *)glGetString(GL_RENDERER),
 		           c ? gdk_gl_context_get_use_es(c) : -1, c ? gdk_gl_context_is_legacy(c) : -1);
 	}
@@ -283,7 +283,7 @@ void lgwInit(void) {
 	gtk_init(NULL, NULL);
 	g_object_set(gtk_settings_get_default(), "gtk-application-prefer-dark-theme", FALSE, NULL);
 	g_set_prgname(appID()); // the Wayland app id: matches the desktop file, for the dock icon
-	g_set_application_name("Lite Go");
+	g_set_application_name("Iris");
 }
 
 void lgwMain(void) { gtk_main(); }
@@ -291,7 +291,7 @@ void lgwMain(void) { gtk_main(); }
 // lgwOpen makes the window and returns the layout the pages go in.
 uintptr_t lgwOpen(int w, int h, int maximized) {
 	win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-	gtk_window_set_title(GTK_WINDOW(win), "Lite Go");
+	gtk_window_set_title(GTK_WINDOW(win), "Iris");
 	gtk_window_set_icon_name(GTK_WINDOW(win), appID());
 	gtk_window_set_default_size(GTK_WINDOW(win), w, h);
 	GdkGeometry g = {.min_width = 480, .min_height = 420};

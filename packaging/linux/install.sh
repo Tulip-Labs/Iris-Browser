@@ -14,7 +14,7 @@ LIB="$HOME/.local/lib/lite-go-browser"
 
 if [ "${1:-}" = "--remove" ]; then
 	rm -rf "$LIB" "$LIB.new" "$LIB.old"
-	rm -f "$BIN/lite-go" "$BIN/lite-go.sha256" "$SHARE/applications/lite-go.desktop" "$SHARE/icons/hicolor/256x256/apps/lite-go.png"
+	rm -f "$BIN/lite-go" "$BIN/iris" "$BIN/lite-go.sha256" "$SHARE/applications/lite-go.desktop" "$SHARE/icons/hicolor/256x256/apps/lite-go.png"
 	command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$SHARE/applications" || true
 	echo "Lite Go is removed (your settings stay in "~/.config/Lite Go")."
 	exit 0
@@ -32,6 +32,7 @@ mv "$LIB.new" "$LIB"
 rm -rf "$LIB.old"
 rm -f "$BIN/lite-go" "$BIN/lite-go.sha256" # 1.0.7 and older: the program itself
 ln -s "$LIB/lite-go-browser" "$BIN/lite-go"
+ln -sf "$LIB/lite-go-browser" "$BIN/iris"
 sed "s#^Exec=lite-go#Exec=$BIN/lite-go#" lite-go.desktop > "$SHARE/applications/lite-go.desktop"
 install -m 644 lite-go.png "$SHARE/icons/hicolor/256x256/apps/lite-go.png"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$SHARE/applications" || true

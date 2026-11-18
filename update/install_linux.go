@@ -218,7 +218,41 @@ func replaceFromTar(archive, exe string) error {
 		return fail(err)
 	}
 	os.RemoveAll(old)
+	refreshUserEntry(dir)
 	return nil
+}
+
+// refreshUserEntry updates what install.sh put outside the program folder
+// for a copy in the home folder: the menu entry and icon (the name and the
+// icon change between versions) and the iris command beside lite-go.
+func refreshUserEntry(dir string) {
+	home, err := os.UserHomeDir()
+	if err != nil || !strings.HasPrefix(dir, home+string(os.PathSeparator)) {
+		return
+	}
+	share := os.Getenv("XDG_DATA_HOME")
+	if share == "" {
+		share = filepath.Join(home, ".local", "share")
+	}
+	bin := os.Getenv("XDG_BIN_HOME")
+	if bin == "" {
+		bin = filepath.Join(home, ".local", "bin")
+	}
+	entry := filepath.Join(share, "applications", "lite-go.desktop")
+	if _, err := os.Stat(entry); err == nil {
+		if d, err := os.ReadFile(filepath.Join(dir, "lite-go.desktop")); err == nil {
+			d = []byte(strings.ReplaceAll(string(d), "\nExec=lite-go", "\nExec="+filepath.Join(bin, "lite-go")))
+			os.WriteFile(entry, d, 0o644)
+		}
+		if ic, err := os.ReadFile(filepath.Join(dir, "lite-go.png")); err == nil {
+			os.WriteFile(filepath.Join(share, "icons", "hicolor", "256x256", "apps", "lite-go.png"), ic, 0o644)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(bin, "lite-go")); err == nil {
+		if _, err := os.Lstat(filepath.Join(bin, "iris")); err != nil {
+			os.Symlink(filepath.Join(dir, "lite-go-browser"), filepath.Join(bin, "iris"))
+		}
+	}
 }
 
 // Restart starts Lite Go again in a moment, once this copy has quit.

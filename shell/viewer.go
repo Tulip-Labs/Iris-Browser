@@ -163,8 +163,8 @@ func (a *App) viewImage(s *Search, r ui.Rect, head ui.Rect) {
 	ui.TextFit(g, title, r.X, y+16, ui.FBodyBold, th.OnSurface, r.W)
 	if host != "" {
 		mr := ui.Rect{X: r.X, Y: y + 26, W: 18, H: 18}
-		ui.FillRoundAccent(g, mr, 6, siteColor(host))
-		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 9.5, Bold: true}, ui.White)
+		ui.Liquid(g, mr, 6, th.Ink)
+		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 9.5, Bold: true}, th.Ink)
 		ui.TextFit(g, host, r.X+26, y+40, ui.FSmall, th.OnSurfaceVariant, r.W-30)
 	}
 	y += 58
