@@ -1,4 +1,4 @@
-//go:build linux && webkit
+//go:build linux && webkit && !electron
 
 // The Linux side of Iris's web engine on Chromium, through CEF (the
 // Chromium Embedded Framework).

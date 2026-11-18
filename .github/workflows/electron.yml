@@ -1,0 +1,173 @@
+# Iris on the Electron page engine (docs/engines.md): builds it, then starts
+# it on a 1.25 Wayland screen (sway, headless) and checks that pages draw at
+# the screen's scale, that H.264 + AAC videos play, and that clicks and typing
+# reach the page. Prints the engine's memory.
+name: Electron engine
+
+on:
+  push:
+    branches: ["engine/electron"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev ffmpeg
+      - name: Build Iris with Electron
+        run: sh webview/electron/build.sh dist/linux-electron
+      - name: Test videos (H.264 + AAC, and VP9)
+        run: |
+          mkdir -p dist/page
+          ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=frequency=440 -t 20 \
+            -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -movflags +faststart dist/page/h.mp4
+          ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime dist/page/v.webm
+          ls -l dist/page
+      - name: Pack
+        run: tar -C dist -czf iris-electron.tar.gz linux-electron page
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iris-electron
+          path: iris-electron.tar.gz
+
+  run:
+    needs: build
+    runs-on: ubuntu-24.04
+    container:
+      image: fedora:latest
+      options: --shm-size=1g
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: iris-electron
+      - name: Install what Iris and Electron need, and sway
+        run: |
+          dnf install -y -q gtk4 libepoxy gtk3 nss atk at-spi2-atk cups-libs libdrm mesa-libgbm mesa-dri-drivers alsa-lib \
+            libXcomposite libXdamage libXrandr libxkbcommon libxshmfence pango cairo sway grim python3 python3-pillow \
+            dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip
+          cp /usr/bin/sway /usr/local/bin/sway-plain
+          mkdir -p /opt && tar -C /opt -xzf iris-electron.tar.gz && ls -l /opt/linux-electron
+      - name: Iris at 1.25 on Electron
+        run: |
+          useradd -m tester
+          mkdir -p /tmp/fs && chmod 777 /tmp/fs
+          cp /opt/page/* /tmp/fs/ 2>/dev/null || true
+          mkdir -p /tmp/page && cp /opt/page/* /tmp/page/
+          cat > /tmp/page/index.html <<'HTML'
+          <!doctype html><meta charset=utf-8><body style="margin:0;font:16px sans-serif;background:#fff">
+          <div id=s style="font-size:30px;padding:10px 20px;border:4px solid #e33;height:40px">?</div>
+          <button id=b style="position:absolute;left:20px;top:80px;width:300px;height:80px;font-size:24px">Click me</button>
+          <input id=i style="position:absolute;left:20px;top:180px;width:300px;height:40px;font-size:20px">
+          <p style="position:absolute;left:20px;top:240px">The quick brown fox jumps over the lazy dog. 0123456789</p>
+          <video id=h src="h.mp4" autoplay muted loop width=320 height=180 style="position:absolute;left:360px;top:80px"></video>
+          <video id=v src="v.webm" autoplay muted loop width=320 height=180 style="position:absolute;left:700px;top:80px"></video>
+          <script>
+          const s=document.getElementById('s');
+          const f=()=>{s.textContent=innerWidth+' x '+innerHeight+' @ '+devicePixelRatio;console.log('IRIS-DPR '+devicePixelRatio)};f();addEventListener('resize',f);
+          document.getElementById('b').onclick=()=>console.log('IRIS-CLICK');
+          document.getElementById('i').oninput=(e)=>console.log('IRIS-TYPED '+e.target.value);
+          for (const [id,name] of [['h','H264'],['v','VP9']]) {
+            const el=document.getElementById(id);
+            el.addEventListener('playing',()=>console.log('IRIS-'+name+' playing '+el.videoWidth+'x'+el.videoHeight));
+            el.addEventListener('error',()=>console.log('IRIS-'+name+' error '+(el.error&&el.error.code)));
+          }
+          console.log('IRIS-CANPLAY h264='+document.createElement('video').canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'));
+          </script>
+          HTML
+          chmod -R a+rX /tmp/page
+          cat > /tmp/sway.conf <<'CONF'
+          output HEADLESS-1 resolution 1920x1200 scale 1.25
+          default_border none
+          CONF
+          cat > /tmp/run.sh <<'SH'
+          export XDG_RUNTIME_DIR=$(mktemp -d) WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 WLR_HEADLESS_OUTPUTS=1
+          sway-plain -c /tmp/sway.conf > /tmp/sway.txt 2>&1 &
+          for i in $(seq 1 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; sleep 0.2; done
+          export WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
+          export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)
+          (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
+          sleep 1
+          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CONSOLE=1 IRIS_MEM_LOG=1 ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1
+          # Electron alone first: does it start here at all?
+          E=/opt/linux-electron/electron/electron
+          { echo "-- missing libraries:"; ldd $E | grep "not found"; echo "-- version:"; $E --version; echo "exit $?"; } > /tmp/fs/smoke.txt 2>&1
+          for oz in "" "--ozone-platform=wayland" "--ozone-platform=headless" "--disable-gpu"; do
+            echo "-- helper with: $oz" >> /tmp/fs/smoke.txt
+            timeout 15 env IRIS_SOCK=/tmp/none.sock $E --no-sandbox $oz --enable-logging=stderr --v=0 /opt/linux-electron/electron-helper >> /tmp/fs/smoke.txt 2>&1
+            echo "exit $?" >> /tmp/fs/smoke.txt
+          done
+          dbus-run-session -- /opt/linux-electron/iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
+          sleep 25
+          grim /tmp/fs/1-full.png
+          # a click on the page's button (page units 20..320 × 80..160, the page
+          # starts about 83 screen units down and 8 across)
+          swaymsg 'seat seat0 cursor set 160 205'
+          swaymsg 'seat seat0 cursor press button1'
+          swaymsg 'seat seat0 cursor release button1'
+          sleep 2
+          # into the text field, and typing
+          swaymsg 'seat seat0 cursor set 160 285'
+          swaymsg 'seat seat0 cursor press button1'
+          swaymsg 'seat seat0 cursor release button1'
+          sleep 1
+          wtype hello
+          sleep 3
+          grim /tmp/fs/2-after-input.png
+          sleep 8
+          pgrep -x iris >/dev/null || touch /tmp/fs/exited
+          ps -eo rss,args | grep -E "electron|iris" | grep -v grep | awk '{s+=$1} END {print "memory (all Iris and Electron processes): " int(s/1024) " MB"}' > /tmp/fs/mem.txt
+          ps -eo rss,args | grep -E "electron" | grep -v grep | awk '{printf "  %6d MB  %s\n", $1/1024, substr($0, index($0,$2), 120)}' >> /tmp/fs/mem.txt
+          # the memory budget: a tiny one makes the engine restart itself, and
+          # the page in front must come back
+          pkill -x iris; sleep 3; pkill -9 -x iris; pkill -9 -f electron; sleep 1
+          IRIS_ENGINE_BUDGET_MB=60 dbus-run-session -- /opt/linux-electron/iris http://127.0.0.2:8766/ > /tmp/fs/log-budget.txt 2>&1 &
+          sleep 75
+          grim /tmp/fs/3-after-restart.png
+          pkill -x iris
+          SH
+          su tester -c "sh /tmp/run.sh"
+          echo "== Electron alone"; grep -v "dbus/bus.cc" /tmp/fs/smoke.txt | tail -60
+          grep -v dbus /tmp/fs/log.txt | grep -v "Iris: engine \|portal\|fuse" | tail -80
+          echo "== the engine's memory and tabs, as Iris sees them"
+          grep "Iris: engine " /tmp/fs/log.txt | tail -6
+          cat /tmp/fs/mem.txt
+          echo "== budget test"
+          grep -E "Iris: engine |restarting|IRIS-DPR|Iris pages:" /tmp/fs/log-budget.txt | tail -20
+          for f in /tmp/fs/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
+          python3 - <<'PY'
+          from PIL import Image
+          im = Image.open('/tmp/fs/1-full.png').convert('RGB')
+          # the page's area must not be one flat color (a page was drawn)
+          crop = im.crop((20, 140, 900, 500))
+          colors = len(set(crop.getdata()))
+          print('page area colors:', colors)
+          open('/tmp/fs/colors', 'w').write(str(colors))
+          PY
+          ok=1
+          [ ! -e /tmp/fs/exited ] || { echo "Iris exited"; ok=0; }
+          grep -q "IRIS-DPR 1.25" /tmp/fs/log.txt || { echo "FAIL: the page is not drawn at the screen's scale (1.25)"; ok=0; }
+          grep -q "IRIS-H264 playing" /tmp/fs/log.txt || { echo "FAIL: H.264 + AAC did not play"; ok=0; }
+          grep -q "IRIS-VP9 playing" /tmp/fs/log.txt || { echo "FAIL: VP9 did not play"; ok=0; }
+          grep -q "IRIS-CLICK" /tmp/fs/log.txt || { echo "FAIL: the click did not reach the page"; ok=0; }
+          grep -q "IRIS-TYPED hello" /tmp/fs/log.txt || { echo "FAIL: typing did not reach the page"; ok=0; }
+          [ "$(cat /tmp/fs/colors)" -gt 20 ] || { echo "FAIL: no page drawn"; ok=0; }
+          grep -q "Iris: engine [0-9]* MB in [0-9]* processes" /tmp/fs/log.txt || { echo "FAIL: no memory readings"; ok=0; }
+          grep -q "restarting it" /tmp/fs/log-budget.txt || { echo "FAIL: the engine did not restart over its budget"; ok=0; }
+          sed -n '/restarting it/,$p' /tmp/fs/log-budget.txt | grep -q 'IRIS-DPR' || { echo "FAIL: the page did not come back after the restart"; ok=0; }
+          [ $ok = 1 ]
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shots-electron
+          path: /tmp/fs/*.png
+          if-no-files-found: ignore

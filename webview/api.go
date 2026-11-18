@@ -122,6 +122,11 @@ type Policy struct {
 	Unsafe func(url string) bool
 	// Download reports every download as it starts and as it changes.
 	Download func(d Download)
+	// MemoryBudgetMB is how much memory the engine's processes may hold
+	// together (the memory setting's budget; 0 = a quarter of the computer's).
+	// Iris's balancer rests background tabs first; an engine that can (Linux,
+	// Electron) restarts itself when it stays over with nothing left to rest.
+	MemoryBudgetMB int
 }
 
 // Popup is a pending new window that must be attached to its view.
