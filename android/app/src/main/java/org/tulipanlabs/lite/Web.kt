@@ -275,12 +275,18 @@ class Pages(private val act: Activity, private val set: Settings, private val ev
             val u = request.url ?: return false
             val s = u.lowercase()
             if (!s.startsWith("http:") && !s.startsWith("https:") && !s.startsWith("about:") && !s.startsWith("data:") && !s.startsWith("blob:")) {
-                // another app's link (intent:, tel:, mailto:, market:, whatsapp:)
+                // another app's link (intent:, tel:, mailto:, market:, whatsapp:):
+                // only from a tap, so a page cannot open apps by itself
+                if (!request.hasGesture()) return true
                 try {
                     val i = if (s.startsWith("intent:")) Intent.parseUri(u, Intent.URI_INTENT_SCHEME) else Intent(Intent.ACTION_VIEW, Uri.parse(u))
                     i.addCategory(Intent.CATEGORY_BROWSABLE)
                     i.component = null
                     i.selector = null
+                    // an intent: link may not grant access to Iris's own files
+                    i.flags = i.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION).inv()
+                    i.clipData = null
                     ctx.startActivity(i)
                 } catch (e: Exception) {
                     // an intent: link with a web fallback opens that instead

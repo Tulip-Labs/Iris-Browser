@@ -14,7 +14,7 @@ import (
 	"litego/shell"
 )
 
-const version = "1.0.14"
+const version = "1.0.15"
 
 func main() {
 	// a small, steady footprint: collect garbage sooner and keep the Go heap
@@ -135,7 +135,20 @@ func dirs() (conf, web string) {
 		cache = base
 	}
 	web = filepath.Join(cache, "Lite Go", "Web")
-	_ = os.MkdirAll(conf, 0o755)
-	_ = os.MkdirAll(web, 0o755)
+	// private to this account: the settings hold the sync key, and the
+	// history, sign-ins and site data live here (older versions made them
+	// readable by every account on the computer)
+	_ = os.MkdirAll(conf, 0o700)
+	_ = os.MkdirAll(web, 0o700)
+	_ = os.Chmod(conf, 0o700)
+	_ = os.Chmod(filepath.Dir(web), 0o700)
+	_ = os.Chmod(web, 0o700)
+	if ents, err := os.ReadDir(conf); err == nil {
+		for _, e := range ents {
+			if e.Type().IsRegular() {
+				_ = os.Chmod(filepath.Join(conf, e.Name()), 0o600)
+			}
+		}
+	}
 	return
 }

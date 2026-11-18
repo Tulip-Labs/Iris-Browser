@@ -127,7 +127,7 @@ func H264Script(relay string) string {
   const cpt = HTMLMediaElement.prototype.canPlayType;
   HTMLMediaElement.prototype.canPlayType = function (t) {
     const r = cpt.call(this, t);
-    return !r && /video\/mp4|audio\/mp4|avc1|mp4a|video\/quicktime/i.test(t || '') ? 'maybe' : r;
+    return !r && /video\/mp4|audio\/mp4|avc1|avc3|hvc1|hev1|hevc|h265|mp4a|video\/quicktime|video\/x-matroska/i.test(t || '') ? 'maybe' : r;
   };
   const fix = (v) => {
     if (!v || v.__lgRelay) return;

@@ -49,13 +49,34 @@ var (
 
 func hasScheme(t string) bool {
 	m := reScheme.FindStringSubmatch(t)
-	return m != nil && !rePort.MatchString(m[2])
+	if m == nil || rePort.MatchString(m[2]) {
+		return false
+	}
+	// only schemes a person means to open; "note: milk" is a search, and a
+	// pasted javascript: link never runs (the "paste this in your address
+	// bar" scam)
+	switch strings.ToLower(m[1]) {
+	case "http", "https", "file", "about", "view-source", "mailto", "tel":
+		return true
+	}
+	return false
 }
 
 // IsURLLike reports whether typed text is an address rather than a search.
 func IsURLLike(text string) bool {
 	t := strings.TrimSpace(text)
-	return t != "" && (hasScheme(t) || !strings.Contains(t, " ") && (strings.Contains(t, ".") || t == "localhost" || strings.HasPrefix(strings.ToLower(t), "localhost:")))
+	if t == "" {
+		return false
+	}
+	if hasScheme(t) {
+		return true
+	}
+	// "word:" that is not a port ("localhost:8080") nor a scheme Iris opens is
+	// a search (javascript:, data:, notes)
+	if m := reScheme.FindStringSubmatch(t); m != nil && !rePort.MatchString(m[2]) {
+		return false
+	}
+	return !strings.Contains(t, " ") && (strings.Contains(t, ".") || t == "localhost" || strings.HasPrefix(strings.ToLower(t), "localhost:"))
 }
 
 // URLFor completes an address: https:// unless it is a local address.

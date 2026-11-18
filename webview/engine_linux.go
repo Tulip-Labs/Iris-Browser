@@ -380,8 +380,14 @@ func lgxGoBlocked(id C.uintptr_t, u *C.char) {
 
 //export lgxGoResult
 func lgxGoResult(cb C.uintptr_t, res *C.char) {
+	// only callbacks Iris made reach here (the engine checks each result's
+	// secret); a stale or unknown one is dropped rather than crashing
+	defer func() { _ = recover() }()
 	h := cgo.Handle(cb)
-	done := h.Value().(func(string))
+	done, ok := h.Value().(func(string))
+	if !ok {
+		return
+	}
 	h.Delete()
 	done(C.GoString(res))
 }
