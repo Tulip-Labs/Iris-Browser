@@ -1106,13 +1106,16 @@ static void makeArea(LV *v) {
 
 enum {
 	CMD_LINK_TAB = MENU_ID_USER_FIRST,
+	CMD_LINK_SAVE,
 	CMD_LINK_COPY,
 	CMD_IMAGE_TAB,
+	CMD_IMAGE_SAVE,
 	CMD_IMAGE_COPY_URL,
+	CMD_SEARCH,
 };
 
 static cef_run_context_menu_callback_t *menuCb; // the menu on screen
-static char *menuLink, *menuImage;
+static char *menuLink, *menuImage, *menuText;
 
 static void menuFinish(int cmd) {
 	if (!menuCb) return;
@@ -1158,25 +1161,50 @@ static void CEF_CALLBACK onBeforeMenu(cef_context_menu_handler_t *self, cef_brow
 	RELEASE(f);
 	g_free(menuLink);
 	g_free(menuImage);
+	g_free(menuText);
+	cef_string_userfree_t sel = params->get_selection_text(params);
+	menuText = sel ? getStr(sel) : NULL;
+	if (sel) cef_string_userfree_free(sel);
+	if (menuText) g_strstrip(menuText);
 	cef_string_userfree_t l = params->get_link_url(params);
 	menuLink = l ? getStr(l) : NULL;
 	if (l) cef_string_userfree_free(l);
 	cef_string_userfree_t src = params->get_source_url(params);
 	menuImage = src && params->get_media_type(params) == CM_MEDIATYPE_IMAGE ? getStr(src) : NULL;
 	if (src) cef_string_userfree_free(src);
+	// Chrome's items first, in Chrome's order; Chromium's own (back,
+	// forward, reload, print, view source, cut, copy, paste) follow
 	cef_string_t t = {0};
 	size_t at = 0;
 	if (menuLink && *menuLink) {
 		setStr(&t, "Open link in new tab");
 		model->insert_item_at(model, at++, CMD_LINK_TAB, &t);
+		setStr(&t, "Save link as…");
+		model->insert_item_at(model, at++, CMD_LINK_SAVE, &t);
 		setStr(&t, "Copy link address");
 		model->insert_item_at(model, at++, CMD_LINK_COPY, &t);
 	}
 	if (menuImage && *menuImage) {
+		if (at) model->insert_separator_at(model, at++);
 		setStr(&t, "Open image in new tab");
 		model->insert_item_at(model, at++, CMD_IMAGE_TAB, &t);
+		setStr(&t, "Save image as…");
+		model->insert_item_at(model, at++, CMD_IMAGE_SAVE, &t);
 		setStr(&t, "Copy image address");
 		model->insert_item_at(model, at++, CMD_IMAGE_COPY_URL, &t);
+	}
+	if (menuText && *menuText) {
+		// "Search Google for “…”", the selection cut short as Chrome does
+		glong n = g_utf8_strlen(menuText, -1);
+		char *shown = n > 32 ? g_strdup_printf("%.*s…", (int)(g_utf8_offset_to_pointer(menuText, 30) - menuText), menuText) : g_strdup(menuText);
+		for (char *c = shown; *c; c++)
+			if (*c == '\n' || *c == '\t') *c = ' ';
+		char *label = g_strdup_printf("Search Google for “%s”", shown);
+		if (at) model->insert_separator_at(model, at++);
+		setStr(&t, label);
+		model->insert_item_at(model, at++, CMD_SEARCH, &t);
+		g_free(label);
+		g_free(shown);
 	}
 	if (at && model->get_count(model) > at) model->insert_separator_at(model, at);
 	cef_string_clear(&t);
@@ -1231,10 +1259,31 @@ static int CEF_CALLBACK onMenuCommand(cef_context_menu_handler_t *self, cef_brow
 	LV *v = of(b);
 	RELEASE(f);
 	RELEASE(params);
-	const char *u = cmd == CMD_LINK_TAB || cmd == CMD_LINK_COPY ? menuLink : cmd == CMD_IMAGE_TAB || cmd == CMD_IMAGE_COPY_URL ? menuImage : NULL;
+	if (cmd == CMD_SEARCH) {
+		if (!v || !menuText || !*menuText) return 1;
+		char *q = g_uri_escape_string(menuText, NULL, FALSE);
+		char *u = g_strdup_printf("https://www.google.com/search?q=%s", q);
+		lgxGoOpenTab(v->id, u);
+		g_free(u);
+		g_free(q);
+		return 1;
+	}
+	const char *u = cmd == CMD_LINK_TAB || cmd == CMD_LINK_SAVE || cmd == CMD_LINK_COPY ? menuLink
+	              : cmd == CMD_IMAGE_TAB || cmd == CMD_IMAGE_SAVE || cmd == CMD_IMAGE_COPY_URL ? menuImage
+	                                                                                           : NULL;
 	if (!u || !*u) return 0; // Chromium's own command
 	if (cmd == CMD_LINK_TAB || cmd == CMD_IMAGE_TAB) {
 		if (v) lgxGoOpenTab(v->id, (char *)u);
+	} else if (cmd == CMD_LINK_SAVE || cmd == CMD_IMAGE_SAVE) {
+		// into Downloads, through the download handler (name, shields, limits)
+		cef_browser_host_t *host2 = hostOf(v);
+		if (host2) {
+			cef_string_t su = {0};
+			setStr(&su, u);
+			host2->start_download(host2, &su);
+			cef_string_clear(&su);
+			RELEASE(host2);
+		}
 	} else {
 		gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), u, -1);
 	}
