@@ -97,6 +97,10 @@ type App struct {
 	Maximized bool    // set by the host
 	// MoveAreas are the parts of the window that drag it (set each frame).
 	MoveAreas []ui.Rect
+	// Overlay is the part of the interface the window draws over the pages
+	// (the right-click menu), set each frame; OverlayRadius rounds it.
+	Overlay       ui.Rect
+	OverlayRadius float32
 
 	set    *core.Settings
 	core   *Core
@@ -117,11 +121,14 @@ type App struct {
 	histAt      float64
 	histSc      ui.Scroll
 	dlSc        ui.Scroll
-	kindEdit    bool // the container editor on the new tab page
+	kindEdit    bool          // the container editor on the new tab page
+	menu        *webview.Menu // the page's right-click menu, while it is up
+	menuSel     int
+	menuMX      float32
+	menuMY      float32
 	balance     balancer
 	integrity   Integrity
 	setSec      string // the menu's open section ("" = none)
-	relay       *relay // plays H.264 videos where the engine cannot (Linux)
 	nameEd      *ui.TextEdit
 	kindOpen    bool    // the row of other kinds of tab, under the bar
 	stripScroll float32 // the tab strip, when the tabs do not fit
@@ -212,9 +219,6 @@ func New(h Host, cfg Config) *App {
 	a.plan = core.Plan(cfg.TotalMB, a.set.Memory)
 	a.newTab(KNormal, "", "", true)
 	a.restoreSession()
-	if runtime.GOOS == "linux" {
-		a.relay = startRelay() // Chromium here has no H.264: the system converts
-	}
 	if f := cfg.Sys.Integrity; f != nil {
 		go func() {
 			r := f()
@@ -252,9 +256,6 @@ func (a *App) Policy() webview.Policy {
 	}
 	if a.set.YouTubeLight {
 		scripts = append(scripts, core.YouTubeLightScript)
-	}
-	if a.relay != nil {
-		scripts = append(scripts, core.H264Script(a.relay.base))
 	}
 	if a.set.Farble {
 		scripts = append(scripts, shields.FarbleScript())
@@ -434,8 +435,13 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	u.G, u.In, u.Th, u.St, u.Clip = g, a.In, th, &a.st, a.h.Clipboard()
 	u.W, u.H, u.Layer, u.InputLayer, u.Redraw = w, h, 0, 0, false
 	a.MoveAreas = a.MoveAreas[:0]
+	a.Overlay = ui.Rect{}
 	a.st.Editing = nil
 	u.ResetHit()
+	if a.menu != nil {
+		u.InputLayer = 1 // the right-click menu takes the pointer and the keys
+		a.menuKeys()
+	}
 
 	if a.wakeAt > 0 && a.now() >= a.wakeAt {
 		a.wakeAt = 0
@@ -466,6 +472,7 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	if other != nil {
 		a.otherPane(beside, other)
 	}
+	a.drawMenu(w, h)
 	if !a.Fullscreen() {
 		u.DrawTooltip()
 	}

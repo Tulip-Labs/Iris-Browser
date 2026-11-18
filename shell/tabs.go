@@ -338,6 +338,7 @@ func (a *App) events(b *binding) webview.Events {
 		})
 	}
 	return webview.Events{
+		Menu: func(m *webview.Menu) { a.post(func() { a.openMenu(m) }) },
 		URL: func(url string) {
 			on(func(t *Tab) {
 				if url == "about:blank" && t.URL == "" {

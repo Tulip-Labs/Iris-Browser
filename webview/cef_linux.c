@@ -64,6 +64,7 @@ extern void lgxGoAudio(uintptr_t id, int on);
 extern int lgxGoKey(uintptr_t id, int ch, int vk, int ctrl, int shift, int alt);
 extern void lgxGoResult(uintptr_t cb, char *res);
 extern void lgxGoFocus(uintptr_t id);
+extern void lgxGoMenu(uintptr_t id, int serial, double x, double y, int n, int *cmds, char **labels, int *enabled);
 extern void lgxGoDownload(uintptr_t id, uintptr_t view, int state, char *url, char *path, long long total, long long got);
 extern int lgxGoAllow(uintptr_t id, char *url, char *page, char *kind);
 extern void lgxGoBlocked(uintptr_t id, char *url);
@@ -215,6 +216,23 @@ static void loadSyms(void) {
 		p_mtb_new = NULL;
 }
 
+// GTK draws a fractional scale (1.25, 1.5) itself only from 4.14 on; older
+// ones draw such a window at the next whole scale (2) and the compositor
+// shrinks it. Iris's frames are made at the scale GTK really draws at: made
+// at 1.25 there, GTK stretched them to 2 (pixelated) and the compositor
+// shrank them again (soft), while GTK's own text stayed sharp.
+// GDK_DEBUG's gl-fractional and gl-no-fractional change GTK's choice, and so ours.
+static int drawsFractional(void) {
+	static int f = -1;
+	if (f < 0) {
+		const char *d = g_getenv("GDK_DEBUG");
+		if (d && strstr(d, "gl-no-fractional")) f = 0;
+		else if (d && strstr(d, "gl-fractional")) f = 1;
+		else f = gtk_get_minor_version() >= 14;
+	}
+	return f;
+}
+
 // scaleOf is the window's scale: real pixels per GTK unit, fractional where
 // the system draws fractionally (1.25, 1.5…).
 static double scaleOf(void) {
@@ -222,7 +240,7 @@ static double scaleOf(void) {
 	GtkNative *n = host ? gtk_widget_get_native(host) : NULL;
 	GdkSurface *s = n ? gtk_native_get_surface(n) : NULL;
 	if (!s) return host ? gtk_widget_get_scale_factor(host) : 1;
-	double sc = p_surface_get_scale ? p_surface_get_scale(s) : gdk_surface_get_scale_factor(s);
+	double sc = p_surface_get_scale && drawsFractional() ? p_surface_get_scale(s) : gdk_surface_get_scale_factor(s);
 	return sc > 0.25 ? sc : 1;
 }
 
@@ -714,6 +732,13 @@ int lgxPagePointer(GdkEvent *e, double x, double y) {
 		h->send_mouse_move_event(h, &me, 0);
 		break;
 	case GDK_SCROLL: {
+		// A touchpad's two-finger scroll comes as many small moves, often
+		// under a pixel each: rounded one by one they were all 0 and the page
+		// never moved. What is left over is kept for the next move (per page,
+		// until the fingers lift).
+		static LV *accPage;
+		static double accX, accY;
+		if (accPage != v) accPage = v, accX = accY = 0;
 		double dx = 0, dy = 0;
 		const double tick = 40; // pixels for one notch of the wheel
 		switch (gdk_scroll_event_get_direction(e)) {
@@ -724,9 +749,18 @@ int lgxPagePointer(GdkEvent *e, double x, double y) {
 		case GDK_SCROLL_SMOOTH: {
 			double ex = 0, ey = 0;
 			gdk_scroll_event_get_deltas(e, &ex, &ey);
-			// a wheel's deltas are in notches, a touchpad's in pixels
-			double k = p_scroll_unit && p_scroll_unit(e) == 1 ? 1 : tick;
+			// a wheel's deltas are in notches, a touchpad's in pixels (GTK
+			// before 4.8 does not say which: the device does)
+			int pixels;
+			if (p_scroll_unit) pixels = p_scroll_unit(e) == 1;
+			else {
+				GdkDevice *dev = gdk_event_get_device(e);
+				GdkInputSource src = dev ? gdk_device_get_source(dev) : GDK_SOURCE_MOUSE;
+				pixels = src == GDK_SOURCE_TOUCHPAD || src == GDK_SOURCE_TOUCHSCREEN || src == GDK_SOURCE_TRACKPOINT;
+			}
+			double k = pixels ? 1 : tick;
 			dx = -ex * k, dy = -ey * k;
+			if (gdk_scroll_event_is_stop(e)) accX = accY = 0; // the fingers lifted
 			break;
 		}
 		}
@@ -734,7 +768,10 @@ int lgxPagePointer(GdkEvent *e, double x, double y) {
 			dx = dy; // Shift + wheel scrolls sideways
 			dy = 0;
 		}
-		h->send_mouse_wheel_event(h, &me, (int)lround(dx), (int)lround(dy));
+		accX += dx, accY += dy;
+		int sx = (int)trunc(accX), sy = (int)trunc(accY);
+		accX -= sx, accY -= sy;
+		if (sx || sy) h->send_mouse_wheel_event(h, &me, sx, sy);
 		break;
 	}
 	default:
@@ -892,9 +929,11 @@ static void forget(LV *v) {
 // ---- the right-click menu ----
 //
 // Chromium's own menu needs a window, and pages here are drawn off screen,
-// so Iris shows the menu: a GTK popover menu with Chromium's items (back, forward,
-// reload, cut, copy, paste, select all, save or copy an image…) and, on a
-// link or a picture, opening it in a new tab and copying its address.
+// so Iris shows the menu: Chromium's items (back, forward, reload, cut, copy,
+// paste, select all, save or copy an image…) and, on a link or a picture,
+// opening it in a new tab and copying its address. The interface (Go, Gio)
+// draws it over the page in Iris's own style (lgxGoMenu) and answers with
+// lgxMenuChoose.
 
 enum {
 	CMD_LINK_TAB = MENU_ID_USER_FIRST,
@@ -918,25 +957,7 @@ static void menuFinish(int cmd) {
 	RELEASE(cb);
 }
 
-static void onMenuAction(GSimpleAction *a, GVariant *p, gpointer cmd) { menuFinish(GPOINTER_TO_INT(cmd)); }
-
-static gboolean menuCancel(gpointer _) {
-	menuFinish(-1); // closed without a choice (an item's choice came first)
-	return G_SOURCE_REMOVE;
-}
-
-static gboolean menuDrop(gpointer pop) {
-	if (gtk_widget_get_parent(pop)) gtk_widget_unparent(pop);
-	g_object_unref(pop);
-	return G_SOURCE_REMOVE;
-}
-
-static void onMenuClosed(GtkPopover *p, gpointer _) {
-	g_idle_add(menuCancel, NULL);
-	g_idle_add(menuDrop, g_object_ref(p));
-}
-
-// label turns Chromium's label ("&Copy") into GTK's ("_Copy").
+// menuLabel is Chromium's label without its keyboard marks ("&Copy" is "Copy").
 static char *menuLabel(cef_menu_model_t *model, size_t i) {
 	cef_string_userfree_t l = model->get_label_at(model, i);
 	char *s = l ? getStr(l) : g_strdup("");
@@ -945,15 +966,20 @@ static char *menuLabel(cef_menu_model_t *model, size_t i) {
 	for (char *p = s; *p; p++) {
 		if (*p == '&') {
 			if (p[1] == '&') o = g_string_append_c(o, '&'), p++;
-			else o = g_string_append_c(o, '_');
-		} else if (*p == '_') {
-			g_string_append(o, "__");
 		} else {
 			g_string_append_c(o, *p);
 		}
 	}
 	g_free(s);
 	return g_string_free(o, FALSE);
+}
+
+// lgxMenuChoose is the interface's answer: an item's command, or -1 when the
+// menu closed without a choice.
+// (serial names the menu: a late answer to one already replaced is ignored)
+static int menuSerial;
+void lgxMenuChoose(int serial, int cmd) {
+	if (serial == menuSerial) menuFinish(cmd);
 }
 
 static void CEF_CALLBACK onBeforeMenu(cef_context_menu_handler_t *self, cef_browser_t *b, cef_frame_t *f, cef_context_menu_params_t *params,
@@ -1026,52 +1052,37 @@ static int CEF_CALLBACK onRunMenu(cef_context_menu_handler_t *self, cef_browser_
 	}
 	if (menuCb) menuFinish(-1);
 	menuCb = cb; // kept until a choice or the menu closes
-	// a GTK popover menu: one section per group (sections are what draws
-	// the separators), one action per item
-	GMenu *menu = g_menu_new(), *sec = g_menu_new();
-	GSimpleActionGroup *acts = g_simple_action_group_new();
-	for (size_t i = 0; i < model->get_count(model); i++) {
+	int serial = ++menuSerial;
+	// the items for the interface: commands and checks (no submenus), 0 for
+	// a separator, never two separators together nor one at an end
+	size_t n = model->get_count(model);
+	int *cmds = g_new0(int, n + 1), *on = g_new0(int, n + 1);
+	char **labels = g_new0(char *, n + 1);
+	int k = 0;
+	for (size_t i = 0; i < n; i++) {
 		cef_menu_item_type_t type = model->get_type_at(model, i);
 		if (type == MENUITEMTYPE_SEPARATOR) {
-			if (g_menu_model_get_n_items(G_MENU_MODEL(sec)) > 0) {
-				g_menu_append_section(menu, NULL, G_MENU_MODEL(sec));
-				g_object_unref(sec);
-				sec = g_menu_new();
-			}
+			if (k > 0 && cmds[k - 1] != 0) cmds[k] = 0, labels[k] = g_strdup(""), k++;
 			continue;
 		}
-		if (type != MENUITEMTYPE_COMMAND && type != MENUITEMTYPE_CHECK) continue; // no submenus
+		if (type != MENUITEMTYPE_COMMAND && type != MENUITEMTYPE_CHECK) continue;
 		if (!model->is_visible_at(model, i)) continue;
 		int cmd = model->get_command_id_at(model, i);
-		char name[24], detailed[32];
-		snprintf(name, sizeof name, "c%zu", i);
-		snprintf(detailed, sizeof detailed, "ctx.%s", name);
-		GSimpleAction *a = g_simple_action_new(name, NULL);
-		g_simple_action_set_enabled(a, model->is_enabled_at(model, i));
-		g_signal_connect(a, "activate", G_CALLBACK(onMenuAction), GINT_TO_POINTER(cmd));
-		g_action_map_add_action(G_ACTION_MAP(acts), G_ACTION(a));
-		g_object_unref(a);
-		char *label = menuLabel(model, i);
-		g_menu_append(sec, label, detailed);
-		g_free(label);
+		if (cmd == 0) continue;
+		cmds[k] = cmd, on[k] = model->is_enabled_at(model, i), labels[k] = menuLabel(model, i), k++;
 	}
-	if (g_menu_model_get_n_items(G_MENU_MODEL(sec)) > 0) g_menu_append_section(menu, NULL, G_MENU_MODEL(sec));
-	g_object_unref(sec);
-	gtk_widget_insert_action_group(host, "ctx", G_ACTION_GROUP(acts));
-	g_object_unref(acts);
-	GtkWidget *pop = gtk_popover_menu_new_from_model(G_MENU_MODEL(menu));
-	g_object_unref(menu);
-	gtk_widget_set_parent(pop, host);
-	gtk_popover_set_has_arrow(GTK_POPOVER(pop), FALSE);
-	gtk_popover_set_position(GTK_POPOVER(pop), GTK_POS_BOTTOM);
-	gtk_widget_set_halign(pop, GTK_ALIGN_START);
+	while (k > 0 && cmds[k - 1] == 0) g_free(labels[--k]);
+	// where it opened, in the window's units
 	double s = scaleOf(), d = dsf();
-	GdkRectangle at = {(int)((v->px[0] + params->get_xcoord(params) * d) / s), (int)((v->px[1] + params->get_ycoord(params) * d) / s), 1, 1};
-	gtk_popover_set_pointing_to(GTK_POPOVER(pop), &at);
-	g_signal_connect(pop, "closed", G_CALLBACK(onMenuClosed), NULL);
-	gtk_popover_popup(GTK_POPOVER(pop));
+	double x = (v->px[0] + params->get_xcoord(params) * d) / s, y = (v->px[1] + params->get_ycoord(params) * d) / s;
 	RELEASE(params);
 	RELEASE(model);
+	if (k == 0) menuFinish(-1);
+	else lgxGoMenu(v->id, serial, x, y, k, cmds, labels, on);
+	for (int i = 0; i < k; i++) g_free(labels[i]);
+	g_free(labels);
+	g_free(cmds);
+	g_free(on);
 	return 1;
 }
 

@@ -39,6 +39,27 @@ type Events struct {
 	Failed     func(url string, status int)
 	Audio      func(playing bool)
 	Focus      func() // the page took the keyboard (a click inside it)
+	// Menu is a right click in the page (Linux): Iris draws the menu itself.
+	// nil, or a view that cannot, leaves the engine's own.
+	Menu func(m *Menu)
+}
+
+// Menu is a page's right-click menu, for the interface to show. X and Y are
+// where it opened, in the window's units (the interface's own). Choose
+// takes an item's Cmd, or -1 when the menu closed without a choice; it is
+// called once, on the window thread.
+type Menu struct {
+	X, Y   float32
+	Items  []MenuItem
+	Choose func(cmd int)
+}
+
+// MenuItem is one line of a Menu; Sep is a separator line.
+type MenuItem struct {
+	Cmd     int
+	Label   string
+	Enabled bool
+	Sep     bool
 }
 
 // DownloadState is where a download stands.

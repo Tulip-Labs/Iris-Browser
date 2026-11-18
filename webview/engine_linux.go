@@ -13,6 +13,7 @@ void lgxAttach(uintptr_t layout, const char *dataDir);
 void lgxSetMemory(int totalMB);
 void lgxCall(int op, uintptr_t id, int a, int b, int c, int d, const char *s, uintptr_t cb);
 char *lgxVersion(void);
+void lgxMenuChoose(int serial, int cmd);
 */
 import "C"
 
@@ -431,3 +432,35 @@ func totalMemMB() int {
 }
 
 func init() { SleepFreesMemory = false }
+
+// lgxGoMenu is a right click in a page: its items go to the interface, which
+// draws the menu and answers through Choose (lgxMenuChoose, on GTK's thread).
+//
+//export lgxGoMenu
+func lgxGoMenu(id C.uintptr_t, serial C.int, x, y C.double, n C.int, cmds *C.int, labels **C.char, enabled *C.int) {
+	v := wkGet(uintptr(id))
+	if v == nil || v.ev.Menu == nil || n <= 0 {
+		C.lgxMenuChoose(serial, -1)
+		return
+	}
+	cs := unsafe.Slice(cmds, int(n))
+	ls := unsafe.Slice(labels, int(n))
+	es := unsafe.Slice(enabled, int(n))
+	m := &Menu{X: float32(x), Y: float32(y)}
+	for i := range cs {
+		if cs[i] == 0 {
+			m.Items = append(m.Items, MenuItem{Sep: true})
+			continue
+		}
+		m.Items = append(m.Items, MenuItem{Cmd: int(cs[i]), Label: C.GoString(ls[i]), Enabled: es[i] != 0})
+	}
+	done := false
+	m.Choose = func(cmd int) {
+		if done {
+			return
+		}
+		done = true
+		C.lgxMenuChoose(serial, C.int(cmd))
+	}
+	v.ev.Menu(m)
+}

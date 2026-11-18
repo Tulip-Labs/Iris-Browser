@@ -19,7 +19,7 @@
 
         iris-browser = pkgs.buildGoModule {
           pname = "iris-browser";
-          version = "1.0.21";
+          version = "1.0.22";
           src = self;
           vendorHash = "sha256-DUuIMLR+RLt5e6kRZcxRdGo4Q4i9ZGR7ia629F8Vp2o=";
           subPackages = [ "cmd/iris" ];
@@ -60,8 +60,6 @@
           # no setuid helper, so Chromium uses user namespaces for its sandbox
           preFixup = ''
             gappsWrapperArgs+=(--prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [ pkgs.libGL pkgs.systemd ]})
-            # H.264 and H.265 videos play through ffmpeg (Chromium's free build leaves them out)
-            gappsWrapperArgs+=(--prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.ffmpeg ]})
             wrapGApp $out/lib/iris-browser/iris
           '';
           dontWrapGApps = true;

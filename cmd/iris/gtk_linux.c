@@ -106,13 +106,30 @@ typedef struct {
 } IrisViewClass;
 G_DEFINE_TYPE(IrisView, iris_view, GTK_TYPE_WIDGET)
 
+// GTK draws a fractional scale (1.25, 1.5) itself only from 4.14 on; older
+// ones draw such a window at the next whole scale (2) and the compositor
+// shrinks it. Iris's frames are made at the scale GTK really draws at: made
+// at 1.25 there, GTK stretched them to 2 (pixelated) and the compositor
+// shrank them again (soft), while GTK's own text stayed sharp.
+// GDK_DEBUG's gl-fractional and gl-no-fractional change GTK's choice, and so ours.
+static int drawsFractional(void) {
+	static int f = -1;
+	if (f < 0) {
+		const char *d = g_getenv("GDK_DEBUG");
+		if (d && strstr(d, "gl-no-fractional")) f = 0;
+		else if (d && strstr(d, "gl-fractional")) f = 1;
+		else f = gtk_get_minor_version() >= 14;
+	}
+	return f;
+}
+
 // scaleOf is the view's scale: real pixels per GTK unit, fractional where
 // the system draws fractionally.
 static double scaleOf(GtkWidget *w) {
 	GtkNative *n = w ? gtk_widget_get_native(w) : NULL;
 	GdkSurface *s = n ? gtk_native_get_surface(n) : NULL;
 	if (!s) return w ? gtk_widget_get_scale_factor(w) : 1;
-	double sc = p_surface_get_scale ? p_surface_get_scale(s) : gdk_surface_get_scale_factor(s);
+	double sc = p_surface_get_scale && drawsFractional() ? p_surface_get_scale(s) : gdk_surface_get_scale_factor(s);
 	return sc > 0.25 ? sc : 1;
 }
 
@@ -251,6 +268,29 @@ static void renderUI(GtkWidget *w, int pw, int ph, double s) {
 	uiW = pw, uiH = ph, uiS = s;
 }
 
+// The overlay: a part of the interface drawn over the pages (the right-click
+// menu), in the view's units. While it is up the interface has the pointer
+// and the keys (a click outside closes it), except the release of a press
+// that went to a page, which ends that press there.
+static int ovOn;
+static graphene_rect_t ovRect;
+static float ovRadius;
+
+static gboolean pagesLeave(gpointer d) {
+	if (ovOn && lgxPagesLeave) lgxPagesLeave(); // the page under the pointer loses its hover
+	return G_SOURCE_REMOVE;
+}
+
+// lgwSetOverlay is called while the interface draws (lgwGoRender), so the
+// same frame shows it.
+void lgwSetOverlay(int on, double x, double y, double w, double h, double radius) {
+	int was = ovOn;
+	ovOn = on && w > 0 && h > 0;
+	ovRect = GRAPHENE_RECT_INIT(x, y, w, h);
+	ovRadius = radius;
+	if (ovOn && !was) g_idle_add(pagesLeave, NULL);
+}
+
 static void appendTexture(GtkSnapshot *s, GdkTexture *t, const graphene_rect_t *r, int sharp) {
 	if (p_append_scaled) p_append_scaled(s, t, sharp ? GSK_SCALING_FILTER_NEAREST : GSK_SCALING_FILTER_LINEAR, r);
 	else gtk_snapshot_append_texture(s, t, r);
@@ -286,6 +326,18 @@ static void iris_view_snapshot(GtkWidget *w, GtkSnapshot *sn) {
 		gtk_snapshot_append_color(sn, &bg, &all);
 	}
 	if (lgxSnapshotPages) lgxSnapshotPages(sn, s);
+	if (ovOn && uiTex && uiW == pw && uiH == ph) {
+		// the overlay's part of the interface again, over the pages
+		GskRoundedRect rr;
+		gsk_rounded_rect_init_from_rect(&rr, &ovRect, ovRadius);
+		gtk_snapshot_push_rounded_clip(sn, &rr);
+		gtk_snapshot_save(sn);
+		gtk_snapshot_translate(sn, &GRAPHENE_POINT_INIT(0, ph / s));
+		gtk_snapshot_scale(sn, 1, -1);
+		appendTexture(sn, uiTex, &GRAPHENE_RECT_INIT(0, 0, pw / s, ph / s), 1);
+		gtk_snapshot_restore(sn);
+		gtk_snapshot_pop(sn);
+	}
 	gtk_snapshot_restore(sn);
 	gtk_snapshot_pop(sn);
 }
@@ -309,12 +361,6 @@ static void iris_view_unrealize(GtkWidget *w) {
 	GTK_WIDGET_CLASS(iris_view_parent_class)->unrealize(w);
 }
 
-// the pages' right-click menus are popovers of the view: placed here
-static void iris_view_size_allocate(GtkWidget *w, int width, int height, int baseline) {
-	for (GtkWidget *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c))
-		if (GTK_IS_POPOVER(c)) gtk_popover_present(GTK_POPOVER(c));
-}
-
 static void iris_view_dispose(GObject *o) {
 	GtkWidget *c;
 	while ((c = gtk_widget_get_first_child(GTK_WIDGET(o)))) gtk_widget_unparent(c);
@@ -324,7 +370,6 @@ static void iris_view_dispose(GObject *o) {
 static void iris_view_class_init(IrisViewClass *k) {
 	GTK_WIDGET_CLASS(k)->snapshot = iris_view_snapshot;
 	GTK_WIDGET_CLASS(k)->unrealize = iris_view_unrealize;
-	GTK_WIDGET_CLASS(k)->size_allocate = iris_view_size_allocate;
 	G_OBJECT_CLASS(k)->dispose = iris_view_dispose;
 }
 
@@ -367,8 +412,9 @@ static void readScale(void) {
 		GtkNative *n = gtk_widget_get_native(view);
 		GdkSurface *s = n ? gtk_native_get_surface(n) : NULL;
 		GskRenderer *r = n ? gtk_native_get_renderer(n) : NULL;
-		g_printerr("Iris: scale %.4g (surface %.4g, integer %d), renderer %s, xft-dpi %.4g\n", scaleOf(view),
+		g_printerr("Iris: scale %.4g (surface %.4g, integer %d, GTK %d.%d draws fractionally: %d), renderer %s, xft-dpi %.4g\n", scaleOf(view),
 		           s && p_surface_get_scale ? p_surface_get_scale(s) : -1.0, s ? gdk_surface_get_scale_factor(s) : -1,
+		           gtk_get_major_version(), gtk_get_minor_version(), drawsFractional(),
 		           r ? G_OBJECT_TYPE_NAME(r) : "?", text * 96);
 	}
 }
@@ -417,10 +463,11 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 		local(e, &x, &y);
 		int press = t == GDK_BUTTON_PRESS;
 		if (press) gtk_widget_grab_focus(view);
-		if (!(pressedOnUI && !press) && lgxPagePointer && lgxPagePointer(e, x, y)) return TRUE;
+		// with the overlay up only a page's own release goes to it
+		if (!(pressedOnUI && !press) && !(ovOn && press) && lgxPagePointer && lgxPagePointer(e, x, y)) return TRUE;
 		if (press) {
 			pressedOnUI = 1;
-			if (lgxUIFocus) lgxUIFocus();
+			if (lgxUIFocus && !ovOn) lgxUIFocus(); // the menu's choice (Paste) goes to the page that had the keys
 		} else {
 			pressedOnUI = 0;
 		}
@@ -440,7 +487,7 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 	}
 	case GDK_MOTION_NOTIFY:
 		local(e, &x, &y);
-		if (!pressedOnUI && lgxPagePointer && lgxPagePointer(e, x, y)) {
+		if (!pressedOnUI && !ovOn && lgxPagePointer && lgxPagePointer(e, x, y)) {
 			if (onUI) lgwGoLeave(); // the pointer went onto a page
 			onUI = 0;
 			return TRUE;
@@ -450,7 +497,7 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 		return TRUE;
 	case GDK_SCROLL: {
 		local(e, &x, &y);
-		if (lgxPagePointer && lgxPagePointer(e, x, y)) return TRUE;
+		if (!ovOn && lgxPagePointer && lgxPagePointer(e, x, y)) return TRUE;
 		int touch = touchOf(e);
 		if (p_scroll_unit) touch = p_scroll_unit(e) == GDK_SCROLL_UNIT_SURFACE;
 		switch (gdk_scroll_event_get_direction(e)) {
@@ -484,7 +531,7 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 		return FALSE;
 	case GDK_KEY_PRESS:
 	case GDK_KEY_RELEASE: {
-		if (lgxPageKey && lgxPageKey(e)) return TRUE;
+		if (!ovOn && lgxPageKey && lgxPageKey(e)) return TRUE;
 		if (t == GDK_KEY_PRESS && lgwGoKey(gdk_key_event_get_keyval(e), state)) return TRUE; // shortcuts and editing keys
 		return gtk_im_context_filter_keypress(im, e);
 	}

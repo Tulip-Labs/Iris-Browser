@@ -1,7 +1,6 @@
 package core
 
 import (
-	"strconv"
 	"strings"
 )
 
@@ -130,58 +129,3 @@ const YouTubeLightScript = `(() => {
   };
   if (document.documentElement) add(); else document.addEventListener('DOMContentLoaded', add);
 })();`
-
-// H264Script lets a page's H.264 videos play where the engine cannot decode
-// them (Iris's Chromium on Linux): it says MP4 may play, so players offer
-// their MP4 file, and when a video then fails as unplayable it is pointed at
-// Iris's video relay (relay, which ends in "u="), which converts it.
-// Streams (HLS, .m3u8: LinkedIn, X, news sites) are nearly always H.264 too:
-// it says players may hand them to the video element as they are, so they
-// go to the relay whole. Videos made of pieces in the page (blob:
-// addresses) are left alone.
-func H264Script(relay string) string {
-	return `(() => {
-  if (window.__irisH264) return;
-  window.__irisH264 = true;
-  const RELAY = ` + strconv.Quote(relay) + `;
-  const cpt = HTMLMediaElement.prototype.canPlayType;
-  HTMLMediaElement.prototype.canPlayType = function (t) {
-    const r = cpt.call(this, t);
-    return !r && /video\/mp4|audio\/mp4|avc1|avc3|hvc1|hev1|hevc|h265|mp4a|video\/quicktime|video\/x-matroska|mpegurl/i.test(t || '') ? 'maybe' : r;
-  };
-  const fix = (v) => {
-    if (!v || v.__lgRelay) return;
-    let src = v.currentSrc || v.src;
-    if (!src) { const s = v.querySelector('source[src]'); src = s && s.src; }
-    if (!src || !/^https?:/.test(src) || src.startsWith(RELAY.slice(0, 30))) return;
-    v.__lgRelay = true;
-    // a player that already caught the first error (video.js: LinkedIn and
-    // many news sites) keeps its error notice over the video: cleared
-    const p = v.closest && v.closest('.video-js');
-    if (p) p.classList.remove('vjs-error');
-    const play = !v.paused || v.autoplay || v.hasAttribute('autoplay');
-    v.querySelectorAll('source').forEach((s) => s.remove());
-    v.src = RELAY + encodeURIComponent(src) + '&r=' + encodeURIComponent(location.href);
-    v.load();
-    if (play) v.play().catch(() => {});
-  };
-  document.addEventListener('error', (e) => {
-    const t = e.target;
-    let v = null;
-    if (t instanceof HTMLVideoElement && t.error && t.error.code === 4) v = t;
-    else if (t instanceof HTMLSourceElement && t.parentElement instanceof HTMLVideoElement && !t.nextElementSibling) v = t.parentElement;
-    if (!v || v.__lgRelay) return;
-    fix(v);
-    // the page's own player never hears of the error the relay mends (this
-    // listener runs first: capturing, on the document)
-    if (v.__lgRelay) e.stopImmediatePropagation();
-  }, true);
-  // videos that failed before this script ran, or whose error was caught by
-  // their player: look again now and then
-  const sweep = () => document.querySelectorAll('video').forEach((v) => {
-    if (v.error && v.error.code === 4) fix(v);
-  });
-  sweep();
-  setInterval(sweep, 1500);
-})();`
-}

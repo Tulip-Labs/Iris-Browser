@@ -16,7 +16,7 @@ import (
 	"iris/update"
 )
 
-const version = "1.0.21"
+const version = "1.0.22"
 
 func main() {
 	// a small, steady footprint: collect garbage sooner and keep the Go heap

@@ -29,6 +29,7 @@ void lgwFocus(void);
 void lgwSendState(void);
 void lgwDo(uintptr_t h);
 int lgwWayland(void);
+void lgwSetOverlay(int on, double x, double y, double w, double h, double radius);
 */
 import "C"
 
@@ -212,6 +213,12 @@ func lgwGoRender(w, ht C.int, sf C.double, fbo C.uint) {
 	g.Begin(&h.ops, scale)
 	a.Frame(g, float32(w)/scale, float32(ht)/scale)
 	g.End()
+	// what the interface draws over the pages (the right-click menu)
+	if o := a.Overlay; o.W > 0 && o.H > 0 {
+		C.lgwSetOverlay(1, C.double(o.X), C.double(o.Y), C.double(o.W), C.double(o.H), C.double(a.OverlayRadius))
+	} else {
+		C.lgwSetOverlay(0, 0, 0, 0, 0, 0)
+	}
 	if err := glr.Frame(&h.ops, gpu.OpenGLRenderTarget{V: uint(fbo)}, image.Pt(int(w), int(ht))); err != nil {
 		log.Println("Iris: drawing:", err)
 		glr.Release()

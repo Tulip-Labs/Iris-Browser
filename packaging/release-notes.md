@@ -1,5 +1,12 @@
 Iris: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.22
+
+- **Sharp on every GTK.** GTK older than 4.14 (Ubuntu 22.04, many distrobox and toolbox images) draws a 1.25 or 1.5 window at 2 and lets the compositor shrink it, while Iris made its interface and pages at 1.25: GTK stretched them to 2 (pixelated) and the compositor shrank them again (soft), so only GTK's own menus looked sharp. Iris now draws at the scale GTK really draws at, on every version. Nothing changes in size.
+- **Touchpad scrolling in pages.** A two-finger scroll comes as many small moves, often under a pixel each; Iris rounded each one to nothing, so pages only scrolled with the scroll bar. The moves now add up, and the page follows your fingers.
+- **A right-click menu in Iris's own style.** The menu on pages is now drawn by Iris itself, in liquid glass over the page, instead of a GTK pop-up: the same items (open a link or picture in a new tab, copy, paste, save, search for the selection), arrow keys and Enter to choose, Escape or a click outside to close.
+- **No more video converter.** Iris plays what its Chromium plays on its own (VP9, AV1 and VP8 with Opus and Vorbis: YouTube and most sites). The H.264 converter is gone, and with it the ffmpeg and GStreamer packages Iris used to pull in. Videos sent only as H.264 or H.265 (some on LinkedIn, X and news sites) no longer play on Linux.
+
 ## New in 1.0.21
 
 - **Sharp pages on niri, Sway, KDE and GNOME at 1.25, 1.5 or 1.75.** On compositors with fractional scaling, Chromium gave every screen the scale 1, so the pages Iris draws were made at 1 and stretched to fit: soft text everywhere. Iris now turns that off and starts Chromium once the window knows its real scale (the compositor corrects GTK's first guess a frame later), so pages are drawn at exactly your screen's scale: one page pixel on one screen pixel. Checked in CI on a 1.25 screen, where the page now reports a devicePixelRatio of 1.25.

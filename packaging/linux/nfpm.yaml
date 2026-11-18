@@ -92,20 +92,11 @@ overrides:
       - lite-go-browser < ${VERSION}
     provides:
       - lite-go-browser = ${VERSION}
-    # H.264 and H.265 videos play through the system's ffmpeg: Fedora's
-    # ffmpeg-free (H.264 with Cisco's openh264, below) or RPM Fusion's full
-    # ffmpeg (H.264 and H.265); openSUSE's ffmpeg
-    # When ffmpeg cannot (ffmpeg-free has no H.265), GStreamer takes over:
-    # the graphics chip's own decoders (va, in plugins-bad-free) and OpenH264.
+    # the graphics chip decodes VP9 and AV1 videos (VA-API)
     recommends:
-      - openh264
-      - gstreamer1-plugin-openh264
-      - gstreamer1-plugins-good
-      - gstreamer1-plugins-bad-free
       - mesa-va-drivers
     # library names, so one package fits Fedora, RHEL-likes and openSUSE
     depends:
-      - (ffmpeg-free or ffmpeg or ffmpeg-7 or ffmpeg-8)
       - libgtk-4.so.1()(64bit)
       - libepoxy.so.0()(64bit)
       - libGLESv2.so.2()(64bit)
@@ -159,15 +150,10 @@ overrides:
       - libxext6
       - libxfixes3
       - libxrandr2
-      # H.264 and H.265 videos (LinkedIn, X, news sites): Chromium's free
-      # build leaves them out, so Iris plays them through the system's ffmpeg
-      - ffmpeg
     recommends:
       - xdg-utils
-      # the graphics chip decodes and encodes the videos Iris converts
+      # the graphics chip decodes VP9 and AV1 videos (VA-API)
       - va-driver-all
-      - gstreamer1.0-plugins-good
-      - gstreamer1.0-plugins-bad
 
 deb:
   compression: xz

@@ -118,30 +118,17 @@ jobs:
         run: |
           mkdir -p /tmp/page
           command -v ffmpeg >/dev/null && ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime /tmp/page/v.webm
-          # an H.264 + AAC video, which Iris plays through its relay (where ffmpeg has x264)
-          command -v ffmpeg >/dev/null && ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=frequency=440 -t 20 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -movflags +faststart /tmp/page/h.mp4 || true
           cat > /tmp/page/video.html <<'HTML'
           <!doctype html><body style="margin:0;background:#202020;font:24px sans-serif;color:#fff">
           <h1 style="color:#f5a">Iris on Chromium</h1>
           <p id=s>video: loading</p>
           <p id=ua></p>
-          <p id=s2>h264: loading</p>
           <video id=v src="v.webm" autoplay muted loop width=320 height=180></video>
-          <video id=h src="h.mp4" autoplay muted loop width=320 height=180></video>
-          <p id=s3>player: loading</p>
-          <div class="video-js" id=pj><video id=j src="h.mp4?p" autoplay muted loop width=320 height=180></video></div>
           <script>
           const v = document.getElementById('v'), s = document.getElementById('s');
           v.addEventListener('playing', () => s.textContent = 'video: playing, VP9 ' + v.videoWidth + 'x' + v.videoHeight);
           v.addEventListener('error', () => s.textContent = 'video: error ' + (v.error && v.error.code));
-          const h = document.getElementById('h'), s2 = document.getElementById('s2');
-          h.addEventListener('playing', () => s2.textContent = 'h264: playing ' + h.videoWidth + 'x' + h.videoHeight + (h.currentSrc.includes('127.0.0.1') ? ' (relay)' : ''));
-          h.addEventListener('error', () => s2.textContent = 'h264: error ' + (h.error && h.error.code));
           document.getElementById('ua').textContent = navigator.userAgent;
-          // a page's own player (video.js, as on LinkedIn) must never see the error the relay mends
-          const j = document.getElementById('j'), pj = document.getElementById('pj'), s3 = document.getElementById('s3');
-          j.addEventListener('error', () => { pj.classList.add('vjs-error'); s3.textContent = 'player: saw the error'; });
-          j.addEventListener('playing', () => { if (!pj.classList.contains('vjs-error')) s3.textContent = 'player: playing' + (j.currentSrc.includes('127.0.0.1') ? ' (relay)' : ''); });
           </script>
           HTML
           chmod -R a+rX /tmp/page
