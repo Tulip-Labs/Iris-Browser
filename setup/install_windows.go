@@ -290,7 +290,7 @@ func register(dir string, size int) error {
 		"UninstallString": `"` + filepath.Join(dir, uninstName) + `" --uninstall`,
 		// winget and other package managers remove it without a window
 		"QuietUninstallString": `"` + filepath.Join(dir, uninstName) + `" --uninstall --silent`,
-		"InstallDate":     time.Now().Format("20060102"),
+		"InstallDate":          time.Now().Format("20060102"),
 	} {
 		k.SetStringValue(n, v)
 	}

@@ -11,7 +11,6 @@ import (
 // see com_windows.go); extensions belong to the default profile, reached
 // through any page open in it.
 
-
 const (
 	slotProfile7_AddBrowserExtension  = 22
 	slotProfile7_GetBrowserExtensions = 23
