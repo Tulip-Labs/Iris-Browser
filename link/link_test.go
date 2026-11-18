@@ -39,7 +39,7 @@ func TestLink(t *testing.T) {
 			t.Fatalf("%s answered %d without the key", u, code)
 		}
 	}
-	if code, body := get(base); code != 200 || !strings.Contains(body, "Lite Go link") {
+	if code, body := get(base); code != 200 || !strings.Contains(body, "Iris link") {
 		t.Fatalf("page: %d", code)
 	}
 	// the phone sends a file; its name cannot leave the folder

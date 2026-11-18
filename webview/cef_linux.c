@@ -16,6 +16,8 @@
 // here runs there, except the resource checks, which CEF makes on its IO
 // thread (views are found under a lock).
 
+#include <epoxy/egl.h>
+#include <epoxy/gl.h>
 #include <gtk/gtk.h>
 #include <math.h>
 #include <stdint.h>
@@ -73,7 +75,13 @@ typedef struct {
 	int bid;                // the browser's identifier
 	GtkWidget *area;        // where the page is painted, in the layout
 	GtkIMContext *im;       // dead keys and input methods
-	cairo_surface_t *page, *popup;
+	cairo_surface_t *page, *popup; // the frames, on the processor (when the area is not GL, or for the tests' pictures)
+	// the area is a GtkGLArea (gl): the frames are textures on the graphics
+	// chip, drawn pixel for pixel
+	int gl;
+	GLuint tex, popTex, prog, fbo, readFbo;
+	int texW, texH, popW, popH;
+	int texSwap, popSwap; // the texture holds BGRA bytes uploaded as RGBA: red and blue swap when drawn
 	cef_rect_t popupRect;
 	int popupShown;
 	int w, h;      // size in GTK units
@@ -259,6 +267,16 @@ static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type
 	cl->append_switch_with_value(cl, &k, &val);
 	cef_string_clear(&k);
 	cef_string_clear(&val);
+	// videos decoded on the graphics chip (VA-API) when there is one: far
+	// less processor for YouTube and the like
+	if (!g_getenv("LIBGL_ALWAYS_SOFTWARE") && access("/dev/dri/renderD128", R_OK | W_OK) == 0 &&
+	    !(g_getenv("LITEGO_GPU") && strcmp(g_getenv("LITEGO_GPU"), "0") == 0)) {
+		setStr(&k, "enable-features");
+		setStr(&val, "AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL,AcceleratedVideoEncoder");
+		cl->append_switch_with_value(cl, &k, &val);
+		cef_string_clear(&k);
+		cef_string_clear(&val);
+	}
 	// media keys and the like belong to the desktop, not to the pages
 	setStr(&k, "disable-features");
 	setStr(&val, "HardwareMediaKeyHandling,MediaSessionService,BackForwardCache,Translate,OptimizationHints,MediaRouter,"
@@ -289,7 +307,6 @@ static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type
 		{"no-pings", NULL},
 		{"no-first-run", NULL},
 		{"disable-spell-checking", NULL},
-		{"disable-gpu-shader-disk-cache", NULL},
 		{"disk-cache-size", "104857600"},
 		{"js-flags", memTotalMB > 0 && memTotalMB <= 8192 ? "--optimize-for-size" : NULL},
 	};
@@ -412,10 +429,307 @@ static int copyInto(cairo_surface_t **dst, const void *buf, int w, int h, double
 	return whole;
 }
 
+
+// ---- painting on the graphics chip ----
+//
+// Each page is a GtkGLArea. Chromium's frames become a texture there:
+// shared straight from Chromium's graphics process as a dmabuf when the
+// computer has a GPU that can (no copy through the processor at all), else
+// uploaded from the frame Chromium hands over, only the parts that changed.
+// The texture is drawn pixel for pixel when it matches the area (sharp), and
+// smoothly when it does not (never blocky). Without GL the old cairo drawing
+// stays (onDraw).
+
+static int gpuShared = -1; // -1 not known yet, 0 frames come through the processor, 1 as dmabufs
+
+#define FOURCC(a, b, c, d) ((uint32_t)(a) | ((uint32_t)(b) << 8) | ((uint32_t)(c) << 16) | ((uint32_t)(d) << 24))
+#define DRM_ARGB8888 FOURCC('A', 'R', '2', '4')
+#define DRM_ABGR8888 FOURCC('A', 'B', '2', '4')
+#define DRM_MOD_INVALID 0x00ffffffffffffffULL
+
+static const char *vertSrc = "#version 300 es\n"
+                             "uniform vec4 r;\n"
+                             "out vec2 uv;\n"
+                             "void main() {\n"
+                             "  vec2 p = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));\n"
+                             "  uv = vec2(p.x, 1.0 - p.y);\n"
+                             "  gl_Position = vec4(r.xy + p * r.zw, 0.0, 1.0);\n"
+                             "}\n";
+static const char *fragSrc = "#version 300 es\n"
+                             "precision mediump float;\n"
+                             "in vec2 uv;\n"
+                             "uniform sampler2D t;\n"
+                             "uniform int swapRB;\n"
+                             "out vec4 c;\n"
+                             "void main() {\n"
+                             "  vec4 x = texture(t, uv);\n"
+                             "  c = vec4(swapRB == 1 ? x.bgr : x.rgb, 1.0);\n"
+                             "}\n";
+
+static GLuint shader(GLenum kind, const char *src) {
+	GLuint s = glCreateShader(kind);
+	glShaderSource(s, 1, &src, NULL);
+	glCompileShader(s);
+	GLint ok = 0;
+	glGetShaderiv(s, GL_COMPILE_STATUS, &ok);
+	if (!ok) {
+		char log[512] = {0};
+		glGetShaderInfoLog(s, sizeof log - 1, NULL, log);
+		g_printerr("Iris: page shader: %s\n", log);
+		glDeleteShader(s);
+		return 0;
+	}
+	return s;
+}
+
+static GLuint program(void) {
+	GLuint v = shader(GL_VERTEX_SHADER, vertSrc), f = shader(GL_FRAGMENT_SHADER, fragSrc);
+	if (!v || !f) return 0;
+	GLuint p = glCreateProgram();
+	glAttachShader(p, v);
+	glAttachShader(p, f);
+	glLinkProgram(p);
+	glDeleteShader(v);
+	glDeleteShader(f);
+	GLint ok = 0;
+	glGetProgramiv(p, GL_LINK_STATUS, &ok);
+	if (!ok) {
+		glDeleteProgram(p);
+		return 0;
+	}
+	return p;
+}
+
+// glCurrent makes the page's GL area current; 0 when it cannot draw now.
+static int glCurrent(LV *v) {
+	if (!v || !v->gl || !v->area || !gtk_widget_get_realized(v->area)) return 0;
+	gtk_gl_area_make_current(GTK_GL_AREA(v->area));
+	return gtk_gl_area_get_error(GTK_GL_AREA(v->area)) == NULL;
+}
+
+// sized gives *t a w by h RGBA texture, making it again when the size changed.
+static void sized(GLuint *t, int *tw, int *th, int w, int h) {
+	if (*t && *tw == w && *th == h) return;
+	if (*t) glDeleteTextures(1, t);
+	glGenTextures(1, t);
+	glBindTexture(GL_TEXTURE_2D, *t);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	*tw = w, *th = h;
+}
+
+// glUpload puts a frame from the processor into the page's texture (or the
+// popup's), only the parts that changed when the size is the same.
+static void glUpload(LV *v, int popup, const void *buf, int w, int h, size_t n, const cef_rect_t *dirty) {
+	GLuint *t = popup ? &v->popTex : &v->tex;
+	int *tw = popup ? &v->popW : &v->texW, *th = popup ? &v->popH : &v->texH;
+	int whole = !*t || *tw != w || *th != h || n == 0 || !dirty;
+	sized(t, tw, th, w, h);
+	glBindTexture(GL_TEXTURE_2D, *t);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+	glPixelStorei(GL_UNPACK_ROW_LENGTH, w);
+	if (whole) {
+		glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+		glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+	} else {
+		for (size_t i = 0; i < n; i++) {
+			cef_rect_t r = dirty[i];
+			if (r.x < 0) r.width += r.x, r.x = 0;
+			if (r.y < 0) r.height += r.y, r.y = 0;
+			if (r.x + r.width > w) r.width = w - r.x;
+			if (r.y + r.height > h) r.height = h - r.y;
+			if (r.width <= 0 || r.height <= 0) continue;
+			glPixelStorei(GL_UNPACK_SKIP_PIXELS, r.x);
+			glPixelStorei(GL_UNPACK_SKIP_ROWS, r.y);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, r.x, r.y, r.width, r.height, GL_RGBA, GL_UNSIGNED_BYTE, buf);
+		}
+	}
+	glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+	glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+	glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+	if (popup) v->popSwap = 1;
+	else v->texSwap = 1; // Chromium's bytes are BGRA
+}
+
+// glImport copies a frame Chromium shares as a dmabuf (only called once
+// gpuCanShare found the EGL and GL extensions it uses) into the page's
+// texture (or the popup's), on the graphics chip. The dmabuf goes back to
+// Chromium when the callback returns, so it is copied, never kept.
+static int glImport(LV *v, int popup, const cef_accelerated_paint_info_t *info) {
+	EGLDisplay d = eglGetCurrentDisplay();
+	if (d == EGL_NO_DISPLAY || info->plane_count < 1 || info->plane_count > kAcceleratedPaintMaxPlanes) return 0;
+	int w = info->extra.coded_size.width, h = info->extra.coded_size.height;
+	int vw = info->extra.visible_rect.width > 0 ? info->extra.visible_rect.width : w;
+	int vh = info->extra.visible_rect.height > 0 ? info->extra.visible_rect.height : h;
+	if (w <= 0 || h <= 0) return 0;
+	EGLint a[64];
+	int k = 0;
+	a[k++] = EGL_WIDTH, a[k++] = w;
+	a[k++] = EGL_HEIGHT, a[k++] = h;
+	a[k++] = EGL_LINUX_DRM_FOURCC_EXT, a[k++] = (EGLint)(info->format == CEF_COLOR_TYPE_RGBA_8888 ? DRM_ABGR8888 : DRM_ARGB8888);
+	static const EGLint fdA[] = {EGL_DMA_BUF_PLANE0_FD_EXT, EGL_DMA_BUF_PLANE1_FD_EXT, EGL_DMA_BUF_PLANE2_FD_EXT, EGL_DMA_BUF_PLANE3_FD_EXT};
+	static const EGLint offA[] = {EGL_DMA_BUF_PLANE0_OFFSET_EXT, EGL_DMA_BUF_PLANE1_OFFSET_EXT, EGL_DMA_BUF_PLANE2_OFFSET_EXT, EGL_DMA_BUF_PLANE3_OFFSET_EXT};
+	static const EGLint pitchA[] = {EGL_DMA_BUF_PLANE0_PITCH_EXT, EGL_DMA_BUF_PLANE1_PITCH_EXT, EGL_DMA_BUF_PLANE2_PITCH_EXT, EGL_DMA_BUF_PLANE3_PITCH_EXT};
+	static const EGLint loA[] = {EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_LO_EXT};
+	static const EGLint hiA[] = {EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT, EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT, EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT, EGL_DMA_BUF_PLANE3_MODIFIER_HI_EXT};
+	for (int p = 0; p < info->plane_count; p++) {
+		a[k++] = fdA[p], a[k++] = info->planes[p].fd;
+		a[k++] = offA[p], a[k++] = (EGLint)info->planes[p].offset;
+		a[k++] = pitchA[p], a[k++] = (EGLint)info->planes[p].stride;
+		if (info->modifier != DRM_MOD_INVALID) {
+			a[k++] = loA[p], a[k++] = (EGLint)(info->modifier & 0xffffffff);
+			a[k++] = hiA[p], a[k++] = (EGLint)(info->modifier >> 32);
+		}
+	}
+	a[k++] = EGL_NONE;
+	EGLImageKHR img = eglCreateImageKHR(d, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, NULL, a);
+	if (img == EGL_NO_IMAGE_KHR) return 0;
+	GLuint src = 0;
+	glGenTextures(1, &src);
+	glBindTexture(GL_TEXTURE_2D, src);
+	glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, (GLeglImageOES)img);
+	GLuint *t = popup ? &v->popTex : &v->tex;
+	int *tw = popup ? &v->popW : &v->texW, *th = popup ? &v->popH : &v->texH;
+	sized(t, tw, th, vw, vh);
+	if (!v->fbo) glGenFramebuffers(1, &v->fbo);
+	if (!v->readFbo) glGenFramebuffers(1, &v->readFbo);
+	GLint oldRead = 0, oldDraw = 0;
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oldRead);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &oldDraw);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, v->readFbo);
+	glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, src, 0);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, v->fbo);
+	glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, *t, 0);
+	int ok = glCheckFramebufferStatus(GL_READ_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE &&
+	         glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+	if (ok) {
+		int x = info->extra.visible_rect.x, y = info->extra.visible_rect.y;
+		glBlitFramebuffer(x, y, x + vw, y + vh, 0, 0, vw, vh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+	}
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)oldRead);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)oldDraw);
+	glDeleteTextures(1, &src);
+	eglDestroyImageKHR(d, img);
+	if (popup) v->popSwap = 0;
+	else v->texSwap = 0; // the import keeps the channels in order
+	return ok;
+}
+
+// drawTex draws texture t (tw by th pixels) into the area at x, y (pixels,
+// from the top left), w by h pixels, aw by ah being the area.
+static void drawTex(LV *v, GLuint t, int tw, int th, int swap, int x, int y, int w, int h, int aw, int ah) {
+	if (!t || aw <= 0 || ah <= 0) return;
+	glBindTexture(GL_TEXTURE_2D, t);
+	// one texel to one pixel: no smoothing, so text stays sharp; otherwise smooth
+	GLint f = tw == w && th == h ? GL_NEAREST : GL_LINEAR;
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, f);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, f);
+	glUniform1i(glGetUniformLocation(v->prog, "t"), 0);
+	glUniform1i(glGetUniformLocation(v->prog, "swapRB"), swap);
+	// clip space: x to the right, y up
+	float cx = 2.0f * x / aw - 1.0f, cy = 1.0f - 2.0f * (y + h) / ah;
+	glUniform4f(glGetUniformLocation(v->prog, "r"), cx, cy, 2.0f * w / aw, 2.0f * h / ah);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
+static gboolean onGLRender(GtkGLArea *a, GdkGLContext *c, LV *v) {
+	int sf = gtk_widget_get_scale_factor(GTK_WIDGET(a));
+	int aw = gtk_widget_get_allocated_width(GTK_WIDGET(a)) * sf, ah = gtk_widget_get_allocated_height(GTK_WIDGET(a)) * sf;
+	glViewport(0, 0, aw, ah);
+	glDisable(GL_BLEND);
+	glDisable(GL_SCISSOR_TEST);
+	glDisable(GL_DEPTH_TEST);
+	if (!v->tex) {
+		glClearColor(1, 1, 1, 1);
+		glClear(GL_COLOR_BUFFER_BIT);
+		return TRUE;
+	}
+	if (!v->prog) v->prog = program();
+	if (!v->prog) return TRUE;
+	glUseProgram(v->prog);
+	glActiveTexture(GL_TEXTURE0);
+	// the page fills the area (pixel for pixel when it was drawn at this size)
+	drawTex(v, v->tex, v->texW, v->texH, v->texSwap, 0, 0, aw, ah, aw, ah);
+	if (v->popTex && v->popupShown) {
+		drawTex(v, v->popTex, v->popW, v->popH, v->popSwap, v->popupRect.x * sf, v->popupRect.y * sf, v->popupRect.width * sf,
+		        v->popupRect.height * sf, aw, ah);
+	}
+	glUseProgram(0);
+	return TRUE;
+}
+
+// The area's GL context went away (the area left the screen for good, or
+// the driver reset it): its textures went with it, the next frame makes
+// them again.
+static void onGLUnrealize(GtkWidget *w, LV *v) {
+	if (glCurrent(v)) {
+		if (v->tex) glDeleteTextures(1, &v->tex);
+		if (v->popTex) glDeleteTextures(1, &v->popTex);
+		if (v->fbo) glDeleteFramebuffers(1, &v->fbo);
+		if (v->readFbo) glDeleteFramebuffers(1, &v->readFbo);
+		if (v->prog) glDeleteProgram(v->prog);
+	}
+	v->tex = v->popTex = v->prog = v->fbo = v->readFbo = 0;
+	v->texW = v->texH = v->popW = v->popH = 0;
+}
+
+// gpuCanShare decides, once, whether pages share their frames as dmabufs:
+// a real graphics chip (not software GL), EGL that imports dmabufs, and GL
+// that turns them into textures. LITEGO_GPU=0 turns it off.
+static int gpuCanShare(void) {
+	if (gpuShared >= 0) return gpuShared;
+	gpuShared = 0;
+	const char *env = g_getenv("LITEGO_GPU");
+	if (env && strcmp(env, "0") == 0) return 0;
+	if (g_getenv("LIBGL_ALWAYS_SOFTWARE") || access("/dev/dri/renderD128", R_OK | W_OK) != 0) return 0;
+	EGLDisplay d = eglGetCurrentDisplay();
+	if (d == EGL_NO_DISPLAY) return 0;
+	const char *egl = eglQueryString(d, EGL_EXTENSIONS);
+	const char *gl = (const char *)glGetString(GL_EXTENSIONS);
+	const char *rend = (const char *)glGetString(GL_RENDERER);
+	if (!egl || !strstr(egl, "EGL_EXT_image_dma_buf_import") || !gl || !strstr(gl, "GL_OES_EGL_image")) return 0;
+	if (rend && (strstr(rend, "llvmpipe") || strstr(rend, "softpipe") || strstr(rend, "SwiftShader"))) return 0;
+	gpuShared = 1;
+	if (g_getenv("LITEGO_GL_DEBUG")) g_printerr("Iris: pages share frames with the graphics chip (%s)\n", rend ? rend : "?");
+	return 1;
+}
+
+static void CEF_CALLBACK onAcceleratedPaint(cef_render_handler_t *self, cef_browser_t *b, cef_paint_element_type_t type, size_t n,
+                                            cef_rect_t const *dirty, const cef_accelerated_paint_info_t *info) {
+	LV *v = of(b);
+	if (!v || !v->area || !info) return;
+	if (!glCurrent(v)) return;
+	if (glImport(v, type == PET_POPUP, info)) {
+		gtk_gl_area_queue_render(GTK_GL_AREA(v->area));
+		return;
+	}
+	// this computer could not take the shared frame: from now on pages hand
+	// their frames over through the processor, and this one starts again
+	if (gpuShared == 1) {
+		gpuShared = 0;
+		g_printerr("Iris: the graphics chip could not take a page's frame; pages are drawn through the processor\n");
+		lgxGoCrashed(v->id);
+	}
+}
+
 static void CEF_CALLBACK onPaint(cef_render_handler_t *self, cef_browser_t *b, cef_paint_element_type_t type, size_t n, cef_rect_t const *dirty,
                                  const void *buf, int w, int h) {
 	LV *v = of(b);
 	if (!v || !v->area) return;
+	if (v->gl) {
+		// on the graphics chip: the changed parts go into the texture
+		if (glCurrent(v)) {
+			glUpload(v, type == PET_POPUP, buf, w, h, n, dirty);
+			gtk_gl_area_queue_render(GTK_GL_AREA(v->area));
+		}
+		// the tests' page pictures read the frame on the processor
+		if (type != PET_POPUP && g_getenv("LITEGO_SHOT")) copyInto(&v->page, buf, w, h, v->w > 0 ? (double)w / v->w : 0, n, dirty);
+		return;
+	}
 	if (type == PET_POPUP) {
 		copyInto(&v->popup, buf, w, h, v->popupRect.width > 0 ? (double)w / v->popupRect.width : 0, 0, NULL);
 		gtk_widget_queue_draw(v->area);
@@ -463,6 +777,11 @@ static void CEF_CALLBACK onPopupShow(cef_render_handler_t *self, cef_browser_t *
 	if (!show && v->popup) {
 		cairo_surface_destroy(v->popup);
 		v->popup = NULL;
+	}
+	if (!show && v->gl && v->popTex && glCurrent(v)) {
+		glDeleteTextures(1, &v->popTex);
+		v->popTex = 0;
+		v->popW = v->popH = 0;
 	}
 	if (v->area) gtk_widget_queue_draw(v->area);
 }
@@ -718,13 +1037,25 @@ static gboolean onRealize(GtkWidget *w, LV *v) {
 	return FALSE;
 }
 
+static int glBroken; // GL areas do not work here: pages are drawn with cairo
+
 static void makeArea(LV *v) {
 	if (v->area || !host) return;
-	v->area = gtk_drawing_area_new();
+	v->gl = !glBroken && !g_getenv("LITEGO_NO_GL");
+	if (v->gl) {
+		v->area = gtk_gl_area_new();
+		gtk_gl_area_set_use_es(GTK_GL_AREA(v->area), TRUE);
+		gtk_gl_area_set_required_version(GTK_GL_AREA(v->area), 3, 0);
+		gtk_gl_area_set_has_alpha(GTK_GL_AREA(v->area), FALSE);
+		g_signal_connect(v->area, "render", G_CALLBACK(onGLRender), v);
+		g_signal_connect(v->area, "unrealize", G_CALLBACK(onGLUnrealize), v);
+	} else {
+		v->area = gtk_drawing_area_new();
+		g_signal_connect(v->area, "draw", G_CALLBACK(onDraw), v);
+	}
 	gtk_widget_set_can_focus(v->area, TRUE);
 	gtk_widget_add_events(v->area, GDK_POINTER_MOTION_MASK | GDK_BUTTON_PRESS_MASK | GDK_BUTTON_RELEASE_MASK | GDK_SCROLL_MASK | GDK_SMOOTH_SCROLL_MASK |
 	                                   GDK_LEAVE_NOTIFY_MASK | GDK_KEY_PRESS_MASK | GDK_KEY_RELEASE_MASK | GDK_FOCUS_CHANGE_MASK);
-	g_signal_connect(v->area, "draw", G_CALLBACK(onDraw), v);
 	g_signal_connect(v->area, "button-press-event", G_CALLBACK(onButton), v);
 	g_signal_connect(v->area, "button-release-event", G_CALLBACK(onButton), v);
 	g_signal_connect(v->area, "motion-notify-event", G_CALLBACK(onMotion), v);
@@ -735,12 +1066,29 @@ static void makeArea(LV *v) {
 	g_signal_connect(v->area, "focus-in-event", G_CALLBACK(onFocusIn), v);
 	g_signal_connect(v->area, "focus-out-event", G_CALLBACK(onFocusOut), v);
 	g_signal_connect(v->area, "realize", G_CALLBACK(onRealize), v);
-	v->im = gtk_im_context_simple_new();
-	g_signal_connect(v->im, "commit", G_CALLBACK(onCommit), v);
+	if (!v->im) {
+		v->im = gtk_im_context_simple_new();
+		g_signal_connect(v->im, "commit", G_CALLBACK(onCommit), v);
+	}
 	gtk_widget_set_no_show_all(v->area, TRUE);
 	gtk_layout_put(host, v->area, 0, 0);
 	gtk_widget_set_size_request(v->area, 1, 1);
 	gtk_widget_realize(v->area);
+	if (v->gl) {
+		gtk_gl_area_make_current(GTK_GL_AREA(v->area));
+		GError *err = gtk_gl_area_get_error(GTK_GL_AREA(v->area));
+		if (err) {
+			// no GL here (or no GLES 3): this page and the next ones use cairo
+			g_printerr("Iris: pages drawn without GL: %s\n", err->message);
+			glBroken = 1;
+			gtk_widget_destroy(v->area);
+			v->area = NULL;
+			v->gl = 0;
+			makeArea(v);
+			return;
+		}
+		gpuCanShare(); // decided once, with a GL context of the page's own
+	}
 }
 
 // ---- the page's events ----
@@ -773,19 +1121,37 @@ static void CEF_CALLBACK onFullscreen(cef_display_handler_t *self, cef_browser_t
 // Run's results come back as a console message only this file writes.
 #define RESULT_MARK "\x01lgx-result:"
 
+// A script's result comes back marked with its callback and a secret made
+// for that one call; it counts only from the page it was sent to, once.
+// (A page can print the mark itself: without the secret and the right page
+// it is ignored, so a page can neither fake an answer nor crash Iris.)
+typedef struct {
+	int bid;
+	guint64 secret;
+} EvalWait;
+static GHashTable *evalWaits; // callback -> EvalWait*
+
 static int CEF_CALLBACK onConsole(cef_display_handler_t *self, cef_browser_t *b, cef_log_severity_t level, const cef_string_t *msg,
                                   const cef_string_t *src, int line) {
+	int bid = b ? b->get_identifier(b) : -1;
 	RELEASE(b);
 	char *m = getStr(msg);
 	int ours = 0;
 	if (g_str_has_prefix(m, RESULT_MARK)) {
 		ours = 1;
 		char *rest = m + strlen(RESULT_MARK);
-		char *colon = strchr(rest, ':');
-		if (colon) {
-			*colon = 0;
+		char *c1 = strchr(rest, ':');
+		char *c2 = c1 ? strchr(c1 + 1, ':') : NULL;
+		if (c1 && c2 && evalWaits) {
+			*c1 = 0;
+			*c2 = 0;
 			uintptr_t cb = (uintptr_t)g_ascii_strtoull(rest, NULL, 10);
-			if (cb) lgxGoResult(cb, colon + 1);
+			guint64 secret = g_ascii_strtoull(c1 + 1, NULL, 16);
+			EvalWait *w = cb ? g_hash_table_lookup(evalWaits, GSIZE_TO_POINTER(cb)) : NULL;
+			if (w && w->secret == secret && w->bid == bid) {
+				g_hash_table_remove(evalWaits, GSIZE_TO_POINTER(cb));
+				lgxGoResult(cb, c2 + 1);
+			}
 		}
 	}
 	g_free(m);
@@ -918,6 +1284,9 @@ static int CEF_CALLBACK onBeforePopup(cef_life_span_handler_t *self, cef_browser
 	RELEASE(f);
 	LV *v = of(b);
 	if (!v) return 1;
+	// a window the person did not ask for (no click or key just before) is
+	// not opened: no popup ads, no tabs opened by themselves
+	if (!gesture) return 1;
 	char *u = getStr(url);
 	uintptr_t nid = lgxGoPopup(v->id, u);
 	if (nid) {
@@ -1040,7 +1409,44 @@ static cef_request_handler_t requestH;
 
 static int CEF_CALLBACK canDownload(cef_download_handler_t *self, cef_browser_t *b, const cef_string_t *url, const cef_string_t *method) {
 	LV *v = of(b);
-	return !(v && v->sandbox); // nothing from a sandbox reaches the disk
+	if (v && v->sandbox) return 0; // nothing from a sandbox reaches the disk
+	// a page may not flood the disk: at most six downloads in half a minute
+	static gint64 times[6];
+	static int next;
+	gint64 now = g_get_monotonic_time();
+	if (times[next] && now - times[next] < 30 * G_USEC_PER_SEC) return 0;
+	times[next] = now;
+	next = (next + 1) % 6;
+	return 1;
+}
+
+// safeName makes a page's suggested file name a plain one: no folders,
+// no control characters, no hidden file, and short enough for the disk.
+static char *safeName(const char *suggested) {
+	char *base = g_path_get_basename(suggested && *suggested ? suggested : "download");
+	GString *o = g_string_new(NULL);
+	for (const char *p = base; *p; p++) {
+		unsigned char c = (unsigned char)*p;
+		if (c < 0x20 || c == 0x7f || c == '/' || c == '\\') continue;
+		g_string_append_c(o, (char)c);
+	}
+	g_free(base);
+	while (o->len && (o->str[0] == '.' || o->str[0] == ' ' || o->str[0] == '-')) g_string_erase(o, 0, 1);
+	if (!o->len || !g_utf8_validate(o->str, -1, NULL)) {
+		g_string_free(o, TRUE);
+		return g_strdup("download");
+	}
+	if (o->len > 180) {
+		// keep the end (the extension) and cut the middle, on a character boundary
+		const char *dot = strrchr(o->str, '.');
+		size_t ext = dot && strlen(dot) <= 16 ? strlen(dot) : 0;
+		const char *cut = g_utf8_find_prev_char(o->str, o->str + 180 - ext);
+		GString *t = g_string_new_len(o->str, cut ? cut - o->str : 0);
+		if (ext) g_string_append(t, dot);
+		g_string_free(o, TRUE);
+		o = t;
+	}
+	return g_string_free(o, FALSE);
 }
 
 static char *freePath(const char *suggested) {
@@ -1048,9 +1454,13 @@ static char *freePath(const char *suggested) {
 	char *home = NULL;
 	if (!dir) dir = home = g_build_filename(g_get_home_dir(), "Downloads", NULL);
 	g_mkdir_with_parents(dir, 0755);
-	char *name = g_path_get_basename(suggested && *suggested ? suggested : "download");
+	char *name = safeName(suggested);
 	char *path = g_build_filename(dir, name, NULL);
-	for (int n = 1; g_file_test(path, G_FILE_TEST_EXISTS) && n < 1000; n++) {
+	// names given out this run count as taken too: two downloads of one name
+	// at once do not write into one file
+	static GHashTable *taken;
+	if (!taken) taken = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+	for (int n = 1; (g_file_test(path, G_FILE_TEST_EXISTS) || g_hash_table_contains(taken, path)) && n < 1000; n++) {
 		char *dot = strrchr(name, '.');
 		char *stem = dot && dot != name ? g_strndup(name, dot - name) : g_strdup(name);
 		char *next = g_strdup_printf("%s (%d)%s", stem, n + 1, dot && dot != name ? dot : "");
@@ -1059,6 +1469,7 @@ static char *freePath(const char *suggested) {
 		g_free(stem);
 		g_free(next);
 	}
+	g_hash_table_add(taken, g_strdup(path));
 	g_free(name);
 	g_free(home);
 	return path;
@@ -1149,6 +1560,7 @@ static void initHandlers(void) {
 	renderH.get_screen_info = getScreenInfo;
 	renderH.get_screen_point = getScreenPoint;
 	renderH.on_paint = onPaint;
+	renderH.on_accelerated_paint = onAcceleratedPaint;
 	renderH.on_popup_show = onPopupShow;
 	renderH.on_popup_size = onPopupSize;
 
@@ -1233,6 +1645,8 @@ static void createBrowser(LV *v) {
 	cef_window_info_t wi = {0};
 	wi.size = sizeof wi;
 	wi.windowless_rendering_enabled = 1;
+	// frames shared with the graphics chip as dmabufs, when it can take them
+	wi.shared_texture_enabled = v->gl && gpuShared == 1;
 	wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
 	cef_browser_settings_t bs = {0};
 	bs.size = sizeof bs;
@@ -1290,10 +1704,16 @@ static void evalJS(LV *v, const char *js, uintptr_t cb) {
 	}
 	char *code;
 	if (cb) {
-		// the result comes back as a marked console message (onConsole)
+		// the result comes back as a marked console message (onConsole), with
+		// a secret for this call only
+		if (!evalWaits) evalWaits = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, g_free);
+		EvalWait *w = g_new0(EvalWait, 1);
+		w->bid = v->bid;
+		w->secret = ((guint64)g_random_int() << 32) | g_random_int();
+		g_hash_table_replace(evalWaits, GSIZE_TO_POINTER(cb), w);
 		code = g_strdup_printf("(async () => { let r = 'null'; try { const v = await (0, eval)(%s); r = JSON.stringify(v === undefined ? null : v); "
-		                       "if (r === undefined) r = 'null'; } catch (e) {} console.log('\\x01lgx-result:%" G_GUINT64_FORMAT ":' + r); })();",
-		                       js, (guint64)cb);
+		                       "if (r === undefined) r = 'null'; } catch (e) {} console.log('\\x01lgx-result:%" G_GUINT64_FORMAT ":%" G_GINT64_MODIFIER "x:' + r); })();",
+		                       js, (guint64)cb, w->secret);
 		// js is passed as a string literal (see below)
 	} else {
 		code = g_strdup(js);

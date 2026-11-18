@@ -50,9 +50,12 @@ func TestFetchAndReplace(t *testing.T) {
 	}
 	name := AssetName(KindUser, "9.9.9")
 	tgz := tarball(t, map[string]string{
-		"LiteGo-linux-x86_64/lite-go":        "new program",
-		"LiteGo-linux-x86_64/lite-go.sha256": "new record",
-		"LiteGo-linux-x86_64/README.md":      "ignored",
+		"LiteGo-linux-x86_64/lite-go-browser":        "new program",
+		"LiteGo-linux-x86_64/lite-go-browser.sha256": "new record",
+		"LiteGo-linux-x86_64/libcef.so":              "new engine",
+		"LiteGo-linux-x86_64/lite-go-helper":         "new helper",
+		"LiteGo-linux-x86_64/install.sh":             "not copied",
+		"LiteGo-linux-x86_64/../escape":              "never written",
 	})
 	sum := sha256.Sum256(tgz)
 	bad := false
@@ -89,10 +92,12 @@ func TestFetchAndReplace(t *testing.T) {
 	if err != nil || last != 1 {
 		t.Fatalf("fetch: %v (progress %v)", err, last)
 	}
-	exe := filepath.Join(dir, "bin", "lite-go")
+	// the program's own folder, as install.sh makes it
+	exe := filepath.Join(dir, "lib", "lite-go-browser", "lite-go-browser")
 	os.MkdirAll(filepath.Dir(exe), 0o755)
 	os.WriteFile(exe, []byte("old program"), 0o755)
 	os.WriteFile(exe+".sha256", []byte("old record"), 0o644)
+	os.WriteFile(filepath.Join(filepath.Dir(exe), "libcef.so"), []byte("old engine"), 0o644)
 	if err := replaceFromTar(p, exe); err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +106,12 @@ func TestFetchAndReplace(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(exe + ".sha256"); string(b) != "new record" {
 		t.Fatalf("record: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(exe), "install.sh")); err == nil {
+		t.Fatal("install.sh was copied into the program folder")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "lib", "escape")); err == nil {
+		t.Fatal("a path in the archive left the program folder")
 	}
 	// a file that does not match its checksum is refused
 	bad = true

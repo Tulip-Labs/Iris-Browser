@@ -145,7 +145,7 @@ jobs:
             page=file:///tmp/page/video.html
           fi
           mkdir -p /tmp/shots
-          export LITEGO_CEF_VERBOSE=1 LITEGO_SHOT=/tmp/shots/page LITEGO_CEF_ARGS="--enable-logging=stderr --v=0"
+          export LITEGO_RELAY_LOCAL=1 LITEGO_CEF_VERBOSE=1 LITEGO_SHOT=/tmp/shots/page LITEGO_CEF_ARGS="--enable-logging=stderr --v=0"
           run=""; command -v dbus-run-session >/dev/null && run="dbus-run-session --"
           $run lite-go "$page" > /tmp/log.txt 2>&1 &
           pid=$!

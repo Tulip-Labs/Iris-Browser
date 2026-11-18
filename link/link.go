@@ -259,9 +259,20 @@ func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
 	s.inID++
 	id := s.inID
 	s.mu.Unlock()
-	path := freePath(s.dir, name)
-	part := path + ".part"
-	f, err := os.Create(part)
+	// at most 16 GB from one phone upload, so a sender cannot fill the disk
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<30)
+	// the name is claimed atomically (O_EXCL): two uploads of one name never
+	// share a file
+	var path, part string
+	var f *os.File
+	var err error
+	for try := 0; try < 20; try++ {
+		path = freePath(s.dir, name)
+		part = path + ".part"
+		if f, err = os.OpenFile(part, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644); err == nil || !os.IsExist(err) {
+			break
+		}
+	}
 	if err != nil {
 		http.Error(w, "cannot save here", http.StatusInternalServerError)
 		return
@@ -298,6 +309,10 @@ func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
 	}
 	cerr := f.Close()
 	if werr == nil && cerr == nil && (ev.Size < 0 || ev.Got == ev.Size) {
+		if _, e := os.Lstat(path); e == nil {
+			path = freePath(s.dir, filepath.Base(path))
+			ev.Path, ev.Name = path, filepath.Base(path)
+		}
 		werr = os.Rename(part, path)
 	} else if werr == nil {
 		werr = errors.New("incomplete")
