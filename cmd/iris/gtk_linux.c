@@ -49,6 +49,36 @@ extern int lgxPagePointer(GdkEvent *e, double x, double y) __attribute__((weak))
 extern int lgxPageKey(GdkEvent *e) __attribute__((weak));
 extern void lgxPagesLeave(void) __attribute__((weak));
 extern void lgxUIFocus(void) __attribute__((weak));
+// Servo's pages (webview/servo/servo_linux.c), when Iris is built with them
+extern void lsvSnapshotPages(GtkSnapshot *s, double scale) __attribute__((weak));
+extern int lsvPagePointer(GdkEvent *e, double x, double y) __attribute__((weak));
+extern int lsvPageKey(GdkEvent *e) __attribute__((weak));
+extern void lsvPagesLeave(void) __attribute__((weak));
+extern void lsvUIFocus(void) __attribute__((weak));
+
+// The pages of both engines: a press on one engine's page takes the keys
+// from the other's.
+static int pagePointer(GdkEvent *e, double x, double y) {
+	int press = gdk_event_get_event_type(e) == GDK_BUTTON_PRESS;
+	if (lsvPagePointer && lsvPagePointer(e, x, y)) {
+		if (press && lgxUIFocus) lgxUIFocus();
+		return 1;
+	}
+	if (lgxPagePointer && lgxPagePointer(e, x, y)) {
+		if (press && lsvUIFocus) lsvUIFocus();
+		return 1;
+	}
+	return 0;
+}
+static int pageKey(GdkEvent *e) { return (lsvPageKey && lsvPageKey(e)) || (lgxPageKey && lgxPageKey(e)); }
+static void pagesLeave(void) {
+	if (lsvPagesLeave) lsvPagesLeave();
+	if (lgxPagesLeave) lgxPagesLeave();
+}
+static void uiFocus(void) {
+	if (lsvUIFocus) lsvUIFocus();
+	if (lgxUIFocus) lgxUIFocus();
+}
 
 // ---- newer GTK, when the system has it ----
 //
@@ -277,7 +307,7 @@ static graphene_rect_t ovRect;
 static float ovRadius;
 
 static gboolean pagesLeave(gpointer d) {
-	if (ovOn && lgxPagesLeave) lgxPagesLeave(); // the page under the pointer loses its hover
+	if (ovOn) pagesLeave(); // the page under the pointer loses its hover
 	return G_SOURCE_REMOVE;
 }
 
@@ -326,6 +356,7 @@ static void iris_view_snapshot(GtkWidget *w, GtkSnapshot *sn) {
 		gtk_snapshot_append_color(sn, &bg, &all);
 	}
 	if (lgxSnapshotPages) lgxSnapshotPages(sn, s);
+	if (lsvSnapshotPages) lsvSnapshotPages(sn, s);
 	if (ovOn && uiTex && uiW == pw && uiH == ph) {
 		// the overlay's part of the interface again, over the pages
 		GskRoundedRect rr;
@@ -469,10 +500,10 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 		int press = t == GDK_BUTTON_PRESS;
 		if (press) gtk_widget_grab_focus(view);
 		// with the overlay up only a page's own release goes to it
-		if (!(pressedOnUI && !press) && !(ovOn && press) && lgxPagePointer && lgxPagePointer(e, x, y)) return TRUE;
+		if (!(pressedOnUI && !press) && !(ovOn && press) && pagePointer(e, x, y)) return TRUE;
 		if (press) {
 			pressedOnUI = 1;
-			if (lgxUIFocus && !ovOn) lgxUIFocus(); // the menu's choice (Paste) goes to the page that had the keys
+			if (!ovOn) uiFocus(); // the menu's choice (Paste) goes to the page that had the keys
 		} else {
 			pressedOnUI = 0;
 		}
@@ -492,7 +523,7 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 	}
 	case GDK_MOTION_NOTIFY:
 		local(e, &x, &y);
-		if (!pressedOnUI && !ovOn && lgxPagePointer && lgxPagePointer(e, x, y)) {
+		if (!pressedOnUI && !ovOn && pagePointer(e, x, y)) {
 			if (onUI) lgwGoLeave(); // the pointer went onto a page
 			onUI = 0;
 			return TRUE;
@@ -502,7 +533,7 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 		return TRUE;
 	case GDK_SCROLL: {
 		local(e, &x, &y);
-		if (!ovOn && lgxPagePointer && lgxPagePointer(e, x, y)) return TRUE;
+		if (!ovOn && pagePointer(e, x, y)) return TRUE;
 		int touch = touchOf(e);
 		if (p_scroll_unit) touch = p_scroll_unit(e) == GDK_SCROLL_UNIT_SURFACE;
 		switch (gdk_scroll_event_get_direction(e)) {
@@ -531,12 +562,12 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 		if (gdk_crossing_event_get_mode(e) == GDK_CROSSING_NORMAL) {
 			lgwGoLeave();
 			onUI = 0;
-			if (lgxPagesLeave) lgxPagesLeave();
+			pagesLeave();
 		}
 		return FALSE;
 	case GDK_KEY_PRESS:
 	case GDK_KEY_RELEASE: {
-		if (!ovOn && lgxPageKey && lgxPageKey(e)) return TRUE;
+		if (!ovOn && pageKey(e)) return TRUE;
 		if (t == GDK_KEY_PRESS && lgwGoKey(gdk_key_event_get_keyval(e), state)) return TRUE; // shortcuts and editing keys
 		return gtk_im_context_filter_keypress(im, e);
 	}
@@ -618,7 +649,7 @@ void lgwPresent(void) {
 }
 void lgwFocus(void) {
 	if (view) gtk_widget_grab_focus(view);
-	if (lgxUIFocus) lgxUIFocus();
+	uiFocus();
 }
 
 // ---- the tests' picture of the whole window (IRIS_SHOT) ----

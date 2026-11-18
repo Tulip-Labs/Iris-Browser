@@ -1,0 +1,30 @@
+# Iris's bridge to Servo: a small C library over Servo's embedding API (the
+# servo crate), called from Go (webview/servo). servo-capi only covers
+# creating Servo so far; this covers what Iris needs, nothing more.
+[package]
+name = "irisservo"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+servo = "=0.4.0"
+url = "2.5"
+euclid = "0.22"
+dpi = "0.1"
+keyboard-types = "0.8"
+cookie = "0.18"
+serde_json = "1"
+log = "0.4"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
+strip = true
+debug = 0
