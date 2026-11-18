@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -143,39 +144,81 @@ func (r *relay) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 	case <-q.Context().Done():
 		return
 	}
-	cmd := convertCmd(q.Context(), pu.String(), ref)
-	if cmd == nil {
+	cmds := convertCmds(q.Context(), pu.String(), ref)
+	if len(cmds) == 0 {
 		http.Error(w, "no converter", http.StatusServiceUnavailable)
 		return
 	}
-	cmd.Stderr = os.Stderr // ffmpeg's own errors, for a terminal
 	fmt.Fprintln(os.Stderr, "Iris: converting a video for this engine:", pu.Host)
-	out, err := cmd.StdoutPipe()
-	if err != nil || cmd.Start() != nil {
-		http.Error(w, "could not convert", http.StatusBadGateway)
+	// each way in turn (the graphics chip, the processor, GStreamer): one that
+	// gives nothing (a codec it lacks, a driver that fails) hands over to the next
+	for i, cmd := range cmds {
+		out, first, ok := startConvert(cmd)
+		if !ok {
+			if i < len(cmds)-1 {
+				fmt.Fprintln(os.Stderr, "Iris: that way gave no video; trying the next")
+			}
+			continue
+		}
+		w.Header().Set("Content-Type", "video/webm")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin") // a video element may show it; scripts may not read it
+		stream(w, out, first)
+		cmd.Process.Kill() // the page stopped reading, or the video ended
+		cmd.Wait()
 		return
 	}
-	w.Header().Set("Content-Type", "video/webm")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cross-Origin-Resource-Policy", "cross-origin") // a video element may show it; scripts may not read it
+	http.Error(w, "could not convert", http.StatusBadGateway)
+}
+
+// startConvert starts cmd and waits for its first bytes of video (at most
+// 25 seconds); ok is false, and cmd is stopped, when none come.
+func startConvert(cmd *exec.Cmd) (out io.Reader, first []byte, ok bool) {
+	cmd.Stderr = os.Stderr // the converter's own errors, for a terminal
+	pipe, err := cmd.StdoutPipe()
+	if err != nil || cmd.Start() != nil {
+		return nil, nil, false
+	}
+	got := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 64<<10)
+		n, _ := io.ReadAtLeast(pipe, buf, 1)
+		got <- buf[:n]
+	}()
+	select {
+	case b := <-got:
+		if len(b) > 0 {
+			return pipe, b, true
+		}
+	case <-time.After(25 * time.Second):
+	}
+	cmd.Process.Kill()
+	cmd.Wait()
+	return nil, nil, false
+}
+
+// stream copies the conversion to the page as it comes.
+func stream(w http.ResponseWriter, out io.Reader, first []byte) {
+	f, _ := w.(http.Flusher)
+	if _, err := w.Write(first); err != nil {
+		return
+	}
 	buf := make([]byte, 64<<10)
 	for {
+		if f != nil {
+			f.Flush()
+		}
 		n, err := out.Read(buf)
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
-				break
-			}
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
+				return
 			}
 		}
 		if err != nil {
-			break
+			return
 		}
 	}
-	cmd.Process.Kill() // the page stopped reading, or the video ended
-	cmd.Wait()
 }
 
 var (
@@ -206,10 +249,13 @@ func hwEncoder() bool {
 	return hwVP9
 }
 
-// convertCmd is the conversion of src to WebM on standard output: ffmpeg
-// when it is installed, else GStreamer. src is a checked public http(s)
-// address.
-func convertCmd(ctx context.Context, src, ref string) *exec.Cmd {
+// convertCmds are the ways to convert src to WebM on standard output, best
+// first: ffmpeg on the graphics chip (VA-API), ffmpeg on the processor, then
+// GStreamer, whose decoders include the chip's own (va: H.264, H.265, AV1)
+// and Cisco's OpenH264 where ffmpeg has neither. src is a checked public
+// http(s) address.
+func convertCmds(ctx context.Context, src, ref string) []*exec.Cmd {
+	var cmds []*exec.Cmd
 	if p, err := exec.LookPath("ffmpeg"); err == nil {
 		hdr := "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36\r\n"
 		if ref != "" {
@@ -223,30 +269,30 @@ func convertCmd(ctx context.Context, src, ref string) *exec.Cmd {
 			// decoded and encoded on the graphics chip: sharp, smooth, little processor
 			// (a video the chip cannot decode is decoded by the processor and
 			// still encoded on the chip)
-			args := append(in, "-init_hw_device", "vaapi=va:"+renderNode, "-filter_hw_device", "va",
+			args := append(append([]string{}, in...), "-init_hw_device", "vaapi=va:"+renderNode, "-filter_hw_device", "va",
 				"-hwaccel", "vaapi", "-hwaccel_device", "va", "-i", src,
 				"-map", "0:v:0?", "-map", "0:a:0?",
 				"-vf", "format=nv12|vaapi,hwupload,scale_vaapi=w='min(1920,iw)':h=-2:format=nv12",
 				"-c:v", "vp9_vaapi", "-b:v", "6M", "-maxrate", "8M")
-			return exec.CommandContext(ctx, p, append(args, audio...)...)
+			cmds = append(cmds, exec.CommandContext(ctx, p, append(args, audio...)...))
 		}
 		// decoded on the graphics chip when it can (else by the processor),
 		// encoded by the processor as fast as it goes, at a quality that stays sharp
-		args := append(in, "-hwaccel", "auto", "-i", src,
+		args := append(append([]string{}, in...), "-hwaccel", "auto", "-i", src,
 			"-map", "0:v:0?", "-map", "0:a:0?",
 			"-vf", "scale='min(1920,iw)':-2",
 			"-c:v", "libvpx", "-deadline", "realtime", "-cpu-used", "6", "-threads", "4", "-slices", "4",
 			"-crf", "10", "-b:v", "5M", "-qmin", "4", "-qmax", "40", "-lag-in-frames", "0", "-auto-alt-ref", "0")
-		return exec.CommandContext(ctx, p, append(args, audio...)...)
+		cmds = append(cmds, exec.CommandContext(ctx, p, append(args, audio...)...))
 	}
-	if p, err := exec.LookPath("gst-launch-1.0"); err == nil {
+	if p, err := exec.LookPath("gst-launch-1.0"); err == nil && !strings.Contains(strings.ToLower(src), ".m3u8") {
 		// gst-launch reads its arguments as one pipeline description: the
 		// address goes in quotes, and publicURL already refused quotes,
 		// spaces and the other characters that could end it
-		return exec.CommandContext(ctx, p, "-q", "souphttpsrc", "location=\""+src+"\"", "!", "decodebin", "name=d",
+		cmds = append(cmds, exec.CommandContext(ctx, p, "-q", "souphttpsrc", "location=\""+src+"\"", "!", "decodebin", "name=d",
 			"webmmux", "name=m", "streamable=true", "!", "fdsink", "fd=1",
 			"d.", "!", "queue", "!", "videoconvert", "!", "vp8enc", "deadline=1", "cpu-used=6", "threads=4", "target-bitrate=5000000", "!", "queue", "!", "m.",
-			"d.", "!", "queue", "!", "audioconvert", "!", "audioresample", "!", "opusenc", "!", "queue", "!", "m.")
+			"d.", "!", "queue", "!", "audioconvert", "!", "audioresample", "!", "opusenc", "!", "queue", "!", "m."))
 	}
-	return nil
+	return cmds
 }

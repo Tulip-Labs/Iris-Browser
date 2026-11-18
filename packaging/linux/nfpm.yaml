@@ -95,9 +95,14 @@ overrides:
     # H.264 and H.265 videos play through the system's ffmpeg: Fedora's
     # ffmpeg-free (H.264 with Cisco's openh264, below) or RPM Fusion's full
     # ffmpeg (H.264 and H.265); openSUSE's ffmpeg
+    # When ffmpeg cannot (ffmpeg-free has no H.265), GStreamer takes over:
+    # the graphics chip's own decoders (va, in plugins-bad-free) and OpenH264.
     recommends:
       - openh264
       - gstreamer1-plugin-openh264
+      - gstreamer1-plugins-good
+      - gstreamer1-plugins-bad-free
+      - mesa-va-drivers
     # library names, so one package fits Fedora, RHEL-likes and openSUSE
     depends:
       - (ffmpeg-free or ffmpeg or ffmpeg-7 or ffmpeg-8)
@@ -159,6 +164,10 @@ overrides:
       - ffmpeg
     recommends:
       - xdg-utils
+      # the graphics chip decodes and encodes the videos Iris converts
+      - va-driver-all
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-plugins-bad
 
 deb:
   compression: xz

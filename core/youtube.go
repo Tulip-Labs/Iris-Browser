@@ -135,7 +135,10 @@ const YouTubeLightScript = `(() => {
 // them (Iris's Chromium on Linux): it says MP4 may play, so players offer
 // their MP4 file, and when a video then fails as unplayable it is pointed at
 // Iris's video relay (relay, which ends in "u="), which converts it.
-// Videos made of pieces in the page (blob: addresses) are left alone.
+// Streams (HLS, .m3u8: LinkedIn, X, news sites) are nearly always H.264 too:
+// it says players may hand them to the video element as they are, so they
+// go to the relay whole. Videos made of pieces in the page (blob:
+// addresses) are left alone.
 func H264Script(relay string) string {
 	return `(() => {
   if (window.__irisH264) return;
@@ -144,7 +147,7 @@ func H264Script(relay string) string {
   const cpt = HTMLMediaElement.prototype.canPlayType;
   HTMLMediaElement.prototype.canPlayType = function (t) {
     const r = cpt.call(this, t);
-    return !r && /video\/mp4|audio\/mp4|avc1|avc3|hvc1|hev1|hevc|h265|mp4a|video\/quicktime|video\/x-matroska/i.test(t || '') ? 'maybe' : r;
+    return !r && /video\/mp4|audio\/mp4|avc1|avc3|hvc1|hev1|hevc|h265|mp4a|video\/quicktime|video\/x-matroska|mpegurl/i.test(t || '') ? 'maybe' : r;
   };
   const fix = (v) => {
     if (!v || v.__lgRelay) return;

@@ -204,7 +204,7 @@ jobs:
           name: linux
           path: pkg
       - name: Install Iris and sway
-        run: dnf install -y -q ./pkg/iris-browser-*.rpm sway grim mesa-dri-drivers python3 dejavu-sans-fonts procps-ng dbus-daemon
+        run: dnf install -y -q ./pkg/iris-browser-*.rpm sway grim mesa-dri-drivers python3 dejavu-sans-fonts procps-ng dbus-daemon util-linux
       - name: Iris at 1.25, resized
         run: |
           useradd -m tester
