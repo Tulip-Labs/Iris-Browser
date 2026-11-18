@@ -457,6 +457,11 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 	GdkEventType t = gdk_event_get_event_type(e);
 	guint state = gdk_event_get_modifier_state(e);
 	double x, y;
+	if (g_getenv("IRIS_INPUT_DEBUG") && t != GDK_MOTION_NOTIFY) {
+		GdkDevice *dev = gdk_event_get_device(e);
+		g_printerr("Iris: event %d from %s (source %d)%s\n", (int)t, dev ? gdk_device_get_name(dev) : "?", dev ? (int)gdk_device_get_source(dev) : -1,
+		           ovOn ? " [menu up]" : "");
+	}
 	switch (t) {
 	case GDK_BUTTON_PRESS:
 	case GDK_BUTTON_RELEASE: {

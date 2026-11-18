@@ -34,6 +34,9 @@ type Gfx struct {
 	metric map[ui.Font][2]float32
 	images map[image.Image]paint.ImageOp
 	used   map[image.Image]bool
+	// lines of hinted text (Linux), kept while drawn
+	lines     map[lineKey]*lineImg
+	linesUsed map[lineKey]bool
 }
 
 type mark struct {
@@ -67,7 +70,8 @@ func newShaper() *text.Shaper {
 
 // NewGfx makes the Gio drawing surface.
 func NewGfx() *Gfx {
-	return &Gfx{shaper: newShaper(), meas: map[measKey]float32{}, metric: map[ui.Font][2]float32{}, images: map[image.Image]paint.ImageOp{}, used: map[image.Image]bool{}}
+	return &Gfx{shaper: newShaper(), meas: map[measKey]float32{}, metric: map[ui.Font][2]float32{}, images: map[image.Image]paint.ImageOp{}, used: map[image.Image]bool{},
+		lines: map[lineKey]*lineImg{}, linesUsed: map[lineKey]bool{}}
 }
 
 // Begin starts a frame on ops with the device scale.
@@ -105,6 +109,7 @@ func (g *Gfx) Image(img image.Image, r ui.Rect, radius float32) {
 }
 
 func (g *Gfx) End() {
+	g.endLines()
 	if len(g.images) > len(g.used) {
 		for k := range g.images {
 			if !g.used[k] {
@@ -286,6 +291,10 @@ func (g *Gfx) Text(s string, x, baseline float32, f ui.Font, c ui.Color) {
 		dx, dy := g.tx+(x+x0)*k, g.ty+baseline*k
 		x += (float32(math.Round(float64(dx))) - dx) / k
 		baseline += (float32(math.Round(float64(dy))) - dy) / k
+		// hinted, where the system has the rasterizer (Linux): stems on whole pixels
+		if g.hinted(s, f, ppem, float32(math.Round(float64(dx))), float32(math.Round(float64(dy))), c) {
+			return
+		}
 	}
 	t := op.Affine(f32.Affine2D{}.Scale(f32.Point{}, f32.Pt(inv, inv)).Offset(f32.Pt(x+x0, baseline))).Push(g.ops)
 	spec := g.shaper.Shape(g.glyphs)

@@ -771,6 +771,15 @@ int lgxPagePointer(GdkEvent *e, double x, double y) {
 		accX += dx, accY += dy;
 		int sx = (int)trunc(accX), sy = (int)trunc(accY);
 		accX -= sx, accY -= sy;
+		// a touchpad's moves are exact pixels: Chromium follows them as they
+		// come instead of animating each one like a wheel's notch
+		if (gdk_scroll_event_get_direction(e) == GDK_SCROLL_SMOOTH && dx * dx + dy * dy > 0 && fabs(dx) < 40 && fabs(dy) < 40)
+			me.modifiers |= EVENTFLAG_PRECISION_SCROLLING_DELTA;
+		if (g_getenv("IRIS_INPUT_DEBUG"))
+			g_printerr("Iris: page scroll dir %d unit %d src %d -> %+.2f %+.2f sent %d %d%s\n", gdk_scroll_event_get_direction(e),
+			           p_scroll_unit ? (int)p_scroll_unit(e) : -1,
+			           gdk_event_get_device(e) ? (int)gdk_device_get_source(gdk_event_get_device(e)) : -1, dx, dy, sx, sy,
+			           gdk_scroll_event_is_stop(e) ? " (stop)" : "");
 		if (sx || sy) h->send_mouse_wheel_event(h, &me, sx, sy);
 		break;
 	}
