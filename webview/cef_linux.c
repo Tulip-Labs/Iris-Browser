@@ -16,6 +16,7 @@
 // here runs there, except the resource checks, which CEF makes on its IO
 // thread (views are found under a lock).
 
+#define _GNU_SOURCE // RTLD_DEFAULT
 #include <dlfcn.h>
 #include <gtk/gtk.h>
 #include <math.h>

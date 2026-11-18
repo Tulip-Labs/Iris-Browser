@@ -17,6 +17,7 @@
 // empty GTK title bar keep the system's shadow, rounded corners and resize
 // edges.
 
+#define _GNU_SOURCE // RTLD_DEFAULT
 #include <dlfcn.h>
 #include <epoxy/gl.h>
 #include <gtk/gtk.h>
