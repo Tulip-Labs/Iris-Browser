@@ -666,7 +666,10 @@ uintptr_t lgwOpen(int w, int h, int maximized) {
 	g_signal_connect(win, "close-request", G_CALLBACK(onCloseRequest), NULL);
 	g_signal_connect(win, "destroy", G_CALLBACK(onDestroy), NULL);
 	g_signal_connect(gtk_settings_get_default(), "notify::gtk-xft-dpi", G_CALLBACK(onScale), NULL);
-	if (maximized) gtk_window_maximize(GTK_WINDOW(win));
+	// GTK before 4.10 sizes a window maximized before it is shown wrongly
+	// when the compositor leaves the size to it (Weston: "buffer does not match
+	// the configured maximized state"); there it opens at its size instead
+	if (maximized && gtk_get_minor_version() >= 10) gtk_window_maximize(GTK_WINDOW(win));
 	gtk_window_present(GTK_WINDOW(win));
 	gtk_widget_grab_focus(view);
 	if (g_getenv("LITEGO_SHOT")) g_timeout_add_seconds(14, windowShot, NULL);
