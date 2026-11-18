@@ -112,6 +112,11 @@ func (a *App) readNowPlaying(t *Tab) {
 					np.title = got.Title
 				}
 				np.artist, np.art = got.Artist, got.Art
+				// Iris fetches the artwork itself: never from this computer or
+				// its network, whatever the page names
+				if core.IsPrivateHost(np.art) {
+					np.art = ""
+				}
 			})
 		})
 	})
