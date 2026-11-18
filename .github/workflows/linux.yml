@@ -53,9 +53,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {distro: "debian:12", kind: deb}
+          - {distro: "debian:12", kind: deb, wldebug: true}
           - {distro: "debian:13", kind: deb}
-          - {distro: "ubuntu:22.04", kind: deb}
+          - {distro: "ubuntu:22.04", kind: deb, wldebug: true}
           - {distro: "ubuntu:24.04", kind: deb, shots: true}
           - {distro: "fedora:42", kind: rpm}
           - {distro: "fedora:43", kind: rpm, shots: true, scale: 2}
@@ -146,13 +146,15 @@ jobs:
           fi
           mkdir -p /tmp/shots
           export LITEGO_RELAY_LOCAL=1 LITEGO_CEF_VERBOSE=1 LITEGO_SHOT=/tmp/shots/page LITEGO_CEF_ARGS="--enable-logging=stderr --v=0"
+          [ "${{ matrix.wldebug }}" = true ] && export WAYLAND_DEBUG=client
           run=""; command -v dbus-run-session >/dev/null && run="dbus-run-session --"
           $run lite-go "$page" > /tmp/log.txt 2>&1 &
           pid=$!
           sleep 20
           alive=0; kill -0 $pid 2>/dev/null && alive=1
           kill $pid 2>/dev/null; sleep 1; kill -9 $pid 2>/dev/null
-          grep -v "dbus" /tmp/log.txt | tail -200
+          if [ "${{ matrix.wldebug }}" = true ]; then grep -n "error\|wl_display.*error\|Error 71" /tmp/log.txt | head -20; grep -B40 -m1 "wl_display@1.error\|wl_display#1.error\|Error 71" /tmp/log.txt | tail -60; fi
+          grep -v "dbus" /tmp/log.txt | grep -v "^\[ *[0-9]*\.[0-9]*\]" | tail -200
           for f in /tmp/shots/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
           [ $alive = 1 ] || { echo "Lite Go exited on Wayland before 20 seconds"; exit 1; }
           ! grep -q "no GPU drawing\|no OpenGL context\|could not start" /tmp/log.txt || { echo "Lite Go ran on Wayland but could not draw"; exit 1; }
