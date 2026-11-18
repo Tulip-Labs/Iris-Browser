@@ -3,6 +3,7 @@ Iris (formerly Lite Go): a light, fast browser in Go and Gio for Windows 10 and 
 ## New in 1.0.16
 
 - **Pages open again on every setup.** In 1.0.15, Chromium handed its frames straight to the graphics chip; on some computers (inside a toolbox, with some drivers) it could not allocate those buffers and sent no frame at all, so pages stayed blank. Pages are now uploaded to the graphics chip from the processor by default, which works everywhere; the direct hand-off is opt-in with `LITEGO_GPU=1`.
+- **Video codecs come with Iris.** Installing Iris now installs ffmpeg too, so H.264 and H.265 videos (LinkedIn, X, news sites) play out of the box: on Fedora `ffmpeg-free` with Cisco's `openh264` (H.264; RPM Fusion's full `ffmpeg` adds H.265), on Debian, Ubuntu, Arch and Nix their ffmpeg (both).
 - **A quiet terminal.** Chromium no longer prints its messages about the system bus, the battery or VA-API (common inside a toolbox, and harmless); `LITEGO_CEF_VERBOSE=1` shows them.
 
 ## New in 1.0.15
