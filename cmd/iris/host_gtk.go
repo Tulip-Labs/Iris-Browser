@@ -130,14 +130,11 @@ func (h *host) SetFullscreen(on bool) {
 
 func (h *host) later(f func()) { h.after = append(h.after, f); h.Invalidate() }
 
-// scale is Gio's pixels per dp: GTK's scale times the desktop's text scale.
-func (h *host) scale() float32 {
-	s := h.sf
-	if h.text > 0.5 && h.text < 4 {
-		s *= h.text
-	}
-	return float32(s)
-}
+// scale is Gio's pixels per dp: exactly the scale the compositor gives the
+// window (niri's 1.25, 1.5 and the like included), nothing on top. The
+// desktop's text scale (gtk-xft-dpi) is left out: multiplied in, it made the
+// whole interface larger than the screen it was laid out for.
+func (h *host) scale() float32 { return float32(h.sf) }
 
 // dp turns a GTK position into our units.
 func (h *host) dp(x, y float64) (float32, float32) {

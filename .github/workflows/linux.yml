@@ -182,6 +182,72 @@ jobs:
           path: /tmp/shots/*.png
           if-no-files-found: ignore
 
+  # Fractional scale, as on niri at 1.25: sway (which scales fractionally the
+  # same way) on a 1920x1200 screen, Iris filling it, then resized. The
+  # pictures are the screen itself (grim), not Iris's own idea of it: the
+  # page must fill its place at the window's exact scale after each change.
+  fractional:
+    needs: build
+    runs-on: ubuntu-24.04
+    container:
+      image: fedora:latest
+      options: --shm-size=1g
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: pkg
+      - name: Install Iris and sway
+        run: dnf install -y -q ./pkg/iris-browser-*.rpm sway grim mesa-dri-drivers python3 dejavu-sans-fonts procps-ng dbus-daemon
+      - name: Iris at 1.25, resized
+        run: |
+          useradd -m tester
+          mkdir -p /tmp/page /tmp/fs && chmod 777 /tmp/fs
+          cat > /tmp/page/index.html <<'HTML'
+          <!doctype html><meta charset=utf-8><body style="margin:0;font:16px sans-serif;background:repeating-linear-gradient(90deg,#fff 0 1px,#eef 1px 2px)">
+          <div id=s style="font-size:40px;padding:20px;background:#fff;border:4px solid #e33">?</div>
+          <p style="padding:0 20px">The quick brown fox jumps over the lazy dog. 0123456789</p>
+          <div style="position:fixed;right:0;bottom:0;width:120px;height:60px;background:#3a3">right-bottom</div>
+          <script>const f=()=>document.getElementById('s').textContent=innerWidth+' x '+innerHeight+' @ '+devicePixelRatio;f();addEventListener('resize',f)</script>
+          HTML
+          chmod -R a+rX /tmp/page
+          cat > /tmp/sway.conf <<'CONF'
+          output HEADLESS-1 resolution 1920x1200 scale 1.25
+          default_border none
+          CONF
+          cat > /tmp/run.sh <<'SH'
+          export XDG_RUNTIME_DIR=$(mktemp -d) WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 WLR_HEADLESS_OUTPUTS=1
+          sway -c /tmp/sway.conf > /tmp/sway.txt 2>&1 &
+          for i in $(seq 1 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; sleep 0.2; done
+          export WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
+          export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)
+          (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
+          sleep 1
+          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland
+          dbus-run-session -- iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
+          sleep 18
+          grim /tmp/fs/1-full.png
+          swaymsg -t get_tree | grep -o '"rect": {[^}]*}' | head -3
+          swaymsg '[app_id="io.github.tulip_labs.Iris"] floating enable, resize set 1000 700, move position 40 40'
+          sleep 6
+          grim /tmp/fs/2-small.png
+          swaymsg '[app_id="io.github.tulip_labs.Iris"] floating disable'
+          sleep 6
+          grim /tmp/fs/3-full-again.png
+          pgrep -x iris >/dev/null || echo "IRIS-EXITED"
+          SH
+          su tester -c "sh /tmp/run.sh"
+          grep -v dbus /tmp/fs/log.txt | tail -60
+          tail -20 /tmp/sway.txt
+          for f in /tmp/fs/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
+          ! grep -q IRIS-EXITED /tmp/fs/log.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shots-fractional
+          path: /tmp/fs/*.png
+          if-no-files-found: ignore
+
   # nix build github:Tulip-Labs/Iris-Browser must keep working
   nix:
     runs-on: ubuntu-24.04

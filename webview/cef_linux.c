@@ -255,23 +255,6 @@ static void CEF_CALLBACK onSchedulePump(cef_browser_process_handler_t *self, int
 
 static int noSandbox;
 
-// screenScale is the window's scale once it is on screen, else the largest
-// scale of the screens (fractional ones included, on GTK 4.14 and later).
-static double screenScale(void) {
-	loadSyms();
-	if (host && gtk_widget_get_realized(host)) return scaleOf();
-	double sf = 1;
-	GdkDisplay *d = gdk_display_get_default();
-	GListModel *ms = d ? gdk_display_get_monitors(d) : NULL;
-	for (guint i = 0; ms && i < g_list_model_get_n_items(ms); i++) {
-		GdkMonitor *m = g_list_model_get_item(ms, i);
-		double s = p_monitor_get_scale ? p_monitor_get_scale(m) : gdk_monitor_get_scale_factor(m);
-		if (s > sf) sf = s;
-		g_object_unref(m);
-	}
-	return sf;
-}
-
 static int fileSays(const char *path, const char *want) {
 	char *b = NULL;
 	int r = g_file_get_contents(path, &b, NULL, NULL) && g_str_has_prefix(g_strstrip(b), want);
@@ -306,14 +289,17 @@ static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type
 	cef_string_clear(&k);
 	cef_string_clear(&val);
 	// Chromium draws at exactly the window's scale, fractional ones (1.25,
-	// 1.5) included: one page pixel is one screen pixel, sharp.
-	char sfs[16];
-	g_ascii_formatd(sfs, sizeof sfs, "%.4g", screenScale());
-	setStr(&k, "force-device-scale-factor");
-	setStr(&val, g_getenv("IRIS_SCALE") ? g_getenv("IRIS_SCALE") : sfs);
-	cl->append_switch_with_value(cl, &k, &val);
-	cef_string_clear(&k);
-	cef_string_clear(&val);
+	// 1.5) included: each page asks it of the window (getScreenInfo), and
+	// follows it when it changes. No forced factor: one guessed at startup,
+	// before the window is on screen, fought the window's real scale and
+	// drew pages smaller or larger than their place.
+	if (g_getenv("IRIS_SCALE")) {
+		setStr(&k, "force-device-scale-factor");
+		setStr(&val, g_getenv("IRIS_SCALE"));
+		cl->append_switch_with_value(cl, &k, &val);
+		cef_string_clear(&k);
+		cef_string_clear(&val);
+	}
 	// GTK 4, as Iris's window: Chromium loads GTK itself (file pickers,
 	// printing) and would take GTK 3 first, which cannot live beside GTK 4
 	setStr(&k, "gtk-version");
@@ -511,10 +497,15 @@ void lgxSnapshotPages(GtkSnapshot *sn, double s) {
 		gtk_snapshot_push_clip(sn, &r);
 		if (v->tex) {
 			int tw = gdk_texture_get_width(v->tex), th = gdk_texture_get_height(v->tex);
-			GdkRGBA white = {1, 1, 1, 1};
-			if (tw < v->px[2] || th < v->px[3]) gtk_snapshot_append_color(sn, &white, &r); // the frame for the next size is on its way
-			// one texel on one pixel: sharp
-			appendTexture(sn, v->tex, &GRAPHENE_RECT_INIT(r.origin.x, r.origin.y, tw / s, th / s), 1);
+			if (abs(tw - v->px[2]) <= 1 && abs(th - v->px[3]) <= 1) {
+				// one texel on one pixel: sharp
+				appendTexture(sn, v->tex, &GRAPHENE_RECT_INIT(r.origin.x, r.origin.y, tw / s, th / s), 1);
+			} else {
+				// the page's place changed size and its frame for that size is
+				// on its way: the last frame fills the place meanwhile, never a
+				// smaller page beside a blank strip
+				appendTexture(sn, v->tex, &r, 0);
+			}
 			if (v->popTex && v->popupShown) {
 				int pw = gdk_texture_get_width(v->popTex), ph = gdk_texture_get_height(v->popTex);
 				double x = round(v->px[0] + v->popupRect.x * s) / s, y = round(v->px[1] + v->popupRect.y * s) / s;
@@ -1829,6 +1820,9 @@ static gboolean runOp(gpointer data) {
 			if (!op->a) forget(v);
 			redrawView();
 			if (h) h->was_hidden(h, !op->a);
+			// a page resized while hidden may not have drawn at its new size:
+			// shown, it is asked to
+			if (h && op->a) h->was_resized(h);
 		}
 		break;
 	case OP_EVAL: {

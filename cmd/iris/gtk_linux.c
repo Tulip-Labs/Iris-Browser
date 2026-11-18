@@ -610,7 +610,8 @@ void lgwInit(void) {
 	loadSyms();
 	// GTK's OpenGL renderer: Iris's interface is a GL texture, which it
 	// takes as it is (GSK_RENDERER set by hand wins)
-	g_setenv("GSK_RENDERER", "ngl", FALSE);
+	// ("ngl" until GTK 4.16; later ones call it "gl" and warn at the old name)
+	g_setenv("GSK_RENDERER", gtk_get_minor_version() >= 17 ? "gl" : "ngl", FALSE);
 	g_set_prgname(appID()); // the Wayland app id: matches the desktop file, for the dock icon
 	g_set_application_name("Iris");
 	gtk_init();
@@ -628,6 +629,20 @@ uintptr_t lgwOpen(int w, int h, int maximized) {
 	win = gtk_window_new();
 	gtk_window_set_title(GTK_WINDOW(win), "Iris");
 	gtk_window_set_icon_name(GTK_WINDOW(win), appID());
+	// never larger than the screen: a size saved in another unit or on a
+	// larger screen would open a window partly off it
+	GListModel *ms = gdk_display_get_monitors(gdk_display_get_default());
+	int mw = 0, mh = 0;
+	for (guint i = 0; ms && i < g_list_model_get_n_items(ms); i++) {
+		GdkMonitor *m = g_list_model_get_item(ms, i);
+		GdkRectangle g;
+		gdk_monitor_get_geometry(m, &g);
+		if (g.width > mw) mw = g.width;
+		if (g.height > mh) mh = g.height;
+		g_object_unref(m);
+	}
+	if (mw > 0 && w > mw) w = mw;
+	if (mh > 0 && h > mh) h = mh;
 	gtk_window_set_default_size(GTK_WINDOW(win), w, h);
 	// client-side decorations with no visible title bar: our own title row
 	// is drawn by the interface; GTK keeps the shadow and the resize edges
