@@ -1,0 +1,56 @@
+--------- beginning of main
+11-18 17:40:16.756  4472  4472 I Cefrium : WebAuthn configured: getCredManSupport=1 credentialService=present
+11-18 17:40:16.768  4472  4472 I Cefrium : nativeCreateWithSurface: 1080x2209 (windowed mode, ContentViewRenderView)
+11-18 17:40:16.823  4472  4472 I Cefrium : OnAfterCreated: browser ready (id=1, surface_mode=1)
+11-18 17:40:16.851  4472  4472 I Cefrium : loadUrl: about:blank
+11-18 17:40:16.898  4472  6146 E chromium: [ERROR:ui/gl/egl_util.cc:92] EGL Driver message (Error) eglDestroyContext: eglMakeCurrent failed
+11-18 17:40:16.898  4472  6146 E chromium: [ERROR:ui/gl/gl_context_egl.cc:421] eglDestroyContext failed with error EGL_BAD_MATCH
+11-18 17:40:16.904  4472  6146 E chromium: [ERROR:gpu/ipc/service/gpu_init.cc:225] Vulkan not supported with in process gpu
+11-18 17:40:16.914  4472  4472 I Cefrium : nativeCreateWithSurface: 1080x2209 (windowed mode, ContentViewRenderView)
+11-18 17:40:16.916  4472  4472 I Cefrium : OnAfterCreated: browser ready (id=2, surface_mode=1)
+11-18 17:40:16.932  4472  4472 I Cefrium : loadUrl: https://www.google.com/search?q=red+pandas&udm=14
+11-18 17:40:18.733  4472  4472 I Cefrium : OnLoadEnd: status 0, isMain=1
+11-18 17:40:18.973  4472  4472 I Cefrium : OnLoadEnd: status 0, isMain=0
+11-18 17:40:19.044  4472  4472 I Cefrium : OnLoadEnd: status 200, isMain=1
+11-18 17:40:20.941  4472  4472 I Cefrium : OnLoadEnd: status 200, isMain=1
+11-18 17:40:21.167  4472  4472 I Cefrium : OnLoadEnd: status 0, isMain=0
+11-18 17:40:21.209  4472  4472 I LiteResults: web: 9 links, captcha false, at https://www.google.com/search?q=red+pandas&udm=14&sei=AuP9aqqjJNuq5NoP_c2hiQs
+11-18 17:40:21.215  4472  4472 I Cefrium : loadUrl: https://www.google.com/search?q=red+pandas&udm=2
+11-18 17:40:23.371  4472  4472 I Cefrium : OnLoadEnd: status 200, isMain=1
+11-18 17:40:24.292  4472  4472 I LiteResults: images: 13
+11-18 17:40:24.310  4472  4472 I Cefrium : loadDataWithBaseUrl served origin=https://www.google.com/search?q=red+pandas&udm=14
+11-18 17:40:24.535  4472  4472 I Cefrium : OnLoadEnd: status 200, isMain=1
+11-18 17:40:26.467  4472  4472 I Cefrium : OnLoadEnd: status 0, isMain=0
+11-18 17:40:30.015  4472  4472 I Cefrium : OnLoadEnd: status 200, isMain=0
+11-18 17:40:30.132  4472  4472 I Cefrium : OnLoadEnd: status 0, isMain=0
+11-18 17:40:36.118  4472  4472 I Cefrium : nativeCreateWithSurface: 1080x2209 (windowed mode, ContentViewRenderView)
+11-18 17:40:36.119  4472  4472 I Cefrium : OnAfterCreated: browser ready (id=3, surface_mode=1)
+11-18 17:40:36.128  4472  4472 I Cefrium : loadUrl: https://en.wikipedia.org/wiki/Red_panda
+11-18 17:40:38.554  4472  4472 I Cefrium : OnLoadEnd: status 200, isMain=1
+11-18 17:40:49.804  4472  4472 I Cefrium : nativeCreateWithSurface: 1080x2209 (windowed mode, ContentViewRenderView)
+11-18 17:40:49.806  4472  4472 I Cefrium : OnAfterCreated: browser ready (id=4, surface_mode=1)
+11-18 17:40:49.822  4472  4472 I Cefrium : loadUrl: https://www.youtube.com/
+11-18 17:40:55.170  4472  4472 I Cefrium : OnLoadEnd: status 401, isMain=0
+11-18 17:40:55.454  4472  4472 I Cefrium : OnLoadEnd: status 0, isMain=0
+11-18 17:40:56.122  4472  4472 I Cefrium : OnLoadEnd: status 200, isMain=1
+11-18 17:40:56.488  4472  6146 E chromium: [ERROR:gpu/command_buffer/service/context_group.cc:140] ContextResult::kFatalFailure: WebGL1 blocklisted
+11-18 17:40:56.488  4472  6146 E chromium: [ERROR:ui/gl/egl_util.cc:92] EGL Driver message (Error) eglDestroyContext: eglMakeCurrent failed
+11-18 17:40:56.488  4472  6146 E chromium: [ERROR:ui/gl/gl_context_egl.cc:421] eglDestroyContext failed with error EGL_BAD_MATCH
+11-18 17:41:04.670  4472  4472 I Cefrium : nativeCreateWithSurface: 1080x2209 (windowed mode, ContentViewRenderView)
+11-18 17:41:04.671  4472  4472 I Cefrium : OnAfterCreated: browser ready (id=5, surface_mode=1)
+11-18 17:41:04.680  4472  4472 I Cefrium : loadUrl: https://github.com/Tulip-Labs/Iris-Browser
+11-18 17:41:10.565  4472  4472 I Cefrium : OnLoadEnd: status 200, isMain=1
+11-18 17:41:52.755  4472  4472 I Cefrium : loadUrl: about:blank
+11-18 17:41:52.775  4472  4472 I Cefrium : loadUrl: https://www.google.com/search?q=red+pandas&udm=14
+11-18 17:41:52.971  4472  4472 I Cefrium : OnLoadEnd: status 0, isMain=1
+11-18 17:41:54.263  4472  4472 I Cefrium : OnLoadEnd: status 200, isMain=1
+11-18 17:41:54.499  4472  4472 I Cefrium : OnLoadEnd: status 0, isMain=0
+11-18 17:41:54.532  4472  4472 I LiteResults: web: 9 links, captcha false, at https://www.google.com/search?q=red+pandas&udm=14
+11-18 17:41:54.537  4472  4472 I Cefrium : loadUrl: https://www.google.com/search?q=red+pandas&udm=2
+11-18 17:41:55.636  4472  4472 I Cefrium : OnLoadEnd: status 200, isMain=1
+11-18 17:41:56.450  4472  4472 I Cefrium : OnLoadEnd: status 200, isMain=0
+11-18 17:41:56.480  4472  4472 I Cefrium : OnLoadEnd: status 0, isMain=0
+11-18 17:41:56.547  4472  4472 I LiteResults: images: 16
+11-18 17:41:56.557  4472  4472 I Cefrium : loadDataWithBaseUrl served origin=https://www.google.com/search?q=red+pandas&udm=14
+11-18 17:41:56.685  4472  4472 I Cefrium : OnLoadEnd: status 200, isMain=1
+11-18 17:41:58.233  4472  4472 I Cefrium : OnLoadEnd: status 0, isMain=0
