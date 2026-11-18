@@ -531,6 +531,7 @@ static int CEF_CALLBACK getScreenInfo(cef_render_handler_t *self, cef_browser_t 
 	// the window's scale, exactly (fractional ones included)
 	double sf = v && v->scale > 0 ? v->scale : scaleOf();
 	si->device_scale_factor = (float)sf;
+	if (g_getenv("IRIS_GL_DEBUG")) g_printerr("Iris: page scale %.4g\n", sf);
 	return 1;
 }
 

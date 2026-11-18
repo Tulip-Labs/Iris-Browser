@@ -363,6 +363,14 @@ static void readScale(void) {
 	gboolean motion = TRUE; // the desktop's "animations" switch
 	g_object_get(gtk_settings_get_default(), "gtk-enable-animations", &motion, NULL);
 	lgwGoScale(scaleOf(view), text, motion);
+	if (g_getenv("IRIS_GL_DEBUG")) {
+		GtkNative *n = gtk_widget_get_native(view);
+		GdkSurface *s = n ? gtk_native_get_surface(n) : NULL;
+		GskRenderer *r = n ? gtk_native_get_renderer(n) : NULL;
+		g_printerr("Iris: scale %.4g (surface %.4g, integer %d), renderer %s, xft-dpi %.4g\n", scaleOf(view),
+		           s && p_surface_get_scale ? p_surface_get_scale(s) : -1.0, s ? gdk_surface_get_scale_factor(s) : -1,
+		           r ? G_OBJECT_TYPE_NAME(r) : "?", text * 96);
+	}
 }
 
 static void onScale(GObject *o, GParamSpec *p, gpointer d) {
