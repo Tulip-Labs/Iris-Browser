@@ -331,9 +331,14 @@ static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type
 		cef_string_clear(&k);
 		cef_string_clear(&val);
 	}
-	// media keys and the like belong to the desktop, not to the pages
+	// media keys and the like belong to the desktop, not to the pages.
+	// WaylandPerSurfaceScale and WaylandFractionalScaleV1: on compositors with
+	// fractional scaling (niri, sway, KDE, GNOME) Chromium otherwise gives
+	// every screen the scale 1 and each of its own windows its scale; pages
+	// drawn off screen have no window of Chromium's, so they stayed at 1 and
+	// were stretched: blurry. Without them, the scale above holds.
 	setStr(&k, "disable-features");
-	setStr(&val, "HardwareMediaKeyHandling,MediaSessionService,BackForwardCache,Translate,OptimizationHints,MediaRouter,"
+	setStr(&val, "WaylandPerSurfaceScale,WaylandFractionalScaleV1,HardwareMediaKeyHandling,MediaSessionService,BackForwardCache,Translate,OptimizationHints,MediaRouter,"
 	             "DialMediaRouteProvider,AutofillServerCommunication,CertificateTransparencyComponentUpdater,InterestFeedContentSuggestions,"
 	             "IsolateOrigins,site-per-process,SpareRendererForSitePerProcess,PrefetchPrivacyChanges,Prerender2,LensOverlay,"
 	             "GlobalMediaControls,PrivacySandboxSettings4,FedCm,LocalNetworkAccessChecks,PrivateNetworkAccessForWorkers,"
