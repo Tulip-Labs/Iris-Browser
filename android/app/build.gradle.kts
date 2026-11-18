@@ -28,10 +28,10 @@ android {
         release {
             // phones: 64-bit ARM only, so the APK carries one Chromium
             ndk { abiFilters += listOf("arm64-v8a") }
-            // smaller and faster: unused code and resources are removed
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // no shrinking: the app is mostly Chromium, which R8 cannot shrink
+            // safely (its resources and native calls), and Iris's own code is small
+            isMinifyEnabled = false
+            isShrinkResources = false
             // signed with this PC's debug key, to install for testing; use your own key for the Play Store
             signingConfig = signingConfigs.getByName("debug")
         }
