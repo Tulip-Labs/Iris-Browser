@@ -92,11 +92,10 @@ func (a *App) askAI(q string) {
 func (a *App) drawAI(r ui.Rect) {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	ui.Glass(g, r, 20, th, true, true)
-	ui.FillRound(g, r, 20, th.Primary.Alpha(0.03))
 	hr := ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 56}
 	ib := ui.RectAround(hr.X+30, hr.CY(), 28, 28)
-	ui.FillRoundAccent(g, ib, 9, th.Primary)
-	ui.DrawIcon(g, ui.ISparkle, ib.CX()-8, ib.CY()-8, 16, ui.White)
+	ui.Liquid(g, ib, 9, th.Ink)
+	ui.DrawIcon(g, ui.ISparkle, ib.CX()-8, ib.CY()-8, 16, th.Ink)
 	g.Text("Ask AI", hr.X+54, ui.Mid(g, hr.Y, hr.H, ui.FTitle), ui.FTitle, th.OnSurface)
 	g.Text("Google AI Mode", hr.X+54+g.Measure("Ask AI", ui.FTitle)+10, ui.Mid(g, hr.Y, hr.H, ui.FSmall), ui.FSmall, th.OnSurfaceVariant)
 	if u.IconButton(ID("aiclose"), ui.Rect{X: hr.R() - 48, Y: hr.CY() - 20, W: 40, H: 40}, ui.IClose, "Close", ui.IconOpt{}) {
@@ -121,8 +120,8 @@ func (a *App) drawAI(r ui.Rect) {
 	}
 	mr := ui.RectAround(pc.X+22, pc.CY(), 26, 26)
 	if host != "" {
-		ui.FillRoundAccent(g, mr, 8, siteColor(host))
-		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 12, Bold: true}, ui.White)
+		ui.Liquid(g, mr, 8, th.Ink)
+		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 12, Bold: true}, th.Ink)
 	} else {
 		ui.FillRound(g, mr, 8, th.SecondaryContainer)
 		ui.DrawIcon(g, ui.IGlobe, mr.CX()-8, mr.CY()-8, 16, th.OnSecondaryContainer)
@@ -247,7 +246,7 @@ func (a *App) drawAI(r ui.Rect) {
 		col = th.Primary.Alpha(0.35)
 	}
 	ui.FillOval(g, sb, col)
-	ui.DrawIcon(g, ui.ISend, sb.CX()-9, sb.CY()-9, 18, ui.White)
+	ui.DrawIcon(g, ui.ISend, sb.CX()-9, sb.CY()-9, 18, th.OnPrimary)
 	if !empty && u.Clickable(ID("aisend"), sb) {
 		send()
 	}

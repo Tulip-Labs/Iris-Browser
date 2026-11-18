@@ -20,12 +20,7 @@ func (a *App) setKind(t *Tab, k Kind, container string) {
 	a.st.Focus = ID("ntp")
 }
 
-func sandboxColor(th *ui.Theme) ui.Color {
-	if th.Dark {
-		return ui.Hex("#f0a84a")
-	}
-	return ui.Hex("#b5650f")
-}
+func sandboxColor(th *ui.Theme) ui.Color { return tone(th, "") }
 
 // containerEditor draws the editor of container i (name, icon, color,
 // remove) at r and returns its height.
@@ -37,7 +32,7 @@ func (a *App) containerEditor(r ui.Rect, i int) float32 {
 	ic := float32(30)
 	per := max(1, int((w+6)/(ic+6)))
 	iconRows := (len(core.ContainerIcons) + per - 1) / per
-	h := 12 + 46 + float32(iconRows)*(ic+6) + 6 + ic + 10 + 36 + 14
+	h := 12 + 46 + float32(iconRows)*(ic+6) + 6 + 36 + 14
 	box := ui.Rect{X: r.X, Y: r.Y, W: r.W, H: h}
 	ui.Glass(g, box, 18, th, true, false)
 	ey := r.Y + 12
@@ -82,20 +77,6 @@ func (a *App) containerEditor(r ui.Rect, i int) float32 {
 		}
 	}
 	ey += float32(iconRows)*(ic+6) + 6
-	for j, name := range core.ContainerColors {
-		cr := ui.Rect{X: x + float32(j)*(ic+6), Y: ey, W: ic, H: ic}
-		cc := tone(th, name)
-		ui.FillOval(g, cr.Inset(3), cc)
-		if name == c.Color {
-			ui.StrokeOval(g, cr.Inset(0.5), 2, cc)
-		}
-		u.Tooltip(strings.ToUpper(name[:1])+name[1:], cr)
-		if u.Clickable(ui.Id("ccol/"+name), cr) {
-			a.set.Containers[i].Color = name
-			a.set.Save()
-		}
-	}
-	ey += ic + 10
 	if u.Button(ui.Id("cdone"), ui.Rect{X: x + w - 96, Y: ey, W: 96, H: 36}, "Done", ui.ButtonOpt{Primary: true}) {
 		rename()
 		a.editCont = -1

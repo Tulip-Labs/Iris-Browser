@@ -87,16 +87,8 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 	return ui.Rect{X: x, Y: y, W: max(0, right-x), H: max(0, full.H-y-8)}
 }
 
-// logo is Lite Go's mark: a liquid accent tile with a ring in motion and a spark.
-func logo(g ui.Gfx, r ui.Rect, th *ui.Theme, base ui.Color) {
-	ui.Shadow(g, r, r.W*0.3, th.Shadow, 0.6, 1.5)
-	ui.FillRoundAccent(g, r, r.W*0.3, base)
-	s := r.W / 24
-	ring := ui.NewPath().Arc(r.CX(), r.CY(), 6.6*s, 140, 470, true)
-	ui.Pen(g, ring, 2.1*s, ui.White)
-	ui.FillOval(g, ui.RectAround(r.X+17.2*s, r.Y+7.4*s, 4.6*s, 4.6*s), th.Hl)
-	ui.FillOval(g, ui.RectAround(r.CX(), r.CY(), 3.2*s, 3.2*s), ui.White)
-}
+// logo is Iris's mark on the theme's clear glass.
+func logo(g ui.Gfx, r ui.Rect, th *ui.Theme) { ui.IrisLogo(g, r, th) }
 
 func siteColor(host string) ui.Color {
 	pal := []string{"#4f6bd8", "#c2457a", "#2f8f6b", "#b9741f", "#7b55c7", "#2a8fb0", "#b8403a", "#5d7a2b"}
@@ -124,8 +116,8 @@ func (a *App) tabIcon(t *Tab, x, y float32) {
 		ui.StrokeOval(g, ui.Rect{X: x + 1.5, Y: y + 1.5, W: 13, H: 13}, 2, th.Primary.Alpha(0.18))
 		ui.Pen(g, ui.NewPath().Arc(x+8, y+8, 6.5, ph, ph+110, true), 2, th.Primary)
 	case t.search != nil:
-		ui.FillRoundAccent(g, ui.Rect{X: x, Y: y, W: 16, H: 16}, 5, th.Primary)
-		ui.DrawIcon(g, modeIcons[t.search.Mode], x+2, y+2, 12, ui.White)
+		ui.Liquid(g, ui.Rect{X: x, Y: y, W: 16, H: 16}, 5, th.Ink)
+		ui.DrawIcon(g, modeIcons[t.search.Mode], x+2, y+2, 12, th.Ink)
 	case t.URL == "":
 		ic, col := a.kindIcon(t)
 		if t.Kind == KNormal {
@@ -135,9 +127,8 @@ func (a *App) tabIcon(t *Tab, x, y float32) {
 		return
 	default:
 		host := core.Host(t.URL)
-		c := siteColor(host)
-		ui.FillRoundAccent(g, ui.Rect{X: x, Y: y, W: 16, H: 16}, 5, c)
-		ui.TextCenter(g, monogram(host), ui.Rect{X: x, Y: y, W: 16, H: 16}, ui.Font{Size: 10, Bold: true}, ui.White)
+		ui.Liquid(g, ui.Rect{X: x, Y: y, W: 16, H: 16}, 5, th.Ink)
+		ui.TextCenter(g, monogram(host), ui.Rect{X: x, Y: y, W: 16, H: 16}, ui.Font{Size: 10, Bold: true}, th.Ink)
 	}
 	// the tab's kind as a small badge on its icon
 	if t.Kind != KNormal {
@@ -303,7 +294,7 @@ func (a *App) kindRow(r ui.Rect) {
 	}
 	items := []item{
 		{"Private", "Nothing is kept  Ctrl+Shift+N", ui.IPrivate, privateColor(th), func() { a.newTab(KPrivate, "", "", true) }},
-		{"Temporary", "A fresh session for this tab alone, wiped when it closes", ui.IHourglass, ui.Mix(th.Hl, th.Ink, 0.25), func() { a.newTab(KTemp, "", "", true) }},
+		{"Temporary", "A fresh session for this tab alone, wiped when it closes", ui.IHourglass, tone(th, ""), func() { a.newTab(KTemp, "", "", true) }},
 		{"Sandbox", "For a site you do not trust: no downloads, no permissions, nothing kept", ui.IShield, sandboxColor(th), func() { a.newTab(KSandbox, "", "", true) }},
 	}
 	for _, c := range a.set.Containers {

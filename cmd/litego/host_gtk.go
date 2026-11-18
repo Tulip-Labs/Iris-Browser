@@ -170,7 +170,7 @@ func (r *resident) makeWindow(urls []string) {
 	// the pages go in the window's layout, on this (the GTK) thread
 	h.eng.Start(uintptr(layout), r.webDir, h.a.LowMemory(), h.a.Started)
 	if C.lgwWayland() != 0 {
-		log.Println("Lite Go: native Wayland")
+		log.Println("Iris: native Wayland")
 	}
 	h.Invalidate()
 }
@@ -192,7 +192,7 @@ func lgwGoRender(w, ht C.int, sf C.int, fbo C.uint) {
 	if glr == nil {
 		g, err := newGPU()
 		if err != nil {
-			log.Println("Lite Go: no GPU drawing:", err)
+			log.Println("Iris: no GPU drawing:", err)
 			return
 		}
 		glr = g
@@ -207,7 +207,7 @@ func lgwGoRender(w, ht C.int, sf C.int, fbo C.uint) {
 	a.Frame(g, float32(w)/scale, float32(ht)/scale)
 	g.End()
 	if err := glr.Frame(&h.ops, gpu.OpenGLRenderTarget{V: uint(fbo)}, image.Pt(int(w), int(ht))); err != nil {
-		log.Println("Lite Go: drawing:", err)
+		log.Println("Iris: drawing:", err)
 		glr.Release()
 		glr = nil
 		h.Invalidate()

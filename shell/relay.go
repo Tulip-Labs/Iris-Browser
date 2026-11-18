@@ -73,7 +73,7 @@ func (r *relay) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		return
 	}
 	cmd.Stderr = os.Stderr // ffmpeg's own errors, for a terminal
-	fmt.Fprintln(os.Stderr, "Lite Go: converting a video for this engine:", pu.Host)
+	fmt.Fprintln(os.Stderr, "Iris: converting a video for this engine:", pu.Host)
 	out, err := cmd.StdoutPipe()
 	if err != nil || cmd.Start() != nil {
 		http.Error(w, "could not convert", http.StatusBadGateway)

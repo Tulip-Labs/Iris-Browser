@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=Lite Go
+Name=Iris
 GenericName=Web Browser
 Comment=A light, fast browser with shields built in
 Exec=lite-go %U
@@ -9,7 +9,7 @@ Terminal=false
 StartupNotify=true
 StartupWMClass=lite-go
 Categories=Network;WebBrowser;
-Keywords=web;browser;internet;
+Keywords=web;browser;internet;lite go;iris;
 MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
 Actions=new-window;
 

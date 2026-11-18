@@ -18,7 +18,7 @@ func (a *App) drawPanel(r ui.Rect) {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	ui.Glass(g, r, 20, th, true, true)
 	hr := ui.Rect{X: r.X, Y: r.Y, W: r.W, H: 54}
-	title := "Lite Go"
+	title := "Iris"
 	switch a.panelMode {
 	case panelDownloads:
 		title = "Downloads"
@@ -27,7 +27,7 @@ func (a *App) drawPanel(r ui.Rect) {
 		title = "History"
 		ui.DrawIcon(g, ui.IHistory, hr.X+19, hr.CY()-11, 22, th.Primary)
 	default:
-		logo(g, ui.RectAround(hr.X+30, hr.CY(), 26, 26), th, th.Primary)
+		logo(g, ui.RectAround(hr.X+30, hr.CY(), 26, 26), th)
 	}
 	g.Text(title, hr.X+52, ui.Mid(g, hr.Y, hr.H, ui.FTitle), ui.FTitle, th.OnSurface)
 	if u.IconButton(ID("pclose"), ui.Rect{X: hr.R() - 46, Y: hr.CY() - 19, W: 38, H: 38}, ui.IClose, "Close  Esc", ui.IconOpt{}) {
@@ -84,10 +84,10 @@ func (a *App) drawPanel(r ui.Rect) {
 			ui.FillRound(g, br, 16, th.Ink.Alpha(0.06))
 		}
 		u.Tooltip(tl.tip, br)
-		// a liquid glass drop with the icon in white, as on Apple's home screens
+		// a drop of clear liquid glass with the icon in ink
 		tile := ui.RectAround(br.CX(), br.Y+19, 34, 34)
-		ui.Liquid(g, tile, 11, liquidTones(th)[i%len(liquidTones(th))])
-		ui.DrawIcon(g, tl.icon, tile.CX()-9, tile.CY()-9, 18, ui.White)
+		ui.Liquid(g, tile, 11, th.Ink)
+		ui.DrawIcon(g, tl.icon, tile.CX()-9, tile.CY()-9, 18, th.Ink)
 		ui.TextCenter(g, ui.Fit(g, tl.label, ui.FSmallBold, bw-6), ui.Rect{X: br.X, Y: br.Y + 40, W: br.W, H: 18}, ui.FSmallBold, th.OnSurface)
 		if u.Clickable(ui.IdN("ptool", i), br) {
 			a.do(tl.act)
@@ -211,11 +211,12 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 			if tm.Grad != nil {
 				ui.FillGradient3(g, sw, 10, tm.Grad)
 			} else {
+				// the backdrop: the base with its fields of colored light
 				ui.FillRound(g, sw, 10, tm.G5)
-				ui.FillRound(g, ui.Rect{X: sw.X, Y: sw.CY(), W: sw.W, H: sw.H / 2}, 10, tm.Deep)
-				g.FillRect(ui.Rect{X: sw.X, Y: sw.CY(), W: sw.W, H: 10}, tm.Deep)
+				g.FillPathGradient(ui.NewPath().RoundRect(sw, 10), tm.G1.Alpha(0.95), tm.G3.Alpha(0.6), sw.Y, sw.B())
 			}
-			ui.FillOval(g, ui.RectAround(sw.R()-14, sw.Y+14, 14, 14), tm.Primary)
+			// a drop of the theme's clear glass
+			ui.Liquid(g, ui.RectAround(sw.R()-16, sw.Y+16, 18, 18), 6, tm.Ink)
 			on := tm.ID == a.set.Theme
 			switch {
 			case on:
@@ -378,7 +379,7 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 		bigW := g.Measure(big, ui.FBig)
 		g.Text("pages", x+bigW+8, y+26, ui.FBody, th.OnSurfaceVariant)
 		if a.appMB > 0 {
-			s := "Lite Go " + mb(a.appMB)
+			s := "Iris " + mb(a.appMB)
 			g.Text(s, x+w-g.Measure(s, ui.FSmall), y+26, ui.FSmall, th.OnSurfaceVariant)
 		}
 		y += 40
@@ -447,7 +448,7 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 	if sec == "data" {
 		// data
 		section("History and data")
-		if v := check("restore", "Reopen the last tabs when Lite Go starts", a.set.Restore); v != a.set.Restore {
+		if v := check("restore", "Reopen the last tabs when Iris starts", a.set.Restore); v != a.set.Restore {
 			a.set.Restore = v
 			a.set.Save()
 		}
@@ -456,14 +457,14 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 			a.notify("History cleared.")
 		}
 		y += 48
-		note("Lite Go keeps no bookmarks. History feeds address suggestions and stays on this computer.")
+		note("Iris keeps no bookmarks. History feeds address suggestions and stays on this computer.")
 		divider()
 
 	}
 	if sec == "about" {
 		// about
-		section("About Lite Go")
-		ver := "Lite Go " + a.cfg.Version
+		section("About Iris")
+		ver := "Iris " + a.cfg.Version
 		if a.eng != nil && a.eng.Version() != "" {
 			engine := "WebView2 "
 			if runtime.GOOS == "linux" {
@@ -478,7 +479,7 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 		case IntegrityProtected:
 			note("Installed as a Windows package: Windows keeps the program read-only and verifies it.")
 		case IntegrityChanged:
-			note("Warning: the program file is not the one that was installed. Install Lite Go again from a source you trust.")
+			note("Warning: the program file is not the one that was installed. Install Iris again from a source you trust.")
 		}
 		note("Tulipan Labs (Cesar Jose Luis Torrecilla Gelvez) · GPL 3.0")
 		if k := a.updateKind(); k != "" {
@@ -576,10 +577,4 @@ func (a *App) pageFocus() {
 		v := t.view
 		a.web(v.Focus)
 	}
-}
-
-// liquidTones are the colors of the liquid icon tiles: the theme's accent
-// first, then Apple's system blue, indigo, teal, orange, pink, green and purple.
-func liquidTones(th *ui.Theme) []ui.Color {
-	return []ui.Color{th.Primary, ui.Hex("#5e5ce6"), ui.Hex("#30b0c7"), ui.Hex("#ff9f0a"), ui.Hex("#ff375f"), ui.Hex("#30d158"), ui.Hex("#bf5af2"), ui.Hex("#64d2ff")}
 }

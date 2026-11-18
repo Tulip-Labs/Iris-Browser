@@ -85,9 +85,10 @@ const (
 
 // App is the browser window's interface.
 type App struct {
-	h   Host
-	cfg Config
-	eng webview.Engine
+	scheme int // the pages' color mode last given to the engine (1 light, 2 dark)
+	h      Host
+	cfg    Config
+	eng    webview.Engine
 
 	In        *ui.Input
 	st        ui.State
@@ -419,6 +420,10 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 		a.In.Now = time.Since(a.start).Seconds()
 	}
 	th := a.theme()
+	if want := map[bool]int{false: 1, true: 2}[th.Dark]; a.scheme != want {
+		a.scheme = want
+		webview.SetColorScheme(th.Dark) // pages follow the palette: dark or light
+	}
 	u := &a.u
 	u.G, u.In, u.Th, u.St, u.Clip = g, a.In, th, &a.st, a.h.Clipboard()
 	u.W, u.H, u.Layer, u.InputLayer, u.Redraw = w, h, 0, 0, false

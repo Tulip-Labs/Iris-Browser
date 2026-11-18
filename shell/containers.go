@@ -25,18 +25,14 @@ func iconOf(c core.Container) ui.Icon {
 	return ui.IBriefcase
 }
 
-// tone fits a container color to the palette: a touch of the theme's primary in
-// light themes, lifted for dark ones, so every container sits well in every theme.
+// tone is the color of a container, a tab kind or a label: colorless glass,
+// a neutral gray that white icons read on and that reads on the backdrop
+// (containers tell apart by their icon and name).
 func tone(th *ui.Theme, name string) ui.Color {
-	h, ok := contHex[name]
-	if !ok {
-		h = contHex["blue"]
-	}
-	c := ui.Hex(h)
 	if th.Dark {
-		return ui.Mix(c, ui.White, 0.22)
+		return ui.Hex("#8e8e93")
 	}
-	return ui.Mix(c, th.Deep, 0.12)
+	return ui.Hex("#636366")
 }
 
 func (a *App) container(name string) core.Container {
@@ -57,7 +53,7 @@ func (a *App) kindIcon(t *Tab) (ui.Icon, ui.Color) {
 	case KPrivate:
 		return ui.IPrivate, privateColor(th)
 	case KTemp:
-		return ui.IHourglass, ui.Mix(th.Hl, th.Ink, 0.25)
+		return ui.IHourglass, tone(th, "")
 	case KContainer:
 		return a.contStyle(t.Container)
 	case KSandbox:
@@ -66,12 +62,7 @@ func (a *App) kindIcon(t *Tab) (ui.Icon, ui.Color) {
 	return ui.IHome, th.Primary
 }
 
-func privateColor(th *ui.Theme) ui.Color {
-	if th.Dark {
-		return ui.Hex("#b99cff")
-	}
-	return ui.Hex("#5b3f8c")
-}
+func privateColor(th *ui.Theme) ui.Color { return tone(th, "") }
 
 // badge draws an icon on a filled circle (for a tab's kind).
 func badge(g ui.Gfx, r ui.Rect, ic ui.Icon, bg, ring ui.Color) {

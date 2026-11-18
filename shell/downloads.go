@@ -245,7 +245,7 @@ func (a *App) drawDownloads(body ui.Rect) {
 	if len(a.downloads) == 0 {
 		ui.DrawIcon(g, ui.IDownload, body.CX()-16, body.Y+70, 32, th.OnSurfaceVariant.Alpha(0.5))
 		ui.TextCenter(g, "Nothing downloaded in this session", ui.Rect{X: body.X, Y: body.Y + 112, W: body.W, H: 20}, ui.FBody, th.OnSurfaceVariant)
-		for i, ln := range wrap(g, "Files go to your Downloads folder. The list is kept until Lite Go closes; the files stay.", ui.FSmall, w-20) {
+		for i, ln := range wrap(g, "Files go to your Downloads folder. The list is kept until Iris closes; the files stay.", ui.FSmall, w-20) {
 			ui.TextCenter(g, ln, ui.Rect{X: body.X, Y: body.Y + 138 + float32(i)*18, W: body.W, H: 18}, ui.FSmall, th.OnSurfaceVariant)
 		}
 	}

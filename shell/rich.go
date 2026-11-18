@@ -231,8 +231,8 @@ func (a *App) sourceCards(src []core.WebResult, x, y, w float32, cols int, id st
 		ui.FillRound(g, nb, 9, th.Primary.Alpha(0.14))
 		ui.TextCenter(g, strconv.Itoa(i+1), nb, ui.Font{Size: 10.5, Bold: true}, th.Primary)
 		mr := ui.Rect{X: r.X + 10, Y: r.Y + 31, W: 14, H: 14}
-		ui.FillOval(g, mr, siteColor(host))
-		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 8, Bold: true}, ui.White)
+		ui.Liquid(g, mr, mr.W/2, th.Ink)
+		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 8, Bold: true}, th.Ink)
 		title := s.Title
 		if title == "" || strings.EqualFold(title, host) {
 			title = host
@@ -278,8 +278,8 @@ func (a *App) sourceChips(src []core.WebResult, x, y, w float32, id string, meas
 			ui.StrokeRound(g, r.Inset(0.5), h/2, 1, th.Primary.Alpha(0.6))
 		}
 		mr := ui.RectAround(r.X+15, r.CY(), 18, 18)
-		ui.FillOval(g, mr, siteColor(host))
-		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 9, Bold: true}, ui.White)
+		ui.Liquid(g, mr, mr.W/2, th.Ink)
+		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 9, Bold: true}, th.Ink)
 		g.Text(name, r.X+30, ui.Mid(g, r.Y, r.H, f), f, th.OnSurface)
 		u.Tooltip(strings.TrimSpace(src[i].Title+"  ·  "+host), r)
 		if u.Clickable(ui.IdN(id, i), r) {
@@ -311,8 +311,8 @@ func (a *App) sourceStack(src []core.WebResult, x, y float32, id string, onClick
 		host := strings.TrimPrefix(core.Host(src[i].URL), "www.")
 		mr := ui.RectAround(r.X+16+float32(i)*13, r.CY(), 20, 20)
 		ui.FillOval(g, mr.Inset(-1.5), th.Surface)
-		ui.FillOval(g, mr, siteColor(host))
-		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 9, Bold: true}, ui.White)
+		ui.Liquid(g, mr, mr.W/2, th.Ink)
+		ui.TextCenter(g, monogram(host), mr, ui.Font{Size: 9, Bold: true}, th.Ink)
 	}
 	g.Text(label, r.X+float32(n)*13+18, ui.Mid(g, r.Y, r.H, ui.FSmallBold), ui.FSmallBold, th.OnSurface)
 	if u.Clickable(ui.Id(id), r) && onClick != nil {
@@ -323,9 +323,9 @@ func (a *App) sourceStack(src []core.WebResult, x, y float32, id string, onClick
 
 // aiBadge is the accent mark of AI answers.
 func aiBadge(g ui.Gfx, th *ui.Theme, r ui.Rect) {
-	ui.FillRoundAccent(g, r, r.W*0.32, th.Primary)
+	ui.Liquid(g, r, r.W*0.32, th.Ink)
 	s := r.W * 0.62
-	ui.DrawIcon(g, ui.ISparkle, r.CX()-s/2, r.CY()-s/2, s, ui.White)
+	ui.DrawIcon(g, ui.ISparkle, r.CX()-s/2, r.CY()-s/2, s, th.Ink)
 }
 
 // writing draws the animated "Writing" status.

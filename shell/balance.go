@@ -220,7 +220,7 @@ func (a *App) restoreSession() {
 func (a *App) setIntegrity(r Integrity) {
 	a.integrity = r
 	if r == IntegrityChanged {
-		a.bar = infobar{warn: true, text: "Lite Go's program file is not the one that was installed. Install it again from a source you trust."}
+		a.bar = infobar{warn: true, text: "The program file is not the one that was installed. Install it again from a source you trust."}
 	}
 	a.h.Invalidate()
 }
@@ -269,12 +269,12 @@ func (a *App) drawHistory(body ui.Rect) {
 		}
 		host := core.Host(e.URL)
 		dot := ui.RectAround(row.X+20, row.CY(), 26, 26)
-		ui.FillRound(g, dot, 9, siteColor(host).Alpha(0.9))
+		ui.Liquid(g, dot, 9, th.Ink)
 		letter := "?"
 		if h := trimWWW(host); h != "" {
 			letter = string([]rune(h)[:1])
 		}
-		ui.TextCenter(g, upper(letter), dot, ui.FSmallBold, ui.White)
+		ui.TextCenter(g, upper(letter), dot, ui.FSmallBold, th.Ink)
 		title := e.Title
 		if title == "" {
 			title = core.Display(e.URL)

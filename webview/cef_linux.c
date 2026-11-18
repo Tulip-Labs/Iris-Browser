@@ -47,7 +47,7 @@
 #include "include/capi/cef_context_menu_handler_capi.h"
 #include "include/capi/cef_jsdialog_handler_capi.h"
 
-enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST, OP_ZOOM, OP_DLCANCEL };
+enum { OP_NEW = 1, OP_NAV, OP_BACK, OP_FWD, OP_RELOAD, OP_STOP, OP_BOUNDS, OP_SHOW, OP_FOCUS, OP_EVAL, OP_MUTE, OP_CLOSE, OP_SCRIPT, OP_PROFILE, OP_PRIVATE, OP_BLOCKLIST, OP_ZOOM, OP_DLCANCEL, OP_SCHEME };
 
 extern void lgxGoCreated(uintptr_t cb, int ok);
 extern void lgxGoURL(uintptr_t id, char *u);
@@ -1197,6 +1197,15 @@ static void initHandlers(void) {
 
 // ---- containers: each profile is a request context with its own storage ----
 
+// scheme is the pages' color mode: 0 the system's, 1 light, 2 dark (the
+// browser's palette); every request context gets it.
+static int scheme = 0;
+
+static void applyScheme(cef_request_context_t *c) {
+	static const cef_color_variant_t modes[] = {CEF_COLOR_VARIANT_SYSTEM, CEF_COLOR_VARIANT_LIGHT, CEF_COLOR_VARIANT_DARK};
+	if (c && c->set_chrome_color_scheme) c->set_chrome_color_scheme(c, modes[scheme], 0);
+}
+
 static cef_request_context_t *contextFor(const char *profile, int priv) {
 	char *key = g_strdup_printf("%s:%s", priv ? "private" : "disk", profile ? profile : "");
 	cef_request_context_t *c = g_hash_table_lookup(contexts, key);
@@ -1215,6 +1224,7 @@ static cef_request_context_t *contextFor(const char *profile, int priv) {
 	c = cef_request_context_create_context(&s, NULL);
 	cef_string_clear(&s.cache_path);
 	g_hash_table_insert(contexts, key, c);
+	applyScheme(c);
 	return c;
 }
 
@@ -1227,7 +1237,7 @@ static void createBrowser(LV *v) {
 	cef_browser_settings_t bs = {0};
 	bs.size = sizeof bs;
 	bs.windowless_frame_rate = 60;
-	bs.background_color = 0xFFFFFFFF;
+	bs.background_color = scheme == 2 ? 0xFF1C1C1E : 0xFFFFFFFF; // no white flash in dark mode
 	cef_string_t url = {0};
 	setStr(&url, v->startURL ? v->startURL : "about:blank");
 	cef_request_context_t *ctx = contextFor(v->profile, v->priv);
@@ -1320,6 +1330,16 @@ static gboolean runOp(gpointer data) {
 	LV *v = op->id && op->op != OP_DLCANCEL ? lv(op->id, op->op == OP_SCRIPT || op->op == OP_PROFILE || op->op == OP_NEW) : NULL;
 	cef_browser_host_t *h = v ? hostOf(v) : NULL;
 	switch (op->op) {
+	case OP_SCHEME: {
+		scheme = op->a >= 0 && op->a <= 2 ? op->a : 0;
+		if (contexts) {
+			GHashTableIter it;
+			gpointer k, c;
+			g_hash_table_iter_init(&it, contexts);
+			while (g_hash_table_iter_next(&it, &k, &c)) applyScheme(c);
+		}
+		break;
+	}
 	case OP_SCRIPT:
 		v->scripts = g_slist_append(v->scripts, g_strdup(op->s));
 		break;
@@ -1456,7 +1476,7 @@ static gboolean shotTick(gpointer d) {
 			cairo_destroy(cr);
 			cairo_surface_write_to_png(small, path);
 			cairo_surface_destroy(small);
-			g_printerr("Lite Go: page written to %s (%dx%d)\n", path, cairo_image_surface_get_width(v->page), cairo_image_surface_get_height(v->page));
+			g_printerr("Iris: page written to %s (%dx%d)\n", path, cairo_image_surface_get_width(v->page), cairo_image_surface_get_height(v->page));
 			g_free(path);
 			break;
 		}
@@ -1493,7 +1513,7 @@ static void setup(const char *dir) {
 	cef_settings_t s = {0};
 	s.size = sizeof s;
 	noSandbox = sandboxMissing(bin);
-	if (noSandbox) g_printerr("Lite Go: Chromium runs without its sandbox here (no setuid chrome-sandbox, no user namespaces)\n");
+	if (noSandbox) g_printerr("Iris: Chromium runs without its sandbox here (no setuid chrome-sandbox, no user namespaces)\n");
 	s.no_sandbox = noSandbox;
 	s.external_message_pump = 1;
 	s.multi_threaded_message_loop = 0;
@@ -1513,7 +1533,7 @@ static void setup(const char *dir) {
 	}
 	cef_main_args_t args = {0, NULL};
 	started = cef_initialize(&args, &s, &app, NULL);
-	if (!started) g_printerr("Lite Go: Chromium (CEF) could not start\n");
+	if (!started) g_printerr("Iris: Chromium (CEF) could not start\n");
 	// a steady beat as well, for work CEF does not schedule
 	g_timeout_add(250, pumpTick, NULL); // CEF schedules its own work; this beat only catches what it did not
 	if (g_getenv("LITEGO_SHOT")) g_timeout_add_seconds(5, shotTick, NULL);

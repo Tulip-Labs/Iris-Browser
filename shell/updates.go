@@ -35,7 +35,7 @@ var kindLabels = map[update.Kind]string{
 	update.KindFlatpak:  "as a Flatpak bundle",
 	update.KindFlathub:  "as a Flatpak from a remote",
 	update.KindNix:      "with Nix",
-	update.KindSetup:    "with Lite Go Setup",
+	update.KindSetup:    "with Iris Setup",
 	update.KindStore:    "from the Microsoft Store",
 	update.KindPortable: "as a portable copy",
 	update.KindDev:      "from source",
@@ -75,11 +75,11 @@ func (a *App) checkUpdate(asked bool) {
 			}
 			a.upd.latest = r.Version()
 			if !update.Newer(r.Version(), cur) {
-				a.upd.busy, a.upd.status = false, "Lite Go "+cur+" is the latest version."
+				a.upd.busy, a.upd.status = false, "Iris "+cur+" is the latest version."
 				return
 			}
 			if !k.CanSelf() {
-				a.upd.busy, a.upd.status = false, "Lite Go "+r.Version()+" is out. Updates for this copy come from "+k.Managed()+"."
+				a.upd.busy, a.upd.status = false, "Iris "+r.Version()+" is out. Updates for this copy come from "+k.Managed()+"."
 				return
 			}
 			a.fetchUpdate(r, k, asked)
@@ -97,13 +97,13 @@ func updateDir() string {
 
 func (a *App) fetchUpdate(r update.Release, k update.Kind, asked bool) {
 	ver := r.Version()
-	a.upd.status = "Downloading Lite Go " + ver + "…"
+	a.upd.status = "Downloading Iris " + ver + "…"
 	silent := k == update.KindUser || k == update.KindFlatpak
 	go func() {
 		dir := updateDir()
 		os.RemoveAll(dir) // what an earlier update left
 		p, err := update.Fetch(context.Background(), r, k, dir, func(f float32) {
-			a.post(func() { a.upd.status = "Downloading Lite Go " + ver + "… " + pct(f) })
+			a.post(func() { a.upd.status = "Downloading Iris " + ver + "… " + pct(f) })
 		})
 		a.post(func() {
 			if err != nil {
@@ -116,8 +116,8 @@ func (a *App) fetchUpdate(r update.Release, k update.Kind, asked bool) {
 			}
 			// a package: one click, then the system asks for the password
 			a.upd.busy, a.upd.ready = false, p
-			a.upd.status = "Lite Go " + ver + " is downloaded and ready to install."
-			a.bar = infobar{text: "Lite Go " + ver + " is ready to install.", action: "Install", do: func() { a.installUpdate(k, p, ver) },
+			a.upd.status = "Iris " + ver + " is downloaded and ready to install."
+			a.bar = infobar{text: "Iris " + ver + " is ready to install.", action: "Install", do: func() { a.installUpdate(k, p, ver) },
 				action2: "Later", do2: func() {}}
 			a.h.Invalidate()
 		})
@@ -126,7 +126,7 @@ func (a *App) fetchUpdate(r update.Release, k update.Kind, asked bool) {
 
 func (a *App) installUpdate(k update.Kind, path, ver string) {
 	a.upd.busy, a.upd.ready = true, ""
-	a.upd.status = "Installing Lite Go " + ver + "…"
+	a.upd.status = "Installing Iris " + ver + "…"
 	go func() {
 		res, err := update.Install(context.Background(), k, path)
 		a.post(func() {
@@ -137,11 +137,11 @@ func (a *App) installUpdate(k update.Kind, path, ver string) {
 				return
 			}
 			if !res.Restart {
-				a.upd.status = "Lite Go Setup is installing " + ver + "."
+				a.upd.status = "Iris Setup is installing " + ver + "."
 				return
 			}
-			a.upd.status = "Lite Go " + ver + " is installed. It opens with the next start."
-			a.bar = infobar{text: "Lite Go " + ver + " is installed.", action: "Restart now", do: func() {
+			a.upd.status = "Iris " + ver + " is installed. It opens with the next start."
+			a.bar = infobar{text: "Iris " + ver + " is installed.", action: "Restart now", do: func() {
 				if update.Restart() == nil {
 					a.h.Quit()
 				}

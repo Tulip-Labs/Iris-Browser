@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="assets/icon.png" width="112" alt="Lite Go">
+  <img src="assets/icon.png" width="112" alt="Iris">
 </p>
 
-<h1 align="center">Lite Go</h1>
+<h1 align="center">Iris</h1>
+
+<p align="center"><i>Formerly Lite Go. Iris is the Greek goddess of the rainbow, who carries light between worlds.</i></p>
 
 <p align="center">
   <b>A light, fast browser written in Go.</b><br>
@@ -31,10 +33,10 @@
 
 ---
 
-## Why Lite Go
+## Why Iris
 
 Most browsers spend your memory on their web engine without asking what each page is worth.
-Lite Go puts a small Go program around the engine (WebView2 on Windows, which the system keeps
+Iris puts a small Go program around the engine (WebView2 on Windows, which the system keeps
 up to date; Chromium on Linux) that decides what each page may cost.
 
 <table>
@@ -50,7 +52,7 @@ A background tab rests within a minute: its page closes and its memory goes back
 
 **Fast**
 
-Compact tabs on top, one slim bar under them, and a new tab page drawn by Lite Go itself:
+Compact tabs on top, one slim bar under them, and a new tab page drawn by Iris itself:
 the name and a search, nothing else.
 
 </td>
@@ -59,7 +61,7 @@ the name and a search, nothing else.
 **Clean**
 
 Ads, trackers, cookie notices and tracking links are removed. Google searches are shown on
-a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
+a page of Iris's own, in your theme. No bookmarks, no tiles, no feeds.
 
 </td>
 </tr>
@@ -85,11 +87,11 @@ a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
 <td align="center"><sub><b>Sandbox.</b> Unsafe addresses are stopped first.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="assets/screens/results.png" alt="Lite results: the AI answer, goggles, websites, pictures and videos"></td>
+<td width="50%"><img src="assets/screens/results.png" alt="Lite results: the AI answer, websites, pictures and videos"></td>
 <td width="50%"><img src="assets/screens/tabs.png" alt="The tabs on top"></td>
 </tr>
 <tr>
-<td align="center"><sub><b>Lite results.</b> The AI answer with named sources, goggles, stacks of pictures and videos.</sub></td>
+<td align="center"><sub><b>Lite results.</b> The AI answer with named sources, glass cards for the websites, stacks of pictures and videos.</sub></td>
 <td align="center"><sub><b>Tabs.</b> A compact strip on top, centered.</sub></td>
 </tr>
 <tr>
@@ -115,7 +117,7 @@ a page of Lite Go's own, in your theme. No bookmarks, no tiles, no feeds.
 </tr>
 </table>
 
-<sub>The desktop pictures are drawn by the test suite with Lite Go's software renderer (page areas
+<sub>The desktop pictures are drawn by the test suite with Iris's software renderer (page areas
 and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 
 ## What it does
@@ -124,13 +126,13 @@ and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 
 | | |
 |---|---|
-| **Lite results** | Google searches on Lite Go's own page, minimal like Kagi. At the top, the AI answer: written for you (by your name, warm, insight over hype), tagged with its topic, how strong its sources are and how complete it is, with each citation named by its site. Then the websites as a stack of cards that keeps loading as long as Google has relevant ones, ranked by source quality (references, official sites and docs rise; shops, coupon farms and listicles sink), and stacks of picture cards (each in its own shape, sharp at the front) and video cards. "On Google" shows the original. Type `yt ` before words to search YouTube. |
-| **Goggles** | Re-rank the links in one click, as Brave Search's Goggles do: Forums, Academic, Tech, News, Small web (personal sites first, big platforms last) and No shops. Raise, lower or hide any site, and it stays that way. |
+| **Lite results** | Google searches on a page of Iris's own, minimal like Kagi. At the top, the AI answer, written for you (by your name, warm, insight over hype), with each citation named by its site. Then the websites as clear glass cards that keep loading as long as Google has relevant ones, ranked by source quality (references, official sites and docs rise; shops, coupon farms and listicles sink), and stacks of picture cards (each in its own shape, sharp at the front) and video cards. "On Google" shows the original. Type `yt ` before words to search YouTube. |
+| **Your say over sites** | Raise, lower or hide any site in your results, and it stays that way. |
 | **Websites in new tabs** | A result, an address typed while a site is open, or a link to another website opens in a new tab beside the one you are on. Back from its first page (or closing it) returns there. Sign-in steps stay in their tab. |
 | **Ask AI** (Ctrl+J) | On any page, a side panel sends your question and the page's text (or your selection) to Google AI Mode and writes the answer with its sources. No API key. |
 | **Split view** | Two pages side by side. The pane you click takes the keyboard and the address bar. |
 | **Downloads** | A toolbar icon with a progress ring; a list with speed, time left, pause, resume, cancel, open and show in folder. |
-| **One slim bar** | Back, forward and reload at the left, the address in the middle, then the shield and the menu. It narrows to what is needed on a small window. A Sign in button shows only while Lite Go is not signed in to Google. |
+| **One slim bar** | Back, forward and reload at the left, the address in the middle, then the shield and the menu. It narrows to what is needed on a small window. A Sign in button shows only while Iris is not signed in to Google. |
 | **The menu** | Tools (private tab, history, downloads, reopen, split view, find, print, free memory), zoom, your name for the AI answers, and the settings in sections that open in place: appearance (the palettes, shared with Ember), shields and privacy, containers, memory, history and data, about and updates. |
 | **The usual** | Find in page, zoom, print, a searchable history by day, reopen a closed tab, and the last tabs brought back at start (unloaded until you open them). |
 | **Tabs** | A compact strip on top, centered, above the bar; tabs shrink to their icons as more open, and the strip scrolls with the wheel when they do not fit. The arrow beside + opens private, temporary, sandbox and container tabs. Containers keep their own sign-ins, each with an icon and a color. |
@@ -150,8 +152,8 @@ and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 | **Adaptive** | A site is scanned on its first visits. Where three scans find nothing, the shield stands by and the site's requests go straight to the network; where something is found, it stays on. Clean sites are scanned again every 15 visits or three days. |
 | **What ads leave behind** | Empty boxes and cookie notices are hidden. Tracking parameters are cut from links, tracking redirects skipped, AMP pages opened at the source. |
 | **Fingerprinting** | Canvas, audio and hardware details vary slightly per site and session. Sign-in and human-check pages are left alone. |
-| **H.264 videos** | Lite Go's Chromium has no H.264 or AAC (the free builds leave them out). When a video in that format cannot play (LinkedIn, X, many news sites), Lite Go converts it on the fly with the system's ffmpeg, or GStreamer, through a small relay on the computer only, and the page plays that. |
-| **YouTube** | YouTube shows a warning when it sees an ad blocker, so on YouTube the shield blocks nothing and Lite Go does not touch the player's data. When an ad starts, Lite Go mutes it, plays it at 16× to its end and presses Skip; the video then goes on with its own sound and speed. The ad boxes around the videos are hidden, and if the warning still comes, it is closed and the video resumes. YouTube tabs never rest. |
+| **H.264 videos** | Iris's Chromium has no H.264 or AAC (the free builds leave them out). When a video in that format cannot play (LinkedIn, X, many news sites), Iris converts it on the fly with the system's ffmpeg, or GStreamer, through a small relay on the computer only, and the page plays that. |
+| **YouTube** | YouTube shows a warning when it sees an ad blocker, so on YouTube the shield blocks nothing and Iris does not touch the player's data. When an ad starts, Iris mutes it, plays it at 16× to its end and presses Skip; the video then goes on with its own sound and speed. The ad boxes around the videos are hidden, and if the warning still comes, it is closed and the video resumes. YouTube tabs never rest. |
 | **Never broken** | Sign-in, messaging, human checks and YouTube playback are never blocked. Pictures, video, style sheets and fonts always load: the shield checks scripts and data requests, where ads and trackers start, and never blocks a whole hosting network. |
 
 ### Safety
@@ -160,7 +162,7 @@ and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 |---|---|
 | **HTTPS-only** | Addresses go straight to HTTPS. A site without it is stopped before it loads. |
 | **Sandbox** | A site without HTTPS, or an address that looks dangerous (a known name on someone else's site, a real site hidden behind an `@`, a bare network address, look-alike letters), can be opened in a throwaway session: no downloads, no camera, microphone, location, notifications or clipboard, nothing saved, wiped when the tab closes. The check reads the address only; it is not a malware scanner. |
-| **Checks itself** | At every start Lite Go compares its program file with the SHA-256 recorded at install and warns if they differ. This catches accidents and careless changes. The Store package is stronger: Windows keeps it read-only and verifies it. |
+| **Checks itself** | At every start Iris compares its program file with the SHA-256 recorded at install and warns if they differ. This catches accidents and careless changes. The Store package is stronger: Windows keeps it read-only and verifies it. |
 | **Private by kind** | Private tabs share one session never written to disk. A temporary tab is a fresh session of its own. History is never kept for either. |
 
 ## Shortcuts
@@ -184,23 +186,23 @@ They work while a page has the keyboard too.
 
 | System | Web engine | Status |
 |---|---|---|
-| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Lite Go's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, the menu) are covered by tests with a stand-in engine and still need a pass on a real PC. |
-| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Chromium, through CEF (the Chromium Embedded Framework), which Lite Go carries | Built and started on Wayland on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora 42 and 43, openSUSE Tumbleweed and Arch on every push, with a VP9 video playing. Packages: .deb, .rpm, AUR, Nix and .tar.gz. (The Flatpak is paused until Chromium is packaged for its sandbox.) |
+| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Iris's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, the menu) are covered by tests with a stand-in engine and still need a pass on a real PC. |
+| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Chromium, through CEF (the Chromium Embedded Framework), which Iris carries | Built and started on Wayland on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora 42 and 43, openSUSE Tumbleweed and Arch on every push, with a VP9 video playing. Packages: .deb, .rpm, AUR, Nix and .tar.gz. (The Flatpak is paused until Chromium is packaged for its sandbox.) |
 | Android 8 and newer | Android System WebView | **Lite for Android**, a separate app in Kotlin (`android/`): shields, Lite results for Web searches, tabs, containers (WebView 123 or newer), eleven palettes, phone and tablet layouts, and sync with the computer. `Lite-android.apk` is in each release. |
 
-On Windows the engine comes with the system. On Linux, Lite Go carries its own Chromium
+On Windows the engine comes with the system. On Linux, Iris carries its own Chromium
 (Chromium 156, from CEF) in `/usr/lib/lite-go-browser`, and each release brings the newer one.
 
 On Linux the window is a GTK window, because Wayland does not let one program's surface sit
 inside another's. GTK owns the window, Gio's GPU renderer draws the interface into a GL area
-in it, and Chromium draws each page off screen: Lite Go paints the page into its own area of
+in it, and Chromium draws each page off screen: Iris paints the page into its own area of
 the window and passes it the pointer, the wheel and the keys. One window, one connection to
 the display. Chrome extensions do not run in an embedded Chromium like this one; the shields
 do the work of an ad blocker.
 
 ## Install on Linux
 
-Every release has a `.deb`, an `.rpm` and a `.tar.gz` for any distribution (each about 110 MB: Chromium is inside). Lite Go needs glibc 2.35 or newer (Debian 12, Ubuntu 22.04, Fedora 36 or later) and a Wayland session.
+Every release has a `.deb`, an `.rpm` and a `.tar.gz` for any distribution (each about 110 MB: Chromium is inside). Iris needs glibc 2.35 or newer (Debian 12, Ubuntu 22.04, Fedora 36 or later) and a Wayland session.
 
 **Debian, Ubuntu, Linux Mint** (from the signed repository, so updates come with the system's):
 
@@ -238,7 +240,7 @@ sudo zypper install lite-go-browser
 
 The repository pages with these commands are at [tulip-labs.github.io/Lite-Go-Browser](https://tulip-labs.github.io/Lite-Go-Browser/).
 
-**Updates.** Lite Go checks the latest GitHub release every few hours (Settings, About Lite Go; on by default) and checks each download against the release's `SHA256SUMS`. The `.tar.gz` copy updates by itself; `.deb` and `.rpm` copies download in the background and install with one click and your password. Copies from the AUR, Nix or rpm-ostree update the way those tools do.
+**Updates.** Iris checks the latest GitHub release every few hours (Settings, About Iris; on by default) and checks each download against the release's `SHA256SUMS`. The `.tar.gz` copy updates by itself; `.deb` and `.rpm` copies download in the background and install with one click and your password. Copies from the AUR, Nix or rpm-ostree update the way those tools do.
 
 ## Build
 
@@ -253,7 +255,7 @@ tests and makes:
 
 No C compiler is needed, and builds stay well under 2 GB of memory.
 
-**Linux.** On Linux, `./build-litego.sh` builds Lite Go for Linux first and then the Windows
+**Linux.** On Linux, `./build-litego.sh` builds Iris for Linux first and then the Windows
 files. It fetches Chromium (CEF, about 300 MB, checked against its SHA-1) into `third_party/cef`
 once, checks for the build tools and GTK development files and says what to install if
 something is missing:
@@ -337,10 +339,10 @@ the same on both systems, and the whole interface can be tested with a stand-in 
 
 ## License
 
-[GNU General Public License 3.0](LICENSE). You may use, share and change Lite Go, and sell
+[GNU General Public License 3.0](LICENSE). You may use, share and change Iris, and sell
 copies; copies and changed versions must keep the copyright notice, stay under the GPL and
 come with their source. See also [NOTICE](NOTICE) and
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). What Lite Go does with data: [PRIVACY.md](PRIVACY.md).
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). What Iris does with data: [PRIVACY.md](PRIVACY.md).
 
 <p align="center">
   <sub>Tulipan Labs · Cesar Jose Luis Torrecilla Gelvez</sub>

@@ -41,7 +41,7 @@ func TestResultsClickStaysInItsColumn(t *testing.T) {
 	tab.search.scroll.Y = 700 // down to the websites
 	d.frames(2)
 	opened := 0
-	for _, x := range []float32{120, 400, 800} {
+	for _, x := range []float32{120, 360, 560} { // the websites column (the AI panel is open at the side)
 		for y := float32(200); y < 880; y += 58 {
 			n := len(d.a.tabs)
 			d.click(x, y)
