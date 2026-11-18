@@ -152,13 +152,13 @@ jobs:
           path: /tmp/fs/*.png
           if-no-files-found: ignore
 
-  # The Flatpak bundle, from dist/linux (flatpak-builder's own container)
+  # The Flatpak bundle, from dist/linux, built with flatpak-builder (the
+  # GNOME runtime and SDK from Flathub), then installed the way a reader
+  # would and started on Wayland (Weston, no screen): it must still be
+  # running after 25 seconds, in a Wayland window of its own.
   flatpak:
     needs: build
     runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
-      options: --privileged --shm-size=1g
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -167,31 +167,24 @@ jobs:
           path: pkg
       - name: The program and its engine in dist/linux
         run: mkdir -p dist && tar -xzf pkg/iris-linux.tar.gz -C dist && ls dist/linux | head
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-        with:
-          bundle: Iris-x86_64.flatpak
-          manifest-path: packaging/flatpak/io.github.tulip_labs.Iris.yml
-          cache-key: flatpak-builder-${{ github.sha }}
-          upload-artifact: true
-
-  # The bundle installed the way a reader would (the GNOME runtime from
-  # Flathub) and started on Wayland (Weston, no screen): it must still be
-  # running after 25 seconds, in a Wayland window of its own.
-  flatpak-run:
-    needs: flatpak
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: Iris-x86_64-x86_64.flatpak
-      - name: Flatpak, Weston and the GNOME runtime
+      - name: Flatpak, flatpak-builder and Weston
         run: |
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq flatpak weston dbus-user-session procps
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq flatpak flatpak-builder weston dbus-user-session procps
           # bubblewrap needs user namespaces, which Ubuntu limits by default
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-          ls -l *.flatpak
+      - name: Build the bundle
+        run: |
+          flatpak-builder --user --install-deps-from=flathub --force-clean --repo=repo --default-branch=stable \
+            build packaging/flatpak/io.github.tulip_labs.Iris.yml
+          flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            repo Iris-x86_64.flatpak io.github.tulip_labs.Iris stable
+          ls -l Iris-x86_64.flatpak
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: Iris-x86_64.flatpak
       - name: Install the bundle and start Iris on Wayland
         run: |
           set -x
