@@ -123,11 +123,16 @@ build_packages() {
 	esac
 	export ARCH
 	nfpm="go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.0"
+	# the version goes into every field (nfpm fills it in only in some)
+	for f in nfpm nfpm-transitional; do
+		sed "s/\${VERSION}/$VERSION/g" "packaging/linux/$f.yaml" > "dist/$f.yaml"
+	done
 	for p in deb rpm; do
-		$nfpm package --config packaging/linux/nfpm.yaml --packager $p --target dist/
+		$nfpm package --config dist/nfpm.yaml --packager $p --target dist/
 	done
 	# apt moves lite-go-browser (the name until 1.0.19) over through this
-	$nfpm package --config packaging/linux/nfpm-transitional.yaml --packager deb --target "dist/lite-go-browser-transitional_${VERSION}_${ARCH}.deb"
+	$nfpm package --config dist/nfpm-transitional.yaml --packager deb --target "dist/lite-go-browser-transitional_${VERSION}_${ARCH}.deb"
+	rm -f dist/nfpm.yaml dist/nfpm-transitional.yaml
 	ls dist/*.deb dist/*.rpm
 }
 
