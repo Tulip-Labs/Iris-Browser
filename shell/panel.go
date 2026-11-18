@@ -163,6 +163,8 @@ func (a *App) drawPanel(r ui.Rect) {
 		if open {
 			if sec.id == "containers" {
 				y = a.containerSettings(x, y-10, w)
+			} else if sec.id == "extensions" {
+				y = a.extensionSettings(x, y-10, w)
 			} else {
 				y = a.settingsBody(x, y-10, w, sec.id)
 			}

@@ -4,6 +4,7 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"gioui.org/app"
@@ -22,11 +23,21 @@ import (
 )
 
 func main() {
-	uninstallMode := false
+	uninstallMode, silent := false, false
 	for _, a := range os.Args[1:] {
-		if a == "--uninstall" || a == "/uninstall" {
+		switch strings.ToLower(a) {
+		case "--uninstall", "/uninstall":
 			uninstallMode = true
+		case "--silent", "/silent", "/s", "/quiet", "--quiet", "/verysilent":
+			silent = true // winget and other package managers: no window
 		}
+	}
+	if silent {
+		if err := setup.Silent(uninstallMode); err != nil {
+			log.Println(err)
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
 	go func() {
 		w := new(app.Window)

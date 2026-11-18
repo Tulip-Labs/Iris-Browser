@@ -147,3 +147,21 @@ type Engine interface {
 
 // ErrUnavailable is returned where the platform's web engine is not supported yet.
 var ErrUnavailable = errors.New("the web engine is not available on this system")
+
+// Extension is a browser extension installed in the engine.
+type Extension struct {
+	ID, Name string
+	Enabled  bool
+}
+
+// ExtensionHost is an engine that runs browser extensions (WebView2 on
+// Windows; CEF drawing pages off screen, as on Linux, cannot). Extensions
+// live in the default container; private, sandbox and container tabs run
+// without them. Every callback arrives on the window's thread.
+type ExtensionHost interface {
+	// AddExtension loads the unpacked extension in dir (it must stay there).
+	AddExtension(dir string, done func(Extension, error))
+	Extensions(done func([]Extension, error))
+	RemoveExtension(id string, done func(error))
+	EnableExtension(id string, on bool, done func(error))
+}

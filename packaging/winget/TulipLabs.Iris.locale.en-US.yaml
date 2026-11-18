@@ -1,0 +1,22 @@
+# winget manifest (default locale), made by the release workflow from this file.
+PackageIdentifier: TulipLabs.Iris
+PackageVersion: "@VERSION@"
+PackageLocale: en-US
+Publisher: Tulipan Labs
+PublisherUrl: https://github.com/Tulip-Labs
+PublisherSupportUrl: https://github.com/Tulip-Labs/Iris-Browser/issues
+PackageName: Iris
+PackageUrl: https://github.com/Tulip-Labs/Iris-Browser
+License: GPL-3.0-only
+LicenseUrl: https://github.com/Tulip-Labs/Iris-Browser/blob/main/LICENSE
+ShortDescription: A light, fast browser with shields built in.
+Description: Iris is a light, fast web browser with ad and tracker blocking built in, containers, split view, tabs that sleep to save memory, and clean search results.
+Moniker: iris
+Tags:
+  - browser
+  - web-browser
+  - privacy
+  - adblock
+ReleaseNotesUrl: https://github.com/Tulip-Labs/Iris-Browser/releases/tag/v@VERSION@
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

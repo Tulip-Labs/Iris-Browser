@@ -200,6 +200,16 @@ the window and passes it the pointer, the wheel and the keys. One window, one co
 the display. Chrome extensions do not run in an embedded Chromium like this one; the shields
 do the work of an ad blocker.
 
+## Install on Windows
+
+```
+winget install TulipLabs.Iris
+```
+
+Or download `Iris-Setup.exe` from the [releases](https://github.com/Tulip-Labs/Iris-Browser/releases) (installs for the current user, no administrator rights; `Iris-Setup.exe --silent` installs without a window). Iris updates itself; `winget upgrade TulipLabs.Iris` works too.
+
+Extensions from the Chrome Web Store run in Iris on Windows: open an extension's page in the store and choose **Add to Iris**. Iris checks each package's signature before adding it.
+
 ## Install on Linux
 
 Every release has a `.deb`, an `.rpm` and a `.tar.gz` for any distribution (each about 110 MB: Chromium is inside). Iris needs glibc 2.35 or newer (Debian 12, Ubuntu 22.04, Fedora 36 or later) and a Wayland session.

@@ -94,6 +94,7 @@ const (
 	IFolder
 	IPrint
 	IPhone
+	IPuzzle
 	iconCount
 )
 
@@ -488,6 +489,10 @@ func DrawIcon(g Gfx, icon Icon, x, y, size float32, c Color) {
 			LineTo(X(17), Y(19)).QuadTo(X(19), Y(19), X(19), Y(17)).LineTo(X(19), Y(13.5)), w, c)
 		stroke(13.5, 4.5, 19.5, 4.5, 19.5, 10.5)
 		stroke(19, 5, 11.5, 12.5)
+	case IPuzzle: // extensions
+		Pen(g, NewPath().MoveTo(X(4.5), Y(8)).LineTo(X(9), Y(8)).CubeTo(X(8), Y(4), X(14), Y(4), X(13), Y(8)).LineTo(X(17.5), Y(8)).
+			LineTo(X(17.5), Y(11.5)).CubeTo(X(21.5), Y(10.5), X(21.5), Y(16.5), X(17.5), Y(15.5)).LineTo(X(17.5), Y(20)).
+			LineTo(X(4.5), Y(20)).Close(), w, c)
 	case IGrid:
 		box(4, 4, 10.5, 10.5, 2)
 		box(13.5, 4, 20, 10.5, 2)

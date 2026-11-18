@@ -158,6 +158,7 @@ type App struct {
 	workers      [4]*worker
 	wakeAt       float64
 	np           nowPlaying // the now-playing pill (nowplaying.go)
+	ext          extState   // browser extensions (extensions.go)
 	thumbs       map[string]*thumb
 	thumbSem     chan struct{}
 	fetchImage   func(ctx context.Context, src string, maxW int) (image.Image, error)

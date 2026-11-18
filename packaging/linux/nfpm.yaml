@@ -89,7 +89,7 @@ scripts:
 overrides:
   rpm:
     replaces:
-      - lite-go-browser < 1.0.20
+      - lite-go-browser < ${VERSION}
     provides:
       - lite-go-browser = ${VERSION}
     # H.264 and H.265 videos play through the system's ffmpeg: Fedora's
@@ -126,7 +126,7 @@ overrides:
       - libXrandr.so.2()(64bit)
   deb:
     replaces:
-      - lite-go-browser (<< 1.0.20)
+      - lite-go-browser (<< ${VERSION})
     scripts:
       postinstall: packaging/linux/postinst-deb.sh
     # Chromium's libraries (libcef.so); t64 names on Debian 13 and Ubuntu 24.04
@@ -163,7 +163,7 @@ overrides:
 deb:
   compression: xz
   breaks:
-    - lite-go-browser (<< 1.0.20)
+    - lite-go-browser (<< ${VERSION})
   fields:
     Bugs: https://github.com/Tulip-Labs/Iris-Browser/issues
 rpm:

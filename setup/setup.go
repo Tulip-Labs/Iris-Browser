@@ -413,3 +413,30 @@ func wrap(g ui.Gfx, text string, f ui.Font, w float32) []string {
 	}
 	return out
 }
+
+// Silent installs Iris without a window (or removes it, keeping the
+// settings), for package managers such as winget: the same steps as the
+// window, a Start menu shortcut and no desktop shortcut, and Iris is not
+// started afterwards.
+func Silent(uninstallMode bool) error {
+	if uninstallMode {
+		return uninstall(false)
+	}
+	app := appBytes()
+	if app == nil {
+		return errString("this setup was built without the app inside; build it with build-iris")
+	}
+	if !engineInstalled() {
+		if err := installEngine(func(float32) {}); err != nil {
+			return err
+		}
+	}
+	dir := installDir()
+	if err := copyApp(dir, app); err != nil {
+		return err
+	}
+	if err := makeShortcuts(dir, false); err != nil {
+		return err
+	}
+	return register(dir, len(app))
+}

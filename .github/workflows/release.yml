@@ -124,6 +124,17 @@ jobs:
           sum=$(sha256sum all/Iris-linux-x86_64.tar.gz | cut -d' ' -f1)
           sed -e "s/@VERSION@/$ver/" -e "s/@SHA256@/$sum/" packaging/aur/PKGBUILD.in > PKGBUILD
           gh release upload "$TAG" SHA256SUMS PKGBUILD --clobber
+      - name: winget manifests
+        run: |
+          ver=${TAG#v}
+          sum=$(sha256sum all/Iris-Setup.exe | cut -d' ' -f1 | tr a-f A-F)
+          mkdir -p winget
+          for f in packaging/winget/*.yaml; do
+            sed -e "s/@VERSION@/$ver/g" -e "s/@SHA256@/$sum/" -e "s/@DATE@/$(date -u +%Y-%m-%d)/" "$f" | grep -v '^# ' > "winget/$(basename "$f")"
+          done
+          cat winget/*.yaml
+          (cd winget && zip -q ../Iris-winget-manifests.zip *.yaml)
+          gh release upload "$TAG" Iris-winget-manifests.zip --clobber
       - name: Publish the repositories
         run: |
           cd site
@@ -133,3 +144,30 @@ jobs:
           git add -A
           git commit -q -m "Iris $TAG packages"
           git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+  # winget: sends this version to microsoft/winget-pkgs (needs the
+  # WINGET_TOKEN secret, a GitHub token that may open pull requests there;
+  # without it the manifests stay on the release for submitting by hand)
+  winget:
+    needs: publish
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Submit to winget
+        shell: pwsh
+        run: |
+          if (-not $env:WINGET_TOKEN) { Write-Host "No WINGET_TOKEN secret: the manifests are on the release (Iris-winget-manifests.zip)."; exit 0 }
+          $ver = $env:TAG.TrimStart('v')
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:TAG/Iris-Setup.exe"
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe show TulipLabs.Iris 2>&1 | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            .\wingetcreate.exe update TulipLabs.Iris --version $ver --urls $url --submit --token $env:WINGET_TOKEN
+          } else {
+            gh release download $env:TAG --repo $env:GITHUB_REPOSITORY --pattern Iris-winget-manifests.zip
+            Expand-Archive Iris-winget-manifests.zip -DestinationPath manifests
+            .\wingetcreate.exe submit --token $env:WINGET_TOKEN manifests
+          }

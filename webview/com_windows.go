@@ -221,6 +221,33 @@ type envOptions struct {
 	vtbl *[11]uintptr
 	refs int32
 	args string
+	ext  envOptions6 // ICoreWebView2EnvironmentOptions6: extensions on
+}
+
+// envOptions6 is envOptions' ICoreWebView2EnvironmentOptions6 face (it
+// shares envOptions' references).
+type envOptions6 struct {
+	vtbl  *[5]uintptr
+	owner *envOptions
+}
+
+var envOptions6Vtbl = [5]uintptr{
+	syscall.NewCallback(func(this, riid, ppv uintptr) uintptr {
+		return envOptionsQI(uintptr(unsafe.Pointer((*envOptions6)(unsafe.Pointer(this)).owner)), riid, ppv)
+	}),
+	syscall.NewCallback(func(this uintptr) uintptr {
+		o := (*envOptions6)(unsafe.Pointer(this)).owner
+		return objAddRef(uintptr(unsafe.Pointer(o)))
+	}),
+	syscall.NewCallback(func(this uintptr) uintptr {
+		o := (*envOptions6)(unsafe.Pointer(this)).owner
+		return objRelease(uintptr(unsafe.Pointer(o)))
+	}),
+	syscall.NewCallback(func(this, out uintptr) uintptr { // get_AreBrowserExtensionsEnabled
+		*(*int32)(unsafe.Pointer(out)) = 1
+		return sOK
+	}),
+	syscall.NewCallback(func(this, v uintptr) uintptr { return sOK }), // put_
 }
 
 var envOptionsVtbl = [11]uintptr{
@@ -251,6 +278,7 @@ var envOptionsVtbl = [11]uintptr{
 
 func newEnvOptions(args string) uintptr {
 	o := &envOptions{vtbl: &envOptionsVtbl, refs: 1, args: args}
+	o.ext = envOptions6{vtbl: &envOptions6Vtbl, owner: o}
 	p := uintptr(unsafe.Pointer(o))
 	liveMu.Lock()
 	live[p] = o
@@ -263,6 +291,12 @@ func envOptionsQI(this, riid, ppv uintptr) uintptr {
 	if sameGUID(iid, &iidIUnknown) || sameGUID(iid, &iidICoreWebView2EnvironmentOptions) || sameGUID(iid, &iidIAgileObject) {
 		*(*uintptr)(unsafe.Pointer(ppv)) = this
 		(*envOptions)(unsafe.Pointer(this)).refs++
+		return sOK
+	}
+	if sameGUID(iid, &iidICoreWebView2EnvironmentOptions6) {
+		o := (*envOptions)(unsafe.Pointer(this))
+		*(*uintptr)(unsafe.Pointer(ppv)) = uintptr(unsafe.Pointer(&o.ext))
+		o.refs++
 		return sOK
 	}
 	*(*uintptr)(unsafe.Pointer(ppv)) = 0

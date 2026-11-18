@@ -37,6 +37,9 @@ type engine struct {
 	version string
 	memMB   float64
 	memAt   time.Time
+	// defaults are the open pages of the default profile (the one
+	// extensions live in), to reach that profile through
+	defaults map[*view]bool
 }
 
 var downloadID int
@@ -162,6 +165,12 @@ func (e *engine) NewView(o Options, ev Events, done func(View, error)) {
 		v := &view{e: e, ctrl: ctrl, ev: ev, sandbox: o.Sandbox}
 		v.core = getPtr(ctrl, slotICoreWebView2Controller_CoreWebView2)
 		v.setup()
+		if o.Profile == "" && !o.Private && o.Popup == nil {
+			if e.defaults == nil {
+				e.defaults = map[*view]bool{}
+			}
+			e.defaults[v] = true
+		}
 		if o.Popup != nil {
 			o.Popup.finish(v.core)
 		}
@@ -761,6 +770,7 @@ func (v *view) Close() {
 		return
 	}
 	v.closed = true
+	delete(v.e.defaults, v)
 	call(v.ctrl, slotICoreWebView2Controller_Close)
 	for _, p := range v.held {
 		release(p)
