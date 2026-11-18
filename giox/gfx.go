@@ -26,6 +26,7 @@ type Gfx struct {
 	shaper *text.Shaper
 	base   float32 // device pixels per logical pixel
 	scale  float32 // current total scale (base * zooms)
+	tx, ty float32 // where the current origin is, in device pixels
 	marks  []mark
 	stack  []func()
 	glyphs []text.Glyph
@@ -36,8 +37,9 @@ type Gfx struct {
 }
 
 type mark struct {
-	n     int
-	scale float32
+	n      int
+	scale  float32
+	tx, ty float32
 }
 
 type measKey struct {
@@ -71,6 +73,7 @@ func NewGfx() *Gfx {
 // Begin starts a frame on ops with the device scale.
 func (g *Gfx) Begin(ops *op.Ops, base float32) {
 	g.ops, g.base, g.scale = ops, base, base
+	g.tx, g.ty = 0, 0
 	g.marks, g.stack = g.marks[:0], g.stack[:0]
 	g.push(op.Affine(f32.Affine2D{}.Scale(f32.Point{}, f32.Pt(base, base))).Push(ops).Pop)
 	if len(g.meas) > 20000 {
@@ -118,7 +121,7 @@ func (g *Gfx) End() {
 
 func (g *Gfx) push(pop func()) { g.stack = append(g.stack, pop) }
 
-func (g *Gfx) Save() { g.marks = append(g.marks, mark{len(g.stack), g.scale}) }
+func (g *Gfx) Save() { g.marks = append(g.marks, mark{len(g.stack), g.scale, g.tx, g.ty}) }
 
 func (g *Gfx) Restore() {
 	m := g.marks[len(g.marks)-1]
@@ -127,11 +130,13 @@ func (g *Gfx) Restore() {
 		g.stack[len(g.stack)-1]()
 		g.stack = g.stack[:len(g.stack)-1]
 	}
-	g.scale = m.scale
+	g.scale, g.tx, g.ty = m.scale, m.tx, m.ty
 }
 
 func (g *Gfx) Translate(x, y float32) {
 	g.push(op.Affine(f32.Affine2D{}.Offset(f32.Pt(x, y))).Push(g.ops).Pop)
+	g.tx += x * g.scale
+	g.ty += y * g.scale
 }
 
 func (g *Gfx) Scale(s float32) {
@@ -274,6 +279,14 @@ func (g *Gfx) Text(s string, x, baseline float32, f ui.Font, c ui.Color) {
 	// so the dot goes exactly on (x, baseline).
 	inv := f.Size / ppem // device glyph space back to logical units
 	x0 := float32(g.glyphs[0].X) / 64 * inv
+	// the line starts on a whole screen pixel and its baseline lies on one:
+	// at fractional scales (1.25, 1.5) a baseline between two pixel rows
+	// smears every horizontal stroke over both, and the text looks soft
+	if k > 0 {
+		dx, dy := g.tx+(x+x0)*k, g.ty+baseline*k
+		x += (float32(math.Round(float64(dx))) - dx) / k
+		baseline += (float32(math.Round(float64(dy))) - dy) / k
+	}
 	t := op.Affine(f32.Affine2D{}.Scale(f32.Point{}, f32.Pt(inv, inv)).Offset(f32.Pt(x+x0, baseline))).Push(g.ops)
 	spec := g.shaper.Shape(g.glyphs)
 	paint.FillShape(g.ops, nrgba(c), clip.Outline{Path: spec}.Op())

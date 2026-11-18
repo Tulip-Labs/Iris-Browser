@@ -243,8 +243,10 @@ jobs:
           swaymsg '[app_id="io.github.tulip_labs.Iris"] floating disable'
           sleep 6
           grim /tmp/fs/3-full-again.png
-          # the menu panel (Ctrl+,), at full size
-          wtype -M ctrl , -m ctrl
+          # the menu panel (the ⋮ button, top right: 1510,58 in screen units), at full size
+          swaymsg 'seat seat0 cursor set 1510 58'
+          swaymsg 'seat seat0 cursor press button1'
+          swaymsg 'seat seat0 cursor release button1'
           sleep 3
           grim /tmp/fs/4-panel.png
           pgrep -x iris >/dev/null || touch /tmp/fs/exited
