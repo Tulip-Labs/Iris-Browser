@@ -35,6 +35,14 @@ jobs:
             webview/servo/rust/target
           key: servo-${{ hashFiles('webview/servo/rust/Cargo.toml', 'webview/servo/rust/src/**') }}
           restore-keys: servo-
+      - name: Servo's own locked versions (its crate carries its Cargo.lock)
+        run: |
+          cd webview/servo/rust
+          if [ ! -f Cargo.lock ]; then
+            mkdir -p /tmp/servo-crate
+            curl -fsSL https://static.crates.io/crates/servo/servo-0.4.0.crate | tar -xz -C /tmp/servo-crate
+            cp /tmp/servo-crate/servo-0.4.0/Cargo.lock Cargo.lock
+          fi
       - name: Build the bridge
         run: |
           cd webview/servo/rust
@@ -43,6 +51,7 @@ jobs:
           echo "built in $(( $(date +%s) - start )) s"
           ls -l target/release/libirisservo.so
           du -sh target
+          echo "LOCK-BEGIN"; gzip -c Cargo.lock | base64 -w0; echo; echo "LOCK-END"
       - uses: actions/upload-artifact@v4
         with:
           name: libirisservo

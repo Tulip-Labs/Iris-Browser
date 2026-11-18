@@ -71,7 +71,7 @@ static int pagePointer(GdkEvent *e, double x, double y) {
 	return 0;
 }
 static int pageKey(GdkEvent *e) { return (lsvPageKey && lsvPageKey(e)) || (lgxPageKey && lgxPageKey(e)); }
-static void pagesLeave(void) {
+static void leavePages(void) {
 	if (lsvPagesLeave) lsvPagesLeave();
 	if (lgxPagesLeave) lgxPagesLeave();
 }
@@ -307,7 +307,7 @@ static graphene_rect_t ovRect;
 static float ovRadius;
 
 static gboolean pagesLeave(gpointer d) {
-	if (ovOn) pagesLeave(); // the page under the pointer loses its hover
+	if (ovOn) leavePages(); // the page under the pointer loses its hover
 	return G_SOURCE_REMOVE;
 }
 
@@ -562,7 +562,7 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 		if (gdk_crossing_event_get_mode(e) == GDK_CROSSING_NORMAL) {
 			lgwGoLeave();
 			onUI = 0;
-			pagesLeave();
+			leavePages();
 		}
 		return FALSE;
 	case GDK_KEY_PRESS:
