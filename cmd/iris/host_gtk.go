@@ -160,7 +160,7 @@ func (r *resident) makeWindow(urls []string) {
 		max = 0
 	}
 	layout := C.lgwOpen(C.int(ws.W), C.int(ws.H), max)
-	h.eng = webview.New()
+	h.eng = newEngine(r.conf)
 	h.a = shell.New(h, shell.Config{Engine: h.eng, DataDir: r.conf, TotalMB: totalMB(), Version: version, SelfMB: webview.SelfMB,
 		Core: r.core, SetBoost: setStartup, Sys: sysHooks(), UpdateKind: installKind()})
 	h.in = h.a.In
