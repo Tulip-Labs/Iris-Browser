@@ -157,6 +157,7 @@ type App struct {
 
 	workers      [4]*worker
 	wakeAt       float64
+	np           nowPlaying // the now-playing pill (nowplaying.go)
 	thumbs       map[string]*thumb
 	thumbSem     chan struct{}
 	fetchImage   func(ctx context.Context, src string, maxW int) (image.Image, error)
@@ -237,6 +238,10 @@ func New(h Host, cfg Config) *App {
 
 // LowMemory says whether the engine should start in its low-end mode.
 func (a *App) LowMemory() bool { return a.plan.Low }
+
+// SetMotion turns the interface's animations on or off (the desktop's
+// "reduce animations" choice).
+func (a *App) SetMotion(on bool) { a.u.NoMotion = !on }
 
 // Policy is what the engine should enforce (pass to Engine.SetPolicy before Start).
 func (a *App) Policy() webview.Policy {

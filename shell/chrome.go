@@ -64,13 +64,19 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 	}
 	x := float32(8)
 	right := w - 8
+	// panels slide in from the right edge (only the drawing moves: the page
+	// takes its final size at once, Chromium would redraw it every frame)
+	slide := (1 - ui.Smooth(a.u.Ease(ID("panel-in"), ui.On(a.panel || a.ai.open), ui.RateCalm))) * 28
 	if a.panel {
 		pw := min(float32(panelW), max(280, w*0.42))
 		if w < 560 {
 			pw = w - 16 // a phone-sized window: the menu takes the width
 		}
 		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - 8}
+		a.u.G.Save()
+		a.u.G.Translate(slide, 0)
 		a.drawPanel(pr)
+		a.u.G.Restore()
 		right = pr.X - 8
 	} else if a.ai.open {
 		pw := float32(aiW)
@@ -78,11 +84,21 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 			pw = min(320, w-16)
 		}
 		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - 8}
+		a.u.G.Save()
+		a.u.G.Translate(slide, 0)
 		a.drawAI(pr)
+		a.u.G.Restore()
 		right = pr.X - 8
 	}
 	if sugH > 0 {
+		// the suggestions drop in under the address
+		drop := (1 - ui.Smooth(a.u.EaseFrom(ID("sug-in"), 1, ui.RateQuick, 0))) * 6
+		a.u.G.Save()
+		a.u.G.Translate(0, -drop)
 		a.suggestions(ui.Rect{X: addr.X, Y: sugTop + 2, W: addr.W, H: sugH - 6}, ID("sugA"))
+		a.u.G.Restore()
+	} else {
+		a.u.Forget(ID("sug-in"))
 	}
 	return ui.Rect{X: x, Y: y, W: max(0, right-x), H: max(0, full.H-y-8)}
 }
@@ -159,10 +175,9 @@ func (a *App) drawTab(i int, t *Tab, r ui.Rect) {
 	active := i == a.cur
 	id := ui.IdN("tab", t.ID)
 	hot := u.Hover(r)
-	if active {
-		ui.Glass(g, r, 11, th, true, true)
-	} else if hot {
-		ui.FillRound(g, r, 11, th.Ink.Alpha(0.06))
+	// the selected tab's glass is drawn by tabStrip, gliding between tabs
+	if h := u.Hot(id, r, !active); h > 0.01 {
+		ui.FillRound(g, r, 11, th.Ink.Alpha(0.06*h))
 	}
 	if t.Kind != KNormal {
 		// the kind's color runs along the bottom of the tab
@@ -194,8 +209,8 @@ func (a *App) drawTab(i int, t *Tab, r ui.Rect) {
 	showClose := active || hot || r.W > 150
 	if showClose {
 		cr := ui.RectAround(right-11, r.CY(), 22, 22)
-		if u.Hover(cr) {
-			ui.FillOval(g, cr, th.Ink.Alpha(0.10))
+		if h := u.Hot(id.Sub("x"), cr, true); h > 0.01 {
+			ui.FillOval(g, cr, th.Ink.Alpha(0.10*h))
 		}
 		ui.DrawIcon(g, ui.IClose, cr.CX()-7, cr.CY()-7, 14, th.OnSurfaceVariant)
 		if u.Clickable(id.Sub("x"), cr) {
@@ -261,6 +276,12 @@ func (a *App) tabStrip(r ui.Rect) {
 	g.Clip(clip)
 	u.PushHit(clip)
 	x := start - a.stripScroll
+	// the selected tab's glass glides to the tab chosen
+	if a.cur >= 0 && a.cur < len(a.tabs) {
+		ax := u.Ease(ID("tab-sel-x"), x+float32(a.cur)*tw+1.5, ui.RateQuick)
+		aw := u.Ease(ID("tab-sel-w"), tw-3, ui.RateQuick)
+		ui.Glass(g, ui.Rect{X: ax, Y: r.Y + 4, W: aw, H: r.H - 6}, 11, a.u.Th, true, true)
+	}
 	for i, t := range a.tabs {
 		tr := ui.Rect{X: x + 1.5, Y: r.Y + 4, W: tw - 3, H: r.H - 6}
 		if tr.R() > clip.X && tr.X < clip.R() {
@@ -435,6 +456,22 @@ func (a *App) toolbar(r ui.Rect) ui.Rect {
 		}
 	}
 	rx -= 10
+	// the now-playing pill, beside the address: it slides open while a tab
+	// plays sound
+	pt := a.playingTab()
+	if compact {
+		pt = nil
+	}
+	if pt != a.np.tab && pt == nil {
+		a.np.tab = nil
+	}
+	pillW := u.Ease(ID("np-w"), map[bool]float32{true: min(270, max(190, (rx-left)*0.3)), false: 0}[pt != nil], ui.RateCalm)
+	if pillW > 1 {
+		rx -= pillW + 8
+		if pt != nil && pillW > 60 {
+			a.nowPlayingPill(ui.Rect{X: rx + 8, Y: cy - 19, W: pillW, H: 38}, pt)
+		}
+	}
 
 	// the address: centered in the window when there is room, never wider than a calm line
 	aw := min(rx-left, float32(760))
@@ -488,15 +525,22 @@ func (a *App) addressBar(r ui.Rect, t *Tab) {
 		}
 	}
 	rad := r.H / 2
-	if focused {
-		ui.Glass(g, r, rad, th, true, true)
-		ui.FillRound(g, r, rad, th.Primary.Alpha(0.04))
-		ui.StrokeRound(g, r.Inset(1), rad-1, 2, th.Primary)
-	} else {
-		ui.FillRound(g, r, rad, addrFill(th))
-		if u.Hover(r) {
-			ui.FillRound(g, r, rad, th.Ink.Alpha(0.05))
+	// focus glides in: the pill turns to glass, a ring draws in around it
+	// and a soft glow spreads out, so it is plain that typing goes here
+	fo := u.Ease(id.Sub("focus"), ui.On(focused), ui.RateQuick)
+	hot := u.Hot(id, r, !focused)
+	if fo < 0.99 {
+		ui.FillRound(g, r, rad, addrFill(th).Fade(1-fo))
+		if hot > 0.01 {
+			ui.FillRound(g, r, rad, th.Ink.Alpha(0.05*hot*(1-fo)))
 		}
+	}
+	if fo > 0.01 {
+		glow := r.Inset(-5 * fo)
+		ui.FillRound(g, glow, glow.H/2, th.Primary.Alpha(0.10*fo))
+		ui.Glass(g, r, rad, th, true, true)
+		ui.FillRound(g, r, rad, th.Primary.Alpha(0.04*fo))
+		ui.StrokeRound(g, r.Inset(1), rad-1, 1+fo, th.Primary.Fade(fo))
 	}
 	// leading icon: security, or the search mode while typing
 	ic, icCol := ui.IGlobe, th.OnSurfaceVariant

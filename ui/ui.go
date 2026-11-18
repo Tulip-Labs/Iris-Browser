@@ -31,6 +31,11 @@ type State struct {
 	// Editing is the focused field's text (set by TextField each frame), for
 	// hosts that tell the input method what is being edited.
 	Editing *TextEdit
+	// motion (anim.go)
+	anims   map[ID]*animVal
+	animNow float64
+	animDt  float32
+	tipLast string
 }
 
 // Clipboard writes text to the system clipboard; pasted text arrives in Input.Paste.
@@ -49,6 +54,7 @@ type Ui struct {
 	InputLayer int
 	W, H       float32
 	Redraw     bool // something animates: ask for another frame
+	NoMotion   bool // the reader asked for less motion: values jump to where they go
 	hit        []Rect
 }
 
@@ -241,16 +247,20 @@ func (u *Ui) TextField(id ID, r Rect, t *TextEdit, o FieldOpt) bool {
 	}
 	focused := u.St.Focus == id
 	if !o.Bare {
-		// M3 outlined text field, rounded to match the glass cards
+		// M3 outlined text field, rounded to match the glass cards; focus
+		// glows in around it, so it is plain where typing goes
+		fo := u.Ease(id.Sub("focus"), b2f(focused), RateQuick)
+		hot := u.Hot(id, r, !focused)
 		FillRound(g, r, 12, th.Field)
-		rim, rw := th.Outline, float32(1)
+		if fo > 0.01 && !o.Error {
+			StrokeRound(g, r.Inset(-2.5), 14.5, 3, th.Primary.Fade(0.22*fo))
+		}
+		rim, rw := Mix(th.Outline, th.OnSurface.Alpha(0.6), hot), float32(1)
 		switch {
 		case o.Error:
 			rim, rw = th.Danger, 2
-		case focused:
-			rim, rw = th.Primary, 2
-		case u.Hover(r):
-			rim = th.OnSurface.Alpha(0.6)
+		case fo > 0.01:
+			rim, rw = Mix(rim, th.Primary, fo), 1+fo
 		}
 		StrokeRound(g, r.Inset(rw/2), 12, rw, rim)
 	}

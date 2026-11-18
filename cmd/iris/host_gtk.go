@@ -101,6 +101,7 @@ type host struct {
 
 	sf        float64 // the screen's scale (real pixels per GTK unit; 1.25, 1.5 and the like included)
 	text      float64 // the desktop's text scale
+	motion    bool    // the desktop allows animations
 	lastClick time.Time
 	lastX     float64
 	lastY     float64
@@ -149,7 +150,7 @@ func (r *resident) window(urls []string) {
 }
 
 func (r *resident) makeWindow(urls []string) {
-	h := &host{r: r, start: time.Now(), sf: 1, text: 1, pinch: 1}
+	h := &host{r: r, start: time.Now(), sf: 1, text: 1, pinch: 1, motion: true}
 	win = h
 	// the size the reader left, and maximized unless they chose otherwise
 	ws := r.core.Settings.Window
@@ -165,6 +166,7 @@ func (r *resident) makeWindow(urls []string) {
 	h.a = shell.New(h, shell.Config{Engine: h.eng, DataDir: r.conf, TotalMB: totalMB(), Version: version, SelfMB: webview.SelfMB,
 		Core: r.core, SetBoost: setStartup, Sys: sysHooks(), UpdateKind: installKind()})
 	h.in = h.a.In
+	h.a.SetMotion(h.motion)
 	C.lgwSendState()
 	h.eng.SetPolicy(h.a.Policy())
 	for _, u := range urls {
@@ -180,9 +182,12 @@ func (r *resident) makeWindow(urls []string) {
 }
 
 //export lgwGoScale
-func lgwGoScale(sf C.double, text C.double) {
+func lgwGoScale(sf C.double, text C.double, motion C.int) {
 	if h := win; h != nil {
-		h.sf, h.text = max(float64(sf), 0.5), float64(text)
+		h.sf, h.text, h.motion = max(float64(sf), 0.5), float64(text), motion != 0
+		if h.a != nil {
+			h.a.SetMotion(h.motion)
+		}
 	}
 }
 

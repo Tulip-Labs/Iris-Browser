@@ -2,14 +2,19 @@ package ui
 
 // Material 3 components, blended with Flowcode's palettes and glass.
 
-// stateLayer paints M3's hover/press overlay in the content color.
-func stateLayer(g Gfx, r Rect, rad float32, on Color, hot, down bool) {
-	switch {
-	case down:
-		FillRound(g, r, rad, on.Alpha(0.12))
-	case hot:
-		FillRound(g, r, rad, on.Alpha(0.08))
+// stateLayer paints M3's hover/press overlay in the content color; hot and
+// down are how far the pointer is over it and pressing it (0 to 1).
+func stateLayer(g Gfx, r Rect, rad float32, on Color, hot, down float32) {
+	if a := 0.08*hot + 0.06*down; a > 0.003 {
+		FillRound(g, r, rad, on.Alpha(a))
 	}
+}
+
+func b2f(b bool) float32 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // Button: Primary is an M3 filled button (with a soft accent gradient), the default
@@ -17,8 +22,9 @@ func stateLayer(g Gfx, r Rect, rad float32, on Color, hot, down bool) {
 func (u *Ui) Button(id ID, r Rect, label string, o ButtonOpt) bool {
 	g, th := u.G, u.Th
 	enabled := !o.Disabled
-	hot := enabled && u.Hover(r)
-	down := enabled && u.IsActive(id)
+	hot, down := u.Hot(id, r, enabled), u.Press(id, enabled)
+	hit := r
+	r = Squeeze(r, down)
 	rad := r.H / 2
 	var bg, fg Color
 	switch {
@@ -32,7 +38,7 @@ func (u *Ui) Button(id ID, r Rect, label string, o ButtonOpt) bool {
 		bg, fg = th.SecondaryContainer, th.OnSecondaryContainer
 	}
 	if enabled && (o.Primary || o.Danger) {
-		Shadow(g, r, rad, th.Shadow, 0.5, 2)
+		Shadow(g, r, rad, th.Shadow, 0.5+0.3*hot-0.3*down, 2)
 		FillRoundAccent(g, r, rad, bg)
 	} else {
 		FillRound(g, r, rad, bg)
@@ -55,30 +61,33 @@ func (u *Ui) Button(id ID, r Rect, label string, o ButtonOpt) bool {
 	if label != "" {
 		g.Text(label, x, Mid(g, r.Y, r.H, f), f, fg)
 	}
-	u.Tooltip(o.Tip, r)
-	return enabled && u.Clickable(id, r)
+	u.Tooltip(o.Tip, hit)
+	return enabled && u.Clickable(id, hit)
 }
 
 // IconButton is an M3 standard icon button; Toggled shows the tonal selected state.
 func (u *Ui) IconButton(id ID, r Rect, icon Icon, tip string, o IconOpt) bool {
 	g, th := u.G, u.Th
 	enabled := !o.Disabled
-	hot := enabled && u.Hover(r)
-	down := enabled && u.IsActive(id)
+	hot, down := u.Hot(id, r, enabled), u.Press(id, enabled)
 	d := min(r.W, r.H)
 	c := RectAround(r.CX(), r.CY(), d, d)
 	col := th.OnSurfaceVariant
+	// the selected state grows out of the middle
+	on := u.Ease(id.Sub("on"), b2f(enabled && o.Toggled), RateQuick)
+	if on > 0.01 {
+		FillOval(g, RectAround(c.CX(), c.CY(), d*(0.6+0.4*on), d*(0.6+0.4*on)), th.SecondaryContainer.Fade(on))
+	}
 	switch {
 	case !enabled:
 		col = th.OnSurface.Alpha(0.38)
 	case o.Toggled:
-		FillOval(g, c, th.SecondaryContainer)
 		col = th.OnSecondaryContainer
 	case o.Accent != 0:
 		col = o.Accent
 	}
 	stateLayer(g, c, d/2, col, hot, down)
-	s := min(20, d-12)
+	s := min(20, d-12) * (1 - 0.08*down)
 	DrawIcon(g, icon, r.CX()-s/2, r.CY()-s/2, s, col)
 	u.Tooltip(tip, r)
 	return enabled && u.Clickable(id, r)
@@ -87,9 +96,11 @@ func (u *Ui) IconButton(id ID, r Rect, icon Icon, tip string, o IconOpt) bool {
 // Fab is an M3 floating action button (extended when label is set).
 func (u *Ui) Fab(id ID, r Rect, icon Icon, label, tip string) bool {
 	g, th := u.G, u.Th
-	hot, down := u.Hover(r), u.IsActive(id)
+	hot, down := u.Hot(id, r, true), u.Press(id, true)
+	hit := r
+	r = Squeeze(r, down)
 	rad := min(16, r.H/2)
-	Shadow(g, r, rad, th.Shadow, 0.9, 3)
+	Shadow(g, r, rad, th.Shadow, 0.9+0.3*hot, 3)
 	FillRoundAccent(g, r, rad, th.Primary)
 	stateLayer(g, r, rad, th.OnPrimary, hot, down)
 	if label == "" {
@@ -100,8 +111,8 @@ func (u *Ui) Fab(id ID, r Rect, icon Icon, label, tip string) bool {
 		DrawIcon(g, icon, x, r.CY()-10, 20, th.OnPrimary)
 		g.Text(label, x+28, Mid(g, r.Y, r.H, FBodyBold), FBodyBold, th.OnPrimary)
 	}
-	u.Tooltip(tip, r)
-	return u.Clickable(id, r)
+	u.Tooltip(tip, hit)
+	return u.Clickable(id, hit)
 }
 
 // Segmented is an M3 segmented button: an outlined pill group, the selected
@@ -113,20 +124,17 @@ func (u *Ui) Segmented(id ID, r Rect, options []string, selected int) int {
 	out := selected
 	g.Save()
 	g.Clip(r)
+	// the selected fill glides to the chosen segment, clipped to the pill
+	at := u.Ease(id.Sub("sel"), float32(selected), RateQuick)
+	FillPathClip(g, NewPath().RoundRect(r, rad), Rect{r.X + at*w, r.Y, w, r.H}, th.SecondaryContainer)
 	for i, o := range options {
 		cr := Rect{r.X + float32(i)*w, r.Y, w, r.H}
 		sel := i == selected
-		if sel {
-			// selected fill, clipped to the pill
-			g.Save()
-			FillPathClip(g, NewPath().RoundRect(r, rad), cr, th.SecondaryContainer)
-			g.Restore()
-		}
 		fg := th.OnSurface
 		if sel {
 			fg = th.OnSecondaryContainer
 		}
-		stateLayer(g, cr, 0, fg, u.Hover(cr), u.IsActive(id.N(i)))
+		stateLayer(g, cr, 0, fg, u.Hot(id.N(i), cr, true), u.Press(id.N(i), true))
 		f := FSmallBold
 		tw := g.Measure(o, f)
 		cw := float32(0)
@@ -178,7 +186,7 @@ func (u *Ui) Tabs(id ID, r Rect, items []TabItem, selected int, compact bool) in
 		if sel {
 			c = th.Primary
 		}
-		stateLayer(g, cr.Inset2(2, 2), 10, c, u.Hover(cr), u.IsActive(id.N(i)))
+		stateLayer(g, cr.Inset2(2, 2), 10, c, u.Hot(id.N(i), cr, true), u.Press(id.N(i), true))
 		cw := float32(24)
 		if iconsOnly {
 			DrawIcon(g, it.Icon, cr.CX()-9, cr.CY()-10, 18, c)
@@ -191,8 +199,10 @@ func (u *Ui) Tabs(id ID, r Rect, items []TabItem, selected int, compact bool) in
 			cw = tw + 22
 		}
 		if sel {
-			ind := Rect{cr.CX() - cw/2, r.B() - 3, cw, 3}
-			FillRound(g, Rect{ind.X, ind.Y, ind.W, 6}, 3, th.Primary)
+			// the indicator glides from the last tab to this one
+			cx := u.Ease(id.Sub("ind-x"), cr.CX(), RateQuick)
+			iw := u.Ease(id.Sub("ind-w"), cw, RateQuick)
+			FillRound(g, Rect{cx - iw/2, r.B() - 3, iw, 6}, 3, th.Primary)
 		}
 		if u.Clickable(id.N(i), cr) {
 			out = i
@@ -204,12 +214,17 @@ func (u *Ui) Tabs(id ID, r Rect, items []TabItem, selected int, compact bool) in
 func (u *Ui) Checkbox(id ID, r Rect, label string, value bool) bool {
 	g, th := u.G, u.Th
 	b := Rect{r.X + 2, r.CY() - 9, 18, 18}
-	stateLayer(g, RectAround(b.CX(), b.CY(), 36, 36), 18, th.Primary, u.Hover(r), u.IsActive(id))
-	if value {
-		FillRound(g, b, 4, th.Primary)
-		DrawIcon(g, ICheck, b.X+2, b.Y+2, 14, th.OnPrimary)
-	} else {
-		StrokeRound(g, b.Inset(1), 3, 2, th.OnSurfaceVariant)
+	stateLayer(g, RectAround(b.CX(), b.CY(), 36, 36), 18, th.Primary, u.Hot(id, r, true), u.Press(id, true))
+	// the box fills from the middle and the check pops in
+	on := u.Ease(id.Sub("on"), b2f(value), RateQuick)
+	if on < 0.99 {
+		StrokeRound(g, b.Inset(1), 3, 2, th.OnSurfaceVariant.Fade(1-on))
+	}
+	if on > 0.01 {
+		k := 0.5 + 0.5*on
+		FillRound(g, RectAround(b.CX(), b.CY(), b.W*k, b.H*k), 4*k, th.Primary.Fade(on))
+		s := 14 * (0.6 + 0.4*on)
+		DrawIcon(g, ICheck, b.CX()-s/2, b.CY()-s/2, s, th.OnPrimary.Fade(on))
 	}
 	g.Text(label, r.X+32, Mid(g, r.Y, r.H, FBody), FBody, th.OnSurface)
 	if u.Clickable(id, r) {
@@ -261,13 +276,20 @@ func (u *Ui) DrawTooltip() {
 		return
 	}
 	g, th, f := u.G, u.Th, FSmall
+	// a new tooltip fades in and rises into place
+	if s != u.St.tipLast {
+		u.St.tipLast = s
+		delete(u.St.anims, Id("tooltip"))
+	}
+	k := u.EaseFrom(Id("tooltip"), 1, RateQuick, 0)
 	tw := g.Measure(s, f) + 16
 	x := clampf(u.St.TooltipAt.CX()-tw/2, 4, u.W-tw-4)
 	y := u.St.TooltipAt.B() + 6
 	if y+26 > u.H-4 {
 		y = u.St.TooltipAt.Y - 32
 	}
-	FillRound(g, Rect{x, y, tw, 26}, 6, th.InverseSurface)
-	g.Text(s, x+8, Mid(g, y, 26, f), f, th.InverseOnSurface)
+	y += (1 - k) * 4
+	FillRound(g, Rect{x, y, tw, 26}, 6, th.InverseSurface.Fade(k))
+	g.Text(s, x+8, Mid(g, y, 26, f), f, th.InverseOnSurface.Fade(k))
 	u.St.Tooltip = ""
 }

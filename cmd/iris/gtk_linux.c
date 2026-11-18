@@ -41,7 +41,7 @@ extern void lgwGoState(int maximized, int fullscreen, int w, int h);
 extern void lgwGoDestroy(void);
 extern void lgwGoClose(void);
 extern void lgwGoDo(uintptr_t h);
-extern void lgwGoScale(double sf, double text);
+extern void lgwGoScale(double sf, double text, int motion);
 
 // the pages (webview/cef_linux.c)
 extern void lgxSnapshotPages(GtkSnapshot *s, double scale) __attribute__((weak));
@@ -360,7 +360,9 @@ static void readScale(void) {
 	gint dpi = 0;
 	g_object_get(gtk_settings_get_default(), "gtk-xft-dpi", &dpi, NULL);
 	double text = dpi > 0 ? dpi / 1024.0 / 96.0 : 1;
-	lgwGoScale(scaleOf(view), text);
+	gboolean motion = TRUE; // the desktop's "animations" switch
+	g_object_get(gtk_settings_get_default(), "gtk-enable-animations", &motion, NULL);
+	lgwGoScale(scaleOf(view), text, motion);
 }
 
 static void onScale(GObject *o, GParamSpec *p, gpointer d) {
@@ -666,6 +668,7 @@ uintptr_t lgwOpen(int w, int h, int maximized) {
 	g_signal_connect(win, "close-request", G_CALLBACK(onCloseRequest), NULL);
 	g_signal_connect(win, "destroy", G_CALLBACK(onDestroy), NULL);
 	g_signal_connect(gtk_settings_get_default(), "notify::gtk-xft-dpi", G_CALLBACK(onScale), NULL);
+	g_signal_connect(gtk_settings_get_default(), "notify::gtk-enable-animations", G_CALLBACK(onScale), NULL);
 	// GTK before 4.10 sizes a window maximized before it is shown wrongly
 	// when the compositor leaves the size to it (Weston: "buffer does not match
 	// the configured maximized state"); there it opens at its size instead
