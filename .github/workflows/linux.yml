@@ -248,12 +248,21 @@ jobs:
           sleep 3
           grim /tmp/fs/4-panel.png
           pgrep -x iris >/dev/null || touch /tmp/fs/exited
+          # what Chromium does with each scale it is given
+          pkill -x iris; sleep 2; pkill -9 -x iris; pkill -9 -f iris-helper; sleep 1
+          for f in 1.25 1.5 2; do
+            IRIS_SCALE=$f IRIS_CEF_VERBOSE=1 IRIS_CEF_ARGS="--enable-logging=stderr --v=0" dbus-run-session -- iris http://127.0.0.2:8766/ > /tmp/fs/log-$f.txt 2>&1 &
+            sleep 14
+            grim /tmp/fs/5-forced-$f.png
+            pkill -x iris; sleep 2; pkill -9 -x iris; pkill -9 -f iris-helper; sleep 1
+          done
           SH
           su tester -c "sh /tmp/run.sh"
           grep -v dbus /tmp/fs/log.txt | tail -60
           tail -20 /tmp/sway.txt
           for f in /tmp/fs/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
           [ ! -e /tmp/fs/exited ] || { echo "Iris exited"; exit 1; }
+          for f in 1.25 1.5 2; do echo "== forced $f"; grep -i "scale\|dsf\|device" /tmp/fs/log-$f.txt | grep -v dbus | head -12; done
           grep -q "pages at scale 1.25" /tmp/fs/log.txt || { echo "the pages are not at the screen's scale (1.25)"; exit 1; }
       - uses: actions/upload-artifact@v4
         if: always()
