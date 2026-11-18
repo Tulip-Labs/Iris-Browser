@@ -152,6 +152,10 @@ func H264Script(relay string) string {
     if (!src) { const s = v.querySelector('source[src]'); src = s && s.src; }
     if (!src || !/^https?:/.test(src) || src.startsWith(RELAY.slice(0, 30))) return;
     v.__lgRelay = true;
+    // a player that already caught the first error (video.js: LinkedIn and
+    // many news sites) keeps its error notice over the video: cleared
+    const p = v.closest && v.closest('.video-js');
+    if (p) p.classList.remove('vjs-error');
     const play = !v.paused || v.autoplay || v.hasAttribute('autoplay');
     v.querySelectorAll('source').forEach((s) => s.remove());
     v.src = RELAY + encodeURIComponent(src) + '&r=' + encodeURIComponent(location.href);
@@ -160,8 +164,14 @@ func H264Script(relay string) string {
   };
   document.addEventListener('error', (e) => {
     const t = e.target;
-    if (t instanceof HTMLVideoElement && t.error && t.error.code === 4) fix(t);
-    else if (t instanceof HTMLSourceElement && t.parentElement instanceof HTMLVideoElement && !t.nextElementSibling) fix(t.parentElement);
+    let v = null;
+    if (t instanceof HTMLVideoElement && t.error && t.error.code === 4) v = t;
+    else if (t instanceof HTMLSourceElement && t.parentElement instanceof HTMLVideoElement && !t.nextElementSibling) v = t.parentElement;
+    if (!v || v.__lgRelay) return;
+    fix(v);
+    // the page's own player never hears of the error the relay mends (this
+    // listener runs first: capturing, on the document)
+    if (v.__lgRelay) e.stopImmediatePropagation();
   }, true);
   // videos that failed before this script ran, or whose error was caught by
   // their player: look again now and then
