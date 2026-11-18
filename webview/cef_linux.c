@@ -226,6 +226,19 @@ static double scaleOf(void) {
 	return sc > 0.25 ? sc : 1;
 }
 
+// pageDSF is the scale Chromium draws pages at: the window's own, read once
+// it has settled (startWhenSettled) and given to Chromium at its start, the
+// one time it takes one. dsf is that, or the window's until then.
+static double pageDSF;
+static double dsf(void) { return pageDSF > 0 ? pageDSF : scaleOf(); }
+
+// Chromium's start, held until the window's scale settles (startWhenSettled)
+static char *startDir;
+static gint64 startAt, scaleSince;
+static double lastScale;
+static int cefStarting;           // setup ran
+static GQueue early = G_QUEUE_INIT; // what the interface asked of the pages before it
+
 // ---- the message pump: CEF's work runs from GTK's main loop ----
 
 static guint pumpTimer;
@@ -289,17 +302,18 @@ static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type
 	cef_string_clear(&k);
 	cef_string_clear(&val);
 	// Chromium draws at exactly the window's scale, fractional ones (1.25,
-	// 1.5) included: each page asks it of the window (getScreenInfo), and
-	// follows it when it changes. No forced factor: one guessed at startup,
-	// before the window is on screen, fought the window's real scale and
-	// drew pages smaller or larger than their place.
-	if (g_getenv("IRIS_SCALE")) {
-		setStr(&k, "force-device-scale-factor");
-		setStr(&val, g_getenv("IRIS_SCALE"));
-		cl->append_switch_with_value(cl, &k, &val);
-		cef_string_clear(&k);
-		cef_string_clear(&val);
-	}
+	// 1.5) included: one page pixel on one screen pixel, sharp. Off screen it
+	// takes the scale only from this switch (it ignores the pages' screen
+	// information), so Chromium starts once the window's scale has settled
+	// (startWhenSettled): the first one GTK reports is a guess the compositor
+	// corrects a frame later (2, then 1.25).
+	char sfs[16];
+	g_ascii_formatd(sfs, sizeof sfs, "%.4g", pageDSF > 0 ? pageDSF : 1);
+	setStr(&k, "force-device-scale-factor");
+	setStr(&val, g_getenv("IRIS_SCALE") ? g_getenv("IRIS_SCALE") : sfs);
+	cl->append_switch_with_value(cl, &k, &val);
+	cef_string_clear(&k);
+	cef_string_clear(&val);
 	// GTK 4, as Iris's window: Chromium loads GTK itself (file pickers,
 	// printing) and would take GTK 3 first, which cannot live beside GTK 4
 	setStr(&k, "gtk-version");
@@ -508,7 +522,7 @@ void lgxSnapshotPages(GtkSnapshot *sn, double s) {
 			}
 			if (v->popTex && v->popupShown) {
 				int pw = gdk_texture_get_width(v->popTex), ph = gdk_texture_get_height(v->popTex);
-				double x = round(v->px[0] + v->popupRect.x * s) / s, y = round(v->px[1] + v->popupRect.y * s) / s;
+				double x = round(v->px[0] + v->popupRect.x * dsf()) / s, y = round(v->px[1] + v->popupRect.y * dsf()) / s;
 				appendTexture(sn, v->popTex, &GRAPHENE_RECT_INIT(x, y, pw / s, ph / s), 1);
 			}
 		} else {
@@ -528,8 +542,8 @@ static void CEF_CALLBACK getViewRect(cef_render_handler_t *self, cef_browser_t *
 
 static int CEF_CALLBACK getScreenInfo(cef_render_handler_t *self, cef_browser_t *b, cef_screen_info_t *si) {
 	LV *v = of(b);
-	// the window's scale, exactly (fractional ones included)
-	double sf = v && v->scale > 0 ? v->scale : scaleOf();
+	// the scale Chromium was started at (it keeps it whatever this says)
+	double sf = dsf();
 	si->device_scale_factor = (float)sf;
 	if (g_getenv("IRIS_GL_DEBUG")) g_printerr("Iris: page scale %.4g\n", sf);
 	return 1;
@@ -600,8 +614,8 @@ static LV *pageAt(double x, double y) {
 
 // inPage is (x, y) in the page's own units.
 static cef_mouse_event_t inPage(LV *v, double x, double y, guint state) {
-	double s = scaleOf();
-	cef_mouse_event_t me = {(int)floor((x * s - v->px[0]) / s), (int)floor((y * s - v->px[1]) / s), modsOf(state)};
+	double s = scaleOf(), d = dsf();
+	cef_mouse_event_t me = {(int)floor((x * s - v->px[0]) / d), (int)floor((y * s - v->px[1]) / d), modsOf(state)};
 	return me;
 }
 
@@ -1046,8 +1060,8 @@ static int CEF_CALLBACK onRunMenu(cef_context_menu_handler_t *self, cef_browser_
 	gtk_popover_set_has_arrow(GTK_POPOVER(pop), FALSE);
 	gtk_popover_set_position(GTK_POPOVER(pop), GTK_POS_BOTTOM);
 	gtk_widget_set_halign(pop, GTK_ALIGN_START);
-	double s = scaleOf();
-	GdkRectangle at = {(int)(v->px[0] / s) + params->get_xcoord(params), (int)(v->px[1] / s) + params->get_ycoord(params), 1, 1};
+	double s = scaleOf(), d = dsf();
+	GdkRectangle at = {(int)((v->px[0] + params->get_xcoord(params) * d) / s), (int)((v->px[1] + params->get_ycoord(params) * d) / s), 1, 1};
 	gtk_popover_set_pointing_to(GTK_POPOVER(pop), &at);
 	g_signal_connect(pop, "closed", G_CALLBACK(onMenuClosed), NULL);
 	gtk_popover_popup(GTK_POPOVER(pop));
@@ -1218,7 +1232,7 @@ static cef_load_handler_t loadH;
 static void applyState(LV *v) {
 	cef_browser_host_t *h = hostOf(v);
 	if (!h) return;
-	v->scale = scaleOf();
+	v->scale = dsf();
 	h->notify_screen_info_changed(h);
 	h->was_resized(h);
 	h->was_hidden(h, !v->shown);
@@ -1751,6 +1765,10 @@ static char *jsString(const char *s) {
 }
 
 static gboolean runOp(gpointer data) {
+	if (!cefStarting && startDir) { // Chromium is not started yet: after it is
+		g_queue_push_tail(&early, data);
+		return G_SOURCE_REMOVE;
+	}
 	Op *op = data;
 	LV *v = op->id && op->op != OP_DLCANCEL ? lv(op->id, op->op == OP_SCRIPT || op->op == OP_PROFILE || op->op == OP_NEW) : NULL;
 	cef_browser_host_t *h = v ? hostOf(v) : NULL;
@@ -1796,8 +1814,9 @@ static gboolean runOp(gpointer data) {
 		break;
 	case OP_BOUNDS:
 		if (v) {
-			// where the page goes, in the view's real pixels
-			double sf = scaleOf();
+			// where the page goes, in the view's real pixels; its size in
+			// Chromium's units, so its frame has exactly that many pixels
+			double sf = dsf();
 			v->px[0] = op->a, v->px[1] = op->b, v->px[2] = op->c, v->px[3] = op->d;
 			int w = (int)lround(op->c / sf), hh = (int)lround(op->d / sf);
 			if (w < 1) w = 1;
@@ -1922,13 +1941,21 @@ static char *exeDir(void) {
 	return g_path_get_dirname(buf);
 }
 
-static void setup(const char *dir) {
+// tables are the pages' tables, there from the first moment (input and
+// drawing look at them before Chromium starts)
+static void tables(void) {
 	if (views) return;
-	dataDir = g_strdup(dir);
 	views = g_hash_table_new(g_direct_hash, g_direct_equal);
 	byBrowser = g_hash_table_new(g_direct_hash, g_direct_equal);
 	contexts = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
 	downloads = g_hash_table_new(g_direct_hash, g_direct_equal);
+}
+
+static void setup(const char *dir) {
+	if (cefStarting) return;
+	cefStarting = 1;
+	tables();
+	dataDir = g_strdup(dir);
 	initHandlers();
 	cef_api_hash(CEF_API_VERSION, 0);
 
@@ -1973,6 +2000,40 @@ static void setup(const char *dir) {
 	g_free(locales);
 }
 
+// startWhenSettled starts Chromium once the window is on screen and its
+// scale has held for 150 ms (the compositor corrects GTK's first guess a
+// frame or two after the window shows), or after 1.5 s at the latest. What
+// the interface asks of the pages meanwhile waits (early) and runs then.
+static void startNow(void);
+
+static gboolean startWhenSettled(GtkWidget *w, GdkFrameClock *fc, gpointer d) {
+	gint64 now = g_get_monotonic_time();
+	double sc = scaleOf();
+	if (fabs(sc - lastScale) > 0.001) lastScale = sc, scaleSince = now;
+	int settled = gtk_widget_get_mapped(w) && now - scaleSince >= 150000;
+	if (cefStarting) return G_SOURCE_REMOVE;
+	if (!settled && now - startAt < 1500000) return G_SOURCE_CONTINUE;
+	startNow();
+	return G_SOURCE_REMOVE;
+}
+
+// startNow starts Chromium at the window's scale as it is now.
+static void startNow(void) {
+	if (cefStarting) return;
+	double sc = scaleOf();
+	pageDSF = g_getenv("IRIS_SCALE") ? g_ascii_strtod(g_getenv("IRIS_SCALE"), NULL) : sc;
+	if (pageDSF < 0.5 || pageDSF > 8) pageDSF = sc;
+	if (g_getenv("IRIS_GL_DEBUG")) g_printerr("Iris: pages at scale %.4g\n", pageDSF);
+	setup(startDir);
+	while (!g_queue_is_empty(&early)) runOp(g_queue_pop_head(&early));
+}
+
+// the window drew no frames (opened minimized, say): Chromium starts anyway
+static gboolean startLate(gpointer d) {
+	startNow();
+	return G_SOURCE_REMOVE;
+}
+
 // lgxAttach starts the engine in Iris's GTK window (on GTK's thread); view
 // is the widget the pages are drawn in.
 void lgxAttach(uintptr_t view, const char *dir) {
@@ -1982,7 +2043,11 @@ void lgxAttach(uintptr_t view, const char *dir) {
 	pageIM = gtk_im_context_simple_new();
 	gtk_im_context_set_client_widget(pageIM, host);
 	g_signal_connect(pageIM, "commit", G_CALLBACK(onCommit), NULL);
-	setup(dir);
+	tables();
+	startDir = g_strdup(dir);
+	startAt = g_get_monotonic_time();
+	gtk_widget_add_tick_callback(host, startWhenSettled, NULL, NULL);
+	g_timeout_add(1800, startLate, NULL);
 }
 
 // lgxMain is the Gio-window variant, which the Chromium engine does not use.
