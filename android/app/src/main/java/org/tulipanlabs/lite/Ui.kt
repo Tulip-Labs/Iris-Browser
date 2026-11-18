@@ -107,32 +107,52 @@ fun Context.button(p: Palette, label: String, filled: Boolean, onClick: () -> Un
     return t
 }
 
-/** Lite's mark: a rounded tile in the accent with a ring in motion and a spark. */
+/** Iris's mark: an iris of light under an arc, in a drop of the palette's clear glass. */
 class LogoView(ctx: Context, var palette: Palette) : View(ctx) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val r = RectF()
 
     override fun onDraw(c: Canvas) {
         val w = width.toFloat()
+        val h = height.toFloat()
         val s = w / 24f
-        r.set(0f, 0f, w, height.toFloat())
+        val rad = w * 0.28f
+        val p = palette
+        // the drop of glass: clear, brighter at the top, with a rim of light
+        r.set(0f, 0f, w, h)
         paint.style = Paint.Style.FILL
-        paint.shader = LinearGradient(0f, 0f, w, w, Palette.mix(palette.primary, Palette.WHITE, 0.18f), Palette.mix(palette.primary, Palette.BLACK, 0.12f), Shader.TileMode.CLAMP)
-        c.drawRoundRect(r, w * 0.3f, w * 0.3f, paint)
+        paint.shader = LinearGradient(0f, 0f, 0f, h,
+            Palette.alpha(Palette.WHITE, if (p.dark) 0.20f else 0.72f), Palette.alpha(Palette.WHITE, if (p.dark) 0.06f else 0.38f), Shader.TileMode.CLAMP)
+        c.drawRoundRect(r, rad, rad, paint)
+        paint.shader = LinearGradient(0f, 0f, 0f, h * 0.5f, Palette.alpha(Palette.WHITE, if (p.dark) 0.28f else 0.6f), 0, Shader.TileMode.CLAMP)
+        r.set(w * 0.07f, h * 0.035f, w * 0.93f, h * 0.5f)
+        c.drawRoundRect(r, rad * 0.85f, rad * 0.85f, paint)
         paint.shader = null
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 2.1f * s
-        paint.strokeCap = Paint.Cap.ROUND
-        paint.color = Palette.WHITE
+        paint.strokeWidth = maxOf(1f, w * 0.02f)
+        paint.color = p.rim
+        r.set(paint.strokeWidth / 2, paint.strokeWidth / 2, w - paint.strokeWidth / 2, h - paint.strokeWidth / 2)
+        c.drawRoundRect(r, rad, rad, paint)
+        // the iris and its arc, in the ink
+        val ink = p.onSurface
         val cx = w / 2
-        val cy = height / 2f
-        r.set(cx - 6.6f * s, cy - 6.6f * s, cx + 6.6f * s, cy + 6.6f * s)
-        c.drawArc(r, 140f, 330f, false, paint)
+        val cy = h / 2 + 0.6f * s
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.color = Palette.alpha(ink, 0.5f)
+        paint.strokeWidth = 0.9f * s
+        r.set(cx - 9f * s, cy - 9f * s, cx + 9f * s, cy + 9f * s)
+        c.drawArc(r, 205f, 130f, false, paint)
+        paint.color = ink
+        paint.strokeWidth = 1.15f * s
+        c.drawCircle(cx, cy, 6f * s, paint)
+        paint.color = Palette.alpha(ink, 0.5f)
+        paint.strokeWidth = 0.5f * s
+        c.drawCircle(cx, cy, 3.8f * s, paint)
         paint.style = Paint.Style.FILL
-        paint.color = palette.hl
-        c.drawCircle(17.2f * s, 7.4f * s, 2.3f * s, paint)
-        paint.color = Palette.WHITE
+        paint.color = Palette.alpha(ink, 0.92f)
         c.drawCircle(cx, cy, 1.6f * s, paint)
+        paint.color = Palette.alpha(ink, 0.8f)
+        c.drawCircle(cx + 2.9f * s, cy - 3f * s, 0.65f * s, paint)
     }
 }
 

@@ -9,12 +9,12 @@ shot() { sleep "${2:-4}"; adb exec-out screencap -p > "screens/$1.png"; }
 back() { adb shell input keyevent KEYCODE_BACK; sleep 1; }
 
 start; sleep 12; adb shell am force-stop $P; start; shot start 10
-for th in crocus peach mint night; do
+for th in liquid daylight mist graphite; do
   start --es lite.theme $th --es lite.open menu; shot menu-$th
   adb shell input swipe 540 1800 540 600 300; shot menu-$th-2 2
   back
 done
-start --es lite.theme crocus --es lite.open tabs; shot tabs; back
+start --es lite.theme liquid --es lite.open tabs; shot tabs; back
 start --es lite.open new; shot new-menu; back
 start --es lite.open shield; shot shield; back
 start --es lite.mode web --es lite.url "red\ pandas"; shot results 16
@@ -36,5 +36,5 @@ start --es lite.mode web --es lite.url "red\ pandas"; shot tablet-results 16
 adb shell wm size reset
 adb shell wm density reset
 adb logcat -d -b crash > screens/crash.txt
-adb logcat -d -s AndroidRuntime:E chromium:E LiteResults:I > screens/errors.txt
+adb logcat -d -s AndroidRuntime:E chromium:E cefrium:* Cefrium:* LiteResults:I > screens/errors.txt
 ls -la screens
