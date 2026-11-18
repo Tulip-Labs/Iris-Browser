@@ -100,8 +100,8 @@ Electron is Chromium plus Node.js; Iris keeps both on a diet:
 - **Nothing in the background.** No crash reporter, component updater,
   spellchecker downloads, safe browsing pings, translate, or media router.
 - **A small package.** Only the English and the reader's own locale files,
-  no Electron sample apps, the helper as one plain script (no bundler, no
-  dependencies from npm).
+  no Electron sample apps, the helper as one plain script (no bundler; the
+  only npm dependency is `electron-chrome-extensions`, see Extensions).
 
 What the diet never touches, because pages break without it: the graphics
 chip (GPU compositing, WebGL, WebGPU), JIT-compiled JavaScript, workers and
@@ -121,6 +121,44 @@ Servo from crates.io (0.x LTS), linked as a C library through `servo-capi`
 and called from Go with cgo. It renders with WebRender into a GL texture of
 its own context, shared with GTK the same way (dmabuf). Servo runs in Iris's
 own process: no start-up cost for a light page.
+
+## Extensions (Chrome Web Store, unpacked)
+
+Extensions run in the Electron engine; Iris draws everything they show.
+
+**In Electron.** The helper's main process carries `electron-chrome-extensions`
+(the one npm dependency, vendored and pinned), which provides the
+`chrome.tabs`, `chrome.runtime`, `chrome.webRequest`, `chrome.action` and
+related APIs on top of Electron's own extension support. Extensions are
+loaded unpacked with `session.loadExtension()`: Iris unpacks a .crx (from
+the Web Store or a file) into its data folder first and checks its
+signature; Electron never opens a .crx. Their background pages and service
+workers run in the helper, which therefore also starts when an installed
+extension needs to run, and stays as small as above otherwise.
+
+**In Go and Gio.** Over the same socket the helper reports each extension's
+icon, title, badge text and color, and popup address; Gio draws the icons and
+their badges (an ad blocker's count, say) in the toolbar beside the address,
+in Iris's own style. A click on an icon asks the helper to open the popup
+(`chrome-extension://<id>/popup.html`) as an offscreen page of its own,
+which Iris draws under the icon, sized to the popup's content, on the same
+overlay over the pages that the right-click menu uses, and closes on a click
+outside or Escape. Tabs the extensions see (`chrome.tabs`) are Iris's tabs,
+mapped by Iris, Servo tabs included (their address and title).
+
+**The limit.** Content scripts run only in pages Electron draws. When an
+installed extension's content scripts match a site (a password manager on
+a sign-in page, say), the router sends that site to Electron, and the reader
+can turn that off per extension.
+
+**Blocking in both engines, natively.** Iris Shields already matches
+EasyList, EasyPrivacy and uBlock's lists in Go (about 110,000 rules in
+microseconds). Both engines ask it before every request: Electron through
+`session.webRequest.onBeforeRequest`, answered over the socket; Servo through
+its embedding API's resource-load hook, answered in process. A proxy is not
+used: for https it would see only the host name, not the address, and
+blocking by host alone breaks sites. So an ad-blocking extension is optional,
+not needed for the shield to work everywhere.
 
 ## Packaging (Linux)
 
