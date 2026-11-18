@@ -279,7 +279,12 @@ func (e *elxEngine) run(dataDir string, low bool, scale float64) {
 	e.mu.Lock()
 	e.cmd = cmd
 	e.mu.Unlock()
-	go func() { _ = cmd.Wait() }()
+	go func() {
+		err := cmd.Wait()
+		if err != nil || os.Getenv("IRIS_GL_DEBUG") != "" {
+			fmt.Fprintln(os.Stderr, "Iris: the page engine ended:", cmd.ProcessState)
+		}
+	}()
 	type acc struct {
 		c   net.Conn
 		err error
