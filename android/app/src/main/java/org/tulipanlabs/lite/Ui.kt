@@ -20,7 +20,7 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 
-// Small building blocks for Lite's Material 3 look, drawn with Android's own
+// Small building blocks for Iris's Material 3 look, drawn with Android's own
 // views (no extra libraries: the app stays small and light).
 
 fun Context.dp(v: Float): Int = (v * resources.displayMetrics.density + 0.5f).toInt()

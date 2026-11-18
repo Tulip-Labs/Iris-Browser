@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"time"
 
-	"litego/core"
-	"litego/shields"
+	"iris/core"
+	"iris/shields"
 )
 
-// Hiding what ads leave behind (Lite Shields' cosmetic filtering): a page gets
+// Hiding what ads leave behind (Iris Shields' cosmetic filtering): a page gets
 // its site's rules as it starts, then the generic rules that match its own
 // classes and ids once it has loaded, and again a little later for what it
 // added by itself.

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"litego/raster"
+	"iris/raster"
 )
 
 type nopHost struct{}
@@ -30,7 +30,7 @@ func TestScreens(t *testing.T) {
 	s.existing = ""
 	shot(t, s, "setup-welcome")
 	s.stage = stWorking
-	s.steps = []step{{"Checking the web engine", 2}, {"Copying Lite Go", 2}, {"Adding shortcuts", 1}, {"Registering Lite Go as a browser", 0}}
+	s.steps = []step{{"Checking the web engine", 2}, {"Copying Iris", 2}, {"Adding shortcuts", 1}, {"Registering Iris as a browser", 0}}
 	s.progress = 0.8
 	shot(t, s, "setup-working")
 	s.stage = stDone

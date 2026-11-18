@@ -1,6 +1,6 @@
-# The .deb and .rpm packages, made by nfpm (build-litego.sh packages).
+# The .deb and .rpm packages, made by nfpm (build-iris.sh packages).
 # VERSION and ARCH come from the environment.
-name: lite-go-browser
+name: iris-browser
 version: ${VERSION}
 arch: ${ARCH}
 platform: linux
@@ -12,112 +12,86 @@ homepage: https://github.com/Tulip-Labs/Iris-Browser
 license: GPL-3.0-only
 description: |-
   A light, fast browser with shields built in.
-  Iris (formerly Lite Go) shows pages with Chromium (through CEF, which it carries) and adds
+  Iris shows pages with Chromium (through CEF, which it carries) and adds
   ad and tracker blocking, containers, split view and tabs that sleep to
   save memory. It runs on Wayland.
 
 contents:
-  - src: dist/linux/lite-go-browser
-    dst: /usr/lib/lite-go-browser/lite-go-browser
+  - src: dist/linux/iris
+    dst: /usr/lib/iris-browser/iris
     file_info: {mode: 0755}
-  - src: dist/linux/lite-go-browser.sha256
-    dst: /usr/lib/lite-go-browser/lite-go-browser.sha256
-  - src: dist/linux/lite-go-helper
-    dst: /usr/lib/lite-go-browser/lite-go-helper
+  - src: dist/linux/iris.sha256
+    dst: /usr/lib/iris-browser/iris.sha256
+  - src: dist/linux/iris-helper
+    dst: /usr/lib/iris-browser/iris-helper
     file_info: {mode: 0755}
   - src: dist/linux/libcef.so
-    dst: /usr/lib/lite-go-browser/libcef.so
+    dst: /usr/lib/iris-browser/libcef.so
     file_info: {mode: 0644}
   - src: dist/linux/libvk_swiftshader.so
-    dst: /usr/lib/lite-go-browser/libvk_swiftshader.so
+    dst: /usr/lib/iris-browser/libvk_swiftshader.so
     file_info: {mode: 0644}
   - src: dist/linux/libvulkan.so.1
-    dst: /usr/lib/lite-go-browser/libvulkan.so.1
+    dst: /usr/lib/iris-browser/libvulkan.so.1
     file_info: {mode: 0644}
   - src: dist/linux/vk_swiftshader_icd.json
-    dst: /usr/lib/lite-go-browser/vk_swiftshader_icd.json
+    dst: /usr/lib/iris-browser/vk_swiftshader_icd.json
   - src: dist/linux/v8_context_snapshot.bin
-    dst: /usr/lib/lite-go-browser/v8_context_snapshot.bin
+    dst: /usr/lib/iris-browser/v8_context_snapshot.bin
   - src: dist/linux/icudtl.dat
-    dst: /usr/lib/lite-go-browser/icudtl.dat
+    dst: /usr/lib/iris-browser/icudtl.dat
   - src: dist/linux/resources.pak
-    dst: /usr/lib/lite-go-browser/resources.pak
+    dst: /usr/lib/iris-browser/resources.pak
   - src: dist/linux/chrome_100_percent.pak
-    dst: /usr/lib/lite-go-browser/chrome_100_percent.pak
+    dst: /usr/lib/iris-browser/chrome_100_percent.pak
   - src: dist/linux/chrome_200_percent.pak
-    dst: /usr/lib/lite-go-browser/chrome_200_percent.pak
+    dst: /usr/lib/iris-browser/chrome_200_percent.pak
   # Chromium's sandbox helper must be setuid root
   - src: dist/linux/chrome-sandbox
-    dst: /usr/lib/lite-go-browser/chrome-sandbox
+    dst: /usr/lib/iris-browser/chrome-sandbox
     file_info: {mode: 04755, owner: root, group: root}
   - src: dist/linux/locales/*.pak
-    dst: /usr/lib/lite-go-browser/locales/
+    dst: /usr/lib/iris-browser/locales/
   - src: dist/linux/CEF-LICENSE.txt
-    dst: /usr/share/licenses/lite-go-browser/CEF-LICENSE.txt
+    dst: /usr/share/licenses/iris-browser/CEF-LICENSE.txt
   - src: dist/linux/CHROMIUM-CREDITS.html
-    dst: /usr/share/doc/lite-go-browser/CHROMIUM-CREDITS.html
+    dst: /usr/share/doc/iris-browser/CHROMIUM-CREDITS.html
   - src: packaging/linux/install-kind-deb
-    dst: /usr/lib/lite-go-browser/install-kind
+    dst: /usr/lib/iris-browser/install-kind
     packager: deb
   - src: packaging/linux/install-kind-rpm
-    dst: /usr/lib/lite-go-browser/install-kind
+    dst: /usr/lib/iris-browser/install-kind
     packager: rpm
-  - src: /usr/lib/lite-go-browser/lite-go-browser
-    dst: /usr/bin/lite-go
-    type: symlink
-  - src: /usr/lib/lite-go-browser/lite-go-browser
-    dst: /usr/bin/lite-go-browser
-    type: symlink
-  - src: /usr/lib/lite-go-browser/lite-go-browser
+  - src: /usr/lib/iris-browser/iris
     dst: /usr/bin/iris
     type: symlink
-  - src: packaging/linux/lite-go.desktop
-    dst: /usr/share/applications/lite-go.desktop
+  - src: /usr/lib/iris-browser/iris
+    dst: /usr/bin/iris-browser
+    type: symlink
+  - src: packaging/linux/io.github.tulip_labs.Iris.desktop
+    dst: /usr/share/applications/io.github.tulip_labs.Iris.desktop
   - src: assets/icon.png
-    dst: /usr/share/icons/hicolor/256x256/apps/lite-go.png
+    dst: /usr/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
+  - src: packaging/linux/io.github.tulip_labs.Iris.metainfo.xml
+    dst: /usr/share/metainfo/io.github.tulip_labs.Iris.metainfo.xml
   - src: LICENSE
-    dst: /usr/share/licenses/lite-go-browser/LICENSE
+    dst: /usr/share/licenses/iris-browser/LICENSE
   - src: THIRD_PARTY_NOTICES.md
-    dst: /usr/share/doc/lite-go-browser/THIRD_PARTY_NOTICES.md
+    dst: /usr/share/doc/iris-browser/THIRD_PARTY_NOTICES.md
 
 scripts:
   postinstall: packaging/linux/postinst.sh
 
+# Iris was packaged as lite-go-browser until 1.0.19: this package takes its
+# place (dnf and zypper upgrade into it; on apt, a small lite-go-browser
+# package of the same version depends on it, see nfpm-transitional.yaml)
+
 overrides:
-  deb:
-    scripts:
-      postinstall: packaging/linux/postinst-deb.sh
-    # Chromium's libraries (libcef.so); t64 names on Debian 13 and Ubuntu 24.04
-    depends:
-      - libgtk-4-1
-      - libepoxy0
-      - libgles2
-      - libnss3
-      - libnspr4
-      - libasound2 | libasound2t64
-      - libgbm1
-      - libdrm2
-      - libxkbcommon0
-      - libatk-bridge2.0-0 | libatk-bridge2.0-0t64
-      - libatk1.0-0 | libatk1.0-0t64
-      - libcups2 | libcups2t64
-      - libdbus-1-3
-      - libexpat1
-      - libpango-1.0-0
-      - libcairo2
-      - libx11-6
-      - libxcb1
-      - libxcomposite1
-      - libxdamage1
-      - libxext6
-      - libxfixes3
-      - libxrandr2
-      # H.264 and H.265 videos (LinkedIn, X, news sites): Chromium's free
-      # build leaves them out, so Iris plays them through the system's ffmpeg
-      - ffmpeg
-    recommends:
-      - xdg-utils
   rpm:
+    replaces:
+      - lite-go-browser < 1.0.20
+    provides:
+      - lite-go-browser = ${VERSION}
     # H.264 and H.265 videos play through the system's ffmpeg: Fedora's
     # ffmpeg-free (H.264 with Cisco's openh264, below) or RPM Fusion's full
     # ffmpeg (H.264 and H.265); openSUSE's ffmpeg
@@ -150,9 +124,46 @@ overrides:
       - libXext.so.6()(64bit)
       - libXfixes.so.3()(64bit)
       - libXrandr.so.2()(64bit)
+  deb:
+    replaces:
+      - lite-go-browser (<< 1.0.20)
+    scripts:
+      postinstall: packaging/linux/postinst-deb.sh
+    # Chromium's libraries (libcef.so); t64 names on Debian 13 and Ubuntu 24.04
+    depends:
+      - libgtk-4-1
+      - libepoxy0
+      - libgles2
+      - libnss3
+      - libnspr4
+      - libasound2 | libasound2t64
+      - libgbm1
+      - libdrm2
+      - libxkbcommon0
+      - libatk-bridge2.0-0 | libatk-bridge2.0-0t64
+      - libatk1.0-0 | libatk1.0-0t64
+      - libcups2 | libcups2t64
+      - libdbus-1-3
+      - libexpat1
+      - libpango-1.0-0
+      - libcairo2
+      - libx11-6
+      - libxcb1
+      - libxcomposite1
+      - libxdamage1
+      - libxext6
+      - libxfixes3
+      - libxrandr2
+      # H.264 and H.265 videos (LinkedIn, X, news sites): Chromium's free
+      # build leaves them out, so Iris plays them through the system's ffmpeg
+      - ffmpeg
+    recommends:
+      - xdg-utils
 
 deb:
   compression: xz
+  breaks:
+    - lite-go-browser (<< 1.0.20)
   fields:
     Bugs: https://github.com/Tulip-Labs/Iris-Browser/issues
 rpm:

@@ -3,9 +3,9 @@ package org.tulipanlabs.lite
 
 import java.io.BufferedReader
 
-// Lite Shields: an ad and tracker blocker that reads the usual filter lists
+// Iris Shields: an ad and tracker blocker that reads the usual filter lists
 // (EasyList, EasyPrivacy, uBlock filters, the cookie notice list), plus the
-// hiding of the boxes ads leave behind. The same design as Lite Go's Go engine
+// hiding of the boxes ads leave behind. The same design as Iris's Go engine
 // (and Brave's and uBlock Origin's): every rule is filed under its rarest whole
 // word, and a request only checks the rules filed under the words of its own
 // address, so each request costs microseconds.
@@ -23,7 +23,7 @@ object Kind {
     const val DOCUMENT = 512
     const val ALL = 1023
 
-    /** the kinds Lite asks about (style sheets and fonts are never blocked: pages must look right) */
+    /** the kinds Iris asks about (style sheets and fonts are never blocked: pages must look right) */
     const val ASKED = SCRIPT or IMAGE or XHR or MEDIA or PING or OTHER or SUBDOCUMENT
 
     val names = mapOf(

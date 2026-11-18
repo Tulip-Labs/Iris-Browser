@@ -1,10 +1,10 @@
 # Privacy
 
-Lite Go is a browser made by Tulipan Labs. This page says what it does with your data.
+Iris is a browser made by Tulipan Labs. This page says what it does with your data.
 
-**Lite Go collects nothing.** There is no account, no telemetry, no analytics and no crash
+**Iris collects nothing.** There is no account, no telemetry, no analytics and no crash
 reporting. Nothing about you or your browsing is sent to Tulipan Labs or to anyone on its
-behalf. Tulipan Labs runs no servers for Lite Go.
+behalf. Tulipan Labs runs no servers for Iris.
 
 ## What stays on your computer
 

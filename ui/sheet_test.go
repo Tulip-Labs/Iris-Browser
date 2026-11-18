@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"litego/raster"
-	"litego/ui"
+	"iris/raster"
+	"iris/ui"
 )
 
 func TestIconSheet(t *testing.T) {

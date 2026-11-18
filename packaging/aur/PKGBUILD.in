@@ -1,7 +1,8 @@
 # Maintainer: Tulip Labs <tulip-labs@users.noreply.github.com>
 # Made by the release workflow from packaging/aur/PKGBUILD.in; publish it as
-# the AUR package lite-go-browser-bin.
-pkgname=lite-go-browser-bin
+# the AUR package iris-browser-bin (it replaces lite-go-browser-bin, the
+# name Iris had as Lite Go).
+pkgname=iris-browser-bin
 pkgver=@VERSION@
 pkgrel=1
 pkgdesc="A light, fast browser with shields built in"
@@ -9,27 +10,27 @@ arch=('x86_64')
 url="https://github.com/Tulip-Labs/Iris-Browser"
 license=('GPL-3.0-only')
 depends=('gtk4' 'libepoxy' 'libglvnd' 'nss' 'alsa-lib' 'libdrm' 'mesa' 'libxkbcommon' 'at-spi2-core' 'libcups' 'libxcomposite' 'libxdamage' 'libxrandr' 'ffmpeg') # ffmpeg: H.264 and H.265 videos
-provides=('lite-go-browser')
-conflicts=('lite-go-browser')
-source=("LiteGo-linux-x86_64-${pkgver}.tar.gz::https://github.com/Tulip-Labs/Iris-Browser/releases/download/v${pkgver}/LiteGo-linux-x86_64.tar.gz")
+provides=('iris-browser')
+conflicts=('iris-browser' 'lite-go-browser' 'lite-go-browser-bin')
+replaces=('lite-go-browser-bin')
+source=("Iris-linux-x86_64-${pkgver}.tar.gz::https://github.com/Tulip-Labs/Iris-Browser/releases/download/v${pkgver}/Iris-linux-x86_64.tar.gz")
 sha256sums=('@SHA256@')
 
 options=('!strip') # Chromium's files come stripped
 
 package() {
-	cd "LiteGo-linux-x86_64"
-	local lib="$pkgdir/usr/lib/lite-go-browser"
+	cd "Iris-linux-x86_64"
+	local lib="$pkgdir/usr/lib/iris-browser" id=io.github.tulip_labs.Iris
 	install -d "$lib/locales"
-	cp -a lite-go-browser lite-go-browser.sha256 lite-go-helper libcef.so libvk_swiftshader.so libvulkan.so.1 \
+	cp -a iris iris.sha256 iris-helper libcef.so libvk_swiftshader.so libvulkan.so.1 \
 		vk_swiftshader_icd.json v8_context_snapshot.bin icudtl.dat ./*.pak "$lib/"
 	cp -a locales/*.pak "$lib/locales/"
 	install -m4755 chrome-sandbox "$lib/chrome-sandbox"
 	echo arch > "$lib/install-kind"
 	install -d "$pkgdir/usr/bin"
-	ln -s /usr/lib/lite-go-browser/lite-go-browser "$pkgdir/usr/bin/lite-go"
-	ln -s /usr/lib/lite-go-browser/lite-go-browser "$pkgdir/usr/bin/lite-go-browser"
-	install -Dm644 lite-go.desktop "$pkgdir/usr/share/applications/lite-go.desktop"
-	install -Dm644 lite-go.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/lite-go.png"
+	ln -s /usr/lib/iris-browser/iris "$pkgdir/usr/bin/iris"
+	install -Dm644 "$id.desktop" "$pkgdir/usr/share/applications/$id.desktop"
+	install -Dm644 "$id.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/$id.png"
 	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 	install -Dm644 CEF-LICENSE.txt "$pkgdir/usr/share/licenses/$pkgname/CEF-LICENSE.txt"
 }

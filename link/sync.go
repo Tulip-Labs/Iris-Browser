@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// Sync between Lite Go and Lite for Android, with no server in between: the
+// Sync between Iris and Iris for Android, with no server in between: the
 // two meet on the local network and trade what they know. Everything they
 // send is sealed with a key they share from the pairing (AES-256-GCM), so
 // nobody else on the network can read or change it.
@@ -46,6 +46,8 @@ type Visit struct {
 	Last   int64  `json:"l"`
 }
 
+// bound into every message; kept from when Iris was Lite Go, so devices on
+// either version still understand each other
 const syncAAD = "litego-sync-1"
 
 // NewKey makes a pairing key (hex).
@@ -122,7 +124,7 @@ func StartSync(keyHex, device string, exchange func(State) State) (*SyncServer, 
 	// who is here: lets the phone find the computer again when its address changes
 	mux.HandleFunc("/sync/hello", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"app": "litego", "id": device, "name": name})
+		_ = json.NewEncoder(w).Encode(map[string]string{"app": "iris", "id": device, "name": name})
 	})
 	mux.HandleFunc("/sync/x", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -161,14 +163,14 @@ func StartSync(keyHex, device string, exchange func(State) State) (*SyncServer, 
 func (s *SyncServer) Port() int { return s.port }
 func (s *SyncServer) Stop()     { _ = s.srv.Close() }
 
-// PairURL is what Lite for Android opens to pair with this computer.
+// PairURL is what Iris for Android opens to pair with this computer.
 func PairURL(port int, keyHex, device string) string {
 	name, _ := os.Hostname()
 	q := url.Values{"h": {lanIP()}, "p": {strconv.Itoa(port)}, "k": {keyHex}, "d": {device}, "n": {name}}
-	return "litego://pair?" + q.Encode()
+	return "iris://pair?" + q.Encode()
 }
 
-// SetPairing shows a "Pair Lite for Android" button on the phone's page
+// SetPairing shows a "Pair Iris for Android" button on the phone's page
 // (pairURL from PairURL; "" takes it away).
 func (s *Server) SetPairing(pairURL string) {
 	s.mu.Lock()

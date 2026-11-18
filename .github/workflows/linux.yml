@@ -1,5 +1,5 @@
-# Lite Go for Linux: builds the .tar.gz, .deb and .rpm on every
-# push, then installs them on several distributions and starts Lite Go on
+# Iris for Linux: builds the .tar.gz, .deb and .rpm on every
+# push, then installs them on several distributions and starts Iris on
 # each (in a virtual display) to check it opens. The release workflow calls
 # this too and publishes what it makes.
 name: Linux
@@ -32,11 +32,11 @@ jobs:
           path: third_party/cef
           key: cef-${{ hashFiles('packaging/cef/cef.env') }}
       - name: Build the program, the .tar.gz, the .deb and the .rpm (tests run first)
-        run: ./build-litego.sh packages
+        run: ./build-iris.sh packages
       - name: Collect
         run: |
           mkdir out
-          cp dist/LiteGo-linux-x86_64.tar.gz dist/*.deb dist/*.rpm out/
+          cp dist/Iris-linux-x86_64.tar.gz dist/LiteGo-linux-x86_64.tar.gz dist/*.deb dist/*.rpm out/
           ls -l out
 
       - uses: actions/upload-artifact@v4
@@ -44,7 +44,7 @@ jobs:
           name: linux
           path: out/*
 
-  # Installs each package the way a reader would, then starts Lite Go in a
+  # Installs each package the way a reader would, then starts Iris in a
   # virtual display: it must still be running after 20 seconds.
   install:
     needs: build
@@ -85,28 +85,28 @@ jobs:
             ;;
           tar)
             pacman -Syu --noconfirm --needed gtk4 libepoxy libglvnd mesa nss alsa-lib libdrm libxkbcommon at-spi2-core libcups libxcomposite libxdamage libxrandr weston procps-ng which tar gzip ttf-dejavu dbus
-            tar -xzf pkg/LiteGo-linux-x86_64.tar.gz -C /tmp
+            tar -xzf pkg/Iris-linux-x86_64.tar.gz -C /tmp
             useradd -m tester
-            su tester -c "/tmp/LiteGo-linux-x86_64/install.sh"
-            ln -s /home/tester/.local/bin/lite-go /usr/local/bin/lite-go
+            su tester -c "/tmp/Iris-linux-x86_64/install.sh"
+            ln -s /home/tester/.local/bin/iris /usr/local/bin/iris
             ;;
           esac
       - name: Libraries are all there
         run: |
-          exe=$(readlink -f "$(command -v lite-go)")
+          exe=$(readlink -f "$(command -v iris)")
           dir=$(dirname "$exe")
           echo "$exe"
           ls -l "$dir"
-          ! ldd "$exe" "$dir/libcef.so" "$dir/lite-go-helper" | grep "not found"
+          ! ldd "$exe" "$dir/libcef.so" "$dir/iris-helper" | grep "not found"
       - name: Test pages (text, and a VP9 video made here where ffmpeg is at hand)
         run: |
           mkdir -p /tmp/page
           command -v ffmpeg >/dev/null && ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime /tmp/page/v.webm
-          # an H.264 + AAC video, which Lite Go plays through its relay (where ffmpeg has x264)
+          # an H.264 + AAC video, which Iris plays through its relay (where ffmpeg has x264)
           command -v ffmpeg >/dev/null && ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=frequency=440 -t 20 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -movflags +faststart /tmp/page/h.mp4 || true
           cat > /tmp/page/video.html <<'HTML'
           <!doctype html><body style="margin:0;background:#202020;font:24px sans-serif;color:#fff">
-          <h1 style="color:#f5a">Lite Go on Chromium</h1>
+          <h1 style="color:#f5a">Iris on Chromium</h1>
           <p id=s>video: loading</p>
           <p id=ua></p>
           <p id=s2>h264: loading</p>
@@ -123,11 +123,11 @@ jobs:
           </script>
           HTML
           chmod -R a+rX /tmp/page
-      - name: Lite Go starts on Wayland and keeps running
+      - name: Iris starts on Wayland and keeps running
         run: |
           id -u tester >/dev/null 2>&1 || useradd -m tester
           cat > /tmp/wl.sh <<'SH'
-          export XDG_RUNTIME_DIR=$(mktemp -d) LIBGL_ALWAYS_SOFTWARE=1 LITEGO_GL_DEBUG=1 LITEGO_NO_SANDBOX=1
+          export XDG_RUNTIME_DIR=$(mktemp -d) LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1
           sc="--scale=${{ matrix.scale || 1 }}"
           for b in "--backend=headless --renderer=gl" "--backend=headless-backend.so --use-gl" "--backend=headless" "--backend=headless-backend.so"; do
             weston $b $sc --socket=wl-test --width=1280 --height=800 --debug > /tmp/weston.txt 2>&1 &
@@ -145,18 +145,18 @@ jobs:
             page=file:///tmp/page/video.html
           fi
           mkdir -p /tmp/shots
-          export LITEGO_RELAY_LOCAL=1 LITEGO_CEF_VERBOSE=1 LITEGO_SHOT=/tmp/shots/page LITEGO_CEF_ARGS="--enable-logging=stderr --v=0"
+          export IRIS_RELAY_LOCAL=1 IRIS_CEF_VERBOSE=1 IRIS_SHOT=/tmp/shots/page IRIS_CEF_ARGS="--enable-logging=stderr --v=0"
           run=""; command -v dbus-run-session >/dev/null && run="dbus-run-session --"
-          $run lite-go "$page" > /tmp/log.txt 2>&1 &
+          $run iris "$page" > /tmp/log.txt 2>&1 &
           pid=$!
           sleep 20
           alive=0; kill -0 $pid 2>/dev/null && alive=1
           kill $pid 2>/dev/null; sleep 1; kill -9 $pid 2>/dev/null
           grep -v "dbus" /tmp/log.txt | tail -200
           for f in /tmp/shots/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
-          [ $alive = 1 ] || { echo "Lite Go exited on Wayland before 20 seconds"; exit 1; }
-          ! grep -q "no GPU drawing\|no OpenGL context\|could not start" /tmp/log.txt || { echo "Lite Go ran on Wayland but could not draw"; exit 1; }
-          echo "Lite Go ran for 20 seconds on Wayland."
+          [ $alive = 1 ] || { echo "Iris exited on Wayland before 20 seconds"; exit 1; }
+          ! grep -q "no GPU drawing\|no OpenGL context\|could not start" /tmp/log.txt || { echo "Iris ran on Wayland but could not draw"; exit 1; }
+          echo "Iris ran for 20 seconds on Wayland."
           SH
           su tester -c "sh /tmp/wl.sh"
       - uses: actions/upload-artifact@v4
@@ -181,5 +181,5 @@ jobs:
       - name: nix build
         run: |
           nix build -L .#default
-          ls -l result/bin result/lib/lite-go-browser
-          ! ldd result/lib/lite-go-browser/.lite-go-browser-wrapped result/lib/lite-go-browser/libcef.so | grep "=> not found"
+          ls -l result/bin result/lib/iris-browser
+          ! ldd result/lib/iris-browser/.iris-wrapped result/lib/iris-browser/libcef.so | grep "=> not found"

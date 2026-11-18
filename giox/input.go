@@ -13,7 +13,7 @@ import (
 	"gioui.org/io/transfer"
 	"gioui.org/layout"
 
-	"litego/ui"
+	"iris/ui"
 )
 
 var keyNames = map[key.Name]ui.Key{

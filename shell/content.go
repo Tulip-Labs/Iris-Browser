@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"litego/ui"
+	"iris/ui"
 )
 
 // content draws what the page area shows when it is not a live page.
@@ -30,7 +30,7 @@ func (a *App) content(r ui.Rect) {
 			msg = "The web engine did not start: " + a.engErr.Error()
 		}
 		if runtime.GOOS == "linux" {
-			msg = "Chromium, which shows the pages, did not start. Install Iris again, or run lite-go from a terminal to see why."
+			msg = "Chromium, which shows the pages, did not start. Install Iris again, or run iris from a terminal to see why."
 		}
 		a.message(r, ui.IGlobe, "The web engine is not available", msg, "", nil)
 	case t.view == nil:
@@ -45,7 +45,7 @@ func (a *App) content(r ui.Rect) {
 	}
 }
 
-// fillPage paints the surface of Lite Go's own pages (new tab, results): the
+// fillPage paints the surface of Iris's own pages (new tab, results): the
 // page color, or a pale version of the palette's merging pastels.
 func fillPage(g ui.Gfx, r ui.Rect, rad float32, th *ui.Theme) {
 	if th.Grad == nil {
@@ -109,7 +109,7 @@ func wrap(g ui.Gfx, text string, f ui.Font, w float32) []string {
 	return out
 }
 
-// ntp is the new tab page, drawn by Lite Go itself so it opens instantly:
+// ntp is the new tab page, drawn by Iris itself so it opens instantly:
 // the mark and the name, and the search under them. Nothing else.
 func (a *App) ntp(r ui.Rect, t *Tab) {
 	g, th := a.u.G, a.u.Th

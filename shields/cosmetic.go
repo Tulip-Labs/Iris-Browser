@@ -159,7 +159,7 @@ func (e *Engine) SiteSelectors(page string) []string {
 }
 
 // GenericSelectors are the generic rules that can match a page with these
-// classes and ids (Lite Go reads them from the page once it has loaded).
+// classes and ids (Iris reads them from the page once it has loaded).
 func (e *Engine) GenericSelectors(page string, classes, ids []string) []string {
 	if e == nil || e.genericHidden(page) {
 		return nil

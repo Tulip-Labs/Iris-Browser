@@ -1,4 +1,4 @@
-// Package update keeps Lite Go up to date from its GitHub releases.
+// Package update keeps Iris up to date from its GitHub releases.
 //
 // It asks GitHub for the latest release, picks the file that matches how this
 // copy was installed (a .tar.gz in the home folder, a .deb, an .rpm, a
@@ -70,7 +70,7 @@ func Latest(ctx context.Context) (Release, error) {
 		return Release{}, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "Lite-Go-updater")
+	req.Header.Set("User-Agent", "Iris-updater")
 	res, err := Client.Do(req)
 	if err != nil {
 		return Release{}, err
@@ -132,13 +132,13 @@ const (
 	KindFlatpak  Kind = "flatpak"  // a Flatpak bundle from the releases
 	KindFlathub  Kind = "flathub"  // a Flatpak from a remote, which updates it
 	KindNix      Kind = "nix"      // Nix
-	KindSetup    Kind = "setup"    // Windows: installed by Lite Go Setup
+	KindSetup    Kind = "setup"    // Windows: installed by Iris Setup
 	KindStore    Kind = "store"    // Windows: the Microsoft Store package
 	KindPortable Kind = "portable" // a copy run from wherever it was unpacked
 	KindDev      Kind = "dev"      // a build from source
 )
 
-// Managed says who updates copies Lite Go does not update itself.
+// Managed says who updates copies Iris does not update itself.
 func (k Kind) Managed() string {
 	switch k {
 	case KindOSTree:
@@ -159,7 +159,7 @@ func (k Kind) Managed() string {
 	return ""
 }
 
-// CanSelf reports whether Lite Go can install updates for this kind itself.
+// CanSelf reports whether Iris can install updates for this kind itself.
 func (k Kind) CanSelf() bool { return k.Managed() == "" }
 
 // arch is the machine name the release files use.
@@ -184,15 +184,15 @@ func debArch() string {
 func AssetName(k Kind, version string) string {
 	switch k {
 	case KindUser:
-		return "LiteGo-linux-" + arch() + ".tar.gz"
+		return "Iris-linux-" + arch() + ".tar.gz"
 	case KindDeb:
-		return "lite-go-browser_" + version + "_" + debArch() + ".deb"
+		return "iris-browser_" + version + "_" + debArch() + ".deb"
 	case KindRPM:
-		return "lite-go-browser-" + version + "-1." + arch() + ".rpm"
+		return "iris-browser-" + version + "-1." + arch() + ".rpm"
 	case KindFlatpak:
-		return "LiteGo-" + arch() + ".flatpak"
+		return "Iris-" + arch() + ".flatpak"
 	case KindSetup:
-		return "LiteGo-Setup.exe"
+		return "Iris-Setup.exe"
 	}
 	return ""
 }
@@ -238,7 +238,7 @@ func sumFor(ctx context.Context, url, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "Lite-Go-updater")
+	req.Header.Set("User-Agent", "Iris-updater")
 	res, err := Client.Do(req)
 	if err != nil {
 		return "", err
@@ -265,7 +265,7 @@ func get(ctx context.Context, url, path string, size int64, progress func(float3
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "Lite-Go-updater")
+	req.Header.Set("User-Agent", "Iris-updater")
 	res, err := Client.Do(req)
 	if err != nil {
 		return err

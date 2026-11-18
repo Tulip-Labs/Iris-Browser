@@ -1,4 +1,4 @@
-// Command litego-setup installs Lite Go for the current user (and removes it with --uninstall).
+// Command iris-setup installs Iris for the current user (and removes it with --uninstall).
 package main
 
 import (
@@ -17,8 +17,8 @@ import (
 
 	"image"
 
-	"litego/giox"
-	"litego/setup"
+	"iris/giox"
+	"iris/setup"
 )
 
 func main() {

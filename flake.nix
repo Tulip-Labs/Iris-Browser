@@ -1,5 +1,5 @@
 {
-  description = "Iris (formerly Lite Go), a light and fast browser with shields built in";
+  description = "Iris (formerly Iris), a light and fast browser with shields built in";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -17,12 +17,12 @@
           hash = "sha1-C0whieO5MDO77xOt0ahvZoScHmI=";
         };
 
-        lite-go-browser = pkgs.buildGoModule {
-          pname = "lite-go-browser";
+        iris-browser = pkgs.buildGoModule {
+          pname = "iris-browser";
           version = "1.0.19";
           src = self;
           vendorHash = "sha256-DUuIMLR+RLt5e6kRZcxRdGo4Q4i9ZGR7ia629F8Vp2o=";
-          subPackages = [ "cmd/litego" ];
+          subPackages = [ "cmd/iris" ];
           tags = [ "webkit" "cef" "novulkan" ];
           ldflags = [ "-s" "-w" ];
           doCheck = false;
@@ -42,21 +42,19 @@
             strip --strip-unneeded third_party/cef/Release/libcef.so
           '';
           postInstall = ''
-            lib=$out/lib/lite-go-browser
+            lib=$out/lib/iris-browser
             mkdir -p $lib/locales
-            mv $out/bin/litego $lib/lite-go-browser
+            mv $out/bin/iris $lib/iris
             gcc -O2 -fno-stack-protector -Ithird_party/cef -DCEF_API_VERSION=15600 packaging/cef/helper.c \
-              -Lthird_party/cef/Release -lcef -Wl,--allow-shlib-undefined -Wl,-rpath,'$ORIGIN' -o $lib/lite-go-helper
+              -Lthird_party/cef/Release -lcef -Wl,--allow-shlib-undefined -Wl,-rpath,'$ORIGIN' -o $lib/iris-helper
             for f in libcef.so libvk_swiftshader.so libvulkan.so.1 vk_swiftshader_icd.json v8_context_snapshot.bin; do
               cp third_party/cef/Release/$f $lib/
             done
             cp third_party/cef/Resources/*.pak third_party/cef/Resources/icudtl.dat $lib/
             cp third_party/cef/Resources/locales/*.pak $lib/locales/
-            ln -s $lib/lite-go-browser $out/bin/lite-go
-            ln -s $lib/lite-go-browser $out/bin/lite-go-browser
-            ln -s $lib/lite-go-browser $out/bin/iris
-            install -Dm644 assets/icon.png $out/share/icons/hicolor/256x256/apps/lite-go.png
-            install -Dm644 packaging/linux/lite-go.desktop $out/share/applications/lite-go.desktop
+            ln -s $lib/iris $out/bin/iris
+            install -Dm644 assets/icon.png $out/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
+            install -Dm644 packaging/linux/io.github.tulip_labs.Iris.desktop $out/share/applications/io.github.tulip_labs.Iris.desktop
           '';
           # Gio loads OpenGL ES at run time, Chromium libudev; the Nix store has
           # no setuid helper, so Chromium uses user namespaces for its sandbox
@@ -64,7 +62,7 @@
             gappsWrapperArgs+=(--prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [ pkgs.libGL pkgs.systemd ]})
             # H.264 and H.265 videos play through ffmpeg (Chromium's free build leaves them out)
             gappsWrapperArgs+=(--prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.ffmpeg ]})
-            wrapGApp $out/lib/lite-go-browser/lite-go-browser
+            wrapGApp $out/lib/iris-browser/iris
           '';
           dontWrapGApps = true;
           meta = with pkgs.lib; {
@@ -72,16 +70,16 @@
             homepage = "https://github.com/Tulip-Labs/Iris-Browser";
             license = licenses.gpl3Only;
             platforms = [ "x86_64-linux" ];
-            mainProgram = "lite-go";
+            mainProgram = "iris";
           };
         };
-        default = lite-go-browser;
+        default = iris-browser;
       });
 
       apps = forAll (pkgs: {
         default = {
           type = "app";
-          program = "${self.packages.${pkgs.system}.default}/bin/lite-go";
+          program = "${self.packages.${pkgs.system}.default}/bin/iris";
         };
       });
     };

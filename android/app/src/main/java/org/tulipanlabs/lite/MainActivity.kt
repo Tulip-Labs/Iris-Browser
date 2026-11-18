@@ -1218,7 +1218,7 @@ class MainActivity : Activity(), PageEvents {
     override fun onUrl(t: Tab, url: String) {
         if (url.startsWith("about:")) return
         if (t.lite.isNotEmpty()) {
-            // Lite's results page reports Google's address: the tab keeps showing the search
+            // Iris's results page reports Google's address: the tab keeps showing the search
             if (url == t.lite || url.startsWith("data:") || (hostOf(url).contains("google.") && !url.contains("/search?"))) {
                 t.url = t.lite
                 if (t === tab()) updateBars()
@@ -1363,7 +1363,7 @@ class MainActivity : Activity(), PageEvents {
         when (i.action) {
             Intent.ACTION_VIEW -> {
                 val u = i.dataString ?: return false
-                if (u.startsWith("litego://")) { // the "Pair with Lite" button on the computer's page
+                if (u.startsWith("iris://") || u.startsWith("litego://")) { // the "Pair with Iris" button on the computer's page
                     val ok = Sync.pair(set, Uri.parse(u))
                     Toast.makeText(this, if (ok) "Paired with " + set.syncName else "That pairing link is not valid", Toast.LENGTH_LONG).show()
                     if (ok) sync(quiet = false)

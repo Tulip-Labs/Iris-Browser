@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"litego/update"
+	"iris/update"
 )
 
 // Updates from the GitHub releases. Copies in the home folder and Flatpak
@@ -92,7 +92,7 @@ func updateDir() string {
 	if err != nil {
 		d = os.TempDir()
 	}
-	return filepath.Join(d, "Lite Go", "updates")
+	return filepath.Join(d, "Iris", "updates")
 }
 
 func (a *App) fetchUpdate(r update.Release, k update.Kind, asked bool) {

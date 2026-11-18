@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// One Lite Go at a time: the running copy listens on the loopback address; a
+// One Iris at a time: the running copy listens on the loopback address; a
 // new launch passes it the addresses to open (with a secret from the user's own
 // settings folder) and exits.
 
@@ -24,7 +24,7 @@ type instanceFile struct {
 
 func instancePath(conf string) string { return filepath.Join(conf, "instance.json") }
 
-// running reports whether a Lite Go answers on its port.
+// running reports whether a Iris answers on its port.
 func running(conf string) bool {
 	b, err := os.ReadFile(instancePath(conf))
 	if err != nil {
@@ -42,7 +42,7 @@ func running(conf string) bool {
 	return true
 }
 
-// handOff gives urls to a running Lite Go; false when none answers.
+// handOff gives urls to a running Iris; false when none answers.
 func handOff(conf string, urls []string) bool {
 	b, err := os.ReadFile(instancePath(conf))
 	if err != nil {
@@ -67,7 +67,7 @@ func handOff(conf string, urls []string) bool {
 	return err == nil && strings.TrimSpace(reply) == "ok"
 }
 
-// listen becomes the running Lite Go; each request is the list of addresses to open.
+// listen becomes the running Iris; each request is the list of addresses to open.
 func listen(conf string) <-chan []string {
 	out := make(chan []string, 4)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

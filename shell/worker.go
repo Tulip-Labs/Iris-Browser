@@ -5,11 +5,11 @@ import (
 	"image"
 	"time"
 
-	"litego/core"
-	"litego/webview"
+	"iris/core"
+	"iris/webview"
 )
 
-// A worker is a hidden page that reads Google for Lite results and for the AI
+// A worker is a hidden page that reads Google for Iris results and for the AI
 // panel. Jobs run one after another; the page is closed when it has been idle
 // for a while, so it only costs memory while it is useful.
 type worker struct {

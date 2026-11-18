@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Settings are Lite Go's preferences, kept in a small JSON file that loads instantly.
+// Settings are Iris's preferences, kept in a small JSON file that loads instantly.
 type Settings struct {
 	Theme        string      `json:"theme"`
 	VerticalTabs bool        `json:"verticalTabs"`
@@ -22,7 +22,7 @@ type Settings struct {
 	ShieldOff    []string    `json:"shieldOff"`
 	// Memory is the tab sleep profile: "saver", "balanced" (default) or "speed".
 	Memory string `json:"memory"`
-	// LiteResults shows Google searches on Lite Go's own results page.
+	// LiteResults shows Google searches on Iris's own results page.
 	LiteResults bool `json:"liteResults"`
 	// YouTubeLight asks YouTube for H.264 video and switches off its glow and previews.
 	YouTubeLight bool `json:"youtubeLight"`
@@ -32,18 +32,18 @@ type Settings struct {
 	GoogleSignIn string `json:"googleSignIn"`
 	// Name is what the AI answers call the reader ("" = no name).
 	Name string `json:"name,omitempty"`
-	// Lite Shields: filter lists (EasyList, EasyPrivacy, uBlock), cookie
+	// Iris Shields: filter lists (EasyList, EasyPrivacy, uBlock), cookie
 	// notices, links without tracking, fingerprinting protection.
 	Lists      bool `json:"lists"`
 	Cookies    bool `json:"cookies"`
 	CleanLinks bool `json:"cleanLinks"`
 	Farble     bool `json:"farble"`
-	// Boost keeps Lite Go ready in the background so its window opens instantly.
+	// Boost keeps Iris ready in the background so its window opens instantly.
 	Boost bool `json:"boost"`
 	// Adaptive shields scan a site first and stand by where nothing needs blocking.
 	Adaptive bool `json:"adaptive"`
 	// Restore reopens the tabs of the last window; Session is what they were.
-	// Window is how the reader left the window. Until they change it, Lite Go
+	// Window is how the reader left the window. Until they change it, Iris
 	// opens filling the screen.
 	Window WindowState `json:"window"`
 	// ThemeAt is when the palette was last chosen (sync keeps the newest choice).
@@ -144,7 +144,7 @@ func (s *Settings) SetWindow(windowed bool, w, h int) bool {
 	return true
 }
 
-// SyncSettings is this computer's side of the sync with Lite for Android.
+// SyncSettings is this computer's side of the sync with Iris for Android.
 type SyncSettings struct {
 	On     bool   `json:"on"`
 	Key    string `json:"key,omitempty"`    // shared with the paired devices; never leaves the local network

@@ -43,7 +43,7 @@ func TestLink(t *testing.T) {
 		t.Fatalf("page: %d", code)
 	}
 	// the phone sends a file; its name cannot leave the folder
-	payload := bytes.Repeat([]byte("lite go "), 100000)
+	payload := bytes.Repeat([]byte("iris web "), 100000)
 	r, err := http.Post(base+"up?name=..%2F..%2Fevil%3Aname.txt", "application/octet-stream", bytes.NewReader(payload))
 	if err != nil || r.StatusCode != 204 {
 		t.Fatalf("upload: %v %v", err, r)
@@ -162,7 +162,7 @@ func TestSync(t *testing.T) {
 	}
 	b, _ := io.ReadAll(r.Body)
 	r.Body.Close()
-	if !strings.Contains(string(b), `"app":"litego"`) || strings.Contains(string(b), key) {
+	if !strings.Contains(string(b), `"app":"iris"`) || strings.Contains(string(b), key) {
 		t.Fatalf("hello: %s", b)
 	}
 	post := func(k string) (int, []byte) {
@@ -189,7 +189,7 @@ func TestSync(t *testing.T) {
 		t.Fatalf("the computer did not get the phone's state: %+v", got)
 	}
 	u := PairURL(s.Port(), key, "pc-1")
-	if !strings.HasPrefix(u, "litego://pair?") || !strings.Contains(u, "k="+key) {
+	if !strings.HasPrefix(u, "iris://pair?") || !strings.Contains(u, "k="+key) {
 		t.Fatalf("pair url %s", u)
 	}
 }

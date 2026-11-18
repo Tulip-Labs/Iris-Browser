@@ -27,7 +27,7 @@ import (
 	"unsafe"
 )
 
-// hosted: Lite Go's window is a GTK window, and Start gets its GtkLayout.
+// hosted: Iris's window is a GTK window, and Start gets its GtkLayout.
 var hosted bool
 
 // HostGTK tells the engine that the program's window is made with GTK (on
@@ -36,7 +36,7 @@ var hosted bool
 func HostGTK() { hosted = true }
 
 // New returns the Linux engine: Chromium (CEF) pages, drawn off screen into
-// Lite Go's GTK window.
+// Iris's GTK window.
 func New() Engine {
 	if wkEng == nil {
 		wkEng = &wkEngine{}
@@ -400,7 +400,7 @@ func lgxGoResult(cb C.uintptr_t, res *C.char) {
 	done(C.GoString(res))
 }
 
-// cleanOldEngine removes what WebKitGTK (Lite Go 1.0.7 and older) kept in the
+// cleanOldEngine removes what WebKitGTK (Iris 1.0.7 and older) kept in the
 // pages' folder: its caches, site data and compiled filter lists. Chromium
 // keeps everything under "cef".
 func cleanOldEngine(dir string) {

@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"litego/core"
-	"litego/ui"
-	"litego/webview"
+	"iris/core"
+	"iris/ui"
+	"iris/webview"
 )
 
 // The side viewer: a picture or a video opened from the results shows in the
@@ -402,7 +402,7 @@ func (a *App) closeSide() {
 
 // ---- signing in to Google once ----
 
-const signInURL = "https://accounts.google.com/ServiceLogin?hl=en&continue=https%3A%2F%2Fwww.google.com%2F%3Fhl%3Den%26litego%3Dsignedin"
+const signInURL = "https://accounts.google.com/ServiceLogin?hl=en&continue=https%3A%2F%2Fwww.google.com%2F%3Fhl%3Den%26iris%3Dsignedin"
 
 // signIn opens Google's sign-in in tab t (the default container, which the
 // results and the AI answers use).
@@ -417,7 +417,7 @@ func (a *App) signIn(t *Tab) {
 
 // signedIn notices the end of the sign-in and turns the tab back into a new tab page.
 func (a *App) signedIn(t *Tab, url string) bool {
-	if !strings.Contains(url, "litego=signedin") || !strings.Contains(core.Host(url), "google.") {
+	if !strings.Contains(url, "iris=signedin") || !strings.Contains(core.Host(url), "google.") {
 		return false
 	}
 	a.set.GoogleSignIn = "done"

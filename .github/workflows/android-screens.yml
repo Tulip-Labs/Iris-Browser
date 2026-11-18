@@ -1,4 +1,4 @@
-# Runs Lite for Android in an emulator and keeps screenshots of its screens,
+# Runs Iris for Android in an emulator and keeps screenshots of its screens,
 # at phone and tablet sizes. Started by hand from the Actions tab.
 name: Android screens
 

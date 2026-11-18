@@ -1,6 +1,6 @@
 #!/bin/sh
 # Chromium's sandbox helper runs setuid root.
-chmod 4755 /usr/lib/lite-go-browser/chrome-sandbox 2>/dev/null || true
+chmod 4755 /usr/lib/iris-browser/chrome-sandbox 2>/dev/null || true
 # the project moved to Tulip-Labs/Iris-Browser: point the repository there
 for f in /etc/yum.repos.d/lite-go-browser.repo /etc/zypp/repos.d/lite-go-browser.repo /etc/apt/sources.list.d/lite-go-browser.list; do
 	[ -f "$f" ] && grep -q "Lite-Go-Browser" "$f" && sed -i 's#Lite-Go-Browser#Iris-Browser#g' "$f" || true

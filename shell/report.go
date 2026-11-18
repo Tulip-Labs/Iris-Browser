@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// memoryReport writes what Lite Go's own process holds (and a heap profile) to
+// memoryReport writes what Iris's own process holds (and a heap profile) to
 // the settings folder, to send along with a memory question.
 func (a *App) memoryReport() (string, error) {
 	dir := a.cfg.DataDir

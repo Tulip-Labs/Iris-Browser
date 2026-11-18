@@ -3,7 +3,7 @@
 package webview
 
 // The Chromium engine (CEF). The CEF distribution is unpacked in third_party/cef
-// by build-litego.sh; libcef.so sits next to the program.
+// by build-iris.sh; libcef.so sits next to the program.
 
 // #cgo pkg-config: gtk4
 // #cgo LDFLAGS: -ldl

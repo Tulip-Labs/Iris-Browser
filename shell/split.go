@@ -5,7 +5,7 @@ import (
 	"math"
 	"strconv"
 
-	"litego/ui"
+	"iris/ui"
 )
 
 // splitView is two tabs side by side: a on the left, b on the right. The pair
@@ -117,7 +117,7 @@ func (a *App) panes(page ui.Rect) (ui.Rect, ui.Rect, *Tab) {
 
 // otherPane draws the pane of the tab beside the current one. Its page, when
 // it has one, is a live view placed there by sync; anything else (a new tab,
-// Lite results, a stopped page) shows as a card that takes the keyboard when
+// Iris results, a stopped page) shows as a card that takes the keyboard when
 // clicked, and then draws in full as the current tab.
 func (a *App) otherPane(r ui.Rect, t *Tab) {
 	u, g, th := &a.u, a.u.G, a.u.Th

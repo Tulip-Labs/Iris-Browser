@@ -21,9 +21,9 @@ if not exist "%ANDROID_HOME%\cmdline-tools\latest\bin\sdkmanager.bat" set NEED=1
 where javac >nul 2>nul || if "%JAVA_HOME%"=="" set NEED=1
 if defined NEED (
   echo Getting the Android build tools ^(first time only^)...
-  powershell -NoProfile -ExecutionPolicy Bypass -File tools\android-setup.ps1 -NoNdk -EnvFile "%TEMP%\litego-android-env.bat"
+  powershell -NoProfile -ExecutionPolicy Bypass -File tools\android-setup.ps1 -NoNdk -EnvFile "%TEMP%\iris-android-env.bat"
   if errorlevel 1 ( echo The setup did not finish. Run this again; it continues where it stopped. & pause & exit /b 1 )
-  if exist "%TEMP%\litego-android-env.bat" call "%TEMP%\litego-android-env.bat"
+  if exist "%TEMP%\iris-android-env.bat" call "%TEMP%\iris-android-env.bat"
 )
 if "%JAVA_HOME%"=="" for /f "delims=" %%j in ('where javac 2^>nul') do if "!JAVA_HOME!"=="" for %%d in ("%%~dpj..") do set "JAVA_HOME=%%~fd"
 if "%JAVA_HOME%"=="" ( echo Java was not found. Run tools\android-setup.ps1 again. & pause & exit /b 1 )

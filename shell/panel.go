@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"litego/core"
-	"litego/ui"
-	"litego/update"
+	"iris/core"
+	"iris/ui"
+	"iris/update"
 )
 
 // drawPanel is the side panel: the menu (tools, then the settings in
@@ -126,7 +126,7 @@ func (a *App) drawPanel(r ui.Rect) {
 	}
 	y += 46
 
-	// Google: only while Lite Go is not signed in
+	// Google: only while Iris is not signed in
 	if a.set.GoogleSignIn != "done" {
 		if u.Button(ID("psignin"), ui.Rect{X: x, Y: y, W: w, H: 40}, "Sign in to Google", ui.ButtonOpt{Icon: ui.IPerson, HasIcon: true, Primary: true,
 			Tip: "Results and AI answers then come without human checks"}) {

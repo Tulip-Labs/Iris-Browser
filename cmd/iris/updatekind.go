@@ -3,7 +3,7 @@ package main
 import (
 	"sync"
 
-	"litego/update"
+	"iris/update"
 )
 
 // installKind is how this copy was installed, worked out once (on Flatpak it

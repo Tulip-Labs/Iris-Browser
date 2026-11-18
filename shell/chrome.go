@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"litego/core"
-	"litego/ui"
+	"iris/core"
+	"iris/ui"
 )
 
 const (
@@ -512,7 +512,7 @@ func (a *App) addressBar(r ui.Rect, t *Tab) {
 		ic = ui.ISearch
 	}
 	if t != nil && t.search != nil && !focused {
-		ic, icCol, tip = modeIcons[t.search.Mode], th.Primary, "Lite results"
+		ic, icCol, tip = modeIcons[t.search.Mode], th.Primary, "Iris results"
 	}
 	ui.DrawIcon(g, ic, r.X+13, r.CY()-8, 16, icCol)
 	u.Tooltip(tip, ui.Rect{X: r.X, Y: r.Y, W: 38, H: r.H})

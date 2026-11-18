@@ -17,7 +17,7 @@ import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
-// Sync with Lite Go on a computer, with no server in between: when both are
+// Sync with Iris on a computer, with no server in between: when both are
 // on the same network, the phone and the computer trade history, open tabs
 // and the palette. Everything is sealed with the key from the pairing
 // (AES-256-GCM), so nobody else on the network can read or change it.
@@ -26,14 +26,14 @@ import javax.crypto.spec.SecretKeySpec
 class PcTab(val url: String, val title: String)
 
 object Sync {
-    private const val AAD = "litego-sync-1"
+    private const val AAD = "litego-sync-1" // the computer uses the same; kept across the rename
     private const val FIRST_PORT = 47600
 
     fun paired(set: Settings): Boolean = set.syncKey.length == 64 && set.syncHost.isNotEmpty()
 
-    /** litego://pair?h=<address>&p=<port>&k=<key>&d=<computer id>&n=<its name> */
+    /** iris://pair?h= (litego:// from Iris 1.0.19 and older) <address>&p=<port>&k=<key>&d=<computer id>&n=<its name> */
     fun pair(set: Settings, uri: Uri): Boolean {
-        if (uri.scheme != "litego" || uri.host != "pair") return false
+        if ((uri.scheme != "iris" && uri.scheme != "litego") || uri.host != "pair") return false
         val key = uri.getQueryParameter("k") ?: return false
         val host = uri.getQueryParameter("h") ?: return false
         if (!Regex("[0-9a-f]{64}").matches(key) || !Regex("[0-9.]{7,15}").matches(host)) return false
@@ -109,7 +109,7 @@ object Sync {
             val body = c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
             c.disconnect()
             val o = JSONObject(body)
-            o.optString("app") == "litego" && (pc.isEmpty() || o.optString("id") == pc)
+            (o.optString("app") == "iris" || o.optString("app") == "litego") && (pc.isEmpty() || o.optString("id") == pc)
         } catch (e: Exception) {
             false
         }

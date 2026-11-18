@@ -1,9 +1,9 @@
 //go:build ignore
 
-// msix packs Lite Go for the Microsoft Store without the Windows SDK:
+// msix packs Iris for the Microsoft Store without the Windows SDK:
 //
-//	go run tools/msix.go -exe "dist/Lite Go/Lite Go.exe" -arch x64 -out dist/LiteGo_x64.msix
-//	go run tools/msix.go -bundle dist/LiteGo.msixbundle dist/LiteGo_x64.msix dist/LiteGo_arm64.msix
+//	go run tools/msix.go -exe "dist/Iris/Iris.exe" -arch x64 -out dist/Iris_x64.msix
+//	go run tools/msix.go -bundle dist/Iris.msixbundle dist/Iris_x64.msix dist/Iris_arm64.msix
 //
 // The packages are unsigned: upload them (or the bundle) to Partner Center and
 // the Store signs them with Microsoft's certificate, so they install on any PC
@@ -28,8 +28,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"litego/raster"
-	"litego/ui"
+	"iris/raster"
+	"iris/ui"
 )
 
 type identity struct {
@@ -175,7 +175,7 @@ const manifest = `<?xml version="1.0" encoding="utf-8"?>
   IgnorableNamespaces="uap uap3 rescap">
   <Identity Name="{{name}}" Publisher="{{publisher}}" Version="{{version}}" ProcessorArchitecture="{{arch}}" />
   <Properties>
-    <DisplayName>Lite Go</DisplayName>
+    <DisplayName>Iris</DisplayName>
     <PublisherDisplayName>{{publisherName}}</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <Description>A light, fast browser: low memory, a built-in shield, and Google results in its own look.</Description>
@@ -187,14 +187,14 @@ const manifest = `<?xml version="1.0" encoding="utf-8"?>
     <Resource Language="en-us" />
   </Resources>
   <Applications>
-    <Application Id="LiteGo" Executable="LiteGo.exe" EntryPoint="Windows.FullTrustApplication">
-      <uap:VisualElements DisplayName="Lite Go" Description="A light, fast browser"
+    <Application Id="LiteGo" Executable="Iris.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="Iris" Description="A light, fast browser"
         BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
       </uap:VisualElements>
       <Extensions>
-        <uap:Extension Category="windows.protocol"><uap:Protocol Name="http"><uap:DisplayName>Lite Go</uap:DisplayName></uap:Protocol></uap:Extension>
-        <uap:Extension Category="windows.protocol"><uap:Protocol Name="https"><uap:DisplayName>Lite Go</uap:DisplayName></uap:Protocol></uap:Extension>
+        <uap:Extension Category="windows.protocol"><uap:Protocol Name="http"><uap:DisplayName>Iris</uap:DisplayName></uap:Protocol></uap:Extension>
+        <uap:Extension Category="windows.protocol"><uap:Protocol Name="https"><uap:DisplayName>Iris</uap:DisplayName></uap:Protocol></uap:Extension>
         <uap:Extension Category="windows.fileTypeAssociation">
           <uap:FileTypeAssociation Name="html">
             <uap:DisplayName>Web page</uap:DisplayName>
@@ -202,7 +202,7 @@ const manifest = `<?xml version="1.0" encoding="utf-8"?>
           </uap:FileTypeAssociation>
         </uap:Extension>
         <uap3:Extension Category="windows.appExecutionAlias" EntryPoint="Windows.FullTrustApplication">
-          <uap3:AppExecutionAlias><uap3:ExecutionAlias Alias="litego.exe" /></uap3:AppExecutionAlias>
+          <uap3:AppExecutionAlias><uap3:ExecutionAlias Alias="iris.exe" /></uap3:AppExecutionAlias>
         </uap3:Extension>
       </Extensions>
     </Application>
@@ -222,7 +222,7 @@ func pack(exe, arch, out string) {
 	}
 	m := strings.NewReplacer("{{name}}", xmlEsc(id.Name), "{{publisher}}", xmlEsc(id.Publisher), "{{version}}", id.Version,
 		"{{arch}}", arch, "{{publisherName}}", xmlEsc(id.PublisherDisplayName)).Replace(manifest)
-	parts := []part{{"LiteGo.exe", app}}
+	parts := []part{{"Iris.exe", app}}
 	for _, n := range []string{"LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"} {
 		if b, err := os.ReadFile(n); err == nil {
 			parts = append(parts, part{n, b})

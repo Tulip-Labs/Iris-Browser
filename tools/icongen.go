@@ -18,8 +18,8 @@ import (
 	"github.com/tc-hib/winres"
 	"github.com/tc-hib/winres/version"
 
-	"litego/raster"
-	"litego/ui"
+	"iris/raster"
+	"iris/ui"
 )
 
 func icon(size int) image.Image {
@@ -30,8 +30,8 @@ func icon(size int) image.Image {
 
 func main() {
 	for _, t := range []struct{ dir, name, desc string }{
-		{"cmd/litego", "Iris", "Iris browser"},
-		{"cmd/litego-setup", "Iris Setup", "Iris installer"},
+		{"cmd/iris", "Iris", "Iris browser"},
+		{"cmd/iris-setup", "Iris Setup", "Iris installer"},
 	} {
 		var imgs []image.Image
 		for _, s := range []int{256, 64, 48, 32, 24, 16} {

@@ -6,12 +6,12 @@ import (
 	"strings"
 )
 
-// Lite results ranks links like a careful reader would: references, official
+// Iris results ranks links like a careful reader would: references, official
 // sites, documentation, research and real discussions rise; shops, coupon and
 // download farms, content mills and listicles built for ads sink or go; one
 // site never fills the page. The user's own raise, lower and hide choices win.
 
-// Quality is how Lite Go judged a link.
+// Quality is how Iris judged a link.
 type Quality struct {
 	Score float64
 	Label string // a short kind shown on the result ("Reference", "Docs"...); "" when ordinary

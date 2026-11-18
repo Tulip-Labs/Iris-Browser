@@ -1,6 +1,6 @@
 package core
 
-// MemoryPlan is how Lite Go keeps the web engine's memory down: background
+// MemoryPlan is how Iris keeps the web engine's memory down: background
 // tabs are hidden at once, put to sleep (suspended, low memory target) after
 // SleepAfter seconds, and unloaded (the page closed, its address and title
 // kept) after UnloadAfter seconds or when more than Live tabs hold a page.

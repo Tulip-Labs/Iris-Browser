@@ -1,4 +1,4 @@
-// Package shell is Lite Go's interface: tabs, the address bar, the new tab
+// Package shell is Iris's interface: tabs, the address bar, the new tab
 // page and the settings panel, drawn with Flowcode's Material 3 and glass
 // look, around pages shown by the system web view.
 //
@@ -17,13 +17,13 @@ import (
 
 	"context"
 	"image"
-	"litego/shields"
+	"iris/shields"
 	"sync"
 	"time"
 
-	"litego/core"
-	"litego/ui"
-	"litego/webview"
+	"iris/core"
+	"iris/ui"
+	"iris/webview"
 )
 
 // Host is what the window gives the interface.
@@ -36,7 +36,7 @@ type Host interface {
 	Close()
 	// FocusWindow takes the keyboard back from the page (call on the window thread).
 	FocusWindow()
-	// Quit ends Lite Go entirely (closing the window may keep it ready in the background).
+	// Quit ends Iris entirely (closing the window may keep it ready in the background).
 	Quit()
 }
 
@@ -48,7 +48,7 @@ type Config struct {
 	Version string
 	SelfMB  func() float64 // this process's memory (nil = unknown)
 	// SetBoost turns starting with Windows on or off (nil where it does not apply);
-	// Lite Go keeps nothing running in the background, so it is only turned off.
+	// Iris keeps nothing running in the background, so it is only turned off.
 	SetBoost func(on bool)
 	// Core reuses preloaded settings, history and shield (the background mode).
 	Core *Core
@@ -68,12 +68,12 @@ type Sys struct {
 	PickFiles func() []string
 	// FreeMB is the system memory still free (0 = unknown).
 	FreeMB func() int
-	// Integrity checks Lite Go's own program file against the record made
+	// Integrity checks Iris's own program file against the record made
 	// when it was installed (it may take a moment; called off the loop).
 	Integrity func() Integrity
 }
 
-// Integrity is the result of checking Lite Go's own program file.
+// Integrity is the result of checking Iris's own program file.
 type Integrity uint8
 
 const (
@@ -205,7 +205,7 @@ func New(h Host, cfg Config) *App {
 		c = LoadCore(cfg.DataDir)
 	}
 	a.set, a.hist, a.shield, a.scan, a.core = c.Settings, c.History, c.Shield, c.Scan, c
-	// one way to search: everything on Lite results (no modes, no background part)
+	// one way to search: everything on Iris results (no modes, no background part)
 	a.set.Mode, a.set.LiteResults, a.set.Boost, a.set.VerticalTabs = core.ModeWeb, true, false, false
 	a.plan = core.Plan(cfg.TotalMB, a.set.Memory)
 	a.newTab(KNormal, "", "", true)
@@ -479,7 +479,7 @@ func frameColor(th *ui.Theme) ui.Color {
 	return th.SurfaceHigh
 }
 
-// OpenURL opens an address given on the command line (Lite Go as the default browser).
+// OpenURL opens an address given on the command line (Iris as the default browser).
 func (a *App) OpenURL(u string) {
 	u = core.Resolve(u, a.set.Mode)
 	if u == "" {
@@ -498,7 +498,7 @@ type Core struct {
 	History  *core.History
 	Shield   *core.Shield
 	Scan     *core.SiteScan
-	// Lite Shields' filter lists: loaded and refreshed in the background
+	// Iris Shields' filter lists: loaded and refreshed in the background
 	Filters  atomic.Pointer[shields.Engine]
 	ListsAt  time.Time
 	ListsErr error

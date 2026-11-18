@@ -1,6 +1,6 @@
-// Package core is Lite Go's browser logic, independent of the window and the
+// Package core is Iris's browser logic, independent of the window and the
 // web engine: what the address bar opens, the shield, HTTPS-only, tab sleep
-// and history. Rules match Lite Desktop exactly.
+// and history. Rules match the original Lite Desktop.
 package core
 
 import (

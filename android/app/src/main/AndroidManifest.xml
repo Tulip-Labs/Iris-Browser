@@ -32,11 +32,12 @@
                 <data android:scheme="http" />
                 <data android:scheme="https" />
             </intent-filter>
-            <!-- pairing with Iris on a computer: litego://pair?... -->
+            <!-- pairing with Iris on a computer: iris://pair?... (litego:// from older versions) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="iris" android:host="pair" />
                 <data android:scheme="litego" android:host="pair" />
             </intent-filter>
             <intent-filter>

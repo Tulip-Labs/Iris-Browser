@@ -15,17 +15,17 @@ import (
 // YouTube still puts up its "ad blockers are not allowed" notice, it is closed
 // and the video resumes. It does nothing on other sites.
 const YouTubeScript = `(() => {
-  if (!/(^|\.)youtube\.com$/.test(location.hostname) || window.__liteGoYT) return;
-  window.__liteGoYT = true;
+  if (!/(^|\.)youtube\.com$/.test(location.hostname) || window.__irisYT) return;
+  window.__irisYT = true;
   const css = 'ytd-ad-slot-renderer, ytd-in-feed-ad-layout-renderer, ytd-display-ad-renderer, ytd-promoted-sparkles-web-renderer,' +
     ' ytd-promoted-video-renderer, ytd-banner-promo-renderer, ytd-statement-banner-renderer, ytd-companion-slot-renderer,' +
     ' ytd-action-companion-ad-renderer, ytd-player-legacy-desktop-watch-ads-renderer, #player-ads, #masthead-ad,' +
     ' ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer), ytd-merch-shelf-renderer,' +
     ' .ytp-ad-overlay-container, .ytp-ad-overlay-slot, ytm-promoted-sparkles-web-renderer { display: none !important; }';
   const style = () => {
-    if (document.getElementById('lite-go-yt')) return;
+    if (document.getElementById('iris-yt')) return;
     const s = document.createElement('style');
-    s.id = 'lite-go-yt';
+    s.id = 'iris-yt';
     s.textContent = css;
     (document.head || document.documentElement).appendChild(s);
   };
@@ -96,8 +96,8 @@ func IsYouTube(page string) bool {
 // ambient glow drawn around the player and the video previews that play when
 // the pointer rests on a thumbnail, and skips the animated thumbnails.
 const YouTubeLightScript = `(() => {
-  if (!/(^|\.)youtube\.com$/.test(location.hostname) || window.__liteGoYTLight) return;
-  window.__liteGoYTLight = true;
+  if (!/(^|\.)youtube\.com$/.test(location.hostname) || window.__irisYTLight) return;
+  window.__irisYTLight = true;
   const heavy = /vp0?9|av01/i;
   try {
     const ms = window.MediaSource;
@@ -138,8 +138,8 @@ const YouTubeLightScript = `(() => {
 // Videos made of pieces in the page (blob: addresses) are left alone.
 func H264Script(relay string) string {
 	return `(() => {
-  if (window.__liteGoH264) return;
-  window.__liteGoH264 = true;
+  if (window.__irisH264) return;
+  window.__irisH264 = true;
   const RELAY = ` + strconv.Quote(relay) + `;
   const cpt = HTMLMediaElement.prototype.canPlayType;
   HTMLMediaElement.prototype.canPlayType = function (t) {

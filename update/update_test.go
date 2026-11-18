@@ -50,12 +50,12 @@ func TestFetchAndReplace(t *testing.T) {
 	}
 	name := AssetName(KindUser, "9.9.9")
 	tgz := tarball(t, map[string]string{
-		"LiteGo-linux-x86_64/lite-go-browser":        "new program",
-		"LiteGo-linux-x86_64/lite-go-browser.sha256": "new record",
-		"LiteGo-linux-x86_64/libcef.so":              "new engine",
-		"LiteGo-linux-x86_64/lite-go-helper":         "new helper",
-		"LiteGo-linux-x86_64/install.sh":             "not copied",
-		"LiteGo-linux-x86_64/../escape":              "never written",
+		"Iris-linux-x86_64/iris":        "new program",
+		"Iris-linux-x86_64/iris.sha256": "new record",
+		"Iris-linux-x86_64/libcef.so":   "new engine",
+		"Iris-linux-x86_64/iris-helper": "new helper",
+		"Iris-linux-x86_64/install.sh":  "not copied",
+		"Iris-linux-x86_64/../escape":   "never written",
 	})
 	sum := sha256.Sum256(tgz)
 	bad := false
@@ -93,7 +93,7 @@ func TestFetchAndReplace(t *testing.T) {
 		t.Fatalf("fetch: %v (progress %v)", err, last)
 	}
 	// the program's own folder, as install.sh makes it
-	exe := filepath.Join(dir, "lib", "lite-go-browser", "lite-go-browser")
+	exe := filepath.Join(dir, "lib", "iris-browser", "iris")
 	os.MkdirAll(filepath.Dir(exe), 0o755)
 	os.WriteFile(exe, []byte("old program"), 0o755)
 	os.WriteFile(exe+".sha256", []byte("old record"), 0o644)
@@ -131,10 +131,10 @@ func TestKinds(t *testing.T) {
 			t.Errorf("%s is updated by %s", k, k.Managed())
 		}
 	}
-	if got := AssetName(KindDeb, "1.2.3"); runtime.GOARCH == "amd64" && got != "lite-go-browser_1.2.3_amd64.deb" {
+	if got := AssetName(KindDeb, "1.2.3"); runtime.GOARCH == "amd64" && got != "iris-browser_1.2.3_amd64.deb" {
 		t.Errorf("deb name %s", got)
 	}
-	if got := AssetName(KindRPM, "1.2.3"); runtime.GOARCH == "amd64" && got != "lite-go-browser-1.2.3-1.x86_64.rpm" {
+	if got := AssetName(KindRPM, "1.2.3"); runtime.GOARCH == "amd64" && got != "iris-browser-1.2.3-1.x86_64.rpm" {
 		t.Errorf("rpm name %s", got)
 	}
 }

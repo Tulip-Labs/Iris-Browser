@@ -1,4 +1,4 @@
-// Package setup is Lite Go's installer: its screens (drawn with the shared
+// Package setup is Iris's installer: its screens (drawn with the shared
 // interface) and the per-user install, update and removal.
 package setup
 
@@ -11,18 +11,18 @@ import (
 	"strings"
 	"sync"
 
-	"litego/ui"
+	"iris/ui"
 )
 
-// Version is the Lite Go version this setup installs.
+// Version is the Iris version this setup installs.
 const Version = "1.0.0"
 
 //go:embed payload
 var payload embed.FS
 
-// appBytes is the embedded Lite Go app (nil when the setup was built without it).
+// appBytes is the embedded Iris app (nil when the setup was built without it).
 func appBytes() []byte {
-	b, err := payload.ReadFile("payload/LiteGo.exe.gz")
+	b, err := payload.ReadFile("payload/Iris.exe.gz")
 	if err != nil {
 		return nil
 	}
@@ -120,13 +120,13 @@ func sentence(s string) string {
 // runInstall does the install, reporting each step.
 func runInstall(s *Setup) {
 	s.set(func() {
-		s.steps = []step{{"Checking the web engine", 0}, {"Copying Lite Go", 0}, {"Adding shortcuts", 0}, {"Registering Lite Go as a browser", 0}}
+		s.steps = []step{{"Checking the web engine", 0}, {"Copying Iris", 0}, {"Adding shortcuts", 0}, {"Registering Iris as a browser", 0}}
 		s.progress = 0
 	})
 	mark := func(i int, st uint8, p float32) { s.set(func() { s.steps[i].state, s.progress = st, p }) }
 	app := appBytes()
 	if app == nil {
-		s.fail(errString("this setup was built without the app inside; build it with build-litego"))
+		s.fail(errString("this setup was built without the app inside; build it with build-iris"))
 		return
 	}
 	dir := installDir()
@@ -206,13 +206,13 @@ func (s *Setup) Frame(g ui.Gfx, w, h float32) {
 	case stWorking, stUninstalling:
 		s.working(cx, w, h)
 	case stDone:
-		s.result(cx, w, h, ui.ICheck, "Lite Go is ready", "Find it in the Start menu. To make it your default browser, choose Lite Go in Windows Settings > Apps > Default apps.", "Open Lite Go", true)
+		s.result(cx, w, h, ui.ICheck, "Iris is ready", "Find it in the Start menu. To make it your default browser, choose Iris in Windows Settings > Apps > Default apps.", "Open Iris", true)
 	case stError:
 		s.result(cx, w, h, ui.IWarning, "Setup could not finish", s.err, "Try again", false)
 	case stUninstall:
 		s.uninstallPage(cx, w, h)
 	case stRemoved:
-		s.result(cx, w, h, ui.ICheck, "Lite Go was removed", "Thanks for trying it.", "", false)
+		s.result(cx, w, h, ui.ICheck, "Iris was removed", "Thanks for trying it.", "", false)
 	}
 	u.DrawTooltip()
 	s.In.EndFrame()
@@ -236,7 +236,7 @@ func (s *Setup) header(cx, y float32, title, sub string, w float32) float32 {
 
 func (s *Setup) welcome(cx, w, h float32) {
 	u, g, th := &s.u, s.u.G, s.th
-	y := s.header(cx, 36, "Lite Go", "A light, fast browser for Google and YouTube.", w)
+	y := s.header(cx, 36, "Iris", "A light, fast browser for Google and YouTube.", w)
 	card := ui.Rect{X: 40, Y: y + 16, W: w - 80, H: 160}
 	ui.Glass(g, card, 20, th, true, true)
 	feats := []struct {
@@ -257,13 +257,13 @@ func (s *Setup) welcome(cx, w, h float32) {
 	}
 	y = card.B() + 10
 	s.desktop = u.Checkbox(ui.Id("desk"), ui.Rect{X: 44, Y: y, W: 200, H: 34}, "Desktop shortcut", s.desktop)
-	s.openAfter = u.Checkbox(ui.Id("open"), ui.Rect{X: 250, Y: y, W: 220, H: 34}, "Open Lite Go when done", s.openAfter)
+	s.openAfter = u.Checkbox(ui.Id("open"), ui.Rect{X: 250, Y: y, W: 220, H: 34}, "Open Iris when done", s.openAfter)
 	// footer
 	fy := h - 64
 	g.FillRect(ui.Rect{X: 0, Y: fy - 1, W: w, H: 1}, th.Divider)
 	note := "Installs for you only, no administrator rights."
 	if s.existing != "" {
-		note = "Lite Go " + s.existing + " is installed. Your tabs and settings are kept."
+		note = "Iris " + s.existing + " is installed. Your tabs and settings are kept."
 	}
 	ui.TextFit(g, note, 24, ui.Mid(g, fy, 64, ui.FSmall), ui.FSmall, th.OnSurfaceVariant, w-220)
 	label := "Install"
@@ -278,9 +278,9 @@ func (s *Setup) welcome(cx, w, h float32) {
 
 func (s *Setup) working(cx, w, h float32) {
 	u, g, th := &s.u, s.u.G, s.th
-	title := "Installing Lite Go"
+	title := "Installing Iris"
 	if s.stage == stUninstalling {
-		title = "Removing Lite Go"
+		title = "Removing Iris"
 	}
 	y := s.header(cx, 36, title, "", w)
 	y += 10
@@ -360,7 +360,7 @@ func (s *Setup) result(cx, w, h float32, ic ui.Icon, title, text, action string,
 
 func (s *Setup) uninstallPage(cx, w, h float32) {
 	u, g, th := &s.u, s.u.G, s.th
-	y := s.header(cx, 48, "Remove Lite Go?", "The app, its shortcuts and its browser registration are removed.", w)
+	y := s.header(cx, 48, "Remove Iris?", "The app, its shortcuts and its browser registration are removed.", w)
 	y += 24
 	s.wipe = u.Checkbox(ui.Id("wipe"), ui.Rect{X: cx - 190, Y: y, W: 380, H: 36}, "Also delete history, settings and site data", s.wipe)
 	_ = th

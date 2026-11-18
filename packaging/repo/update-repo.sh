@@ -30,8 +30,11 @@ if [ -n "${REPO_GPG_KEY:-}" ]; then
 	GNUPGHOME=$(mktemp -d)
 	printf '%s\n' "$REPO_GPG_KEY" | gpg --batch --import
 	KEYID=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/ {print $5; exit}')
-	gpg --armor --export "$KEYID" > "$out/lite-go-browser.asc"
-	gpg --export "$KEYID" > "$out/lite-go-browser.gpg"
+	gpg --armor --export "$KEYID" > "$out/iris-browser.asc"
+	gpg --export "$KEYID" > "$out/iris-browser.gpg"
+	# the names set up while Iris was Lite Go keep working
+	cp "$out/iris-browser.asc" "$out/lite-go-browser.asc"
+	cp "$out/iris-browser.gpg" "$out/lite-go-browser.gpg"
 	signed=1
 fi
 
@@ -43,7 +46,7 @@ fi
 		: > "dists/stable/main/binary-$arch/Packages"
 		gzip -9kf "dists/stable/main/binary-$arch/Packages"
 	done
-	apt-ftparchive -o APT::FTPArchive::Release::Origin="Tulip Labs" -o APT::FTPArchive::Release::Label="Lite Go" \
+	apt-ftparchive -o APT::FTPArchive::Release::Origin="Tulip Labs" -o APT::FTPArchive::Release::Label="Iris" \
 		-o APT::FTPArchive::Release::Suite=stable -o APT::FTPArchive::Release::Codename=stable \
 		-o APT::FTPArchive::Release::Architectures="amd64 arm64" -o APT::FTPArchive::Release::Components=main \
 		release dists/stable > dists/stable/Release
@@ -60,7 +63,7 @@ fi
 	dpkg-scanpackages --multiversion . | sed 's#^Filename: \./#Filename: download/#' > Packages
 	rm -f ./*.deb
 	gzip -9kf Packages
-	apt-ftparchive -o APT::FTPArchive::Release::Origin="Tulip Labs" -o APT::FTPArchive::Release::Label="Lite Go" \
+	apt-ftparchive -o APT::FTPArchive::Release::Origin="Tulip Labs" -o APT::FTPArchive::Release::Label="Iris" \
 		release . > Release
 	if [ $signed = 1 ]; then
 		gpg --batch --yes --default-key "$KEYID" --clearsign -o InRelease Release
@@ -80,47 +83,50 @@ if [ $signed = 1 ]; then
 	gpg --batch --yes --default-key "$KEYID" --detach-sign --armor "$out/rpm/repodata/repomd.xml"
 	check="gpgcheck=1
 repo_gpgcheck=1
-gpgkey=$URL/lite-go-browser.asc"
-	apt_line="deb [signed-by=/usr/share/keyrings/lite-go-browser.gpg] $REL/latest download/"
-	apt_setup="curl -fsSL $URL/lite-go-browser.gpg | sudo tee /usr/share/keyrings/lite-go-browser.gpg >/dev/null
-echo \"$apt_line\" | sudo tee /etc/apt/sources.list.d/lite-go-browser.list"
+gpgkey=$URL/iris-browser.asc"
+	apt_line="deb [signed-by=/usr/share/keyrings/iris-browser.gpg] $REL/latest download/"
+	apt_setup="curl -fsSL $URL/iris-browser.gpg | sudo tee /usr/share/keyrings/iris-browser.gpg >/dev/null
+echo \"$apt_line\" | sudo tee /etc/apt/sources.list.d/iris-browser.list"
 else
 	check="gpgcheck=0
 repo_gpgcheck=0"
 	apt_line="deb [trusted=yes] $REL/latest download/"
-	apt_setup="echo \"$apt_line\" | sudo tee /etc/apt/sources.list.d/lite-go-browser.list"
+	apt_setup="echo \"$apt_line\" | sudo tee /etc/apt/sources.list.d/iris-browser.list"
 fi
-cat > "$out/rpm/lite-go-browser.repo" <<REPO
-[lite-go-browser]
-name=Lite Go
+cat > "$out/rpm/iris-browser.repo" <<REPO
+[iris-browser]
+name=Iris
 baseurl=$URL/rpm
 enabled=1
 metadata_expire=1h
 $check
 REPO
-cp "$out/rpm/lite-go-browser.repo" "$out/lite-go-browser.repo"
+cp "$out/rpm/iris-browser.repo" "$out/iris-browser.repo"
+# set up while Iris was Lite Go: the same repository under the old name
+sed 's/^\[iris-browser\]/[lite-go-browser]/' "$out/iris-browser.repo" > "$out/lite-go-browser.repo"
+cp "$out/lite-go-browser.repo" "$out/rpm/lite-go-browser.repo"
 
 cat > "$out/index.html" <<HTML
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lite Go packages</title>
+<title>Iris packages</title>
 <style>body{font:16px/1.5 system-ui,sans-serif;max-width:46rem;margin:2rem auto;padding:0 1rem;color:#241f4e;background:#fdfaf3}
 pre{background:#f1ecfb;padding:.8rem 1rem;border-radius:10px;overflow-x:auto}h1{font-size:1.6rem}</style></head><body>
-<h1>Lite Go for Linux</h1>
-<p>Packages for Lite Go, the light browser by Tulip Labs. Downloads and source:
+<h1>Iris for Linux</h1>
+<p>Packages for Iris, the light browser by Tulip Labs. Downloads and source:
 <a href="https://github.com/Tulip-Labs/Iris-Browser/releases">GitHub releases</a>.</p>
 <h2>Debian, Ubuntu, Linux Mint</h2>
 <pre>$apt_setup
-sudo apt update && sudo apt install lite-go-browser</pre>
+sudo apt update && sudo apt install iris-browser</pre>
 <h2>Fedora</h2>
-<pre>sudo dnf config-manager addrepo --from-repofile=$URL/lite-go-browser.repo
-sudo dnf install lite-go-browser</pre>
+<pre>sudo dnf config-manager addrepo --from-repofile=$URL/iris-browser.repo
+sudo dnf install iris-browser</pre>
 <h2>openSUSE</h2>
-<pre>sudo zypper addrepo $URL/lite-go-browser.repo
-sudo zypper install lite-go-browser</pre>
+<pre>sudo zypper addrepo $URL/iris-browser.repo
+sudo zypper install iris-browser</pre>
 <h2>Fedora Atomic (Silverblue, Kinoite)</h2>
-<pre>sudo curl -fsSLo /etc/yum.repos.d/lite-go-browser.repo $URL/lite-go-browser.repo
-rpm-ostree install lite-go-browser</pre>
+<pre>sudo curl -fsSLo /etc/yum.repos.d/iris-browser.repo $URL/iris-browser.repo
+rpm-ostree install iris-browser</pre>
 </body></html>
 HTML
 touch "$out/.nojekyll"

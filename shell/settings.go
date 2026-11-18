@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"litego/core"
-	"litego/ui"
+	"iris/core"
+	"iris/ui"
 )
 
 // Settings live in the menu (the ⋮ button), in sections that open in place.

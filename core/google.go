@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Lite results: Google searches are read by a hidden page and shown on Lite Go's
+// Iris results: Google searches are read by a hidden page and shown on Iris's
 // own results page. These are the scripts that read Google's pages, and the
 // parsers for what they return. Google's markup changes over time, so the
 // scripts look for meaning (headings inside links, images, the answer column)

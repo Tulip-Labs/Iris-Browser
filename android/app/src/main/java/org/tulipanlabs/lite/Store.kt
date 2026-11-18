@@ -62,7 +62,7 @@ class Settings(ctx: Context) {
         get() = p.getInt("sessionIndex", 0)
         set(v) = p.edit().putInt("sessionIndex", v).apply()
 
-    /** Lite results: Google searches shown on Lite's own page */
+    /** Iris results: Google searches shown on Iris's own page */
     var liteResults: Boolean
         get() = p.getBoolean("liteResults", true)
         set(v) = p.edit().putBoolean("liteResults", v).apply()
@@ -83,7 +83,7 @@ class Settings(ctx: Context) {
         get() = (p.getString("sessionContainers", "") ?: "").split('\n')
         set(v) = p.edit().putString("sessionContainers", v.joinToString("\n")).apply()
 
-    // ---- sync with Lite Go on a computer (see Sync.kt) ----
+    // ---- sync with Iris on a computer (see Sync.kt) ----
 
     private fun str(key: String) = p.getString(key, "") ?: ""
     private fun setStr(key: String, v: String) = p.edit().putString(key, v).apply()

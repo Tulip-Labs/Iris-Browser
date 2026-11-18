@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"litego/core"
-	"litego/ui"
+	"iris/core"
+	"iris/ui"
 )
 
-// Lite results: a Google search shown on Lite Go's own page, in the palette of
+// Iris results: a Google search shown on Iris's own page, in the palette of
 // the theme: the AI answer, the links, a gallery of pictures and the videos.
 
 type loadState uint8

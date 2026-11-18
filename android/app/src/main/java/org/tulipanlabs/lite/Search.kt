@@ -92,7 +92,7 @@ object Search {
     }
 }
 
-/** The filter lists Lite Shields uses, kept up to date in the background. */
+/** The filter lists Iris Shields uses, kept up to date in the background. */
 object FilterLists {
     class List(val id: String, val name: String, val urls: kotlin.collections.List<String>)
 
@@ -111,7 +111,7 @@ object FilterLists {
                 val c = URL(u).openConnection() as HttpURLConnection
                 c.connectTimeout = 15000
                 c.readTimeout = 40000
-                c.setRequestProperty("User-Agent", "Lite/1.0 (filter lists)")
+                c.setRequestProperty("User-Agent", "Iris/1.0 (filter lists)")
                 if (c.responseCode != 200) { c.disconnect(); continue }
                 val b = c.inputStream.use { it.readBytes() }
                 c.disconnect()

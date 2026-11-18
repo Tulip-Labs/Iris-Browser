@@ -174,7 +174,7 @@ static GdkGLContext *context(GtkWidget *w) {
 		return NULL;
 	}
 	gdk_gl_context_make_current(glc);
-	if (g_getenv("LITEGO_GL_DEBUG"))
+	if (g_getenv("IRIS_GL_DEBUG"))
 		g_printerr("Iris: GL %s | %s | es=%d | GTK %d.%d.%d\n", (const char *)glGetString(GL_VERSION), (const char *)glGetString(GL_RENDERER),
 		           gdk_gl_context_get_use_es(glc), gtk_get_major_version(), gtk_get_minor_version(), gtk_get_micro_version());
 	return glc;
@@ -559,10 +559,10 @@ void lgwFocus(void) {
 	if (lgxUIFocus) lgxUIFocus();
 }
 
-// ---- the tests' picture of the whole window (LITEGO_SHOT) ----
+// ---- the tests' picture of the whole window (IRIS_SHOT) ----
 
 static gboolean windowShot(gpointer d) {
-	const char *pre = g_getenv("LITEGO_SHOT");
+	const char *pre = g_getenv("IRIS_SHOT");
 	GtkNative *n = view ? gtk_widget_get_native(view) : NULL;
 	GskRenderer *r = n ? gtk_native_get_renderer(n) : NULL;
 	int W = view ? gtk_widget_get_width(view) : 0, H = view ? gtk_widget_get_height(view) : 0;
@@ -598,10 +598,10 @@ void lgwDo(uintptr_t h) { g_idle_add_full(G_PRIORITY_DEFAULT, doGo, (gpointer)h,
 // ---- startup ----
 
 // appID is the Wayland app id and icon name: the Flatpak's id inside a
-// Flatpak (its desktop file and icon carry that name), lite-go otherwise.
+// Flatpak (its desktop file and icon carry that name), the desktop id otherwise.
 static const char *appID(void) {
 	const char *id = g_getenv("FLATPAK_ID");
-	return id && *id ? id : "lite-go";
+	return id && *id ? id : "io.github.tulip_labs.Iris";
 }
 
 void lgwInit(void) {
@@ -672,7 +672,7 @@ uintptr_t lgwOpen(int w, int h, int maximized) {
 	if (maximized && gtk_get_minor_version() >= 10) gtk_window_maximize(GTK_WINDOW(win));
 	gtk_window_present(GTK_WINDOW(win));
 	gtk_widget_grab_focus(view);
-	if (g_getenv("LITEGO_SHOT")) g_timeout_add_seconds(14, windowShot, NULL);
+	if (g_getenv("IRIS_SHOT")) g_timeout_add_seconds(14, windowShot, NULL);
 	return (uintptr_t)view;
 }
 

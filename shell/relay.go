@@ -88,7 +88,7 @@ func publicURL(src string) (*url.URL, bool) {
 		strings.HasSuffix(strings.ToLower(host), ".local") {
 		return nil, false
 	}
-	if os.Getenv("LITEGO_RELAY_LOCAL") != "" {
+	if os.Getenv("IRIS_RELAY_LOCAL") != "" {
 		return pu, true // the tests' own server, on the loopback address
 	}
 	ips, err := net.LookupIP(host)

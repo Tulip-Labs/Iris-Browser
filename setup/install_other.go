@@ -12,7 +12,7 @@ var errWindowsOnly = errors.New("this setup installs the Windows app; macOS and 
 
 func installDir() string {
 	h, _ := os.UserHomeDir()
-	return filepath.Join(h, ".local", "share", "Lite Go")
+	return filepath.Join(h, ".local", "share", "Iris")
 }
 func installedVersion() string          { return "" }
 func engineInstalled() bool             { return true }

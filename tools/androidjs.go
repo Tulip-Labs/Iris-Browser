@@ -1,6 +1,6 @@
 //go:build ignore
 
-// androidjs writes the page scripts Lite Go uses into the Android app's
+// androidjs writes the page scripts Iris uses into the Android app's
 // assets, so the Kotlin app runs exactly the same ones:
 //
 //	go run tools/androidjs.go
@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"litego/core"
-	"litego/shields"
+	"iris/core"
+	"iris/shields"
 )
 
 func main() {

@@ -8,7 +8,7 @@ import (
 )
 
 func TestRelayGuards(t *testing.T) {
-	t.Setenv("LITEGO_RELAY_LOCAL", "")
+	t.Setenv("IRIS_RELAY_LOCAL", "")
 	for _, bad := range []string{
 		"file:///etc/passwd", "ftp://example.com/v.mp4", "http://127.0.0.1:8080/v.mp4", "http://localhost/v.mp4",
 		"http://192.168.1.1/cam.mp4", "http://10.0.0.5/a.mp4", "http://[::1]/a.mp4", "http://169.254.169.254/latest",

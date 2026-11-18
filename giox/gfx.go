@@ -15,8 +15,8 @@ import (
 	"gioui.org/text"
 	"golang.org/x/image/math/fixed"
 
-	"litego/assets"
-	"litego/ui"
+	"iris/assets"
+	"iris/ui"
 )
 
 // Gfx implements ui.Gfx on Gio operations. Logical pixels are mapped to

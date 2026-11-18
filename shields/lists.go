@@ -11,14 +11,14 @@ import (
 	"time"
 )
 
-// List is a filter list Lite Go downloads (never bundled: each keeps its own
+// List is a filter list Iris downloads (never bundled: each keeps its own
 // license and authors) and refreshes every few days.
 type List struct {
 	ID, Name string
 	URLs     []string // the first that answers wins
 }
 
-// Lists are the lists Lite Shields uses.
+// Lists are the lists Iris Shields uses.
 var Lists = []List{
 	{"easylist", "EasyList (ads)", []string{"https://easylist.to/easylist/easylist.txt", "https://ublockorigin.github.io/uAssets/thirdparties/easylist.txt"}},
 	{"easyprivacy", "EasyPrivacy (trackers)", []string{"https://easylist.to/easylist/easyprivacy.txt", "https://ublockorigin.github.io/uAssets/thirdparties/easyprivacy.txt"}},
@@ -38,7 +38,7 @@ func fetch(ctx context.Context, urls []string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("User-Agent", "LiteGo/1.0 (filter lists)")
+		req.Header.Set("User-Agent", "Iris/1.0 (filter lists)")
 		resp, err := client.Do(req)
 		if err != nil {
 			last = err

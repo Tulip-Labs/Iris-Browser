@@ -17,8 +17,8 @@ import (
 	"golang.org/x/image/math/fixed"
 	"golang.org/x/image/vector"
 
-	"litego/assets"
-	"litego/ui"
+	"iris/assets"
+	"iris/ui"
 )
 
 type state struct {

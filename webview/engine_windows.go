@@ -525,7 +525,7 @@ func (v *view) setup() {
 			if op == 0 {
 				return
 			}
-			call(args, slotICoreWebView2DownloadStartingEventArgs_SetHandled, 1) // Lite Go lists it itself
+			call(args, slotICoreWebView2DownloadStartingEventArgs_SetHandled, 1) // Iris lists it itself
 			trackDownload(v, op, getString(args, slotICoreWebView2DownloadStartingEventArgs_ResultFilePath), report)
 		})
 	}

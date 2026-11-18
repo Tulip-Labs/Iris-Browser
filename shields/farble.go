@@ -63,7 +63,7 @@ const CollectScript = `(() => {
   return {c: [...c].slice(0, 4000), i: [...i].slice(0, 2000)};
 })()`
 
-// InjectCSS returns a script that adds (or extends) Lite Go's hiding style sheet.
+// InjectCSS returns a script that adds (or extends) Iris's hiding style sheet.
 func InjectCSS(css string) string {
 	q := strconv.Quote(css)
 	return `(() => { const add = () => { let s = document.getElementById('lite-shields'); if (!s) { s = document.createElement('style'); s.id = 'lite-shields'; (document.head || document.documentElement).appendChild(s); } s.textContent += ` + q + `; }; if (document.documentElement) add(); else document.addEventListener('DOMContentLoaded', add); })();`

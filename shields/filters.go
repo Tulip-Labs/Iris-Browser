@@ -1,4 +1,4 @@
-// Package shields is Lite Go's version of what Brave calls Shields: an ad and
+// Package shields is Iris's version of what Brave calls Shields: an ad and
 // tracker blocker that reads the same filter lists (EasyList, EasyPrivacy,
 // uBlock filters, the cookie notice list), hiding of the boxes ads leave
 // behind, links cleaned of tracking, and fingerprinting protection.
@@ -36,7 +36,7 @@ const (
 	kindAll = 1<<10 - 1
 )
 
-// the kinds Lite Go asks about (style sheets and fonts are never blocked)
+// the kinds Iris asks about (style sheets and fonts are never blocked)
 const askedKinds = KindScript | KindImage | KindXHR | KindMedia | KindPing | KindOther
 
 var kindNames = map[string]Kind{
@@ -243,7 +243,7 @@ func parseNetwork(line string) (*rule, string) {
 		return nil, ""
 	}
 	if special == "" && r.kinds != 0 && r.kinds&askedKinds == 0 {
-		return nil, "" // only for things Lite Go never blocks
+		return nil, "" // only for things Iris never blocks
 	}
 	if isRegex {
 		re, err := regexp.Compile(pat[1 : len(pat)-1])

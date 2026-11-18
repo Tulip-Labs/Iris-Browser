@@ -3,16 +3,16 @@ Type=Application
 Name=Iris
 GenericName=Web Browser
 Comment=A light, fast browser with shields built in
-Exec=lite-go %U
-Icon=lite-go
+Exec=iris %U
+Icon=io.github.tulip_labs.Iris
 Terminal=false
 StartupNotify=true
-StartupWMClass=lite-go
+StartupWMClass=io.github.tulip_labs.Iris
 Categories=Network;WebBrowser;
-Keywords=web;browser;internet;lite go;iris;
+Keywords=web;browser;internet;iris;
 MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
 Actions=new-window;
 
 [Desktop Action new-window]
 Name=New Window
-Exec=lite-go
+Exec=iris --new-window

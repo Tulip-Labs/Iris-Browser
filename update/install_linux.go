@@ -66,7 +66,7 @@ func flatpakID() string {
 	if id := os.Getenv("FLATPAK_ID"); id != "" {
 		return id
 	}
-	return "io.github.tulip_labs.LiteGo"
+	return "io.github.tulip_labs.Iris"
 }
 
 // flatpakHost runs flatpak outside the sandbox (the app may talk to the
@@ -167,7 +167,7 @@ func replaceFromTar(archive, exe string) error {
 		if err != nil {
 			return fail(err)
 		}
-		// LiteGo-linux-x86_64/<path>: the first part is the archive's folder
+		// Iris-linux-x86_64/<path>: the first part is the archive's folder
 		name := filepath.ToSlash(filepath.Clean(h.Name))
 		i := strings.IndexByte(name, '/')
 		if i < 0 {
@@ -205,7 +205,7 @@ func replaceFromTar(archive, exe string) error {
 			seen[rel] = true
 		}
 	}
-	for _, need := range []string{"lite-go-browser", "lite-go-browser.sha256", "libcef.so", "lite-go-helper"} {
+	for _, need := range []string{"iris", "iris.sha256", "libcef.so", "iris-helper"} {
 		if !seen[need] {
 			return fail(errors.New("the release archive is missing " + need))
 		}
@@ -218,18 +218,41 @@ func replaceFromTar(archive, exe string) error {
 		return fail(err)
 	}
 	os.RemoveAll(old)
-	refreshUserEntry(dir)
+	if home, err := os.UserHomeDir(); err == nil {
+		refreshUserEntry(dir, home)
+	}
 	return nil
 }
 
-// refreshUserEntry updates what install.sh put outside the program folder
-// for a copy in the home folder: the menu entry and icon (the name and the
-// icon change between versions) and the iris command beside lite-go.
-func refreshUserEntry(dir string) {
+// MigrateUserInstall brings a copy in the home folder to Iris's names: the
+// folder installed as Lite Go (~/.local/lib/lite-go-browser) becomes
+// ~/.local/lib/iris-browser, the command iris and the menu entry point at it,
+// and the old command, entry, icon and compatibility files go. It is cheap
+// when there is nothing to do, and safe to run at every start.
+func MigrateUserInstall() { migrateUserInstall(self()) }
+
+func migrateUserInstall(exe string) {
+	dir := filepath.Dir(exe)
 	home, err := os.UserHomeDir()
 	if err != nil || !strings.HasPrefix(dir, home+string(os.PathSeparator)) {
 		return
 	}
+	if filepath.Base(dir) == "lite-go-browser" {
+		to := filepath.Join(filepath.Dir(dir), "iris-browser")
+		if _, err := os.Stat(to); os.IsNotExist(err) && os.Rename(dir, to) == nil {
+			dir = to // this running copy keeps going from the new place
+		}
+	}
+	for _, f := range []string{"lite-go-browser", "lite-go-browser.sha256", "lite-go-helper", "lite-go", "lite-go.desktop", "lite-go.png"} {
+		os.Remove(filepath.Join(dir, f))
+	}
+	refreshUserEntry(dir, home)
+}
+
+// refreshUserEntry puts the command, the menu entry and the icon in place for
+// a copy in the home folder (the name and icon change between versions).
+func refreshUserEntry(dir, home string) {
+	const id = "io.github.tulip_labs.Iris"
 	share := os.Getenv("XDG_DATA_HOME")
 	if share == "" {
 		share = filepath.Join(home, ".local", "share")
@@ -238,24 +261,39 @@ func refreshUserEntry(dir string) {
 	if bin == "" {
 		bin = filepath.Join(home, ".local", "bin")
 	}
-	entry := filepath.Join(share, "applications", "lite-go.desktop")
-	if _, err := os.Stat(entry); err == nil {
-		if d, err := os.ReadFile(filepath.Join(dir, "lite-go.desktop")); err == nil {
-			d = []byte(strings.ReplaceAll(string(d), "\nExec=lite-go", "\nExec="+filepath.Join(bin, "lite-go")))
+	if _, err := os.Stat(filepath.Join(dir, "iris")); err != nil {
+		return
+	}
+	cmd := filepath.Join(bin, "iris")
+	if t, err := os.Readlink(cmd); err != nil || t != filepath.Join(dir, "iris") {
+		os.MkdirAll(bin, 0o755)
+		os.Remove(cmd)
+		os.Symlink(filepath.Join(dir, "iris"), cmd)
+	}
+	if d, err := os.ReadFile(filepath.Join(dir, id+".desktop")); err == nil {
+		d = []byte(strings.ReplaceAll(string(d), "\nExec=iris", "\nExec="+cmd))
+		entry := filepath.Join(share, "applications", id+".desktop")
+		if old, err := os.ReadFile(entry); err != nil || string(old) != string(d) {
+			os.MkdirAll(filepath.Dir(entry), 0o755)
 			os.WriteFile(entry, d, 0o644)
 		}
-		if ic, err := os.ReadFile(filepath.Join(dir, "lite-go.png")); err == nil {
-			os.WriteFile(filepath.Join(share, "icons", "hicolor", "256x256", "apps", "lite-go.png"), ic, 0o644)
+	}
+	if ic, err := os.ReadFile(filepath.Join(dir, id+".png")); err == nil {
+		icon := filepath.Join(share, "icons", "hicolor", "256x256", "apps", id+".png")
+		if old, err := os.ReadFile(icon); err != nil || len(old) != len(ic) {
+			os.MkdirAll(filepath.Dir(icon), 0o755)
+			os.WriteFile(icon, ic, 0o644)
 		}
 	}
-	if _, err := os.Lstat(filepath.Join(bin, "lite-go")); err == nil {
-		if _, err := os.Lstat(filepath.Join(bin, "iris")); err != nil {
-			os.Symlink(filepath.Join(dir, "lite-go-browser"), filepath.Join(bin, "iris"))
-		}
+	// what Lite Go put there
+	if t, err := os.Readlink(filepath.Join(bin, "lite-go")); err == nil && strings.Contains(t, "lite-go") {
+		os.Remove(filepath.Join(bin, "lite-go"))
 	}
+	os.Remove(filepath.Join(share, "applications", "lite-go.desktop"))
+	os.Remove(filepath.Join(share, "icons", "hicolor", "256x256", "apps", "lite-go.png"))
 }
 
-// Restart starts Lite Go again in a moment, once this copy has quit.
+// Restart starts Iris again in a moment, once this copy has quit.
 func Restart() error {
 	var argv []string
 	if os.Getenv("FLATPAK_ID") != "" {

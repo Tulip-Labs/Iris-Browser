@@ -3,9 +3,9 @@ package shell
 import (
 	"time"
 
-	"litego/core"
-	"litego/ui"
-	"litego/webview"
+	"iris/core"
+	"iris/ui"
+	"iris/webview"
 )
 
 type panelMode uint8

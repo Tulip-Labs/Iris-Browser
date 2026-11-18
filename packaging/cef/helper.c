@@ -1,6 +1,6 @@
-// lite-go-helper: Chromium's other processes (pages, the GPU, the network).
-// Lite Go starts them through this small program, so they do not load the
-// whole browser. Built by build-litego.sh with the CEF distribution.
+// iris-helper: Chromium's other processes (pages, the GPU, the network).
+// Iris starts them through this small program, so they do not load the
+// whole browser. Built by build-iris.sh with the CEF distribution.
 
 #include <signal.h>
 #include <stdio.h>
@@ -13,9 +13,9 @@
 
 static const char *kind = "?";
 
-// With LITEGO_CEF_VERBOSE set, a process that aborts says which one it was.
+// With IRIS_CEF_VERBOSE set, a process that aborts says which one it was.
 static void onAbort(int sig) {
-	const char *m = "lite-go-helper: aborted, process type ";
+	const char *m = "iris-helper: aborted, process type ";
 	write(2, m, strlen(m));
 	write(2, kind, strlen(kind));
 	write(2, "\n", 1);
@@ -27,9 +27,9 @@ int main(int argc, char **argv) {
 	for (int i = 1; i < argc; i++) {
 		if (strncmp(argv[i], "--type=", 7) == 0) kind = argv[i] + 7;
 	}
-	if (getenv("LITEGO_CEF_VERBOSE")) {
+	if (getenv("IRIS_CEF_VERBOSE")) {
 		char buf[160];
-		int n = snprintf(buf, sizeof buf, "lite-go-helper: pid %d, process type %s\n", (int)getpid(), kind);
+		int n = snprintf(buf, sizeof buf, "iris-helper: pid %d, process type %s\n", (int)getpid(), kind);
 		if (n > 0) write(2, buf, (size_t)n);
 		signal(SIGABRT, onAbort);
 		signal(SIGSEGV, onAbort);

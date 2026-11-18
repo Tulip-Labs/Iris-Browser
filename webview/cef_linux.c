@@ -1,9 +1,9 @@
 //go:build linux && webkit
 
-// The Linux side of Lite Go's web engine on Chromium, through CEF (the
+// The Linux side of Iris's web engine on Chromium, through CEF (the
 // Chromium Embedded Framework).
 //
-// Iris's window is a GTK 4 window (cmd/litego/gtk_linux.c) with one view:
+// Iris's window is a GTK 4 window (cmd/iris/gtk_linux.c) with one view:
 // the interface is drawn there by Gio, and each page over it. CEF renders the
 // pages off screen ("windowless") at the window's exact scale: it hands over
 // the pixels of each page, this file turns them into textures the view draws
@@ -75,7 +75,7 @@ typedef struct {
 	cef_browser_t *browser; // NULL until created
 	int bid;                // the browser's identifier
 	GdkTexture *tex, *popTex; // the last frames (the page's, a select box's), ready for the screen
-	cairo_surface_t *page;    // the last frame on the processor, for the tests' pictures (LITEGO_SHOT)
+	cairo_surface_t *page;    // the last frame on the processor, for the tests' pictures (IRIS_SHOT)
 	cef_rect_t popupRect;
 	int popupShown;
 	int px[4];     // where the page is in the view, in real pixels: x, y, width, height
@@ -284,7 +284,7 @@ static int fileSays(const char *path, const char *want) {
 // user namespaces, which some systems turn off (Ubuntu 24.04's AppArmor).
 // Without either, the pages still run, only without Chromium's sandbox.
 static int sandboxMissing(const char *bin) {
-	if (g_getenv("LITEGO_NO_SANDBOX")) return 1;
+	if (g_getenv("IRIS_NO_SANDBOX")) return 1;
 	char *helper = g_build_filename(bin, "chrome-sandbox", NULL);
 	struct stat st;
 	int setuid = stat(helper, &st) == 0 && st.st_uid == 0 && (st.st_mode & S_ISUID);
@@ -299,7 +299,7 @@ static int sandboxMissing(const char *bin) {
 static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type, cef_command_line_t *cl) {
 	if (type && type->length) return; // only the browser process
 	cef_string_t k = {0}, val = {0};
-	// Wayland, always (Lite Go's window is a Wayland window)
+	// Wayland, always (Iris's window is a Wayland window)
 	setStr(&k, "ozone-platform");
 	setStr(&val, g_getenv("WAYLAND_DISPLAY") || !g_getenv("DISPLAY") ? "wayland" : "x11");
 	cl->append_switch_with_value(cl, &k, &val);
@@ -310,7 +310,7 @@ static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type
 	char sfs[16];
 	g_ascii_formatd(sfs, sizeof sfs, "%.4g", screenScale());
 	setStr(&k, "force-device-scale-factor");
-	setStr(&val, g_getenv("LITEGO_SCALE") ? g_getenv("LITEGO_SCALE") : sfs);
+	setStr(&val, g_getenv("IRIS_SCALE") ? g_getenv("IRIS_SCALE") : sfs);
 	cl->append_switch_with_value(cl, &k, &val);
 	cef_string_clear(&k);
 	cef_string_clear(&val);
@@ -324,7 +324,7 @@ static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type
 	// videos decoded on the graphics chip (VA-API) when there is one: far
 	// less processor for YouTube and the like
 	if (!g_getenv("LIBGL_ALWAYS_SOFTWARE") && access("/dev/dri/renderD128", R_OK | W_OK) == 0 &&
-	    !(g_getenv("LITEGO_GPU") && strcmp(g_getenv("LITEGO_GPU"), "0") == 0)) {
+	    !(g_getenv("IRIS_GPU") && strcmp(g_getenv("IRIS_GPU"), "0") == 0)) {
 		setStr(&k, "enable-features");
 		setStr(&val, "AcceleratedVideoDecodeLinuxGL,AcceleratedVideoDecodeLinuxZeroCopyGL,AcceleratedVideoEncoder");
 		cl->append_switch_with_value(cl, &k, &val);
@@ -376,7 +376,7 @@ static void CEF_CALLBACK onCommandLine(cef_app_t *self, const cef_string_t *type
 		}
 		cef_string_clear(&k);
 	}
-	const char *extra = g_getenv("LITEGO_CEF_ARGS"); // for diagnosis: --name or --name=value, separated by spaces
+	const char *extra = g_getenv("IRIS_CEF_ARGS"); // for diagnosis: --name or --name=value, separated by spaces
 	if (extra) {
 		char **sw = g_strsplit(extra, " ", -1);
 		for (char **p = sw; *p; p++) {
@@ -453,7 +453,7 @@ static GdkTexture *frameTexture(GdkTexture *old, const void *buf, int w, int h, 
 	return t;
 }
 
-// copyInto copies a frame for the tests' page pictures (LITEGO_SHOT).
+// copyInto copies a frame for the tests' page pictures (IRIS_SHOT).
 static void copyInto(cairo_surface_t **dst, const void *buf, int w, int h) {
 	if (!*dst || cairo_image_surface_get_width(*dst) != w || cairo_image_surface_get_height(*dst) != h) {
 		if (*dst) cairo_surface_destroy(*dst);
@@ -482,7 +482,7 @@ static void CEF_CALLBACK onPaint(cef_render_handler_t *self, cef_browser_t *b, c
 		GdkTexture *t = frameTexture(v->tex, buf, w, h, n, dirty);
 		if (v->tex) g_object_unref(v->tex);
 		v->tex = t;
-		if (g_getenv("LITEGO_SHOT")) copyInto(&v->page, buf, w, h);
+		if (g_getenv("IRIS_SHOT")) copyInto(&v->page, buf, w, h);
 	}
 	if (v->shown) redrawView();
 }
@@ -1285,7 +1285,7 @@ static void CEF_CALLBACK onBeforeClose(cef_life_span_handler_t *self, cef_browse
 	g_free(v);
 }
 
-// A link or a script asks for a new window: Lite Go opens a tab (or not),
+// A link or a script asks for a new window: Iris opens a tab (or not),
 // and that tab's page loads the address.
 static int CEF_CALLBACK onBeforePopup(cef_life_span_handler_t *self, cef_browser_t *b, cef_frame_t *f, int popupID, const cef_string_t *url,
                                       const cef_string_t *name, cef_window_open_disposition_t disp, int gesture, const cef_popup_features_t *feat,
@@ -1884,11 +1884,11 @@ void lgxCall(int op, uintptr_t id, int a, int b, int c, int d, const char *s, ui
 	g_main_context_invoke(NULL, runOp, o);
 }
 
-// With LITEGO_SHOT=<prefix> set (the tests), the page on screen is written
+// With IRIS_SHOT=<prefix> set (the tests), the page on screen is written
 // to <prefix>-1.png, -2.png and so on, every five seconds.
 static gboolean shotTick(gpointer d) {
 	static int n;
-	const char *pre = g_getenv("LITEGO_SHOT");
+	const char *pre = g_getenv("IRIS_SHOT");
 	if (!pre || n >= 3) return G_SOURCE_REMOVE;
 	GHashTableIter it;
 	gpointer k, val;
@@ -1938,7 +1938,7 @@ static void setup(const char *dir) {
 	cef_api_hash(CEF_API_VERSION, 0);
 
 	char *bin = exeDir();
-	char *helper = g_build_filename(bin, "lite-go-helper", NULL);
+	char *helper = g_build_filename(bin, "iris-helper", NULL);
 	char *root = g_build_filename(dir, "cef", NULL);
 	char *locales = g_build_filename(bin, "locales", NULL);
 	g_mkdir_with_parents(root, 0700);
@@ -1952,9 +1952,9 @@ static void setup(const char *dir) {
 	s.multi_threaded_message_loop = 0;
 	s.windowless_rendering_enabled = 1;
 	s.persist_session_cookies = 1;
-	// Chromium speaks only when asked (LITEGO_CEF_VERBOSE=1): its messages about the
+	// Chromium speaks only when asked (IRIS_CEF_VERBOSE=1): its messages about the
 	// system bus, the battery or VA-API inside a toolbox are noise, not errors
-	s.log_severity = g_getenv("LITEGO_CEF_VERBOSE") ? LOGSEVERITY_INFO : LOGSEVERITY_FATAL;
+	s.log_severity = g_getenv("IRIS_CEF_VERBOSE") ? LOGSEVERITY_INFO : LOGSEVERITY_FATAL;
 	s.background_color = 0xFFFFFFFF;
 	setStr(&s.browser_subprocess_path, helper);
 	setStr(&s.root_cache_path, root);
@@ -1971,7 +1971,7 @@ static void setup(const char *dir) {
 	if (!started) g_printerr("Iris: Chromium (CEF) could not start\n");
 	// a steady beat as well, for work CEF does not schedule
 	g_timeout_add(250, pumpTick, NULL); // CEF schedules its own work; this beat only catches what it did not
-	if (g_getenv("LITEGO_SHOT")) g_timeout_add_seconds(5, shotTick, NULL);
+	if (g_getenv("IRIS_SHOT")) g_timeout_add_seconds(5, shotTick, NULL);
 	g_free(bin);
 	g_free(helper);
 	g_free(root);

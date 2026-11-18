@@ -90,7 +90,7 @@ func pickFiles() []string {
 	return out
 }
 
-// allowForeground lets the running Lite Go bring its window to the front.
+// allowForeground lets the running Iris bring its window to the front.
 func allowForeground(pid int) {
 	if pid > 0 {
 		procAllowFG.Call(uintptr(pid))
@@ -99,7 +99,7 @@ func allowForeground(pid int) {
 
 const runKey = `Software\Microsoft\Windows\CurrentVersion\Run`
 
-// setStartup starts Lite Go in the background when Windows starts (not for the
+// setStartup starts Iris in the background when Windows starts (not for the
 // Store package, whose startup Windows manages).
 func setStartup(on bool) {
 	exe, err := os.Executable()
@@ -112,9 +112,9 @@ func setStartup(on bool) {
 	}
 	defer k.Close()
 	if on {
-		_ = k.SetStringValue("Lite Go", `"`+exe+`" --background`)
+		_ = k.SetStringValue("Iris", `"`+exe+`" --background`)
 	} else {
-		_ = k.DeleteValue("Lite Go")
+		_ = k.DeleteValue("Iris")
 	}
 }
 

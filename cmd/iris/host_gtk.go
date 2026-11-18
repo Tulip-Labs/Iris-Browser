@@ -45,9 +45,9 @@ import (
 	"gioui.org/gpu"
 	"gioui.org/op"
 
-	"litego/shell"
-	"litego/ui"
-	"litego/webview"
+	"iris/shell"
+	"iris/ui"
+	"iris/webview"
 )
 
 func init() {

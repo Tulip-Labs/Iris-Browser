@@ -1,4 +1,4 @@
-# Builds Lite for Android (the Kotlin app in android/) and keeps the APK as
+# Builds Iris for Android (the Kotlin app in android/) and keeps the APK as
 # an artifact of the run. Runs by hand from the Actions tab, and on pushes
 # that touch the app.
 name: Android
@@ -26,9 +26,9 @@ jobs:
       - name: Collect
         run: |
           mkdir out
-          cp android/app/build/outputs/apk/release/*.apk out/Lite-android.apk
+          cp android/app/build/outputs/apk/release/*.apk out/Iris-android.apk
           ls -la out
       - uses: actions/upload-artifact@v4
         with:
-          name: Lite-android
-          path: out/Lite-android.apk
+          name: Iris-android
+          path: out/Iris-android.apk

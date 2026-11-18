@@ -3,8 +3,8 @@ package shell
 import (
 	"strings"
 
-	"litego/core"
-	"litego/ui"
+	"iris/core"
+	"iris/ui"
 )
 
 // setKind turns a new tab into another kind of tab (private, temporary,

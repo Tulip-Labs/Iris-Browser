@@ -27,7 +27,7 @@ func Detect() Kind {
 	return KindPortable
 }
 
-// Install starts Lite Go Setup, which closes Lite Go, puts the new version
+// Install starts Iris Setup, which closes Iris, puts the new version
 // in place and opens it again.
 func Install(ctx context.Context, k Kind, path string) (Result, error) {
 	if k != KindSetup {
@@ -40,5 +40,8 @@ type managedErr struct{ k Kind }
 
 func (e *managedErr) Error() string { return "updates for this copy come from " + e.k.Managed() }
 
-// Restart is done by Lite Go Setup on Windows.
+// Restart is done by Iris Setup on Windows.
 func Restart() error { return nil }
+
+// MigrateUserInstall has nothing to move on Windows (Iris Setup does it).
+func MigrateUserInstall() {}

@@ -22,10 +22,10 @@ import (
 	"gioui.org/op/clip"
 	"gioui.org/unit"
 
-	"litego/giox"
-	"litego/shell"
-	"litego/ui"
-	"litego/webview"
+	"iris/giox"
+	"iris/shell"
+	"iris/ui"
+	"iris/webview"
 )
 
 func runMain() { app.Main() }

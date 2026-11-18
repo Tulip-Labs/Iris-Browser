@@ -23,15 +23,15 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
-	"litego/webview"
+	"iris/webview"
 )
 
 const (
 	uninstallKey = `Software\Microsoft\Windows\CurrentVersion\Uninstall\LiteGo`
 	clientKey    = `Software\Clients\StartMenuInternet\LiteGo`
 	progID       = "LiteGoHTML"
-	exeName      = "Lite Go.exe"
-	uninstName   = "Uninstall Lite Go.exe"
+	exeName      = "Iris.exe"
+	uninstName   = "Uninstall Iris.exe"
 )
 
 // installDir is the per-user install folder (no administrator rights needed).
@@ -40,7 +40,7 @@ func installDir() string {
 	if base == "" {
 		base, _ = os.UserCacheDir()
 	}
-	return filepath.Join(base, "Programs", "Lite Go")
+	return filepath.Join(base, "Programs", "Iris")
 }
 
 func installedVersion() string {
@@ -88,13 +88,19 @@ func installEngine(progress func(float32)) error {
 	return nil
 }
 
-// quitRunning asks a running Lite Go (also one waiting in the background) to exit.
+// quitRunning asks a running Iris (also one waiting in the background) to
+// exit, and a running Lite Go (Iris's name until 1.0.19).
 func quitRunning() {
+	quitIn("Iris")
+	quitIn("Lite Go")
+}
+
+func quitIn(name string) {
 	conf, err := os.UserConfigDir()
 	if err != nil {
 		return
 	}
-	b, err := os.ReadFile(filepath.Join(conf, "Lite Go", "instance.json"))
+	b, err := os.ReadFile(filepath.Join(conf, name, "instance.json"))
 	if err != nil {
 		return
 	}
@@ -118,6 +124,7 @@ func quitRunning() {
 // copyApp writes the app; a running copy is renamed out of the way first.
 func copyApp(dir string, app []byte) error {
 	quitRunning()
+	removeLiteGo()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -126,13 +133,13 @@ func copyApp(dir string, app []byte) error {
 	os.Remove(old)
 	if _, err := os.Stat(exe); err == nil {
 		if err := os.Rename(exe, old); err != nil {
-			return fmt.Errorf("close Lite Go and try again (%v)", err)
+			return fmt.Errorf("close Iris and try again (%v)", err)
 		}
 	}
 	if err := os.WriteFile(exe, app, 0o755); err != nil {
 		return err
 	}
-	// the record Lite Go checks itself against at every start, and both files
+	// the record Iris checks itself against at every start, and both files
 	// read-only so nothing changes them by accident
 	sum := sha256.Sum256(app)
 	rec := exe + ".sha256"
@@ -160,11 +167,11 @@ func copyApp(dir string, app []byte) error {
 func shortcutPaths(desktop bool) []string {
 	var out []string
 	if p, err := windows.KnownFolderPath(windows.FOLDERID_Programs, 0); err == nil {
-		out = append(out, filepath.Join(p, "Lite Go.lnk"))
+		out = append(out, filepath.Join(p, "Iris.lnk"))
 	}
 	if desktop {
 		if p, err := windows.KnownFolderPath(windows.FOLDERID_Desktop, 0); err == nil {
-			out = append(out, filepath.Join(p, "Lite Go.lnk"))
+			out = append(out, filepath.Join(p, "Iris.lnk"))
 		}
 	}
 	return out
@@ -222,11 +229,39 @@ func makeShortcuts(dir string, desktop bool) error {
 	defer windows.CoUninitialize()
 	exe := filepath.Join(dir, exeName)
 	for _, p := range shortcutPaths(desktop) {
-		if err := shortcut(p, exe, "Lite Go, a light and fast browser"); err != nil {
+		if err := shortcut(p, exe, "Iris, a light and fast browser"); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// removeLiteGo takes away what Iris left installed under its old name, Lite
+// Go (until 1.0.19): its program folder, shortcuts and start-up entry. The
+// settings and history move over when Iris first starts; the uninstall
+// entry and the browser registration keep their keys and are rewritten.
+func removeLiteGo() {
+	base := os.Getenv("LOCALAPPDATA")
+	if base == "" {
+		base, _ = os.UserCacheDir()
+	}
+	if base != "" {
+		os.RemoveAll(filepath.Join(base, "Programs", "Lite Go"))
+	}
+	for _, id := range []*windows.KNOWNFOLDERID{windows.FOLDERID_Programs, windows.FOLDERID_Desktop} {
+		if p, err := windows.KnownFolderPath(id, 0); err == nil {
+			os.Remove(filepath.Join(p, "Lite Go.lnk"))
+		}
+	}
+	hk := registry.CURRENT_USER
+	if rk, err := registry.OpenKey(hk, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE); err == nil {
+		rk.DeleteValue("Lite Go")
+		rk.Close()
+	}
+	if rk, err := registry.OpenKey(hk, `Software\RegisteredApplications`, registry.SET_VALUE); err == nil {
+		rk.DeleteValue("Lite Go")
+		rk.Close()
+	}
 }
 
 func setString(root registry.Key, path, name, value string) error {
@@ -238,7 +273,7 @@ func setString(root registry.Key, path, name, value string) error {
 	return k.SetStringValue(name, value)
 }
 
-// register adds the uninstall entry and offers Lite Go as a browser in Windows' default apps.
+// register adds the uninstall entry and offers Iris as a browser in Windows' default apps.
 func register(dir string, size int) error {
 	exe := filepath.Join(dir, exeName)
 	hk := registry.CURRENT_USER
@@ -247,7 +282,7 @@ func register(dir string, size int) error {
 		return err
 	}
 	for n, v := range map[string]string{
-		"DisplayName":     "Lite Go",
+		"DisplayName":     "Iris",
 		"DisplayVersion":  Version,
 		"Publisher":       "Tulipan Labs",
 		"DisplayIcon":     exe + ",0",
@@ -265,20 +300,20 @@ func register(dir string, size int) error {
 	open := `"` + exe + `" "%1"`
 	cls := `Software\Classes\` + progID
 	for _, e := range [][3]string{
-		{cls, "", "Lite Go web page"},
+		{cls, "", "Iris web page"},
 		{cls + `\DefaultIcon`, "", exe + ",0"},
 		{cls + `\shell\open\command`, "", open},
-		{clientKey, "", "Lite Go"},
+		{clientKey, "", "Iris"},
 		{clientKey + `\DefaultIcon`, "", exe + ",0"},
 		{clientKey + `\shell\open\command`, "", `"` + exe + `"`},
-		{clientKey + `\Capabilities`, "ApplicationName", "Lite Go"},
+		{clientKey + `\Capabilities`, "ApplicationName", "Iris"},
 		{clientKey + `\Capabilities`, "ApplicationDescription", "A light, fast browser that keeps memory low."},
 		{clientKey + `\Capabilities`, "ApplicationIcon", exe + ",0"},
 		{clientKey + `\Capabilities\URLAssociations`, "http", progID},
 		{clientKey + `\Capabilities\URLAssociations`, "https", progID},
 		{clientKey + `\Capabilities\FileAssociations`, ".htm", progID},
 		{clientKey + `\Capabilities\FileAssociations`, ".html", progID},
-		{`Software\RegisteredApplications`, "Lite Go", clientKey + `\Capabilities`},
+		{`Software\RegisteredApplications`, "Iris", clientKey + `\Capabilities`},
 	} {
 		if err := setString(hk, e[0], e[1], e[2]); err != nil {
 			return err
@@ -286,7 +321,7 @@ func register(dir string, size int) error {
 	}
 	// ready in the background from sign-in, so the window opens instantly
 	if rk, _, err := registry.CreateKey(hk, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE); err == nil {
-		rk.SetStringValue("Lite Go", `"`+exe+`" --background`)
+		rk.SetStringValue("Iris", `"`+exe+`" --background`)
 		rk.Close()
 	}
 	procNotifyAssocs.Call(0x08000000 /*SHCNE_ASSOCCHANGED*/, 0, 0, 0)
@@ -318,25 +353,25 @@ func uninstall(data bool) error {
 	deleteTree(hk, clientKey)
 	deleteTree(hk, `Software\Classes\`+progID)
 	if k, err := registry.OpenKey(hk, `Software\RegisteredApplications`, registry.SET_VALUE); err == nil {
-		k.DeleteValue("Lite Go")
+		k.DeleteValue("Iris")
 		k.Close()
 	}
 	if rk, err := registry.OpenKey(hk, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.SET_VALUE); err == nil {
-		rk.DeleteValue("Lite Go")
+		rk.DeleteValue("Iris")
 		rk.Close()
 	}
 	quitRunning()
 	procNotifyAssocs.Call(0x08000000, 0, 0, 0)
 	os.Remove(filepath.Join(dir, exeName) + ".sha256")
 	if err := os.Remove(filepath.Join(dir, exeName)); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("close Lite Go and try again (%v)", err)
+		return fmt.Errorf("close Iris and try again (%v)", err)
 	}
 	if data {
 		if c, err := os.UserConfigDir(); err == nil {
-			os.RemoveAll(filepath.Join(c, "Lite Go"))
+			os.RemoveAll(filepath.Join(c, "Iris"))
 		}
 		if c, err := os.UserCacheDir(); err == nil {
-			os.RemoveAll(filepath.Join(c, "Lite Go"))
+			os.RemoveAll(filepath.Join(c, "Iris"))
 		}
 	}
 	cmd := exec.Command("cmd.exe", "/c", "ping -n 3 127.0.0.1 >nul & rmdir /s /q \""+dir+"\"")

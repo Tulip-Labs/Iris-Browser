@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
-	"litego/core"
-	"litego/ui"
-	"litego/webview"
+	"iris/core"
+	"iris/ui"
+	"iris/webview"
 )
 
 // download is a file being fetched, or one that arrived this session.

@@ -1,16 +1,16 @@
 package shell
 
 import (
-	"litego/shields"
+	"iris/shields"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"litego/core"
-	"litego/ui"
-	"litego/webview"
+	"iris/core"
+	"iris/ui"
+	"iris/webview"
 )
 
 // Kind is where a tab keeps its cookies and storage.
@@ -44,7 +44,7 @@ type Tab struct {
 	bounds  [4]int
 	pending string
 	popup   *webview.Popup
-	// Lite results: search is shown instead of the page; lastSearch is where Back returns
+	// Iris results: search is shown instead of the page; lastSearch is where Back returns
 	search       *Search
 	lastSearch   *Search
 	landing      string

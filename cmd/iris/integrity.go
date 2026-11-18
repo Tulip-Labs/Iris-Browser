@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"litego/shell"
+	"iris/shell"
 )
 
 // sysHooks is what the operating system does for the interface.
@@ -16,7 +16,7 @@ func sysHooks() shell.Sys {
 }
 
 // integrity compares the program file with the SHA-256 recorded beside it
-// when Lite Go was installed or packed ("<program>.sha256"). It tells an
+// when Iris was installed or packed ("<program>.sha256"). It tells an
 // accident, a bad disk or a careless change; someone able to replace both
 // files is not stopped by it. The Windows package needs no record: Windows
 // keeps its files read-only and checks them itself.

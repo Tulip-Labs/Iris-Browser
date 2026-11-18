@@ -5,11 +5,11 @@ import (
 	"strconv"
 	"strings"
 
-	"litego/core"
-	"litego/ui"
+	"iris/core"
+	"iris/ui"
 )
 
-// The AI panel: ask about the open page. Lite Go reads the page, asks Google AI
+// The AI panel: ask about the open page. Iris reads the page, asks Google AI
 // Mode with the question, the page's address and its text, and writes the
 // answer here as text, in the theme's colors.
 

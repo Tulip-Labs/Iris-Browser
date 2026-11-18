@@ -1,8 +1,8 @@
 package shell
 
 import (
-	"litego/ui"
-	"litego/webview"
+	"iris/ui"
+	"iris/webview"
 )
 
 type action uint8

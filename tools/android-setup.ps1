@@ -1,4 +1,4 @@
-# Lite Go: gets everything needed to build the Android app, from the terminal
+# Iris: gets everything needed to build the Android app, from the terminal
 # only (no Android Studio). Run by build-android.bat when something is missing;
 # safe to run again (it skips what is already there).
 #
@@ -65,7 +65,7 @@ if (-not (Test-Path $sdkm)) {
 	$zip = Join-Path $env:TEMP $name
 	Invoke-WebRequest -UseBasicParsing "https://dl.google.com/android/repository/$name" -OutFile $zip
 	if (-not (Test-Path $zip)) { throw 'Could not download the Android command-line tools.' }
-	$tmp = Join-Path $env:TEMP 'litego-cmdline-tools'
+	$tmp = Join-Path $env:TEMP 'iris-cmdline-tools'
 	if (Test-Path $tmp) { Remove-Item -Recurse -Force $tmp }
 	Expand-Archive $zip $tmp -ErrorAction Stop
 	New-Item -ItemType Directory -Force "$sdk\cmdline-tools" | Out-Null
@@ -137,4 +137,4 @@ if ($want.Count -gt 0) {
 if ($EnvFile) {
 	"@set ""JAVA_HOME=$jdk""`r`n@set ""ANDROID_HOME=$sdk""`r`n" | Set-Content -Encoding ASCII $EnvFile
 }
-Say 'Ready to build Lite Go for Android.'
+Say 'Ready to build Iris for Android.'

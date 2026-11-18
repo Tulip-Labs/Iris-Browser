@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"litego/core"
-	"litego/ui"
+	"iris/core"
+	"iris/ui"
 )
 
 // The AI answer, laid out like an article: headings, paragraphs and bullets,

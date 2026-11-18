@@ -17,3 +17,6 @@ func Install(context.Context, Kind, string) (Result, error) {
 
 // Restart does nothing here.
 func Restart() error { return nil }
+
+// MigrateUserInstall has nothing to move here.
+func MigrateUserInstall() {}

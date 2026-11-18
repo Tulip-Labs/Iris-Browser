@@ -1,5 +1,5 @@
 // Package link moves files between this computer and a phone on the same
-// network, with nothing to install on the phone: Lite Go serves one small
+// network, with nothing to install on the phone: Iris serves one small
 // page on the local network, the phone opens it by scanning a QR code, and
 // sends or fetches files from its own browser.
 //
@@ -72,7 +72,7 @@ type Server struct {
 	inID   int
 	seen   time.Time
 	phones map[string]bool
-	pair   string // litego://pair?... when sync is on
+	pair   string // iris://pair?... when sync is on
 }
 
 // Start opens the link. Files from the phone are saved in dir; notify is

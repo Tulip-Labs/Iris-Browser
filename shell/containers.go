@@ -3,8 +3,8 @@ package shell
 import (
 	"strings"
 
-	"litego/core"
-	"litego/ui"
+	"iris/core"
+	"iris/ui"
 )
 
 var contIcons = map[string]ui.Icon{

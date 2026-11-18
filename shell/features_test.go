@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"litego/core"
-	"litego/ui"
-	"litego/webview"
+	"iris/core"
+	"iris/ui"
+	"iris/webview"
 )
 
 func (d *driver) open(url string) *Tab {
@@ -592,7 +592,7 @@ func TestUpdatesSection(t *testing.T) {
 	for _, k := range []string{"user", "deb", "nix"} {
 		d := newDriver(t, 1280, 800, false)
 		d.a.cfg.UpdateKind = k
-		d.a.upd.status = "Lite Go 1.0 is the latest version."
+		d.a.upd.status = "Iris 1.0 is the latest version."
 		d.a.openSettings("about")
 		d.frames(2)
 		if os.Getenv("SHOTS") != "" {

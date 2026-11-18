@@ -12,8 +12,8 @@ import (
 	"os"
 	"strconv"
 
-	"litego/raster"
-	"litego/ui"
+	"iris/raster"
+	"iris/ui"
 )
 
 func main() {

@@ -4,18 +4,18 @@ import (
 	"context"
 	"image"
 	"image/color"
-	"litego/shields"
+	"iris/shields"
 	"strings"
 	"time"
 
-	"litego/core"
+	"iris/core"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"litego/raster"
-	"litego/ui"
-	"litego/webview"
+	"iris/raster"
+	"iris/ui"
+	"iris/webview"
 )
 
 // ---- a fake engine that records what the interface asks of it ----
@@ -387,7 +387,7 @@ func mockPage(g ui.Gfx, v *fakeView) {
 	g.Text("Page area (drawn by WebView2 in the app)", r.X+24, r.B()-20, ui.FSmall, ui.Hex("#a0a0aa"))
 }
 
-// ---- Lite results and the AI panel ----
+// ---- Iris results and the AI panel ----
 
 func fixtures(js string) string {
 	switch {
@@ -476,7 +476,7 @@ func TestLiteResults(t *testing.T) {
 	tab := d.a.tab()
 	s := tab.search
 	if s == nil {
-		t.Fatal("a Google search should show Lite results")
+		t.Fatal("a Google search should show Iris results")
 	}
 	if tab.view != nil && tab.shown {
 		t.Fatal("the Google page must not be shown under the results")
@@ -561,7 +561,7 @@ func TestFirstRunSignIn(t *testing.T) {
 		t.Fatalf("sign-in should open: %q", tab.URL)
 	}
 	v := tab.view.(*fakeView)
-	v.ev.URL("https://www.google.com/?hl=en&litego=signedin")
+	v.ev.URL("https://www.google.com/?hl=en&iris=signedin")
 	d.frames(2)
 	if d.a.set.GoogleSignIn != "done" || tab.URL != "" {
 		t.Fatalf("sign-in not noticed: %q %q", d.a.set.GoogleSignIn, tab.URL)

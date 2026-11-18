@@ -1,4 +1,4 @@
-// Package webview embeds the operating system's web engine under Lite Go's
+// Package webview embeds the operating system's web engine under Iris's
 // own Gio interface: WebView2 on Windows and Chromium (CEF) on Linux. Every method must be
 // called on the window's UI thread; events arrive on that thread too.
 package webview
@@ -7,7 +7,7 @@ import "errors"
 
 // SleepFreesMemory says whether putting a page to sleep gives its memory
 // back (WebView2 does; on Linux a hidden page keeps its memory, so under
-// memory pressure Lite Go unloads pages there instead).
+// memory pressure Iris unloads pages there instead).
 var SleepFreesMemory = true
 
 // Options choose a tab's storage: a named container (its own cookies,

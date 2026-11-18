@@ -1,6 +1,6 @@
 # Third-party notices
 
-Lite Go bundles or uses the following. Each keeps its own license.
+Iris bundles or uses the following. Each keeps its own license.
 
 | Component | Used for | License |
 |---|---|---|
@@ -13,7 +13,7 @@ Lite Go bundles or uses the following. Each keeps its own license.
 | go-sqlite3 (Nuno Cruces) | Runs SQLite in pure Go | MIT |
 | wazero (Tetrate) | WebAssembly runtime under go-sqlite3 | Apache License 2.0 |
 | Ad and tracker domain list (`core/shield-domains.json.gz`, the same list as Lite Desktop) | The shield | Compiled from publicly available host blocklists; the original list sources are not recorded in this repository. Redistributors should verify the terms of the source lists. |
-| Filter lists: EasyList, EasyPrivacy and EasyList Cookie (The EasyList authors); uBlock filters (Raymond Hill and contributors) | Lite Shields. Not bundled: Lite Go downloads them from their authors and keeps them in its data folder | EasyList: GPL v3 or CC BY-SA 3.0 (dual); uBlock filters: GPL v3 |
+| Filter lists: EasyList, EasyPrivacy and EasyList Cookie (The EasyList authors); uBlock filters (Raymond Hill and contributors) | Iris Shields. Not bundled: Iris downloads them from their authors and keeps them in its data folder | EasyList: GPL v3 or CC BY-SA 3.0 (dual); uBlock filters: GPL v3 |
 | Public Suffix List (Mozilla), through `golang.org/x/net/publicsuffix` | Telling first-party from third-party requests | MPL 2.0 (list), BSD 3-Clause (Go code) |
 | WebKit (Apple and contributors) and WebKitGTK | The web engine on Linux; part of the system, not bundled | BSD 2-Clause and LGPL 2.1 |
 | webview2-rs bindings (Bill Avery and contributors) | Reference for the WebView2 interface layout from which `webview/slots_windows.go` was generated | MIT |
@@ -24,4 +24,4 @@ missing, the setup downloads Microsoft's own bootstrapper from Microsoft and run
 Microsoft's license terms for the runtime.
 
 No other third-party code is included. The interface toolkit, the WebView2 bindings, the
-browser core and the installer are Lite Go's own.
+browser core and the installer are Iris's own.

@@ -1,4 +1,4 @@
-// Command litego is Lite Go: a light browser whose interface is drawn with Gio
+// Command iris is Iris: a light browser whose interface is drawn with Gio
 // and whose pages are shown by the system web view: WebView2 on Windows,
 // Chromium (CEF) on Linux.
 package main
@@ -10,8 +10,10 @@ import (
 	"strings"
 	"sync"
 
-	"litego/giox"
-	"litego/shell"
+	"iris/core"
+	"iris/giox"
+	"iris/shell"
+	"iris/update"
 )
 
 const version = "1.0.19"
@@ -32,7 +34,7 @@ func main() {
 		}
 	}
 	conf, webDir := dirs()
-	// Lite Go runs once: a second launch hands its addresses to the running one,
+	// Iris runs once: a second launch hands its addresses to the running one,
 	// whose window then appears at once (it is already loaded).
 	if background && running(conf) {
 		return // already ready
@@ -41,6 +43,7 @@ func main() {
 		return
 	}
 	reqs := listen(conf)
+	go update.MigrateUserInstall() // a copy installed in the home folder as Lite Go takes Iris's names
 	r := &resident{conf: conf, webDir: webDir, core: shell.LoadCore(conf), gfx: giox.NewGfx()}
 	if r.core.Settings.Boost {
 		// nothing runs in the background any more: undo "Open instantly"
@@ -56,7 +59,7 @@ func main() {
 			r.open(urls)
 		}
 		for req := range reqs {
-			if len(req) == 1 && req[0] == "--quit" { // the setup is updating Lite Go
+			if len(req) == 1 && req[0] == "--quit" { // the setup is updating Iris
 				r.core.Settings.Flush()
 				os.Exit(0)
 			}
@@ -66,7 +69,7 @@ func main() {
 	runMain()
 }
 
-// resident is the running Lite Go: what stays loaded between windows.
+// resident is the running Iris: what stays loaded between windows.
 type resident struct {
 	conf, webDir string
 	core         *shell.Core
@@ -109,14 +112,14 @@ func (r *resident) shown(a *shell.App, h *host) {
 	r.mu.Unlock()
 }
 
-// closed runs when the window is gone: Lite Go exits, or stays resident
+// closed runs when the window is gone: Iris exits, or stays resident
 // (Open instantly) with only its small loaded part.
 func (r *resident) closed() {
 	r.mu.Lock()
 	r.cur, r.host, r.opening = nil, nil, false
 	r.mu.Unlock()
 	r.core.Settings.Flush()
-	os.Exit(0) // Lite Go keeps nothing running once its window closes
+	os.Exit(0) // Iris keeps nothing running once its window closes
 }
 
 type pendingClip struct{ text *string }
@@ -129,12 +132,14 @@ func dirs() (conf, web string) {
 	if err != nil {
 		base = "."
 	}
-	conf = filepath.Join(base, "Lite Go")
+	conf = filepath.Join(base, "Iris")
+	core.Adopt(filepath.Join(base, core.OldName), conf)
 	cache, err := os.UserCacheDir()
 	if err != nil {
 		cache = base
 	}
-	web = filepath.Join(cache, "Lite Go", "Web")
+	core.Adopt(filepath.Join(cache, core.OldName), filepath.Join(cache, "Iris"))
+	web = filepath.Join(cache, "Iris", "Web")
 	// private to this account: the settings hold the sync key, and the
 	// history, sign-ins and site data live here (older versions made them
 	// readable by every account on the computer)
