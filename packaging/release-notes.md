@@ -2,6 +2,7 @@ Iris (formerly Lite Go): a light, fast browser in Go and Gio for Windows 10 and 
 
 ## New in 1.0.17
 
+- **Sharp on fractionally scaled screens.** GTK 3, which holds Iris's window, draws only at whole scales; on a screen scaled by 1.25, 1.5 or 1.75 the compositor told it 1 and stretched the window up, so everything looked blocky. Iris now asks niri, Sway or Hyprland for the screen's real scale and draws at the next whole scale, which the compositor shrinks cleanly. `GDK_SCALE` set by hand still wins.
 - **Right-click works on pages.** Chromium's own menu needs a window, which pages drawn by Iris do not have, so right-clicking did nothing. Iris now shows the menu itself: back, forward, reload, cut, copy, paste, select all, saving and copying images, and on a link or a picture, opening it in a new tab and copying its address.
 
 ## New in 1.0.16
