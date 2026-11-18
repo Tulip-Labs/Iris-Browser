@@ -678,13 +678,17 @@ static void onGLUnrealize(GtkWidget *w, LV *v) {
 }
 
 // gpuCanShare decides, once, whether pages share their frames as dmabufs:
-// a real graphics chip (not software GL), EGL that imports dmabufs, and GL
-// that turns them into textures. LITEGO_GPU=0 turns it off.
+// asked for (LITEGO_GPU=1), a real graphics chip (not software GL), EGL that
+// imports dmabufs, and GL that turns them into textures.
 static int gpuCanShare(void) {
 	if (gpuShared >= 0) return gpuShared;
 	gpuShared = 0;
+	// opt-in for now (LITEGO_GPU=1): on some setups (a toolbox, some
+	// drivers) Chromium cannot allocate the shared buffers and sends no frame
+	// at all, so by default frames come through the processor and are
+	// uploaded to the graphics chip
 	const char *env = g_getenv("LITEGO_GPU");
-	if (env && strcmp(env, "0") == 0) return 0;
+	if (!env || strcmp(env, "1") != 0) return 0;
 	if (g_getenv("LIBGL_ALWAYS_SOFTWARE") || access("/dev/dri/renderD128", R_OK | W_OK) != 0) return 0;
 	EGLDisplay d = eglGetCurrentDisplay();
 	if (d == EGL_NO_DISPLAY) return 0;

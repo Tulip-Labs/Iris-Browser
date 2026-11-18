@@ -1,8 +1,12 @@
 Iris (formerly Lite Go): a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.16
+
+- **Pages open again on every setup.** In 1.0.15, Chromium handed its frames straight to the graphics chip; on some computers (inside a toolbox, with some drivers) it could not allocate those buffers and sent no frame at all, so pages stayed blank. Pages are now uploaded to the graphics chip from the processor by default, which works everywhere; the direct hand-off is opt-in with `LITEGO_GPU=1`.
+
 ## New in 1.0.15
 
-**Faster and sharper pages.** Each page is now drawn by the graphics chip: on a computer with a GPU, Chromium hands its frames straight to it (dmabuf), with no copy through the processor; elsewhere the changed parts are uploaded as textures. Pages are drawn pixel for pixel. Videos on YouTube and other sites are decoded by the graphics chip (VA-API), and Chromium's shader cache is kept between runs. If the graphics chip cannot take the frames, Iris goes back to the processor by itself (or set `LITEGO_GPU=0`).
+**Faster and sharper pages.** Each page is now drawn by the graphics chip: on a computer with a GPU, Chromium hands its frames straight to it (dmabuf), with no copy through the processor; elsewhere the changed parts are uploaded as textures. Pages are drawn pixel for pixel. Videos on YouTube and other sites are decoded by the graphics chip (VA-API), and Chromium's shader cache is kept between runs. 
 
 **H.264 and H.265 videos look better.** The converter now decodes on the graphics chip, encodes VP9 there when it can (VP8 at a much sharper quality otherwise), up to 1080p, and also takes H.265 (HEVC) videos. H.265 needs an ffmpeg with that decoder (on Fedora: RPM Fusion's `ffmpeg`).
 
