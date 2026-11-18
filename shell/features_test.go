@@ -589,7 +589,7 @@ func TestDownloadSurvivesTabs(t *testing.T) {
 }
 
 func TestUpdatesSection(t *testing.T) {
-	for _, k := range []string{"user", "deb", "nix"} {
+	for _, k := range []string{"setup", "flatpak", "nix"} {
 		d := newDriver(t, 1280, 800, false)
 		d.a.cfg.UpdateKind = k
 		d.a.upd.status = "Iris 1.0 is the latest version."

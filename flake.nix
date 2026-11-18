@@ -1,5 +1,5 @@
 {
-  description = "Iris (formerly Iris), a light and fast browser with shields built in";
+  description = "Iris, a light and fast browser with shields built in";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -55,11 +55,21 @@
             ln -s $lib/iris $out/bin/iris
             install -Dm644 assets/icon.png $out/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
             install -Dm644 packaging/linux/io.github.tulip_labs.Iris.desktop $out/share/applications/io.github.tulip_labs.Iris.desktop
+            install -Dm644 packaging/linux/io.github.tulip_labs.Iris.metainfo.xml $out/share/metainfo/io.github.tulip_labs.Iris.metainfo.xml
           '';
-          # Gio loads OpenGL ES at run time, Chromium libudev; the Nix store has
-          # no setuid helper, so Chromium uses user namespaces for its sandbox
-          preFixup = ''
-            gappsWrapperArgs+=(--prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [ pkgs.libGL pkgs.systemd ]})
+          # Gio loads OpenGL ES at run time, Chromium libudev and the graphics
+          # drivers: NixOS keeps those in /run/opengl-driver. Fonts: the
+          # system's where there is a fontconfig (NixOS, most distributions),
+          # else DejaVu and Noto from the store. The Nix store has no setuid
+          # helper, so Chromium uses user namespaces for its sandbox.
+          preFixup = let
+            fonts = pkgs.makeFontsConf { fontDirectories = with pkgs; [ dejavu_fonts noto-fonts noto-fonts-color-emoji ]; };
+          in ''
+            gappsWrapperArgs+=(
+              --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [ pkgs.libGL pkgs.libdrm (pkgs.libgbm or pkgs.mesa) pkgs.systemd ]}
+              --suffix LD_LIBRARY_PATH : /run/opengl-driver/lib
+              --run 'if [ -z "''${FONTCONFIG_FILE:-}" ] && [ ! -e /etc/fonts/fonts.conf ]; then export FONTCONFIG_FILE=${fonts}; fi'
+            )
             wrapGApp $out/lib/iris-browser/iris
           '';
           dontWrapGApps = true;

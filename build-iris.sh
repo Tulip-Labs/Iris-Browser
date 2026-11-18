@@ -2,17 +2,14 @@
 # Iris builds.
 #   ./build-iris.sh            on Linux: Iris for Linux, then the Windows files
 #                                elsewhere: the Windows files
-#   ./build-iris.sh linux      Iris for Linux only (fetches Chromium (CEF), needs the GTK development files)
+#   ./build-iris.sh linux      Iris for Linux only, in dist/linux (fetches Chromium (CEF),
+#                                needs the GTK development files); the Flatpak and the
+#                                Snap package that folder (packaging/flatpak, packaging/snap)
 #   ./build-iris.sh windows    the Windows files only (cross-built, no C compiler needed)
-#   ./build-iris.sh packages   Iris for Linux as .deb and .rpm too (fetches nfpm)
-#   ./build-iris.sh install    build for Linux and install for the current user (~/.local)
-#   ./build-iris.sh uninstall  remove that install
 set -e
 cd "$(dirname "$0")"
 export GOGC=50 GOMAXPROCS=2 GOFLAGS=-mod=mod
 target=${1:-auto}
-BIN="${XDG_BIN_HOME:-$HOME/.local/bin}"
-SHARE="${XDG_DATA_HOME:-$HOME/.local/share}"
 
 need_linux_deps() {
 	missing=""
@@ -58,6 +55,9 @@ fetch_cef() {
 	echo "$CEF_VERSION" > "$dir/.version"
 }
 
+# version is the one the program reports (cmd/iris/main.go).
+version() { sed -n 's/^const version = "\(.*\)"/\1/p' cmd/iris/main.go; }
+
 build_linux() {
 	need_linux_deps || return 1
 	fetch_cef
@@ -77,63 +77,13 @@ build_linux() {
 	done
 	cp -r "$cef/Resources/"* dist/linux/
 	cp assets/icon.png dist/linux/io.github.tulip_labs.Iris.png
-	cp packaging/linux/io.github.tulip_labs.Iris.desktop dist/linux/
-	cp LICENSE NOTICE THIRD_PARTY_NOTICES.md packaging/linux/install.sh dist/linux/
+	cp packaging/linux/io.github.tulip_labs.Iris.desktop packaging/linux/io.github.tulip_labs.Iris.metainfo.xml dist/linux/
+	cp LICENSE NOTICE THIRD_PARTY_NOTICES.md dist/linux/
+	version > dist/linux/VERSION
 	cp "$cef/LICENSE.txt" dist/linux/CEF-LICENSE.txt
 	cp "$cef/CREDITS.html" dist/linux/CHROMIUM-CREDITS.html
-	chmod +x dist/linux/install.sh
-	arch=$(uname -m)
-	rm -f "dist/Iris-linux-$arch.tar.gz"
-	tar -C dist -czf "dist/Iris-linux-$arch.tar.gz" --transform "s,^linux,Iris-linux-$arch," linux
-	legacy_tarball "$arch"
-	du -sh dist/linux "dist/Iris-linux-$arch.tar.gz"
-	echo "Done: dist/linux and dist/Iris-linux-$arch.tar.gz"
-	echo "Install it with: ./build-iris.sh install   (or dist/linux/install.sh)"
-}
-
-# legacy_tarball makes LiteGo-linux-<arch>.tar.gz, the archive Iris 1.0.19
-# and older (named Lite Go then) look for when they update themselves. It is
-# the same program, with the three files their updater checks for: a
-# lite-go-browser that starts iris (and is what they restart), its record,
-# and a lite-go-helper. Once running, Iris moves the old install over to its
-# own names (update.MigrateUserInstall).
-legacy_tarball() {
-	arch=$1
-	rm -rf dist/legacy && cp -a dist/linux dist/legacy
-	printf '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/iris" "$@"\n' > dist/legacy/lite-go-browser
-	printf '#!/bin/sh\nexec "$(dirname "$(readlink -f "$0")")/iris-helper" "$@"\n' > dist/legacy/lite-go-helper
-	chmod 755 dist/legacy/lite-go-browser dist/legacy/lite-go-helper
-	cp dist/linux/iris.sha256 dist/legacy/lite-go-browser.sha256
-	rm -f "dist/LiteGo-linux-$arch.tar.gz"
-	tar -C dist -czf "dist/LiteGo-linux-$arch.tar.gz" --transform "s,^legacy,LiteGo-linux-$arch," legacy
-	rm -rf dist/legacy
-}
-
-# version is the one the program reports (cmd/iris/main.go).
-version() { sed -n 's/^const version = "\(.*\)"/\1/p' cmd/iris/main.go; }
-
-build_packages() {
-	build_linux
-	export VERSION
-	VERSION=$(version)
-	case "$(uname -m)" in
-	x86_64) ARCH=amd64 ;;
-	aarch64) ARCH=arm64 ;;
-	*) ARCH=$(uname -m) ;;
-	esac
-	export ARCH
-	nfpm="go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.0"
-	# the version goes into every field (nfpm fills it in only in some)
-	for f in nfpm nfpm-transitional; do
-		sed "s/\${VERSION}/$VERSION/g" "packaging/linux/$f.yaml" > "dist/$f.yaml"
-	done
-	for p in deb rpm; do
-		$nfpm package --config dist/nfpm.yaml --packager $p --target dist/
-	done
-	# apt moves lite-go-browser (the name until 1.0.19) over through this
-	$nfpm package --config dist/nfpm-transitional.yaml --packager deb --target "dist/lite-go-browser-transitional_${VERSION}_${ARCH}.deb"
-	rm -f dist/nfpm.yaml dist/nfpm-transitional.yaml
-	ls dist/*.deb dist/*.rpm
+	du -sh dist/linux
+	echo "Done: dist/linux (packaged by packaging/flatpak and packaging/snap)"
 }
 
 build_windows() {
@@ -173,17 +123,9 @@ auto)
 	fi
 	;;
 linux) build_linux ;;
-packages) build_packages ;;
 windows) build_windows ;;
-install)
-	build_linux
-	dist/linux/install.sh
-	;;
-uninstall)
-	packaging/linux/install.sh --remove
-	;;
 *)
-	echo "usage: $0 [linux|packages|windows|install|uninstall]"
+	echo "usage: $0 [linux|windows]"
 	exit 2
 	;;
 esac

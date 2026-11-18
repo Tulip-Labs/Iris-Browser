@@ -187,11 +187,11 @@ They work while a page has the keyboard too.
 | System | Web engine | Status |
 |---|---|---|
 | Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Iris's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, the menu) are covered by tests with a stand-in engine and still need a pass on a real PC. |
-| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Chromium, through CEF (the Chromium Embedded Framework), which Iris carries | Built and started on Wayland on Debian 12 and 13, Ubuntu 22.04 and 24.04, Fedora 42 and 43, openSUSE Tumbleweed and Arch on every push, with a VP9 video playing. Packages: .deb, .rpm, AUR, Nix and .tar.gz. (The Flatpak is paused until Chromium is packaged for its sandbox.) |
+| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Chromium, through CEF (the Chromium Embedded Framework), which Iris carries | Built on every push; the Flatpak is installed and started on Wayland, and Iris is checked at a fractional scale (1.25). Packages: Flatpak, Snap and Nix. |
 | Android 8 and newer | Android System WebView | **Iris for Android**, a separate app in Kotlin (`android/`): shields, Iris results for Web searches, tabs, containers (WebView 123 or newer), eleven palettes, phone and tablet layouts, and sync with the computer. `Iris-android.apk` is in each release. |
 
 On Windows the engine comes with the system. On Linux, Iris carries its own Chromium
-(Chromium 156, from CEF) in `/usr/lib/iris-browser`, and each release brings the newer one.
+(Chromium 156, from CEF) inside its Flatpak, Snap or Nix package, and each release brings the newer one.
 
 On Linux the window is a GTK window, because Wayland does not let one program's surface sit
 inside another's. GTK owns the window, Gio's GPU renderer draws the interface into a GL area
@@ -212,45 +212,22 @@ Extensions from the Chrome Web Store run in Iris on Windows: open an extension's
 
 ## Install on Linux
 
-Every release has a `.deb`, an `.rpm` and a `.tar.gz` for any distribution (each about 110 MB: Chromium is inside). Iris needs glibc 2.35 or newer (Debian 12, Ubuntu 22.04, Fedora 36 or later) and a Wayland session.
+Iris for Linux comes three ways, and each of them keeps it up to date. It needs a Wayland session.
 
-**Debian, Ubuntu, Linux Mint** (from the signed repository, so updates come with the system's):
-
-```sh
-curl -fsSL https://tulip-labs.github.io/Iris-Browser/iris-browser.gpg | sudo tee /usr/share/keyrings/iris-browser.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/iris-browser.gpg] https://github.com/Tulip-Labs/Iris-Browser/releases/latest download/" | sudo tee /etc/apt/sources.list.d/iris-browser.list
-sudo apt update && sudo apt install iris-browser
-```
-
-The packages are too big for GitHub Pages, so the apt repository is made of the latest
-release's files. If you added the old `tulip-labs.github.io/.../deb` line, version 1.0.8 moves
-it over when it installs.
-
-**Fedora**
+**Flatpak** (every distribution, Fedora Atomic, SteamOS, Mint and Ubuntu included): download `Iris-x86_64.flatpak` from the [latest release](https://github.com/Tulip-Labs/Iris-Browser/releases/latest), then
 
 ```sh
-sudo dnf config-manager addrepo --from-repofile=https://tulip-labs.github.io/Iris-Browser/iris-browser.repo
-sudo dnf install iris-browser
+flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user Iris-x86_64.flatpak
 ```
 
-**openSUSE**
+(The first line lets Flatpak fetch the GNOME runtime Iris runs on.) Iris on Flathub is planned; until then a new release is installed the same way.
 
-```sh
-sudo zypper addrepo https://tulip-labs.github.io/Iris-Browser/iris-browser.repo
-sudo zypper install iris-browser
-```
+**Snap** (Ubuntu and other systems with Snap): download `Iris-x86_64.snap` from the latest release and run `sudo snap install --dangerous Iris-x86_64.snap` (the Snap Store listing is planned).
 
-**Fedora Atomic** (Silverblue, Kinoite): `sudo curl -fsSLo /etc/yum.repos.d/iris-browser.repo https://tulip-labs.github.io/Iris-Browser/iris-browser.repo`, then `rpm-ostree install iris-browser`, and restart. Updates come with `rpm-ostree upgrade`.
+**Nix** (NixOS and Nix anywhere): `nix profile install github:Tulip-Labs/Iris-Browser`, or try it with `nix run github:Tulip-Labs/Iris-Browser`. Fonts and graphics drivers are found on their own, NixOS's `/run/opengl-driver` included.
 
-**Arch**: download the `PKGBUILD` from the latest release into an empty folder and run `makepkg -si` (an AUR package is planned).
-
-**Nix**: `nix profile install github:Tulip-Labs/Iris-Browser`, or try it with `nix run github:Tulip-Labs/Iris-Browser`.
-
-**Any distribution, no root**: unpack `Iris-linux-x86_64.tar.gz` and run `./install.sh` (it installs to `~/.local/lib/iris-browser`, with `iris` in `~/.local/bin`).
-
-The repository pages with these commands are at [tulip-labs.github.io/Iris-Browser](https://tulip-labs.github.io/Iris-Browser/).
-
-**Updates.** Iris checks the latest GitHub release every few hours (Settings, About Iris; on by default) and checks each download against the release's `SHA256SUMS`. The `.tar.gz` copy updates by itself; `.deb` and `.rpm` copies download in the background and install with one click and your password. Copies from the AUR, Nix or rpm-ostree update the way those tools do.
+**Updates.** Flatpak, Snap and Nix update Iris; Iris itself only says, in Settings, About Iris, when a new version is out. The `.deb`, `.rpm`, AUR and `.tar.gz` packages of Iris 1.0 are no longer made: remove them (`sudo apt remove iris-browser`, `sudo dnf remove iris-browser`, `rpm-ostree uninstall iris-browser`) and install the Flatpak.
 
 ## Build
 
@@ -280,15 +257,13 @@ sudo apt install gcc pkg-config libgtk-4-dev libepoxy-dev curl bzip2
 # Arch
 sudo pacman -S gcc pkgconf gtk4 libepoxy curl bzip2
 
-./build-iris.sh             # Linux (dist/linux, dist/Iris-linux-x86_64.tar.gz), then Windows
+./build-iris.sh             # Linux (dist/linux), then Windows
 ./build-iris.sh linux       # Linux only
 ./build-iris.sh windows     # Windows only
-./build-iris.sh install     # build for Linux and install for you: ~/.local and the app list
-./build-iris.sh uninstall
 ```
 
-Each release also has `Iris-linux-x86_64.tar.gz`: unpack it and run `./install.sh`. It carries
-Chromium and needs only GTK 4 and the libraries every desktop has.
+Then package `dist/linux` as a Flatpak (`flatpak-builder --user --install build packaging/flatpak/io.github.tulip_labs.Iris.yml`)
+or a Snap (see `packaging/snap/snapcraft.yaml`), or build the Nix flake (`nix build`).
 
 **Tests.**
 
