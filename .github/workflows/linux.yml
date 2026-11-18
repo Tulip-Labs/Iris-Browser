@@ -152,9 +152,7 @@ jobs:
           path: /tmp/fs/*.png
           if-no-files-found: ignore
 
-  # The Flatpak, from dist/linux, then installed and started on Wayland
-  # (Weston without a screen) inside the same container: it must still be
-  # running after 25 seconds and draw natively on Wayland.
+  # The Flatpak bundle, from dist/linux (flatpak-builder's own container)
   flatpak:
     needs: build
     runs-on: ubuntu-24.04
@@ -175,19 +173,32 @@ jobs:
           manifest-path: packaging/flatpak/io.github.tulip_labs.Iris.yml
           cache-key: flatpak-builder-${{ github.sha }}
           upload-artifact: true
+
+  # The bundle installed the way a reader would (the GNOME runtime from
+  # Flathub) and started on Wayland (Weston, no screen): it must still be
+  # running after 25 seconds, in a Wayland window of its own.
+  flatpak-run:
+    needs: flatpak
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Iris-x86_64-x86_64.flatpak
+      - name: Flatpak, Weston and the GNOME runtime
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq flatpak weston dbus-user-session procps
+          # bubblewrap needs user namespaces, which Ubuntu limits by default
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          ls -l *.flatpak
       - name: Install the bundle and start Iris on Wayland
         run: |
           set -x
-          if command -v apt-get >/dev/null; then
-            apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq weston dbus procps
-          else
-            dnf install -y -q weston dbus-daemon procps-ng
-          fi
-          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y --noninteractive ./Iris-x86_64.flatpak
           flatpak info --user io.github.tulip_labs.Iris
-          export XDG_RUNTIME_DIR=/run/user/$(id -u)
-          mkdir -p $XDG_RUNTIME_DIR && chmod 700 $XDG_RUNTIME_DIR
+          export XDG_RUNTIME_DIR=$(mktemp -d)
+          chmod 700 $XDG_RUNTIME_DIR
           weston --backend=headless --socket=wayland-1 --width=1280 --height=800 > /tmp/weston.txt 2>&1 &
           for i in $(seq 1 50); do [ -S $XDG_RUNTIME_DIR/wayland-1 ] && break; sleep 0.2; done
           [ -S $XDG_RUNTIME_DIR/wayland-1 ] || { cat /tmp/weston.txt; exit 1; }
