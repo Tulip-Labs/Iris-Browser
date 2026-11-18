@@ -158,6 +158,14 @@ typedef struct {
 
 static GdkGLContext *glc;
 static GLuint uiFbo;
+// Gio draws upside down (OpenGL's rows run bottom up). It draws into a
+// scratch texture, which is copied the right way up into the frame GTK
+// shows, pixel for pixel: GTK then draws the frame like a page, 1:1. Asked
+// to flip it instead, GTK smoothed the whole interface while doing so (every
+// edge and letter soft in CI's screenshots, the pages beside it sharp).
+static GLuint scrTex, scrFbo;
+static int scrW, scrH;
+static int uiUpright; // the last frame is the right way up (else GTK flips it)
 static UITex pool[3];
 static GdkTexture *uiTex; // the last frame
 static int uiW, uiH;
@@ -215,8 +223,9 @@ static void renderUI(GtkWidget *w, int pw, int ph, double s) {
 		glGenTextures(1, &t->id);
 		glBindTexture(GL_TEXTURE_2D, t->id);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		// one texel on one pixel: never smoothed
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		t->w = pw, t->h = ph;
@@ -229,19 +238,45 @@ static void renderUI(GtkWidget *w, int pw, int ph, double s) {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		return;
 	}
+	// the scratch texture Gio draws into (copying needs OpenGL ES 3 or GL 3)
+	int blit = epoxy_gl_version() >= 30 && !g_getenv("IRIS_UI_FLIP");
+	GLuint target = uiFbo;
+	if (blit) {
+		if (!scrFbo) glGenFramebuffers(1, &scrFbo);
+		if (!scrTex || scrW != pw || scrH != ph) {
+			if (scrTex) glDeleteTextures(1, &scrTex);
+			glGenTextures(1, &scrTex);
+			glBindTexture(GL_TEXTURE_2D, scrTex);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			scrW = pw, scrH = ph;
+		}
+		glBindFramebuffer(GL_FRAMEBUFFER, scrFbo);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, scrTex, 0);
+		if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) target = scrFbo;
+		else blit = 0, glBindFramebuffer(GL_FRAMEBUFFER, uiFbo);
+	}
 	glViewport(0, 0, pw, ph);
 	glDisable(GL_SCISSOR_TEST);
 	glClearColor(0.07f, 0.07f, 0.08f, 1);
 	glClear(GL_COLOR_BUFFER_BIT); // what shows if the interface is not ready yet
-	lgwGoRender(pw, ph, s, uiFbo);
+	lgwGoRender(pw, ph, s, target);
 	// an opaque window: whatever Gio left see-through is not
 	gdk_gl_context_make_current(glc);
-	glBindFramebuffer(GL_FRAMEBUFFER, uiFbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, target);
 	glDisable(GL_SCISSOR_TEST);
 	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
 	glClearColor(0, 0, 0, 1);
 	glClear(GL_COLOR_BUFFER_BIT);
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	if (blit) {
+		// into the frame, the right way up, pixel for pixel
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, scrFbo);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, uiFbo);
+		glBlitFramebuffer(0, 0, pw, ph, 0, ph, pw, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+	}
+	uiUpright = blit;
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	GdkTexture *tex;
 	t->busy = 1;
@@ -296,6 +331,20 @@ static void appendTexture(GtkSnapshot *s, GdkTexture *t, const graphene_rect_t *
 	else gtk_snapshot_append_texture(s, t, r);
 }
 
+// drawUI draws the interface's last frame over the whole view.
+static void drawUI(GtkSnapshot *sn, int pw, int ph, double s) {
+	if (uiUpright) {
+		appendTexture(sn, uiTex, &GRAPHENE_RECT_INIT(0, 0, pw / s, ph / s), 1);
+		return;
+	}
+	// upside down (no copy on this system): GTK flips it
+	gtk_snapshot_save(sn);
+	gtk_snapshot_translate(sn, &GRAPHENE_POINT_INIT(0, ph / s));
+	gtk_snapshot_scale(sn, 1, -1);
+	appendTexture(sn, uiTex, &GRAPHENE_RECT_INIT(0, 0, pw / s, ph / s), 1);
+	gtk_snapshot_restore(sn);
+}
+
 static void iris_view_snapshot(GtkWidget *w, GtkSnapshot *sn) {
 	int W = gtk_widget_get_width(w), H = gtk_widget_get_height(w);
 	if (W <= 0 || H <= 0) return;
@@ -315,12 +364,7 @@ static void iris_view_snapshot(GtkWidget *w, GtkSnapshot *sn) {
 	gtk_snapshot_save(sn);
 	gtk_snapshot_translate(sn, &GRAPHENE_POINT_INIT(dx, dy));
 	if (uiTex && uiW == pw && uiH == ph) {
-		// a GL texture is upside down to GTK: flipped back
-		gtk_snapshot_save(sn);
-		gtk_snapshot_translate(sn, &GRAPHENE_POINT_INIT(0, ph / s));
-		gtk_snapshot_scale(sn, 1, -1);
-		appendTexture(sn, uiTex, &GRAPHENE_RECT_INIT(0, 0, pw / s, ph / s), 1);
-		gtk_snapshot_restore(sn);
+		drawUI(sn, pw, ph, s);
 	} else {
 		GdkRGBA bg = {0.07, 0.07, 0.08, 1};
 		gtk_snapshot_append_color(sn, &bg, &all);
@@ -331,11 +375,7 @@ static void iris_view_snapshot(GtkWidget *w, GtkSnapshot *sn) {
 		GskRoundedRect rr;
 		gsk_rounded_rect_init_from_rect(&rr, &ovRect, ovRadius);
 		gtk_snapshot_push_rounded_clip(sn, &rr);
-		gtk_snapshot_save(sn);
-		gtk_snapshot_translate(sn, &GRAPHENE_POINT_INIT(0, ph / s));
-		gtk_snapshot_scale(sn, 1, -1);
-		appendTexture(sn, uiTex, &GRAPHENE_RECT_INIT(0, 0, pw / s, ph / s), 1);
-		gtk_snapshot_restore(sn);
+		drawUI(sn, pw, ph, s);
 		gtk_snapshot_pop(sn);
 	}
 	gtk_snapshot_restore(sn);
@@ -353,7 +393,10 @@ static void iris_view_unrealize(GtkWidget *w) {
 			pool[i] = (UITex){0};
 		}
 		if (uiFbo) glDeleteFramebuffers(1, &uiFbo);
-		uiFbo = 0;
+		if (scrFbo) glDeleteFramebuffers(1, &scrFbo);
+		if (scrTex) glDeleteTextures(1, &scrTex);
+		uiFbo = scrFbo = scrTex = 0;
+		scrW = scrH = 0;
 	}
 	g_clear_object(&uiTex);
 	g_clear_object(&glc);
