@@ -1,5 +1,13 @@
 Iris: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.21
+
+- **Sharp pages on niri, Sway, KDE and GNOME at 1.25, 1.5 or 1.75.** On compositors with fractional scaling, Chromium gave every screen the scale 1, so the pages Iris draws were made at 1 and stretched to fit: soft text everywhere. Iris now turns that off and starts Chromium once the window knows its real scale (the compositor corrects GTK's first guess a frame later), so pages are drawn at exactly your screen's scale: one page pixel on one screen pixel. Checked in CI on a 1.25 screen, where the page now reports a devicePixelRatio of 1.25.
+- **Fits the window like a native app.** The interface uses exactly the scale the compositor gives the window and nothing on top (the desktop's text scale was multiplied in, which made it larger than its window). Pages always fill their place: resizing, maximizing or opening and closing the menu never leaves a page smaller beside a blank strip. The window never opens larger than the screen.
+- **Crisper interface text.** Each line of text in Iris's own interface sits on whole screen pixels, so letters no longer smear across two pixel rows at fractional scales.
+- **Videos: LinkedIn and streams.** Players such as LinkedIn's caught the first "cannot play" and kept their error notice over the video even after Iris played it; they no longer see that error. Streams (HLS: LinkedIn, X, news sites) now go through Iris's converter too. The converter tries ffmpeg on the graphics chip, then ffmpeg on the processor, then GStreamer with the chip's own H.264 and H.265 decoders and OpenH264, each taking over when the one before gives no video. The packages now bring GStreamer's decoders and the VA-API drivers on Fedora, openSUSE, Debian and Ubuntu.
+- GTK 4.17 and later no longer warn about the renderer's old name.
+
 ## New in 1.0.20
 
 - **Iris, everywhere.** Lite Go is now Iris in every name, not only on screen: the program (`iris`), the packages (`iris-browser`), the folders, the menu entry and the release files. Nothing to do: your settings, history and sign-ins move over on the first start, `dnf upgrade`, `zypper up` and `apt upgrade` move the old package over, a copy installed in your home folder moves itself, and on Windows Iris Setup removes the old Lite Go folder and shortcuts.
