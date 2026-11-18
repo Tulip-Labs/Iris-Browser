@@ -204,7 +204,9 @@ jobs:
           name: linux
           path: pkg
       - name: Install Iris and sway
-        run: dnf install -y -q ./pkg/iris-browser-*.rpm sway grim mesa-dri-drivers python3 dejavu-sans-fonts procps-ng dbus-daemon util-linux
+        run: dnf install -y -q ./pkg/iris-browser-*.rpm sway grim mesa-dri-drivers python3 dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype
+          # a copy without the file capabilities a container cannot grant
+          cp /usr/bin/sway /usr/local/bin/sway-plain
       - name: Iris at 1.25, resized
         run: |
           useradd -m tester
@@ -223,7 +225,7 @@ jobs:
           CONF
           cat > /tmp/run.sh <<'SH'
           export XDG_RUNTIME_DIR=$(mktemp -d) WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 WLR_HEADLESS_OUTPUTS=1
-          sway -c /tmp/sway.conf > /tmp/sway.txt 2>&1 &
+          sway-plain -c /tmp/sway.conf > /tmp/sway.txt 2>&1 &
           for i in $(seq 1 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; sleep 0.2; done
           export WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
           export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)
@@ -240,13 +242,17 @@ jobs:
           swaymsg '[app_id="io.github.tulip_labs.Iris"] floating disable'
           sleep 6
           grim /tmp/fs/3-full-again.png
-          pgrep -x iris >/dev/null || echo "IRIS-EXITED"
+          # the menu panel (Ctrl+,), at full size
+          wtype -M ctrl , -m ctrl
+          sleep 3
+          grim /tmp/fs/4-panel.png
+          pgrep -x iris >/dev/null || touch /tmp/fs/exited
           SH
           su tester -c "sh /tmp/run.sh"
           grep -v dbus /tmp/fs/log.txt | tail -60
           tail -20 /tmp/sway.txt
           for f in /tmp/fs/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
-          ! grep -q IRIS-EXITED /tmp/fs/log.txt
+          [ ! -e /tmp/fs/exited ] || { echo "Iris exited"; exit 1; }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
