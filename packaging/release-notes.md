@@ -1,4 +1,12 @@
-Iris (formerly Lite Go): a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
+Iris: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
+
+## New in 1.0.20
+
+- **Iris, everywhere.** Lite Go is now Iris in every name, not only on screen: the program (`iris`), the packages (`iris-browser`), the folders, the menu entry and the release files. Nothing to do: your settings, history and sign-ins move over on the first start, `dnf upgrade`, `zypper up` and `apt upgrade` move the old package over, a copy installed in your home folder moves itself, and on Windows Iris Setup removes the old Lite Go folder and shortcuts.
+- **Motion that tells you what is happening.** Click into the address bar and a soft glow rings it, so it is always plain where typing goes. Buttons fade on hover and give a little when pressed, switches and checkboxes fill in, the selected tab's glass glides to the tab you pick, panels slide in, suggestions drop down and tooltips fade in. All of it is short and quiet, and it stops when your desktop's animations are off.
+- **Now playing.** While a tab plays music or a video, a liquid-glass pill opens beside the address: the artwork, the title and the artist, tinted with the artwork's colours, with sound waves that move while it plays. Click it to go to that tab; click the waves to pause or play.
+- **Extensions from the Chrome Web Store (Windows).** Open an extension's page in the store and choose **Add to Iris**. Iris downloads it from Google, checks its signature the way Chrome does, and adds it; manage them under Menu, Extensions. On Linux, Iris draws pages with Chromium off screen (that is what keeps them sharp and light on Wayland), and Chromium's extension system does not run that way yet; the menu says so.
+- **winget.** `winget install TulipLabs.Iris` (once the package is accepted into winget). Iris Setup installs and removes without a window with `--silent`.
 
 ## New in 1.0.19
 
