@@ -26,6 +26,7 @@ void lgwFullscreen(int on);
 void lgwClose(void);
 void lgwPresent(void);
 void lgwFocus(void);
+void lgwSendState(void);
 void lgwDo(uintptr_t h);
 int lgwWayland(void);
 */
@@ -164,6 +165,7 @@ func (r *resident) makeWindow(urls []string) {
 	h.a = shell.New(h, shell.Config{Engine: h.eng, DataDir: r.conf, TotalMB: totalMB(), Version: version, SelfMB: webview.SelfMB,
 		Core: r.core, SetBoost: setStartup, Sys: sysHooks(), UpdateKind: installKind()})
 	h.in = h.a.In
+	C.lgwSendState()
 	h.eng.SetPolicy(h.a.Policy())
 	for _, u := range urls {
 		h.a.OpenURL(u)
@@ -187,7 +189,7 @@ func lgwGoScale(sf C.double, text C.double) {
 //export lgwGoRender
 func lgwGoRender(w, ht C.int, sf C.double, fbo C.uint) {
 	h := win
-	if h == nil || w <= 0 || ht <= 0 {
+	if h == nil || h.a == nil || w <= 0 || ht <= 0 {
 		return
 	}
 	h.sf = max(float64(sf), 0.5)
@@ -269,7 +271,7 @@ func lgwGoDestroy() {
 		return
 	}
 	win = nil
-	if !h.quit {
+	if !h.quit && h.a != nil {
 		h.a.Close() // the window was closed by the system
 		for _, f := range h.a.TakeWebCalls() {
 			f()
@@ -280,14 +282,14 @@ func lgwGoDestroy() {
 
 //export lgwGoClose
 func lgwGoClose() {
-	if h := win; h != nil {
+	if h := win; h != nil && h.a != nil {
 		h.Close()
 	}
 }
 
 //export lgwGoState
 func lgwGoState(maximized, fullscreen, w, h C.int) {
-	if hst := win; hst != nil {
+	if hst := win; hst != nil && hst.a != nil { // GTK 4 reports the state while the window opens, before the interface exists
 		hst.a.Maximized = maximized != 0
 		if fullscreen == 0 { // a video's full screen is not how the reader left the window
 			hst.r.core.Settings.SetWindow(maximized == 0, int(w), int(h))
@@ -318,7 +320,7 @@ func (h *host) inMove(x, y float32) bool {
 //export lgwGoButton
 func lgwGoButton(x, y C.double, button C.int, press C.int, state C.uint, touch C.int) C.int {
 	h := win
-	if h == nil {
+	if h == nil || h.in == nil {
 		return 0
 	}
 	in := h.in
@@ -368,7 +370,7 @@ func lgwGoButton(x, y C.double, button C.int, press C.int, state C.uint, touch C
 //export lgwGoMotion
 func lgwGoMotion(x, y C.double, state C.uint, touch C.int) {
 	h := win
-	if h == nil {
+	if h == nil || h.in == nil {
 		return
 	}
 	h.in.MX, h.in.MY = h.dp(float64(x), float64(y))
@@ -382,7 +384,7 @@ func lgwGoMotion(x, y C.double, state C.uint, touch C.int) {
 
 //export lgwGoLeave
 func lgwGoLeave() {
-	if h := win; h != nil && !h.in.Down {
+	if h := win; h != nil && h.in != nil && !h.in.Down {
 		h.in.MX, h.in.MY = -1, -1
 		h.Invalidate()
 	}
@@ -391,7 +393,7 @@ func lgwGoLeave() {
 //export lgwGoScroll
 func lgwGoScroll(dx, dy C.double, smooth C.int, state C.uint, touch C.int) {
 	h := win
-	if h == nil {
+	if h == nil || h.in == nil {
 		return
 	}
 	h.mods(state)
@@ -408,7 +410,7 @@ func lgwGoScroll(dx, dy C.double, smooth C.int, state C.uint, touch C.int) {
 //export lgwGoPinch
 func lgwGoPinch(phase C.int, scale, x, y C.double) {
 	h := win
-	if h == nil {
+	if h == nil || h.in == nil {
 		return
 	}
 	if phase == 0 {
@@ -446,7 +448,7 @@ var gdkChars = map[byte]ui.Key{
 //export lgwGoKey
 func lgwGoKey(keyval C.uint, state C.uint) C.int {
 	h := win
-	if h == nil {
+	if h == nil || h.in == nil {
 		return 0
 	}
 	kv := uint(keyval)
@@ -480,7 +482,7 @@ func lgwGoKey(keyval C.uint, state C.uint) C.int {
 
 //export lgwGoText
 func lgwGoText(s *C.char) {
-	if h := win; h != nil {
+	if h := win; h != nil && h.in != nil {
 		h.in.Typed += C.GoString(s)
 		h.Invalidate()
 	}
@@ -488,7 +490,7 @@ func lgwGoText(s *C.char) {
 
 //export lgwGoPaste
 func lgwGoPaste(s *C.char) {
-	if h := win; h != nil {
+	if h := win; h != nil && h.in != nil {
 		t := C.GoString(s)
 		if len(t) > 4<<20 {
 			t = t[:4<<20]

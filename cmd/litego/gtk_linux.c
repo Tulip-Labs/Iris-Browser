@@ -213,6 +213,9 @@ static void renderUI(GtkWidget *w, int pw, int ph, double s) {
 		return;
 	}
 	glViewport(0, 0, pw, ph);
+	glDisable(GL_SCISSOR_TEST);
+	glClearColor(0.07f, 0.07f, 0.08f, 1);
+	glClear(GL_COLOR_BUFFER_BIT); // what shows if the interface is not ready yet
 	lgwGoRender(pw, ph, s, uiFbo);
 	// an opaque window: whatever Gio left see-through is not
 	gdk_gl_context_make_current(glc);
@@ -498,6 +501,10 @@ static void sendState(void) {
 }
 
 static void onWinState(GObject *o, GParamSpec *p, gpointer d) { sendState(); }
+
+// lgwSendState tells the interface the window's state again (it may have
+// changed before the interface existed).
+void lgwSendState(void) { sendState(); }
 
 // The system's close (Alt+F4, the dock): Iris closes its tabs first.
 static gboolean onCloseRequest(GtkWindow *w, gpointer d) {
