@@ -49,3 +49,16 @@ func TestRelayGuards(t *testing.T) {
 		}
 	}
 }
+
+func TestRunnableDownloads(t *testing.T) {
+	for _, p := range []string{"/d/x.desktop", "/d/setup.SH", "/d/a.AppImage", "/d/a.exe", "/d/a.run"} {
+		if !runnable(p) {
+			t.Errorf("%s would be opened", p)
+		}
+	}
+	for _, p := range []string{"/d/a.pdf", "/d/b.png", "/d/notes.txt", "/d/movie.mp4"} {
+		if runnable(p) {
+			t.Errorf("%s would not be opened", p)
+		}
+	}
+}

@@ -1,5 +1,20 @@
 Iris (formerly Lite Go): a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.15
+
+**Faster and sharper pages.** Each page is now drawn by the graphics chip: on a computer with a GPU, Chromium hands its frames straight to it (dmabuf), with no copy through the processor; elsewhere the changed parts are uploaded as textures. Pages are drawn pixel for pixel. Videos on YouTube and other sites are decoded by the graphics chip (VA-API), and Chromium's shader cache is kept between runs. If the graphics chip cannot take the frames, Iris goes back to the processor by itself (or set `LITEGO_GPU=0`).
+
+**H.264 and H.265 videos look better.** The converter now decodes on the graphics chip, encodes VP9 there when it can (VP8 at a much sharper quality otherwise), up to 1080p, and also takes H.265 (HEVC) videos. H.265 needs an ffmpeg with that decoder (on Fedora: RPM Fusion's `ffmpeg`).
+
+**Security fixes**
+- A web page could crash Iris, or answer Iris's own scripts, by printing a special console message. Each script result now carries a secret for that one call and counts only from the page it was sent to.
+- The video converter could be used by any page to reach this computer or its local network, read the converted result, or (with GStreamer) write a file. It now answers only a page's own video element, fetches only public addresses, and lets no script read it.
+- Windows a page opens without a click are no longer opened; at most six downloads start in half a minute; downloaded file names are cleaned; launchers, scripts and installers in the downloads list are shown in their folder rather than opened.
+- The settings (which hold the sync key), history and site data are now readable by your account only.
+- A pasted `javascript:` link in the address bar is a search, never run; "note: something" is a search too.
+- Phone uploads are size-limited and never overwrite each other.
+- Android: pages can no longer open other apps without a tap, and app links cannot grant access to Iris's files.
+
 ## New in 1.0.14
 
 - **Iris for Android runs on its own Chromium.** The phone app now carries Chromium 156, the same engine as Iris on the computer (CEF for Android, through Cefrium), in place of the system WebView. Pages, YouTube and Google look and behave the same as on the computer, H.264 and AAC videos play, and containers keep their sign-ins apart on every phone.

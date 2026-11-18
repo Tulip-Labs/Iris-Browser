@@ -134,9 +134,22 @@ func fileName(d webview.Download) string {
 	return "download"
 }
 
+// runnable says whether opening a file of this name could run it as a
+// program (a launcher, a script, an installer): such files are shown in
+// their folder instead of opened, so a click on a download never runs one.
+func runnable(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".desktop", ".sh", ".bash", ".zsh", ".fish", ".run", ".bin", ".appimage", ".flatpakref", ".flatpak",
+		".jar", ".py", ".pl", ".rb", ".exe", ".msi", ".bat", ".cmd", ".com", ".scr", ".ps1", ".vbs", ".js", ".jse",
+		".wsf", ".hta", ".lnk", ".reg", ".deb", ".rpm", ".apk", ".elf", ".so", ".ko":
+		return true
+	}
+	return false
+}
+
 func (a *App) openFile(d *download, reveal bool) {
 	f := a.cfg.Sys.Open
-	if reveal {
+	if reveal || runnable(d.Path) {
 		f = a.cfg.Sys.Reveal
 	}
 	if f == nil || d.Path == "" {
