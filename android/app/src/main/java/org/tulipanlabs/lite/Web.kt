@@ -82,14 +82,21 @@ class Page(ctx: Context, val b: CefriumBrowser) : FrameLayout(ctx) {
      * reader allows Google alone; tabs never get it).
      */
     fun answers(allow: (String) -> Boolean) {
-        b.setQueryHandler({ _, request, _, cb ->
-            cb.success("")
-            val i = request.indexOf(",\"v\":")
-            val tok = if (i > 5) request.substring(5, i).toIntOrNull() else null
-            val raw = if (i > 0) request.substring(i + 5, request.length - 1) else null
-            ui.post { tok?.let { pending.remove(it) }?.invoke(raw) }
-            true
-        }, CefriumBrowser.QueryOriginPolicy { url -> allow(url) })
+        val policy = object : CefriumBrowser.QueryOriginPolicy {
+            override fun allows(frameUrl: String?): Boolean = allow(frameUrl ?: "")
+        }
+        val handler = object : CefriumBrowser.QueryHandler {
+            override fun onQuery(queryId: Long, request: String?, origin: String?, callback: CefriumBrowser.QueryCallback?): Boolean {
+                callback?.success("")
+                val req = request ?: return true
+                val i = req.indexOf(",\"v\":")
+                val tok = if (i > 5) req.substring(5, i).toIntOrNull() else null
+                val raw = if (i > 0) req.substring(i + 5, req.length - 1) else null
+                ui.post { tok?.let { pending.remove(it) }?.invoke(raw) }
+                return true
+            }
+        }
+        b.setQueryHandler(policy, handler)
     }
 
     fun canGoBack() = back || b.canGoBack()
