@@ -4,8 +4,12 @@ set -x
 mkdir -p screens
 P=org.tulipanlabs.lite
 adb install -r android/app/build/outputs/apk/debug/*.apk
+# the emulator's own launcher stalls under software drawing: no "isn't responding" dialogs over the shots
+adb shell settings put global hide_error_dialogs 1
+adb shell settings put secure anr_show_background 0
 start() { adb shell am start -n $P/.MainActivity "$@" >/dev/null; }
-shot() { sleep "${2:-4}"; adb exec-out screencap -p > "screens/$1.png"; }
+shot() { sleep "${2:-4}"; adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1; sleep 0.5; adb exec-out screencap -p > "screens/$1.png"; }
+visit() { adb shell am start -a android.intent.action.VIEW -d "$1" -n $P/.MainActivity >/dev/null; }
 back() { adb shell input keyevent KEYCODE_BACK; sleep 1; }
 
 start; sleep 12; adb shell am force-stop $P; start; shot start 10
@@ -19,6 +23,10 @@ start --es lite.open new; shot new-menu; back
 start --es lite.open shield; shot shield; back
 start --es lite.mode web --es lite.url "red\ pandas"; shot results 16
 adb shell input swipe 540 1800 540 700 300; shot results-2 2
+# real sites on the bundled Chromium
+visit https://en.wikipedia.org/wiki/Red_panda; shot page-wikipedia 12
+visit https://www.youtube.com/; shot page-youtube 14
+visit https://github.com/Tulip-Labs/Iris-Browser; shot page-github 12
 
 # landscape and a tablet
 adb shell settings put system accelerometer_rotation 0
