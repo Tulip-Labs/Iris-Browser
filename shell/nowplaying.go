@@ -19,7 +19,7 @@ import (
 
 type nowPlaying struct {
 	tab                *Tab
-	url                string  // the page the details were read for
+	url                string // the page the details were read for
 	title, artist, art string
 	asked              float64 // when the details were last read
 	reading            bool
