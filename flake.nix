@@ -68,9 +68,16 @@
             gappsWrapperArgs+=(
               --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [ pkgs.libGL pkgs.libdrm (pkgs.libgbm or pkgs.mesa) pkgs.systemd ]}
               --suffix LD_LIBRARY_PATH : /run/opengl-driver/lib
-              --run 'if [ -z "''${FONTCONFIG_FILE:-}" ] && [ ! -e /etc/fonts/fonts.conf ]; then export FONTCONFIG_FILE=${fonts}; fi'
             )
             wrapGApp $out/lib/iris-browser/iris
+            # the launcher: the store's fonts only where the system has no fontconfig
+            rm $out/bin/iris
+            cat > $out/bin/iris <<EOF
+            #!${pkgs.runtimeShell}
+            if [ -z "\''${FONTCONFIG_FILE:-}" ] && [ ! -e /etc/fonts/fonts.conf ]; then export FONTCONFIG_FILE=${fonts}; fi
+            exec $out/lib/iris-browser/iris "\$@"
+            EOF
+            chmod 755 $out/bin/iris
           '';
           dontWrapGApps = true;
           meta = with pkgs.lib; {

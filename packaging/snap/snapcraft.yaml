@@ -46,10 +46,10 @@ parts:
   iris:
     plugin: dump
     source: dist
-    organize:
-      "*": lib/iris-browser/
     override-build: |
-      craftctl default
+      # the program's folder (organize would only move it after this step)
+      mkdir -p "$CRAFT_PART_INSTALL/lib/iris-browser"
+      cp -a "$CRAFT_PART_SRC"/. "$CRAFT_PART_INSTALL/lib/iris-browser/"
       cd "$CRAFT_PART_INSTALL"
       rm -f lib/iris-browser/chrome-sandbox # setuid files are not allowed in snaps
       install -Dm644 lib/iris-browser/io.github.tulip_labs.Iris.metainfo.xml share/metainfo/io.github.tulip_labs.Iris.metainfo.xml

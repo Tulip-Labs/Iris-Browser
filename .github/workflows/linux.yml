@@ -178,7 +178,11 @@ jobs:
       - name: Install the bundle and start Iris on Wayland
         run: |
           set -x
-          dnf install -y -q weston dbus-daemon procps-ng >/dev/null 2>&1 || dnf install -y weston dbus-daemon procps-ng
+          if command -v apt-get >/dev/null; then
+            apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq weston dbus procps
+          else
+            dnf install -y -q weston dbus-daemon procps-ng
+          fi
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y --noninteractive ./Iris-x86_64.flatpak
           flatpak info --user io.github.tulip_labs.Iris
