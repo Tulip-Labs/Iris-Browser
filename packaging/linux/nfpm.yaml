@@ -8,7 +8,7 @@ section: web
 priority: optional
 maintainer: Tulip Labs <tulip-labs@users.noreply.github.com>
 vendor: Tulip Labs
-homepage: https://github.com/Tulip-Labs/Lite-Go-Browser
+homepage: https://github.com/Tulip-Labs/Iris-Browser
 license: GPL-3.0-only
 description: |-
   A light, fast browser with shields built in.
@@ -148,7 +148,7 @@ overrides:
 deb:
   compression: xz
   fields:
-    Bugs: https://github.com/Tulip-Labs/Lite-Go-Browser/issues
+    Bugs: https://github.com/Tulip-Labs/Iris-Browser/issues
 rpm:
   compression: xz
   group: Applications/Internet

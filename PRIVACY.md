@@ -31,4 +31,4 @@ behalf. Tulipan Labs runs no servers for Lite Go.
 
 ## Contact
 
-Open an issue at https://github.com/Tulip-Labs/Lite-Go-Browser/issues
+Open an issue at https://github.com/Tulip-Labs/Iris-Browser/issues

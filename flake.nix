@@ -67,7 +67,7 @@
           dontWrapGApps = true;
           meta = with pkgs.lib; {
             description = "A light, fast browser with shields built in";
-            homepage = "https://github.com/Tulip-Labs/Lite-Go-Browser";
+            homepage = "https://github.com/Tulip-Labs/Iris-Browser";
             license = licenses.gpl3Only;
             platforms = [ "x86_64-linux" ];
             mainProgram = "lite-go";

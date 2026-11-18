@@ -207,8 +207,8 @@ Every release has a `.deb`, an `.rpm` and a `.tar.gz` for any distribution (each
 **Debian, Ubuntu, Linux Mint** (from the signed repository, so updates come with the system's):
 
 ```sh
-curl -fsSL https://tulip-labs.github.io/Lite-Go-Browser/lite-go-browser.gpg | sudo tee /usr/share/keyrings/lite-go-browser.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/lite-go-browser.gpg] https://github.com/Tulip-Labs/Lite-Go-Browser/releases/latest download/" | sudo tee /etc/apt/sources.list.d/lite-go-browser.list
+curl -fsSL https://tulip-labs.github.io/Iris-Browser/lite-go-browser.gpg | sudo tee /usr/share/keyrings/lite-go-browser.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/lite-go-browser.gpg] https://github.com/Tulip-Labs/Iris-Browser/releases/latest download/" | sudo tee /etc/apt/sources.list.d/lite-go-browser.list
 sudo apt update && sudo apt install lite-go-browser
 ```
 
@@ -219,26 +219,26 @@ it over when it installs.
 **Fedora**
 
 ```sh
-sudo dnf config-manager addrepo --from-repofile=https://tulip-labs.github.io/Lite-Go-Browser/lite-go-browser.repo
+sudo dnf config-manager addrepo --from-repofile=https://tulip-labs.github.io/Iris-Browser/lite-go-browser.repo
 sudo dnf install lite-go-browser
 ```
 
 **openSUSE**
 
 ```sh
-sudo zypper addrepo https://tulip-labs.github.io/Lite-Go-Browser/lite-go-browser.repo
+sudo zypper addrepo https://tulip-labs.github.io/Iris-Browser/lite-go-browser.repo
 sudo zypper install lite-go-browser
 ```
 
-**Fedora Atomic** (Silverblue, Kinoite): `sudo curl -fsSLo /etc/yum.repos.d/lite-go-browser.repo https://tulip-labs.github.io/Lite-Go-Browser/lite-go-browser.repo`, then `rpm-ostree install lite-go-browser`, and restart. Updates come with `rpm-ostree upgrade`.
+**Fedora Atomic** (Silverblue, Kinoite): `sudo curl -fsSLo /etc/yum.repos.d/lite-go-browser.repo https://tulip-labs.github.io/Iris-Browser/lite-go-browser.repo`, then `rpm-ostree install lite-go-browser`, and restart. Updates come with `rpm-ostree upgrade`.
 
 **Arch**: download the `PKGBUILD` from the latest release into an empty folder and run `makepkg -si` (an AUR package is planned).
 
-**Nix**: `nix profile install github:Tulip-Labs/Lite-Go-Browser`, or try it with `nix run github:Tulip-Labs/Lite-Go-Browser`.
+**Nix**: `nix profile install github:Tulip-Labs/Iris-Browser`, or try it with `nix run github:Tulip-Labs/Iris-Browser`.
 
 **Any distribution, no root**: unpack `LiteGo-linux-x86_64.tar.gz` and run `./install.sh` (it installs to `~/.local/lib/lite-go-browser`, with `lite-go` in `~/.local/bin`).
 
-The repository pages with these commands are at [tulip-labs.github.io/Lite-Go-Browser](https://tulip-labs.github.io/Lite-Go-Browser/).
+The repository pages with these commands are at [tulip-labs.github.io/Iris-Browser](https://tulip-labs.github.io/Iris-Browser/).
 
 **Updates.** Iris checks the latest GitHub release every few hours (Settings, About Iris; on by default) and checks each download against the release's `SHA256SUMS`. The `.tar.gz` copy updates by itself; `.deb` and `.rpm` copies download in the background and install with one click and your password. Copies from the AUR, Nix or rpm-ostree update the way those tools do.
 

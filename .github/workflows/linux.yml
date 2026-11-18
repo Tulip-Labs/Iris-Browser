@@ -166,7 +166,7 @@ jobs:
           path: /tmp/shots/*.png
           if-no-files-found: ignore
 
-  # nix build github:Tulip-Labs/Lite-Go-Browser must keep working
+  # nix build github:Tulip-Labs/Iris-Browser must keep working
   nix:
     runs-on: ubuntu-24.04
     steps:

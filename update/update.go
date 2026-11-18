@@ -25,7 +25,7 @@ import (
 )
 
 // Repo is where the releases are published.
-const Repo = "Tulip-Labs/Lite-Go-Browser"
+const Repo = "Tulip-Labs/Iris-Browser"
 
 // API is GitHub's address (tests point it at a local server).
 var API = "https://api.github.com"

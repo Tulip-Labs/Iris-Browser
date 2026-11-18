@@ -6,12 +6,12 @@ pkgver=@VERSION@
 pkgrel=1
 pkgdesc="A light, fast browser with shields built in"
 arch=('x86_64')
-url="https://github.com/Tulip-Labs/Lite-Go-Browser"
+url="https://github.com/Tulip-Labs/Iris-Browser"
 license=('GPL-3.0-only')
 depends=('gtk3' 'libepoxy' 'libglvnd' 'nss' 'alsa-lib' 'libdrm' 'mesa' 'libxkbcommon' 'at-spi2-core' 'libcups' 'libxcomposite' 'libxdamage' 'libxrandr')
 provides=('lite-go-browser')
 conflicts=('lite-go-browser')
-source=("LiteGo-linux-x86_64-${pkgver}.tar.gz::https://github.com/Tulip-Labs/Lite-Go-Browser/releases/download/v${pkgver}/LiteGo-linux-x86_64.tar.gz")
+source=("LiteGo-linux-x86_64-${pkgver}.tar.gz::https://github.com/Tulip-Labs/Iris-Browser/releases/download/v${pkgver}/LiteGo-linux-x86_64.tar.gz")
 sha256sums=('@SHA256@')
 
 options=('!strip') # Chromium's files come stripped

@@ -17,8 +17,8 @@ set -eu
 in=$1
 out=$2
 flat=$3
-URL=${PAGES_URL:-https://tulip-labs.github.io/Lite-Go-Browser}
-REL=${RELEASE_URL:-https://github.com/Tulip-Labs/Lite-Go-Browser/releases}
+URL=${PAGES_URL:-https://tulip-labs.github.io/Iris-Browser}
+REL=${RELEASE_URL:-https://github.com/Tulip-Labs/Iris-Browser/releases}
 : "${TAG:?TAG is the release tag}"
 rm -rf "$out" "$flat"
 mkdir -p "$out/deb/pool/main" "$out/rpm" "$flat"
@@ -108,7 +108,7 @@ cat > "$out/index.html" <<HTML
 pre{background:#f1ecfb;padding:.8rem 1rem;border-radius:10px;overflow-x:auto}h1{font-size:1.6rem}</style></head><body>
 <h1>Lite Go for Linux</h1>
 <p>Packages for Lite Go, the light browser by Tulip Labs. Downloads and source:
-<a href="https://github.com/Tulip-Labs/Lite-Go-Browser/releases">GitHub releases</a>.</p>
+<a href="https://github.com/Tulip-Labs/Iris-Browser/releases">GitHub releases</a>.</p>
 <h2>Debian, Ubuntu, Linux Mint</h2>
 <pre>$apt_setup
 sudo apt update && sudo apt install lite-go-browser</pre>

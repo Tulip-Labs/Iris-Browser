@@ -31,9 +31,9 @@ selfie.
 |---|---|
 | Pricing and availability | Free, all markets |
 | Properties: category | Productivity |
-| Properties: privacy policy URL | `https://github.com/Tulip-Labs/Lite-Go-Browser/blob/main/PRIVACY.md` |
-| Properties: website | `https://github.com/Tulip-Labs/Lite-Go-Browser` |
-| Properties: support contact | `https://github.com/Tulip-Labs/Lite-Go-Browser/issues` |
+| Properties: privacy policy URL | `https://github.com/Tulip-Labs/Iris-Browser/blob/main/PRIVACY.md` |
+| Properties: website | `https://github.com/Tulip-Labs/Iris-Browser` |
+| Properties: support contact | `https://github.com/Tulip-Labs/Iris-Browser/issues` |
 | Age ratings | Answer the questionnaire: a browser gives unrestricted access to the internet, so say so |
 | Packages | Upload `LiteGo.msixbundle` from the release |
 | Store listing | The texts below, and screenshots from `assets/screens` |
