@@ -49,7 +49,7 @@ jobs:
             gh release upload "$TAG" out/* --clobber
           else
             gh release create "$TAG" out/* --target "$GITHUB_SHA" \
-              --title "Lite Go ${TAG#v}" --notes-file packaging/release-notes.md
+              --title "Iris ${TAG#v}" --notes-file packaging/release-notes.md
           fi
 
   linux:
