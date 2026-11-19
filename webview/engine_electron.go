@@ -1,38 +1,23 @@
-//go:build linux && webkit && electron
+//go:build (linux && webkit && electron) || windows
 
-// The Linux engine on Electron. Electron runs in a helper process
-// (webview/electron/helper/main.js) that Iris starts when the first page opens
-// and that quits by itself a while after the last one closes. Iris speaks to
-// it over a Unix socket:
+// The Chromium engine: Iris's own browser, the same Electron the app ships
+// with, used as the app's heavy page engine. The engine speaks to it over
+// a local pipe, the way a browser speaks to its renderer, and draws the
+// pages it sends back.
 //
-//	each message: length (4 bytes, little endian), kind (1 byte), payload
-//	kind 0: one JSON object
-//	kind 1: a frame: header length (4 bytes), JSON header, then the pixels
+// Electron is kept as its own engine rather than as Iris's app shell
+// because Iris's shell is Gio, and the two do not share a window: Electron
+// draws its own window, and Iris reads the window's pixels and shows them
+// in its own. That is the whole of the integration. The helper (in
+// webview/electron/) is a plain Electron app; the engine starts it once,
+// with no window of its own, and talks to it over stdio.
 //
-// Pages are drawn off screen by Electron at the window's scale; their frames
-// come here and go to electron_linux.c, which draws them in Iris's window.
-// Electron has H.264, H.265 and AAC (CEF's builds do not), so every video
-// plays.
+// This file is the engine itself, shared by Linux and Windows. The platform
+// code lives in electron_linux.go (GTK) and electron_windows.go (child
+// windows): each provides the window, the scale, where a page sits, its
+// frames, and the pointer and keys over it. See docs/engines.md.
 
 package webview
-
-/*
-#cgo pkg-config: gtk4
-#cgo LDFLAGS: -ldl -lm
-#include <stdint.h>
-#include <stdlib.h>
-
-void lgxAttach(uintptr_t view, const char *dataDir);
-double elxScale(void);
-void elxPlace(uintptr_t id, int x, int y, int w, int h);
-void elxShow(uintptr_t id, int on);
-void elxDrop(uintptr_t id);
-void elxFocusPage(uintptr_t id);
-void elxPaint(uintptr_t id, int fw, int fh, int x, int y, int w, int h, int stride, void *pix);
-void elxCursor(uintptr_t id, const char *name);
-void elxOnMain(uintptr_t h);
-*/
-import "C"
 
 import (
 	"bufio"
@@ -46,24 +31,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime/cgo"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-	"unsafe"
 )
 
 const engineName = "Electron "
 
-var hosted bool
-
-// HostGTK tells the engine that Iris's window is made with GTK (always, here).
-func HostGTK() { hosted = true }
-
-// New returns the Linux engine on Electron.
+// New returns the engine on Electron.
 func New() Engine {
 	if wkEng == nil {
 		wkEng = &wkEngine{}
@@ -75,21 +52,6 @@ func New() Engine {
 func Installed() bool { _, _, err := helperPaths(); return err == nil }
 
 func init() { SleepFreesMemory = false }
-
-// SelfMB is this process's memory (resident set).
-func SelfMB() float64 {
-	b, err := os.ReadFile("/proc/self/status")
-	if err != nil {
-		return 0
-	}
-	for _, l := range strings.Split(string(b), "\n") {
-		if fs := strings.Fields(l); len(fs) >= 2 && fs[0] == "VmRSS:" {
-			kb, _ := strconv.Atoi(fs[1])
-			return float64(kb) / 1024
-		}
-	}
-	return 0
-}
 
 // SetColorScheme makes the pages light or dark (prefers-color-scheme).
 func SetColorScheme(dark bool) {
@@ -149,9 +111,7 @@ func (e *elxEngine) Start(window uintptr, dataDir string, low bool, ready func(e
 	wkEng.mu.Lock()
 	wkEng.dataDir, wkEng.low, wkEng.started = dataDir, low, true
 	wkEng.mu.Unlock()
-	cs := C.CString(dataDir)
-	C.lgxAttach(C.uintptr_t(window), cs)
-	C.free(unsafe.Pointer(cs))
+	elxPlatformAttach(window, dataDir)
 	e.mu.Lock()
 	if !e.watching {
 		e.watching = true
@@ -191,7 +151,7 @@ func helperPaths() (bin, app string, err error) {
 	dir := filepath.Dir(exe)
 	bin = os.Getenv("IRIS_ELECTRON")
 	if bin == "" {
-		if p := filepath.Join(dir, "electron", "electron"); fileExists(p) {
+		if p := filepath.Join(dir, "electron", elxBinName); fileExists(p) {
 			bin = p
 		} else if p, e := exec.LookPath("electron"); e == nil {
 			bin = p
@@ -229,7 +189,7 @@ func (e *elxEngine) ensure() {
 		return
 	}
 	e.running = true
-	e.scale = float64(C.elxScale())
+	e.scale = elxPlatformScale()
 	if s := os.Getenv("IRIS_SCALE"); s != "" {
 		if f, err := strconv.ParseFloat(s, 64); err == nil && f >= 0.5 && f <= 8 {
 			e.scale = f
@@ -265,20 +225,10 @@ func (e *elxEngine) run(dataDir string, low bool, scale float64) {
 	_ = os.Chmod(sock, 0o600)
 	data := filepath.Join(dataDir, "electron")
 	_ = os.MkdirAll(data, 0o700)
-	// Electron draws no window of its own (every page is offscreen), but it
-	// still joins a display: the one Iris runs on. Left to itself it tries X11,
-	// and on a Wayland-only desktop (niri, sway, a Flatpak without X) it found
-	// no X server and quit at once. Wayland also lets it share frames on the
-	// graphics chip; headless is the last resort.
-	var args []string
-	switch {
-	case os.Getenv("WAYLAND_DISPLAY") != "":
-		args = append(args, "--ozone-platform=wayland")
-	case os.Getenv("DISPLAY") != "":
-		args = append(args, "--ozone-platform=x11")
-	default:
-		args = append(args, "--ozone-platform=headless")
-	}
+	// Electron draws no window of its own (every page is offscreen), but on
+	// Linux it still joins a display: the one Iris runs on (see
+	// elxPlatformHelperArgs). On Windows it needs no display flag.
+	args := elxPlatformHelperArgs()
 	if app != "" {
 		args = append(args, app)
 	}
@@ -416,15 +366,7 @@ func (e *elxEngine) send(m msg) {
 }
 
 // onMain runs f on the window's thread.
-func onMain(f func()) { C.elxOnMain(C.uintptr_t(cgo.NewHandle(f))) }
-
-//export elxGoRun
-func elxGoRun(h C.uintptr_t) {
-	hd := cgo.Handle(h)
-	f := hd.Value().(func())
-	hd.Delete()
-	f()
-}
+func onMain(f func()) { elxPlatformOnMain(f) }
 
 // ask sends m with a reply number; done gets the reply (null if the helper
 // went away), on the window's thread.
@@ -493,16 +435,14 @@ func (e *elxEngine) frame(r *bufio.Reader, n int) error {
 	if np <= 0 {
 		return nil
 	}
-	pix := C.malloc(C.size_t(np))
-	if _, err := io.ReadFull(r, unsafe.Slice((*byte)(pix), np)); err != nil {
-		C.free(pix)
+	pix := make([]byte, np)
+	if _, err := io.ReadFull(r, pix); err != nil {
 		return err
 	}
 	if h.W <= 0 || h.H <= 0 || h.W*h.H*4 > np || h.FW <= 0 || h.FH <= 0 {
-		C.free(pix)
 		return nil
 	}
-	C.elxPaint(C.uintptr_t(h.ID), C.int(h.FW), C.int(h.FH), C.int(h.X), C.int(h.Y), C.int(h.W), C.int(h.H), C.int(h.W*4), pix)
+	elxPlatformPaint(h.ID, h.FW, h.FH, h.X, h.Y, h.W, h.H, pix)
 	return nil
 }
 
@@ -622,9 +562,7 @@ func (e *elxEngine) handle(p []byte) {
 			v.ev.Fullscreen(m.On)
 		}
 	case "cursor":
-		cs := C.CString(m.Name)
-		C.elxCursor(C.uintptr_t(m.ID), cs)
-		C.free(unsafe.Pointer(cs))
+		elxPlatformCursor(m.ID, m.Name)
 	case "req":
 		act, to := e.decideRequest(m)
 		e.send(msg{"t": "reqr", "n": m.N, "a": act, "u": to})
@@ -842,7 +780,7 @@ func (e *elxEngine) reopen(v *wkView) {
 // 1 and zooms it by the window's scale, read now (GTK's first guess at a
 // window's scale is often corrected a frame later).
 func (e *elxEngine) bounds(id uintptr, x, y, w, h int) {
-	s := float64(C.elxScale())
+	s := elxPlatformScale()
 	if s < 0.5 || s > 8 {
 		s = 1
 	}
@@ -913,7 +851,7 @@ func (v *wkView) SetBounds(x, y, w, h int) {
 	if same {
 		return
 	}
-	C.elxPlace(C.uintptr_t(v.id), C.int(x), C.int(y), C.int(w), C.int(h))
+	elxPlatformPlace(v.id, x, y, w, h)
 	elx.mu.Lock()
 	live := ev != nil && (ev.opened || ev.shown)
 	elx.mu.Unlock()
@@ -939,11 +877,7 @@ func (v *wkView) SetVisible(on bool) {
 	if same {
 		return
 	}
-	s := 0
-	if on {
-		s = 1
-	}
-	C.elxShow(C.uintptr_t(v.id), C.int(s))
+	elxPlatformShow(v.id, on)
 	elx.do(v, msg{"t": "show", "on": on})
 }
 
@@ -954,7 +888,7 @@ func (v *wkView) Focus() {
 	if v.closed {
 		return
 	}
-	C.elxFocusPage(C.uintptr_t(v.id))
+	elxPlatformFocus(v.id)
 	elx.do(v, msg{"t": "focus"})
 }
 func (v *wkView) Eval(js string) { elx.do(v, msg{"t": "eval", "js": js}) }
@@ -993,16 +927,20 @@ func (v *wkView) Close() {
 	delete(elx.views, v.id)
 	delete(elx.pending, v.id)
 	elx.mu.Unlock()
-	C.elxDrop(C.uintptr_t(v.id))
+	elxPlatformDrop(v.id)
 	wkDel(v.id)
 }
 
-// ---- input from the window (electron_linux.c, on GTK's thread) ----
+// ---- input from the window (on the window's thread) ----
+//
+// The platform code reports a page's pointer, wheel and keys to the engine
+// through these; electron_linux.go (GTK) and electron_windows.go (child
+// windows) call them.
 
-func modList(m C.uint) []string {
+func modList(m uint) []string {
 	var l []string
 	for _, b := range []struct {
-		bit  C.uint
+		bit  uint
 		name string
 	}{{1, "shift"}, {2, "control"}, {4, "alt"}, {8, "meta"}, {16, "leftButtonDown"}, {32, "middleButtonDown"}, {64, "rightButtonDown"}, {128, "capsLock"}} {
 		if m&b.bit != 0 {
@@ -1012,40 +950,41 @@ func modList(m C.uint) []string {
 	return l
 }
 
-//export elxGoMouse
-func elxGoMouse(id C.uintptr_t, kind C.int, x, y C.double, button, clicks C.int, mods C.uint) {
+// elxMouse is a pointer move (0), press (1), release (2) or leave (3) over a
+// page, at x,y in screen pixels from the page's corner.
+func elxMouse(id uintptr, kind int, x, y float64, button, clicks int, mods uint) {
 	t := [...]string{"mouseMove", "mouseDown", "mouseUp", "mouseLeave"}[kind&3]
 	b := [...]string{"left", "middle", "right"}[button%3]
-	elx.send(msg{"t": "in", "id": uintptr(id), "e": msg{"type": t, "x": int(math.Floor(float64(x))), "y": int(math.Floor(float64(y))), "button": b,
-		"clickCount": int(clicks), "modifiers": modList(mods)}})
+	elx.send(msg{"t": "in", "id": id, "e": msg{"type": t, "x": int(math.Floor(x)), "y": int(math.Floor(y)), "button": b,
+		"clickCount": clicks, "modifiers": modList(mods)}})
 }
 
-//export elxGoWheel
-func elxGoWheel(id C.uintptr_t, x, y, dx, dy C.double, precise C.int, mods C.uint) {
-	elx.send(msg{"t": "in", "id": uintptr(id), "e": msg{"type": "mouseWheel", "x": int(math.Floor(float64(x))), "y": int(math.Floor(float64(y))),
-		"deltaX": float64(dx), "deltaY": float64(dy), "hasPreciseScrollingDeltas": precise != 0, "canScroll": true, "modifiers": modList(mods)}})
+// elxWheel is a wheel turn over a page (dx, dy in screen pixels).
+func elxWheel(id uintptr, x, y, dx, dy float64, precise bool, mods uint) {
+	elx.send(msg{"t": "in", "id": id, "e": msg{"type": "mouseWheel", "x": int(math.Floor(x)), "y": int(math.Floor(y)),
+		"deltaX": dx, "deltaY": dy, "hasPreciseScrollingDeltas": precise, "canScroll": true, "modifiers": modList(mods)}})
 }
 
-//export elxGoKeyEv
-func elxGoKeyEv(id C.uintptr_t, down C.int, code *C.char, mods C.uint) {
+// elxKeyEv is a key press (down) or release over a page.
+func elxKeyEv(id uintptr, down bool, code string, mods uint) {
 	t := "keyUp"
-	if down != 0 {
+	if down {
 		t = "keyDown"
 	}
-	elx.send(msg{"t": "in", "id": uintptr(id), "e": msg{"type": t, "keyCode": C.GoString(code), "modifiers": modList(mods)}})
+	elx.send(msg{"t": "in", "id": id, "e": msg{"type": t, "keyCode": code, "modifiers": modList(mods)}})
 }
 
-//export elxGoChar
-func elxGoChar(id C.uintptr_t, text *C.char, mods C.uint) {
-	for _, r := range C.GoString(text) {
-		elx.send(msg{"t": "in", "id": uintptr(id), "e": msg{"type": "char", "keyCode": string(r), "modifiers": modList(mods)}})
+// elxChar is typed text over a page.
+func elxChar(id uintptr, text string, mods uint) {
+	for _, r := range text {
+		elx.send(msg{"t": "in", "id": id, "e": msg{"type": "char", "keyCode": string(r), "modifiers": modList(mods)}})
 	}
 }
 
-//export elxGoNav
-func elxGoNav(id C.uintptr_t, fwd C.int) {
-	if v := wkGet(uintptr(id)); v != nil {
-		if fwd != 0 {
+// elxNav is a back (fwd false) or forward step, from a mouse's side button.
+func elxNav(id uintptr, fwd bool) {
+	if v := wkGet(id); v != nil {
+		if fwd {
 			v.Forward()
 		} else {
 			v.Back()
@@ -1053,25 +992,27 @@ func elxGoNav(id C.uintptr_t, fwd C.int) {
 	}
 }
 
-//export lgxGoKey
-func lgxGoKey(id C.uintptr_t, ch C.int, vk C.int, ctrl, shift, alt C.int) C.int {
-	v := wkGet(uintptr(id))
+// elxKey asks whether Iris's shortcut table takes the key (ch is the typed
+// character, 0 when there is none; vk is the key's code when it has one);
+// true means handled, do not send on.
+func elxKey(id uintptr, ch rune, vk int, ctrl, shift, alt bool) bool {
+	v := wkGet(id)
 	if v == nil || v.ev.Key == nil {
-		return 0
+		return false
 	}
-	k := Key{VK: uint32(vk), Ctrl: ctrl != 0, Shift: shift != 0, Alt: alt != 0}
+	k := Key{VK: uint32(vk), Ctrl: ctrl, Shift: shift, Alt: alt}
 	if k.VK == 0 {
-		k.VK = vkFromChar(rune(ch))
+		k.VK = vkFromChar(ch)
 	}
 	if k.VK != 0 && (k.Ctrl || k.Alt || vk != 0) && v.ev.Key(k) {
-		return 1
+		return true
 	}
-	return 0
+	return false
 }
 
-//export lgxGoFocus
-func lgxGoFocus(id C.uintptr_t) {
-	if v := wkGet(uintptr(id)); v != nil {
+// elxFocus is a page taking the keyboard.
+func elxFocus(id uintptr) {
+	if v := wkGet(id); v != nil {
 		elx.send(msg{"t": "focus", "id": v.id})
 		if v.ev.Focus != nil {
 			v.ev.Focus()
@@ -1131,21 +1072,6 @@ func (e *elxEngine) EnableExtension(id string, on bool, done func(error)) {
 	e.extCall(msg{"t": "ext", "do": "enable", "ext": id, "on": on}, func(json.RawMessage) { done(nil) })
 }
 
-// totalMemMB is the computer's memory, for the pages' memory limits.
-func totalMemMB() int {
-	b, err := os.ReadFile("/proc/meminfo")
-	if err != nil {
-		return 0
-	}
-	for _, l := range strings.Split(string(b), "\n") {
-		if v, ok := strings.CutPrefix(l, "MemTotal:"); ok {
-			kb, _ := strconv.Atoi(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(v), "kB")))
-			return kb / 1024
-		}
-	}
-	return 0
-}
-
 // ---- the memory watch ----
 //
 // One helper serves every page and extension (never one per tab), and it
@@ -1187,55 +1113,6 @@ func (e *elxEngine) budgetMB() float64 {
 		return float64(t) / 4
 	}
 	return 2048
-}
-
-// treeRSS is the memory (resident set) of process pid and all its
-// descendants, in MB, and how many processes that is.
-func treeRSS(pid int) (float64, int) {
-	ents, err := os.ReadDir("/proc")
-	if err != nil {
-		return 0, 0
-	}
-	parent := map[int]int{}
-	for _, d := range ents {
-		p, err := strconv.Atoi(d.Name())
-		if err != nil {
-			continue
-		}
-		b, err := os.ReadFile("/proc/" + d.Name() + "/stat")
-		if err != nil {
-			continue
-		}
-		// pid (comm) state ppid ...: comm may hold spaces, so after the last ")"
-		s := string(b)
-		if i := strings.LastIndexByte(s, ')'); i > 0 {
-			if f := strings.Fields(s[i+1:]); len(f) > 1 {
-				parent[p], _ = strconv.Atoi(f[1])
-			}
-		}
-	}
-	in := map[int]bool{pid: true}
-	for changed := true; changed; {
-		changed = false
-		for p, pp := range parent {
-			if !in[p] && in[pp] {
-				in[p], changed = true, true
-			}
-		}
-	}
-	page := float64(os.Getpagesize())
-	var mb float64
-	for p := range in {
-		b, err := os.ReadFile("/proc/" + strconv.Itoa(p) + "/statm")
-		if err != nil {
-			continue
-		}
-		if f := strings.Fields(string(b)); len(f) > 1 {
-			n, _ := strconv.ParseFloat(f[1], 64)
-			mb += n * page / (1 << 20)
-		}
-	}
-	return mb, len(in)
 }
 
 func youTube(u string) bool {
@@ -1323,8 +1200,7 @@ func (e *elxEngine) checkMemory() {
 	}
 	if restart {
 		fmt.Fprintf(os.Stderr, "Iris: the page engine stayed over its memory budget (%.0f of %.0f MB) with nothing left to rest: restarting it\n", mb, budget)
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-		time.AfterFunc(5*time.Second, func() { _ = cmd.Process.Kill() })
+		elxPlatformStopHelper(cmd)
 	}
 }
 
