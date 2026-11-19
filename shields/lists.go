@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"iris/core/safefile"
 )
 
 // List is a filter list Iris downloads (never bundled: each keeps its own
@@ -31,6 +33,11 @@ const MaxAge = 4 * 24 * time.Hour
 
 var client = &http.Client{Timeout: 40 * time.Second}
 
+// maxList is the largest filter list Iris accepts; a larger answer is not a
+// list (the real ones are a few megabytes) and is refused whole rather than
+// cut in the middle of a rule.
+const maxList = 16 << 20
+
 func fetch(ctx context.Context, urls []string) ([]byte, error) {
 	var last error
 	for _, u := range urls {
@@ -44,10 +51,17 @@ func fetch(ctx context.Context, urls []string) ([]byte, error) {
 			last = err
 			continue
 		}
-		b, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+		b, err := io.ReadAll(io.LimitReader(resp.Body, maxList+1))
 		resp.Body.Close()
-		if err != nil || resp.StatusCode != 200 {
+		switch {
+		case resp.StatusCode != 200:
 			last = errors.New(resp.Status)
+			continue
+		case err != nil:
+			last = err // cut off: the list is not kept half
+			continue
+		case len(b) > maxList:
+			last = errors.New("filter list too large")
 			continue
 		}
 		if !bytes.Contains(b[:min(len(b), 4096)], []byte("!")) {
@@ -74,10 +88,7 @@ func Load(ctx context.Context, dir string, wanted map[string]bool, refresh bool)
 		st, err := os.Stat(p)
 		if refresh && (err != nil || time.Since(st.ModTime()) > MaxAge) {
 			if b, ferr := fetch(ctx, l.URLs); ferr == nil {
-				tmp := p + ".tmp"
-				if os.WriteFile(tmp, b, 0o644) == nil {
-					_ = os.Rename(tmp, p)
-				}
+				_ = safefile.WriteFile(p, b, 0o644)
 			} else if firstErr == nil {
 				firstErr = ferr
 			}

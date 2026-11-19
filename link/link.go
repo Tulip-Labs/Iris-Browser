@@ -94,7 +94,10 @@ func Start(dir string, notify func(Event)) (*Server, error) {
 	s := &Server{ln: ln, dir: dir, notify: notify, seen: time.Now(), phones: map[string]bool{},
 		key:  strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw)),
 		host: ln.Addr().String()}
-	s.srv = &http.Server{Handler: http.HandlerFunc(s.serve), ReadHeaderTimeout: 10 * time.Second}
+	// uploads may take long, so there is no whole-request deadline; a
+	// connection that goes quiet is closed instead (see receive)
+	s.srv = &http.Server{Handler: http.HandlerFunc(s.serve), ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
 	go s.srv.Serve(ln)
 	return s, nil
 }
@@ -284,10 +287,15 @@ func (s *Server) receive(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	tell()
+	rc := http.NewResponseController(w)
+	defer rc.SetReadDeadline(time.Time{})
 	buf := make([]byte, 256<<10)
 	last := time.Now()
 	var werr error
 	for werr == nil {
+		// a phone that stops sending for a minute has gone: the upload
+		// fails instead of holding the connection and the .part file forever
+		_ = rc.SetReadDeadline(time.Now().Add(time.Minute))
 		n, rerr := r.Body.Read(buf)
 		if n > 0 {
 			_, werr = f.Write(buf[:n])

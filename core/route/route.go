@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"iris/core/safefile"
 )
 
 // Engine is which engine draws a page.
@@ -190,8 +192,5 @@ func (r *Router) save() {
 	if err != nil {
 		return
 	}
-	tmp := r.path + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		os.Rename(tmp, r.path)
-	}
+	_ = safefile.WriteFile(r.path, b, 0o600)
 }

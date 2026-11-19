@@ -84,3 +84,36 @@ func TestKinds(t *testing.T) {
 		}
 	}
 }
+
+func TestFetchGuards(t *testing.T) {
+	pkg := []byte("the new installer, longer than it was announced")
+	sum := sha256.Sum256(pkg)
+	name := AssetName(KindSetup, "9.9.9")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/f/pkg", func(w http.ResponseWriter, r *http.Request) { w.Write(pkg) })
+	mux.HandleFunc("/f/sums", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(hex.EncodeToString(sum[:]) + "  " + name + "\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	API = srv.URL
+	defer func() { API = "https://api.github.com" }()
+	// more bytes than the release announced: refused, nothing left behind
+	dir := t.TempDir()
+	r := Release{Tag: "v9.9.9", Assets: []Asset{{Name: name, URL: srv.URL + "/f/pkg", Size: 10}, {Name: "SHA256SUMS", URL: srv.URL + "/f/sums"}}}
+	if _, err := Fetch(context.Background(), r, KindSetup, dir, nil); err == nil {
+		t.Fatal("a download larger than announced was accepted")
+	}
+	if ents, _ := os.ReadDir(dir); len(ents) != 0 {
+		t.Fatalf("left behind: %v", ents)
+	}
+	// plain HTTP from anywhere but the API's own address is refused
+	other := "http://downloads.example.invalid/pkg"
+	r.Assets[0] = Asset{Name: name, URL: other, Size: int64(len(pkg))}
+	if _, err := Fetch(context.Background(), r, KindSetup, dir, nil); err == nil {
+		t.Fatal("an update over plain HTTP was accepted")
+	}
+	if secureURL(other) || !secureURL("https://github.com/x") || secureURL("ftp://x/y") || secureURL("https:///nohost") {
+		t.Fatal("secureURL")
+	}
+}

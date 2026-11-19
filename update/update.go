@@ -14,8 +14,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -184,22 +186,40 @@ func Fetch(ctx context.Context, r Release, k Kind, dir string, progress func(flo
 	}
 	path := filepath.Join(dir, name)
 	part := path + ".part"
-	if err := get(ctx, a.URL, part, a.Size, progress); err != nil {
+	h := sha256.New()
+	if err := get(ctx, a.URL, part, a.Size, h, progress); err != nil {
 		os.Remove(part)
 		return "", err
 	}
-	got, err := fileSum(part)
-	if err != nil {
-		return "", err
-	}
-	if got != want {
+	if got := hex.EncodeToString(h.Sum(nil)); got != want {
 		os.Remove(part)
 		return "", fmt.Errorf("%s does not match its checksum: not installing it", name)
 	}
 	return path, os.Rename(part, path)
 }
 
+// maxDownload bounds an update download (the installer is far smaller), so
+// a broken or hostile answer cannot fill the disk.
+const maxDownload = 1 << 30
+
+// secureURL says whether an update file may be fetched from u: only over
+// HTTPS (or from the API's own address, which tests point at a local server).
+func secureURL(u string) bool {
+	p, err := url.Parse(u)
+	if err != nil || p.Host == "" {
+		return false
+	}
+	if p.Scheme == "https" {
+		return true
+	}
+	api, err := url.Parse(API)
+	return err == nil && p.Scheme == api.Scheme && p.Host == api.Host
+}
+
 func sumFor(ctx context.Context, url, name string) (string, error) {
+	if !secureURL(url) {
+		return "", errors.New("SHA256SUMS is not served over HTTPS: not trusting it")
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", err
@@ -226,7 +246,15 @@ func sumFor(ctx context.Context, url, name string) (string, error) {
 	return "", fmt.Errorf("SHA256SUMS has no line for %s", name)
 }
 
-func get(ctx context.Context, url, path string, size int64, progress func(float32)) error {
+// get downloads url into path, feeding every byte to sum; it refuses more
+// than the release said the file holds (or maxDownload).
+func get(ctx context.Context, url, path string, size int64, sum hash.Hash, progress func(float32)) error {
+	if !secureURL(url) {
+		return errors.New("the update is not served over HTTPS: not downloading it")
+	}
+	if size > maxDownload {
+		return errors.New("the update is larger than any Iris release")
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return err
@@ -243,6 +271,10 @@ func get(ctx context.Context, url, path string, size int64, progress func(float3
 	if size <= 0 {
 		size = res.ContentLength
 	}
+	limit := int64(maxDownload)
+	if size > 0 {
+		limit = min(limit, size)
+	}
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -252,11 +284,15 @@ func get(ctx context.Context, url, path string, size int64, progress func(float3
 	for {
 		k, rerr := res.Body.Read(buf)
 		if k > 0 {
+			if n += int64(k); n > limit {
+				f.Close()
+				return errors.New("the download is larger than the release says")
+			}
 			if _, err := f.Write(buf[:k]); err != nil {
 				f.Close()
 				return err
 			}
-			n += int64(k)
+			sum.Write(buf[:k])
 			if progress != nil && size > 0 {
 				progress(min(1, float32(n)/float32(size)))
 			}
@@ -269,20 +305,11 @@ func get(ctx context.Context, url, path string, size int64, progress func(float3
 			return rerr
 		}
 	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
 	return f.Close()
-}
-
-func fileSum(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // Result is what an install did.

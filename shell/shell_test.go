@@ -604,3 +604,25 @@ func TestLiteShields(t *testing.T) {
 		t.Fatalf("hiding rules not applied: %q", all)
 	}
 }
+
+func TestRunnableDownloads(t *testing.T) {
+	for _, p := range []string{"/d/setup.exe", "/d/Setup.EXE", "/d/setup.exe.", "/d/setup.exe . ", "/d/x.AppImage", "/d/a.msix",
+		"/d/s.vbe", "/d/disk.iso", "/d/l.url", "/d/i.appinstaller", "/d/run.sh"} {
+		if !runnable(p) {
+			t.Errorf("%s would be opened, not shown", p)
+		}
+	}
+	for _, p := range []string{"/d/photo.jpg", "/d/doc.pdf", "/d/notes.txt", "/d/song.mp3", "/d/archive.tar.gz"} {
+		if runnable(p) {
+			t.Errorf("%s would only be shown in its folder", p)
+		}
+	}
+}
+
+func TestTimeLeft(t *testing.T) {
+	for sec, want := range map[float64]string{-40: "1 s left", 5: "6 s left", 90: "2 min left", 7200: "2.0 h left", 1e9: "more than 99 h left"} {
+		if got := timeLeft(sec); got != want {
+			t.Errorf("timeLeft(%v) = %q, want %q", sec, got, want)
+		}
+	}
+}

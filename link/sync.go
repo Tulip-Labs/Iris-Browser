@@ -155,7 +155,10 @@ func StartSync(keyHex, device string, exchange func(State) State) (*SyncServer, 
 		w.Header().Set("Content-Type", "application/octet-stream")
 		_, _ = w.Write(sealed)
 	})
-	s := &SyncServer{srv: &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}, port: port}
+	// every exchange is small: a peer (or anyone on the network) that holds a
+	// connection open without finishing its request is cut off
+	s := &SyncServer{srv: &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
+		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}, port: port}
 	go s.srv.Serve(ln)
 	return s, nil
 }
