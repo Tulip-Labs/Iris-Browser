@@ -26,6 +26,14 @@
           src = ./webview/servo/rust;
           cargoLock.lockFile = ./webview/servo/rust/Cargo.lock;
           env.MOZJS_FROM_SOURCE = "1";
+          # Cap cargo at 2 jobs: the Nix sandbox's GNU make 4.4.1 is the
+          # version mozjs_sys's build.rs works around by passing --jobs=4
+          # to the mozjs make, creating a second independent jobserver, so
+          # up to ~7 heavy compiles ran at once on a 16 GB runner and the
+          # mozjs_sys build died with make Error 2 (suspected OOM-killer;
+          # nix build, run 44567641833). build.rs takes NUM_JOBS from cargo,
+          # so this also caps the mozjs make at --jobs=2.
+          env.CARGO_BUILD_JOBS = "2";
           nativeBuildInputs = with pkgs; [
             pkg-config cmake python3 perl m4 gperf yasm which rustPlatform.bindgenHook llvmPackages.bintools
           ];
