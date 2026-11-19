@@ -5,6 +5,13 @@
 //	go run tools/msix.go -exe "dist/Iris/Iris.exe" -arch x64 -out dist/Iris_x64.msix
 //	go run tools/msix.go -bundle dist/Iris.msixbundle dist/Iris_x64.msix dist/Iris_arm64.msix
 //
+// -extra adds more files to the package: a file goes to the package root, a
+// folder goes in under its own name (dist/Iris/electron becomes
+// electron/...), and src=dest places it exactly. The page engine (Electron)
+// and the Servo bridge ride this way:
+//
+//	go run tools/msix.go -exe "dist/Iris/Iris.exe" -arch x64 -extra dist/Iris/electron -extra dist/Iris/irisservo.dll -out dist/Iris_x64.msix
+//
 // The packages are unsigned: upload them (or the bundle) to Partner Center and
 // the Store signs them with Microsoft's certificate, so they install on any PC
 // without warnings. Identity values come from packaging/msix.json.
@@ -214,7 +221,7 @@ const manifest = `<?xml version="1.0" encoding="utf-8"?>
 </Package>
 `
 
-func pack(exe, arch, out string) {
+func pack(exe, arch, out string, extra []string) {
 	id := readID()
 	app, err := os.ReadFile(exe)
 	if err != nil {
@@ -228,6 +235,7 @@ func pack(exe, arch, out string) {
 			parts = append(parts, part{n, b})
 		}
 	}
+	parts = addExtra(parts, extra)
 	parts = append(parts,
 		part{"Assets/StoreLogo.png", logo(50, 50)},
 		part{"Assets/Square44x44Logo.png", logo(44, 44)},
@@ -238,6 +246,65 @@ func pack(exe, arch, out string) {
 	ct := contentTypes(parts, map[string]string{"/AppxManifest.xml": "application/vnd.ms-appx.manifest+xml", "/AppxBlockMap.xml": "application/vnd.ms-appx.blockmap+xml"})
 	writePackage(out, parts, ct)
 	fmt.Println("wrote", out)
+}
+
+// addExtra adds the -extra files and folders to the parts: a file goes to
+// the package root, a folder goes in under its own name, src=dest places it
+// exactly. Names use forward slashes; a part already present is replaced.
+func addExtra(parts []part, extra []string) []part {
+	for _, e := range extra {
+		src, dst := e, ""
+		if i := strings.Index(e, "="); i >= 0 {
+			src, dst = e[:i], e[i+1:]
+		}
+		fi, err := os.Stat(src)
+		if err != nil {
+			log.Fatalf("extra %s: %v", src, err)
+		}
+		if fi.IsDir() {
+			if dst == "" {
+				dst = filepath.Base(src)
+			}
+			err = filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return err
+				}
+				b, err := os.ReadFile(p)
+				if err != nil {
+					return err
+				}
+				rel, err := filepath.Rel(src, p)
+				if err != nil {
+					return err
+				}
+				parts = putPart(parts, part{path.Join(dst, filepath.ToSlash(rel)), b})
+				return nil
+			})
+			if err != nil {
+				log.Fatal(err)
+			}
+			continue
+		}
+		if dst == "" {
+			dst = filepath.Base(src)
+		}
+		b, err := os.ReadFile(src)
+		if err != nil {
+			log.Fatal(err)
+		}
+		parts = putPart(parts, part{filepath.ToSlash(dst), b})
+	}
+	return parts
+}
+
+func putPart(parts []part, p part) []part {
+	for i := range parts {
+		if parts[i].name == p.name {
+			parts[i] = p
+			return parts
+		}
+	}
+	return append(parts, p)
 }
 
 func bundle(out string, pkgs []string) {
@@ -291,17 +358,27 @@ func bundle(out string, pkgs []string) {
 	fmt.Println("wrote", out)
 }
 
+type strList []string
+
+func (s *strList) String() string { return strings.Join(*s, ",") }
+func (s *strList) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
+
 func main() {
 	exe := flag.String("exe", "", "the app to pack")
 	arch := flag.String("arch", "x64", "x64 or arm64")
 	out := flag.String("out", "", "the .msix to write")
 	bun := flag.String("bundle", "", "write a .msixbundle of the .msix files given after the flags")
+	var extra strList
+	flag.Var(&extra, "extra", "a file or folder to add to the package (repeatable; src=dest places it exactly)")
 	flag.Parse()
 	switch {
 	case *bun != "":
 		bundle(*bun, flag.Args())
 	case *exe != "" && *out != "":
-		pack(*exe, *arch, *out)
+		pack(*exe, *arch, *out, extra)
 	default:
 		flag.Usage()
 		os.Exit(2)
