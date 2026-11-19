@@ -41,8 +41,9 @@ selfie.
 The package asks for the `runFullTrust` capability (it is a desktop program). Partner
 Center asks why; answer:
 
-> Iris is a desktop web browser written in Go. It hosts Microsoft Edge WebView2 to show
-> web pages and needs full trust to create its window, run WebView2 and save downloads.
+> Iris is a desktop web browser written in Go. It ships its own page engines
+> (Servo and Electron) to show web pages and needs full trust to create its
+> window, run them and save downloads.
 
 ## Listing text
 
@@ -53,8 +54,8 @@ Center asks why; answer:
 
 **Description**
 
-> Iris is a small browser that uses the web engine Windows already has (Microsoft Edge
-> WebView2), so it installs in seconds and stays light on memory.
+> Iris is a small browser that ships its own page engines (Servo and
+> Electron), so it works the same on every PC and stays light on memory.
 >
 > - Iris Shields remove ads, trackers and cookie notices, and learn which sites need them.
 > - Background tabs give memory back, sleep, and unload on their own.
