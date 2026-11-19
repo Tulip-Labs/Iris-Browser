@@ -144,7 +144,6 @@ jobs:
           pkill -x iris
           SH
           su tester -c "sh /tmp/run.sh"
-          echo "== Electron alone"; grep -v "dbus/bus.cc\|scheduler_loop" /tmp/fs/smoke.txt | tail -150
           grep -v dbus /tmp/fs/log.txt | grep -v "Iris: engine \|portal\|fuse" | tail -80
           echo "== the engine's memory and tabs, as Iris sees them"
           grep "Iris: engine " /tmp/fs/log.txt | tail -6
