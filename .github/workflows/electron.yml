@@ -139,7 +139,9 @@ jobs:
           # into the text field, and typing
           click 160 285
           sleep 1
-          wtype hello >> /tmp/fs/swayin.txt 2>&1; echo "wtype $?" >> /tmp/fs/swayin.txt
+          # wtype makes a new virtual keyboard: a pause first, or the first key
+          # comes before the keyboard is known and only its release arrives
+          wtype -s 500 hello >> /tmp/fs/swayin.txt 2>&1; echo "wtype $?" >> /tmp/fs/swayin.txt
           sleep 3
           grim /tmp/fs/2-after-input.png
           sleep 8
