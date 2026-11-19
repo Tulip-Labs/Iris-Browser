@@ -248,18 +248,8 @@ func (a *App) navigate(t *Tab, url string) {
 			return
 		}
 	}
-	if q, m, ok := core.GoogleQuery(url); ok && a.set.LiteResults && !strings.Contains(url, "lite=0") {
-		if t.search != nil && t.view != nil {
-			t.pageURL = ""
-		}
-		t.search = a.startSearch(q, m, url, t.private())
-		t.lastSearch, t.pageURL = nil, ""
-		t.URL, t.Title, t.Loading, t.Crashed = url, q, false, false
-		if !t.private() {
-			a.hist.Add(url, q, true)
-		}
-		return
-	}
+	// Google searches open on Google's own page, cleaned by
+	// core.GoogleCleanScript, with Iris's filters over it (googleBar)
 	if t.search != nil {
 		t.lastSearch = t.search
 	}

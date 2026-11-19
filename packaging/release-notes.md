@@ -1,5 +1,11 @@
 Iris: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.25
+
+- **Google's own results, cleaned.** Searches open on Google's real page again (Iris's own results page is gone), with the AI Overview kept and the ads, sponsored results, "People also ask" and shopping blocks taken out. The best sources come first and carry a small label (Reference, Docs, Research, Official, Academic, Discussion, News), shops go last unless you are shopping, and content farms, coupon and download sites and listicles built for ads are left out.
+- **Filters over every Google search:** any time, past hour, day, week, month or year; exact words (no guesses or synonyms); all, forums, news, videos or PDFs; and "No SEO spam", on by default, to see everything Google found when you turn it off.
+- **Sharper interface on Linux.** Gio, which draws Iris's interface, now draws into an sRGB frame that Iris copies to the screen pixel for pixel; before, Gio drew into a frame of its own and copied it over itself, which left every edge and letter a pixel softer.
+
 ## New in 1.0.24
 
 A release about safety and steadiness; nothing changes in how Iris looks.
