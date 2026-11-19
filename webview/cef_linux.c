@@ -245,9 +245,8 @@ static double scaleOf(void) {
 }
 
 // pageDSF is the scale Chromium draws pages at: the window's own, read once
-// it has settled (startWhenSettled) and given to Chromium at its start, then
-// kept following the window's scale (OP_BOUNDS refreshes it when the window's
-// changes). dsf is that, or the window's until then.
+// it has settled (startWhenSettled) and given to Chromium at its start, the
+// one time it takes one. dsf is that, or the window's until then.
 static double pageDSF;
 static double dsf(void) { return pageDSF > 0 ? pageDSF : scaleOf(); }
 
@@ -566,8 +565,7 @@ static void CEF_CALLBACK getViewRect(cef_render_handler_t *self, cef_browser_t *
 
 static int CEF_CALLBACK getScreenInfo(cef_render_handler_t *self, cef_browser_t *b, cef_screen_info_t *si) {
 	LV *v = of(b);
-	// the scale the pages are drawn at; OP_BOUNDS refreshes it when the
-	// window's scale changes and tells Chromium (notify_screen_info_changed)
+	// the scale Chromium was started at (it keeps it whatever this says)
 	double sf = dsf();
 	si->device_scale_factor = (float)sf;
 	if (g_getenv("IRIS_GL_DEBUG")) g_printerr("Iris: page scale %.4g\n", sf);
@@ -1841,19 +1839,6 @@ static gboolean runOp(gpointer data) {
 		break;
 	case OP_BOUNDS:
 		if (v) {
-			// the window's scale can change after Chromium started (the
-			// window moved to another screen, or the compositor corrected
-			// its first guess): the pages' scale follows it, so their
-			// frames are drawn at the new scale instead of stretched.
-			// A forced scale (IRIS_SCALE) is left alone, and before the
-			// start dsf() already reads the window's scale live.
-			if (!g_getenv("IRIS_SCALE") && pageDSF > 0) {
-				double sc = scaleOf();
-				if (sc >= 0.5 && sc <= 8 && fabs(sc - pageDSF) > 0.001) {
-					pageDSF = sc;
-					if (g_getenv("IRIS_GL_DEBUG")) g_printerr("Iris: pages at scale %.4g\n", pageDSF);
-				}
-			}
 			// where the page goes, in the view's real pixels; its size in
 			// Chromium's units, so its frame has exactly that many pixels
 			double sf = dsf();
