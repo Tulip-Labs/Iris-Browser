@@ -32,7 +32,7 @@
           # Servo allocates with jemalloc: nixpkgs' build of it with Rust's
           # symbol prefix (its setup hook points tikv-jemalloc-sys at it)
           buildInputs = with pkgs; [
-            rust-jemalloc-sys
+            rust-jemalloc-sys zstd xz glib
             fontconfig freetype harfbuzz libunwind libGL libxkbcommon dbus udev openssl zlib
             xorg.libX11 xorg.libxcb xorg.libXcursor xorg.libXrandr xorg.libXi
           ];
