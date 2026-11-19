@@ -1,0 +1,62 @@
+# Servo's bridge for Iris (webview/servo/rust): a C library over Servo's
+# embedding API. Its build is long (about 30 minutes without the cache), so
+# the workflows that need it call this one and download the artifact
+# "libirisservo" (libirisservo.so).
+name: Servo library
+
+on:
+  workflow_call:
+
+jobs:
+  servo-lib:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Room on the disk (Servo's build is large)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+      - name: Servo's build dependencies
+        run: |
+          # the man pages' index is rebuilt after every install and can hang the
+          # runner for half an hour: not needed here. apt gets 10 minutes, then
+          # one more try.
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo apt-get "$@" || { sleep 10; timeout 600 sudo apt-get "$@"; }; }
+          apt_get update -qq
+          apt_get install -y -qq build-essential clang llvm-dev libclang-dev cmake curl git gperf m4 python3 \
+            libdbus-1-dev libfreetype6-dev libfontconfig1-dev libgl1-mesa-dri libgles2-mesa-dev libegl1-mesa-dev \
+            libglib2.0-dev libharfbuzz-dev liblzma-dev libudev-dev libunwind-dev libx11-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libxmu-dev xorg-dev libxkbcommon-dev libssl-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cargo's cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            webview/servo/rust/target
+          key: servo-${{ hashFiles('webview/servo/rust/Cargo.toml', 'webview/servo/rust/Cargo.lock', 'webview/servo/rust/src/**') }}
+          restore-keys: servo-
+      - name: Servo's own locked versions (its crate carries its Cargo.lock)
+        run: |
+          cd webview/servo/rust
+          if [ ! -f Cargo.lock ]; then
+            mkdir -p /tmp/servo-crate
+            curl -fsSL https://static.crates.io/crates/servo/servo-0.4.0.crate | tar -xz -C /tmp/servo-crate
+            cp /tmp/servo-crate/servo-0.4.0/Cargo.lock Cargo.lock
+          fi
+      - name: Build the bridge
+        run: |
+          cd webview/servo/rust
+          start=$(date +%s)
+          cargo build --release 2>&1 | tail -80
+          echo "built in $(( $(date +%s) - start )) s"
+          ls -l target/release/libirisservo.so
+          du -sh target
+          echo "LOCK-BEGIN"; gzip -c Cargo.lock | base64 -w0; echo; echo "LOCK-END"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libirisservo
+          path: webview/servo/rust/target/release/libirisservo.so
