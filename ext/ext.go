@@ -3,7 +3,7 @@
 // the extension's own key (the same check Chrome makes), and unpacks it into
 // a folder the web engine loads it from.
 //
-// Only engines that run extensions use it (WebView2 on Windows). On Linux
+// Only engines that run extensions use it (Electron). On Linux
 // Iris draws pages with CEF off screen, where Chromium's extension system
 // does not run.
 package ext
