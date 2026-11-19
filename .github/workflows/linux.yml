@@ -119,7 +119,7 @@ jobs:
           export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           sleep 1
-          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CEF_VERBOSE=1 IRIS_CEF_ARGS="--enable-logging=stderr --v=0"
+          export GDK_DEBUG=gl-no-fractional GDK_DISABLE=gl-fractional LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CEF_VERBOSE=1 IRIS_CEF_ARGS="--enable-logging=stderr --v=0"
           dbus-run-session -- iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 18
           grim /tmp/fs/1-full.png

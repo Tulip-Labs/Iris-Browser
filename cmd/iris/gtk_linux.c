@@ -145,8 +145,8 @@ G_DEFINE_TYPE(IrisView, iris_view, GTK_TYPE_WIDGET)
 static int drawsFractional(void) {
 	static int f = -1;
 	if (f < 0) {
-		const char *d = g_getenv("GDK_DEBUG");
-		if (d && strstr(d, "gl-no-fractional")) f = 0;
+		const char *d = g_getenv("GDK_DEBUG"), *off = g_getenv("GDK_DISABLE");
+		if ((d && strstr(d, "gl-no-fractional")) || (off && strstr(off, "gl-fractional"))) f = 0;
 		else if (d && strstr(d, "gl-fractional")) f = 1;
 		else f = gtk_get_minor_version() >= 14;
 	}
