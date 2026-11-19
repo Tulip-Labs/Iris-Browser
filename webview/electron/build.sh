@@ -23,12 +23,15 @@ cp -a "$helper/node_modules/electron/dist" "$out/electron"
 find "$out/electron/locales" -name '*.pak' ! -name 'en-US.pak' ! -name 'es.pak' ! -name 'es-419.pak' -delete
 rm -f "$out/electron/resources/default_app.asar"
 
-# the helper and its runtime library, without Electron itself (a dev dependency)
-mkdir -p "$out/electron-helper"
-cp "$helper/main.js" "$helper/preload.js" "$helper/package.json" "$out/electron-helper/"
+# the helper is Electron's app (resources/app), with its one runtime library:
+# Electron starts it with nothing to open (default_app.asar, which opens a
+# folder given on the command line, is left out above)
+app="$out/electron/resources/app"
+mkdir -p "$app"
+cp "$helper/main.js" "$helper/preload.js" "$helper/package.json" "$app/"
 tmp=$(mktemp -d)
 cp "$helper/package.json" "$tmp/"
 (cd "$tmp" && npm install --omit=dev --no-audit --no-fund --loglevel=error)
-[ -d "$tmp/node_modules" ] && cp -a "$tmp/node_modules" "$out/electron-helper/"
+[ -d "$tmp/node_modules" ] && cp -a "$tmp/node_modules" "$app/"
 rm -rf "$tmp"
-du -sh "$out/iris" "$out/electron" "$out/electron-helper" | sed 's/^/size: /'
+du -sh "$out/iris" "$out/electron" "$app" | sed 's/^/size: /'

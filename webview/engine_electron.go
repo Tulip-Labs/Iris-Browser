@@ -184,7 +184,7 @@ func (e *elxEngine) Version() string {
 }
 
 // helperPaths finds Electron and Iris's helper app: next to the program
-// (electron/ and electron-helper/), or where IRIS_ELECTRON and
+// (electron/, with the helper as its app in electron/resources/app), or where IRIS_ELECTRON and
 // IRIS_ELECTRON_APP say, or Electron on the PATH (Nix, Flatpak's base).
 func helperPaths() (bin, app string, err error) {
 	exe, _ := os.Executable()
@@ -198,6 +198,12 @@ func helperPaths() (bin, app string, err error) {
 		}
 	}
 	app = os.Getenv("IRIS_ELECTRON_APP")
+	// Iris's own Electron carries the helper as its app (resources/app): it
+	// starts with no folder to load. (Opening a folder is the job of Electron's
+	// default_app.asar, which Iris's Electron leaves out.)
+	if app == "" && bin != "" && fileExists(filepath.Join(filepath.Dir(bin), "resources", "app", "main.js")) {
+		return bin, "", nil
+	}
 	if app == "" {
 		for _, p := range []string{filepath.Join(dir, "electron-helper"), filepath.Join(dir, "..", "share", "iris-browser", "electron-helper")} {
 			if fileExists(filepath.Join(p, "main.js")) {
@@ -259,7 +265,10 @@ func (e *elxEngine) run(dataDir string, low bool, scale float64) {
 	_ = os.Chmod(sock, 0o600)
 	data := filepath.Join(dataDir, "electron")
 	_ = os.MkdirAll(data, 0o700)
-	args := []string{app}
+	var args []string
+	if app != "" {
+		args = append(args, app)
+	}
 	if os.Getenv("IRIS_NO_SANDBOX") != "" {
 		args = append([]string{"--no-sandbox"}, args...)
 	}
