@@ -73,7 +73,7 @@ jobs:
         run: |
           dnf install -y -q gtk4 libepoxy gtk3 nss atk at-spi2-atk cups-libs libdrm mesa-libgbm mesa-dri-drivers alsa-lib \
             libXcomposite libXdamage libXrandr libxkbcommon libxshmfence pango cairo sway grim python3 python3-pillow \
-            dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip
+            dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype wlrctl tar gzip
           cp /usr/bin/sway /usr/local/bin/sway-plain
           mkdir -p /opt && tar -C /opt -xzf iris-electron.tar.gz && ls -l /opt/linux-electron
       - name: Iris at 1.25 on Electron
@@ -120,16 +120,21 @@ jobs:
           dbus-run-session -- /opt/linux-electron/iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 25
           grim /tmp/fs/1-full.png
-          # a click on the page's button (page units 20..320 × 80..160, the page
-          # starts about 83 screen units down and 8 across)
-          swaymsg 'seat seat0 cursor set 160 205' >> /tmp/fs/swayin.txt 2>&1
-          swaymsg 'seat seat0 cursor press button1' >> /tmp/fs/swayin.txt 2>&1
-          swaymsg 'seat seat0 cursor release button1' >> /tmp/fs/swayin.txt 2>&1
+          # The headless screen has no mouse: wlrctl makes a virtual one for
+          # each click (as wtype does a keyboard). sway puts the cursor where
+          # the click goes first. A click on the page's button (page units
+          # 20..320 x 80..160; the page starts about 83 screen units down, 8 across):
+          click() {
+            swaymsg "seat seat0 cursor set $1 $2" >> /tmp/fs/swayin.txt 2>&1
+            wlrctl pointer move 1 0 >> /tmp/fs/swayin.txt 2>&1
+            wlrctl pointer move -1 0 >> /tmp/fs/swayin.txt 2>&1
+            wlrctl pointer click left >> /tmp/fs/swayin.txt 2>&1
+            echo "click $1 $2: $?" >> /tmp/fs/swayin.txt
+          }
+          click 160 205
           sleep 2
           # into the text field, and typing
-          swaymsg 'seat seat0 cursor set 160 285' >> /tmp/fs/swayin.txt 2>&1
-          swaymsg 'seat seat0 cursor press button1' >> /tmp/fs/swayin.txt 2>&1
-          swaymsg 'seat seat0 cursor release button1' >> /tmp/fs/swayin.txt 2>&1
+          click 160 285
           sleep 1
           wtype hello >> /tmp/fs/swayin.txt 2>&1; echo "wtype $?" >> /tmp/fs/swayin.txt
           sleep 3
