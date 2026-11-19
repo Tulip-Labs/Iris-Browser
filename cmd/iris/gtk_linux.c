@@ -227,6 +227,107 @@ static GdkGLContext *context(GtkWidget *w) {
 	return glc;
 }
 
+// Gio draws in linear light and needs an sRGB frame to write into. Given a
+// plain one (RGBA8), its OpenGL backend draws into an sRGB texture of its own
+// and copies that over at the end, and the copy left every edge and letter
+// of the interface a pixel softer than drawn (CI's screenshots: a stem's
+// 255 became 105 119 72). So Gio gets an sRGB frame (srgbTex), and Iris
+// copies its pixels as they are, texel for texel (no filtering, no color
+// conversion), into the frame GTK shows. Needs OpenGL ES 3 or GL 3.3 and
+// EXT_texture_sRGB_decode; IRIS_SRGB=0 goes back to the old way.
+static GLuint srgbTex, srgbFbo, copyProg, copyVao;
+static int srgbW, srgbH, srgbOK = -1;
+
+static GLuint shader(GLenum type, const char *src) {
+	GLuint sh = glCreateShader(type);
+	glShaderSource(sh, 1, &src, NULL);
+	glCompileShader(sh);
+	GLint ok = 0;
+	glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+	if (!ok) {
+		char log[512] = {0};
+		glGetShaderInfoLog(sh, sizeof log - 1, NULL, log);
+		g_printerr("Iris: copy shader: %s\n", log);
+		glDeleteShader(sh);
+		return 0;
+	}
+	return sh;
+}
+
+// srgbReady prepares the sRGB frame of pw×ph pixels; 0 where it cannot be.
+static int srgbReady(int pw, int ph) {
+	if (srgbOK == 0) return 0;
+	if (srgbOK < 0) {
+		const char *e = g_getenv("IRIS_SRGB");
+		int es = !epoxy_is_desktop_gl();
+		srgbOK = !(e && e[0] == '0') && epoxy_gl_version() >= (es ? 30 : 33) &&
+		         epoxy_has_gl_extension("GL_EXT_texture_sRGB_decode");
+		if (srgbOK) {
+			const char *vs = es ? "#version 300 es\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0.0,1.0);}"
+			                    : "#version 330 core\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0.0,1.0);}";
+			const char *fs = es ? "#version 300 es\nprecision highp float;uniform highp sampler2D t;out vec4 o;void main(){o=texelFetch(t,ivec2(gl_FragCoord.xy),0);}"
+			                    : "#version 330 core\nuniform sampler2D t;out vec4 o;void main(){o=texelFetch(t,ivec2(gl_FragCoord.xy),0);}";
+			GLuint v = shader(GL_VERTEX_SHADER, vs), f = shader(GL_FRAGMENT_SHADER, fs);
+			if (v && f) {
+				copyProg = glCreateProgram();
+				glAttachShader(copyProg, v);
+				glAttachShader(copyProg, f);
+				glLinkProgram(copyProg);
+				GLint ok = 0;
+				glGetProgramiv(copyProg, GL_LINK_STATUS, &ok);
+				if (!ok) glDeleteProgram(copyProg), copyProg = 0;
+			}
+			if (v) glDeleteShader(v);
+			if (f) glDeleteShader(f);
+			if (copyProg) glGenVertexArrays(1, &copyVao), glGenFramebuffers(1, &srgbFbo);
+			srgbOK = copyProg != 0;
+		}
+		if (g_getenv("IRIS_GL_DEBUG")) g_printerr("Iris: interface frame in sRGB, copied exactly: %d\n", srgbOK);
+		if (!srgbOK) return 0;
+	}
+	if (!srgbTex || srgbW != pw || srgbH != ph) {
+		if (srgbTex) glDeleteTextures(1, &srgbTex);
+		glGenTextures(1, &srgbTex);
+		glBindTexture(GL_TEXTURE_2D, srgbTex);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, pw, ph, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SRGB_DECODE_EXT, GL_SKIP_DECODE_EXT); // read as stored
+		srgbW = pw, srgbH = ph;
+	}
+	glBindFramebuffer(GL_FRAMEBUFFER, srgbFbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, srgbTex, 0);
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		g_printerr("Iris: no sRGB frame here; the interface is drawn the old way\n");
+		srgbOK = 0;
+		return 0;
+	}
+	return 1;
+}
+
+// srgbCopy copies the sRGB frame's pixels, as stored, into the frame bound
+// to dst.
+static void srgbCopy(GLuint dst, int pw, int ph) {
+	glBindFramebuffer(GL_FRAMEBUFFER, dst);
+	glViewport(0, 0, pw, ph);
+	glDisable(GL_SCISSOR_TEST);
+	glDisable(GL_BLEND);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_STENCIL_TEST);
+	glDisable(GL_CULL_FACE);
+	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+	glUseProgram(copyProg);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, srgbTex);
+	glBindSampler(0, 0);
+	glUniform1i(glGetUniformLocation(copyProg, "t"), 0);
+	glBindVertexArray(copyVao);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+	glBindVertexArray(0);
+	glUseProgram(0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 static void renderUI(GtkWidget *w, int pw, int ph, double s) {
 	if (!context(w)) return;
 	gdk_gl_context_make_current(glc);
@@ -245,8 +346,8 @@ static void renderUI(GtkWidget *w, int pw, int ph, double s) {
 		glGenTextures(1, &t->id);
 		glBindTexture(GL_TEXTURE_2D, t->id);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pw, ph, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 		t->w = pw, t->h = ph;
@@ -259,13 +360,18 @@ static void renderUI(GtkWidget *w, int pw, int ph, double s) {
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		return;
 	}
+	// Gio draws into the sRGB frame where there is one (see srgbReady)
+	int viaSRGB = srgbReady(pw, ph);
+	GLuint target = viaSRGB ? srgbFbo : uiFbo;
+	glBindFramebuffer(GL_FRAMEBUFFER, target);
 	glViewport(0, 0, pw, ph);
 	glDisable(GL_SCISSOR_TEST);
 	glClearColor(0.07f, 0.07f, 0.08f, 1);
 	glClear(GL_COLOR_BUFFER_BIT); // what shows if the interface is not ready yet
-	lgwGoRender(pw, ph, s, uiFbo);
-	// an opaque window: whatever Gio left see-through is not
+	lgwGoRender(pw, ph, s, target);
 	gdk_gl_context_make_current(glc);
+	if (viaSRGB) srgbCopy(uiFbo, pw, ph);
+	// an opaque window: whatever Gio left see-through is not
 	glBindFramebuffer(GL_FRAMEBUFFER, uiFbo);
 	glDisable(GL_SCISSOR_TEST);
 	glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
@@ -385,6 +491,13 @@ static void iris_view_unrealize(GtkWidget *w) {
 		}
 		if (uiFbo) glDeleteFramebuffers(1, &uiFbo);
 		uiFbo = 0;
+		if (srgbFbo) glDeleteFramebuffers(1, &srgbFbo);
+		if (srgbTex) glDeleteTextures(1, &srgbTex);
+		if (copyProg) glDeleteProgram(copyProg);
+		if (copyVao) glDeleteVertexArrays(1, &copyVao);
+		srgbFbo = srgbTex = copyProg = copyVao = 0;
+		srgbW = srgbH = 0;
+		srgbOK = -1;
 	}
 	g_clear_object(&uiTex);
 	g_clear_object(&glc);
