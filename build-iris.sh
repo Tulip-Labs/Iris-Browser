@@ -96,20 +96,94 @@ build_linux() {
 
 build_windows() {
 	echo "Building Iris for Windows..."
-	ARCH=${GOARCH:-amd64}
-	export CGO_ENABLED=0
 	go test ./core ./shell ./setup ./shields
 	mkdir -p "dist/Iris"
-	GOOS=windows GOARCH=$ARCH go build -trimpath -ldflags "-H windowsgui -s -w" -o "dist/Iris/Iris.exe" ./cmd/iris
+	# the page engine: Electron's Windows build, staged next to the program
+	# (the program looks for electron/electron.exe beside itself)
+	stage_electron_windows x64 || return 1
+	# Servo for the light pages, when its bridge is built (webview/servo/lib,
+	# from .github/workflows/servo-lib.yml or cargo xwin in webview/servo/rust)
+	tags=""
+	export CGO_ENABLED=0
+	extra_x64=""
+	if [ -f webview/servo/lib/irisservo.dll ]; then
+		# the bridge is C: the build needs a Windows C compiler (cgo)
+		cc=${MINGW_CC:-x86_64-w64-mingw32-gcc}
+		if ! command -v "$cc" >/dev/null 2>&1; then
+			echo "Servo's bridge is built but no Windows C compiler ($cc) was found;" >&2
+			echo "install MinGW (Debian/Ubuntu: sudo apt install gcc-mingw-w64-x86-64 gcc-mingw-w64-aarch64)" >&2
+			echo "or remove webview/servo/lib/irisservo.dll to build without Servo." >&2
+			return 1
+		fi
+		tags="servo"
+		export CGO_ENABLED=1 CC="$cc"
+		cp webview/servo/lib/irisservo.dll dist/Iris/
+		extra_x64="-extra dist/Iris/irisservo.dll"
+		echo "With Servo for light pages (x64)"
+	fi
+	GOOS=windows GOARCH=amd64 go build -tags "$tags" -trimpath -ldflags "-H windowsgui -s -w" -o "dist/Iris/Iris.exe" ./cmd/iris
 	go run tools/sum.go "dist/Iris/Iris.exe" # the record Iris checks itself against
 	cp LICENSE NOTICE THIRD_PARTY_NOTICES.md "dist/Iris/"
-	go run tools/msix.go -exe "dist/Iris/Iris.exe" -arch x64 -out dist/Iris_x64.msix
-	GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-H windowsgui -s -w" -o dist/Iris-arm64.exe ./cmd/iris
-	go run tools/msix.go -exe dist/Iris-arm64.exe -arch arm64 -out dist/Iris_arm64.msix
+	# shellcheck disable=SC2086 # $extra_x64 is empty without Servo
+	go run tools/msix.go -exe "dist/Iris/Iris.exe" -arch x64 -extra dist/Iris/electron $extra_x64 -out dist/Iris_x64.msix
+	# ARM64: the same, Electron-only (Servo's bridge is built for x64; the
+	# arm64 bridge is the same cargo xwin build for aarch64-pc-windows-msvc)
+	export CGO_ENABLED=0
+	unset CC
+	mkdir -p "dist/Iris-arm64"
+	stage_electron_windows arm64 || return 1
+	GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-H windowsgui -s -w" -o dist/Iris-arm64/Iris.exe ./cmd/iris
+	go run tools/sum.go "dist/Iris-arm64/Iris.exe"
+	cp LICENSE NOTICE THIRD_PARTY_NOTICES.md "dist/Iris-arm64/"
+	go run tools/msix.go -exe dist/Iris-arm64/Iris.exe -arch arm64 -extra dist/Iris-arm64/electron -out dist/Iris_arm64.msix
 	go run tools/msix.go -bundle dist/Iris.msixbundle dist/Iris_x64.msix dist/Iris_arm64.msix
-	rm -f dist/Iris-arm64.exe
 	unset CGO_ENABLED
 	echo "Done: dist/Iris.msixbundle (the only Windows package)"
+}
+
+# stage_electron_windows stages Electron's Windows build into dist/<dir>/electron:
+# the binary (from npm, for the architecture given: x64 or arm64) and Iris's
+# helper as its app (resources/app). Needs node and npm.
+stage_electron_windows() {
+	earch=$1 # x64 or arm64
+	dir=dist/Iris
+	[ "$earch" = arm64 ] && dir=dist/Iris-arm64
+	command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1 || {
+		echo "Node and npm are needed to fetch Electron for Windows." >&2
+		return 1
+	}
+	helper=webview/electron/helper
+	tmp=$(mktemp -d)
+	cp "$helper/package.json" "$helper/main.js" "$helper/preload.js" "$tmp/"
+	(cd "$tmp" && npm_config_platform=win32 npm_config_arch=$earch npm install --no-audit --no-fund --loglevel=error)
+	# Electron's binary comes from its own installer, which npm may skip
+	if [ ! -x "$tmp/node_modules/electron/dist/electron.exe" ]; then
+		(cd "$tmp/node_modules/electron" && npm_config_platform=win32 npm_config_arch=$earch node install.js)
+	fi
+	if [ ! -x "$tmp/node_modules/electron/dist/electron.exe" ]; then
+		echo "Electron's Windows binary is missing" >&2
+		rm -rf "$tmp"
+		return 1
+	fi
+	echo "Electron $(cat "$tmp/node_modules/electron/dist/version" 2>/dev/null) for Windows $earch"
+	mkdir -p "$dir"
+	rm -rf "$dir/electron"
+	cp -a --no-preserve=ownership "$tmp/node_modules/electron/dist" "$dir/electron"
+	# only the strings Iris's readers use (Chromium falls back to English)
+	find "$dir/electron/locales" -name '*.pak' ! -name 'en-US.pak' ! -name 'es.pak' ! -name 'es-419.pak' -delete
+	rm -f "$dir/electron/resources/default_app.asar"
+	# the helper is Electron's app (resources/app), with its one runtime library
+	app="$dir/electron/resources/app"
+	mkdir -p "$app"
+	cp "$helper/main.js" "$helper/preload.js" "$helper/package.json" "$app/"
+	# the helper only needs the one runtime library, not the Electron package
+	# itself (its binary is already in electron/) nor the CLIs (.bin points
+	# into the Electron package, so its links would dangle after the removal)
+	rm -rf "$tmp/node_modules/electron" "$tmp/node_modules/@electron" "$tmp/node_modules/.bin"
+	cp -a --no-preserve=ownership "$tmp/node_modules" "$app/"
+	cp "$dir/electron/version" "$dir/ELECTRON_VERSION" 2>/dev/null || true
+	rm -rf "$tmp"
+	du -sh "$dir/electron" | sed 's/^/size: /'
 }
 
 case "$target" in
