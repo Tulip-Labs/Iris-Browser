@@ -468,68 +468,6 @@ func (d *driver) settle(n int) {
 	}
 }
 
-func TestLiteResults(t *testing.T) {
-	d := newResultsDriver(t, 1440, 900)
-	d.typeText("red pandas")
-	d.key(ui.KEnter, false, false)
-	d.settle(14)
-	tab := d.a.tab()
-	s := tab.search
-	if s == nil {
-		t.Fatal("a Google search should show Iris results")
-	}
-	if tab.view != nil && tab.shown {
-		t.Fatal("the Google page must not be shown under the results")
-	}
-	if len(s.Web) != 4 || len(s.Images) != 24 || len(s.Videos) != 6 {
-		t.Fatalf("web %d images %d videos %d", len(s.Web), len(s.Images), len(s.Videos))
-	}
-	if s.AI.Text != "" {
-		t.Fatal("the results page asks no AI any more")
-	}
-	if r := core.Rank(s.Web, s.Q, nil); r[0].Label != "Reference" {
-		t.Fatalf("the reference should lead: %+v", r[0])
-	}
-	d.frames(2)
-	d.shot("results")
-	s.scroll.Y = 900
-	s.vidTo = 2
-	d.settle(4)
-	d.shot("results-media")
-	s.scroll.Y = 0
-	// a picture and a video open beside the results
-	s.scroll.Y = 0
-	s.viewer = viewer{kind: vImage, idx: 3}
-	d.settle(3)
-	d.shot("results-image-viewer")
-	s.viewer = viewer{kind: vVideo, idx: 1}
-	d.settle(3)
-	if d.a.side.view == nil || !d.a.side.shown || !strings.Contains(d.a.side.url, "watch?v=b") {
-		t.Fatalf("video should play beside the results: %+v", d.a.side)
-	}
-	d.shot("results-video-viewer")
-	s.viewer = viewer{}
-	d.frames(2)
-	if d.a.side.shown {
-		t.Fatal("closing the video must hide and quiet it")
-	}
-	// a link opens in a new tab beside the results; Back there returns to them
-	d.a.visitFromResults(s.Web[0].URL)
-	d.frames(3)
-	if nt := d.a.tab(); nt == tab || nt.URL != "https://en.wikipedia.org/wiki/Red_panda" || tab.search == nil {
-		t.Fatalf("link did not open in a new tab: %q", nt.URL)
-	}
-	d.a.do(actBack)
-	d.frame()
-	if d.a.tab() != tab || tab.search == nil {
-		t.Fatal("Back from the link's first page should return to the results")
-	}
-	// night theme
-	d.a.set.Theme = "liquid"
-	d.frames(2)
-	d.shot("results-night")
-}
-
 func TestAIPanel(t *testing.T) {
 	d := newResultsDriver(t, 1440, 900)
 	d.a.newTab(KNormal, "", "https://en.wikipedia.org/wiki/Red_panda", true)
@@ -624,5 +562,39 @@ func TestTimeLeft(t *testing.T) {
 		if got := timeLeft(sec); got != want {
 			t.Errorf("timeLeft(%v) = %q, want %q", sec, got, want)
 		}
+	}
+}
+
+// A Google search opens on Google's own page (cleaned by the policy's
+// script) with Iris's filters over it; a filter opens the same search with it.
+func TestGoogleFilterBar(t *testing.T) {
+	d := newDriver(t, 1440, 900, true)
+	d.typeText("red pandas")
+	d.key(ui.KEnter, false, false)
+	d.frames(4)
+	tab := d.a.tab()
+	if tab.search != nil || tab.view == nil {
+		t.Fatal("a Google search should open on Google's page")
+	}
+	v := tab.view.(*fakeView)
+	if _, ok := core.ReadGoogleFilters(v.url); !ok {
+		t.Fatalf("not a Google search: %s", v.url)
+	}
+	found := false
+	for _, s := range d.eng.policy.Scripts {
+		found = found || strings.Contains(s, "__irisG")
+	}
+	if !found {
+		t.Fatal("the cleaning script is not in the policy")
+	}
+	top := float32(v.bounds[1])
+	d.shot("google-filters")
+	// the time filter is the first control of the bar over the page: Week is
+	// its fourth of six segments (380 wide on a wide window)
+	x := float32(v.bounds[0]) + 4 + 380*3.5/6
+	d.click(x, top-44+(44-6-30)/2+15)
+	d.frames(3)
+	if f, _ := core.ReadGoogleFilters(v.url); f.Time != "w" {
+		t.Fatalf("the Week filter did not apply: %s", v.url)
 	}
 }

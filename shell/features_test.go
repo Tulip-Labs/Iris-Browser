@@ -26,48 +26,6 @@ func lastView(t *testing.T, tab *Tab) *fakeView {
 	return v
 }
 
-// A click on the websites column must never open a picture: the carousel
-// beside it draws tiles past its own edge, and they used to take the click.
-func TestResultsClickStaysInItsColumn(t *testing.T) {
-	d := newResultsDriver(t, 1440, 900)
-	d.typeText("red pandas")
-	d.key(ui.KEnter, false, false)
-	d.settle(14)
-	tab := d.a.tab()
-	if tab.search == nil || len(tab.search.Images) == 0 {
-		t.Fatal("no results to click")
-	}
-	tab.search.aiOpen = false
-	tab.search.scroll.Y = 700 // down to the websites
-	d.frames(2)
-	opened := 0
-	for _, x := range []float32{120, 360, 560} { // the websites column (the AI panel is open at the side)
-		for y := float32(200); y < 880; y += 58 {
-			n := len(d.a.tabs)
-			d.click(x, y)
-			d.frame()
-			if len(d.a.tabs) > n { // a link opened in a new tab: that is what a click here is for
-				opened++
-				if tab.search == nil {
-					t.Fatal("the results must stay in their tab")
-				}
-				d.a.closeTab(d.a.cur)
-				d.frames(2)
-				if d.a.tab() != tab {
-					t.Fatalf("closing the link's tab must return to the results (click at %v,%v)", x, y)
-				}
-				continue
-			}
-			if k := tab.search.viewer.kind; k != vNone {
-				t.Fatalf("click at %v,%v in the websites column opened the viewer (kind %d)", x, y, k)
-			}
-		}
-	}
-	if opened == 0 {
-		t.Fatal("no click on the websites column opened a link")
-	}
-}
-
 func TestHitLimits(t *testing.T) {
 	var u ui.Ui
 	u.In = ui.NewInput()
