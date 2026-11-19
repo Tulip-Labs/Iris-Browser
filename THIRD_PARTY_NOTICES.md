@@ -16,12 +16,11 @@ Iris bundles or uses the following. Each keeps its own license.
 | Filter lists: EasyList, EasyPrivacy and EasyList Cookie (The EasyList authors); uBlock filters (Raymond Hill and contributors) | Iris Shields. Not bundled: Iris downloads them from their authors and keeps them in its data folder | EasyList: GPL v3 or CC BY-SA 3.0 (dual); uBlock filters: GPL v3 |
 | Public Suffix List (Mozilla), through `golang.org/x/net/publicsuffix` | Telling first-party from third-party requests | MPL 2.0 (list), BSD 3-Clause (Go code) |
 | WebKit (Apple and contributors) and WebKitGTK | The web engine on Linux; part of the system, not bundled | BSD 2-Clause and LGPL 2.1 |
-| webview2-rs bindings (Bill Avery and contributors) | Reference for the WebView2 interface layout from which `webview/slots_windows.go` was generated | MIT |
 | winres (Thomas Hibon) | Only `tools/icongen.go` uses it, to write the committed icon resources; not part of the built programs | 0BSD |
 
-Microsoft Edge WebView2 Runtime is not bundled. It ships with Windows 10 and 11; when it is
-missing, the setup downloads Microsoft's own bootstrapper from Microsoft and runs it, under
-Microsoft's license terms for the runtime.
+Electron is bundled with Iris on Windows (its binary and Iris's helper, under
+Electron's license terms). Servo's bridge is Iris's own code over the Servo
+crate.
 
-No other third-party code is included. The interface toolkit, the WebView2 bindings, the
+No other third-party code is included. The interface toolkit, the
 browser core and the installer are Iris's own.
