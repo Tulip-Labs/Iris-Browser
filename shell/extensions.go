@@ -16,8 +16,8 @@ import (
 // Browser extensions, from the Chrome Web Store. On a store page Iris offers
 // to add the extension: it downloads the package from Google, checks its
 // signature (ext.Verify), unpacks it into the settings folder and loads it
-// into the engine. Only engines that run extensions offer this (WebView2 on
-// Windows); on Linux the menu says why it is not there yet.
+// into the engine. Only engines that run extensions offer this (Electron);
+// on Linux the menu says why it is not there yet.
 
 const storeHome = "https://chromewebstore.google.com/category/extensions"
 
@@ -176,8 +176,8 @@ func (a *App) enableExtension(x webview.Extension, on bool) {
 	})
 }
 
-// chromeVersion is the Chromium version the store is told (WebView2 reports
-// Edge's, which shares Chromium's major version).
+// chromeVersion is the Chromium version the store is told (Electron's,
+// which shares Chromium's major version).
 func chromeVersion(v string) string {
 	if i := strings.IndexByte(v, '.'); i > 0 && i < 4 {
 		return v[:i] + ".0.0.0"
