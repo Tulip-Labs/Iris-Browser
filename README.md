@@ -36,8 +36,8 @@
 ## Why Iris
 
 Most browsers spend your memory on their web engine without asking what each page is worth.
-Iris puts a small Go program around the engine (WebView2 on Windows, which the system keeps
-up to date; Chromium on Linux) that decides what each page may cost.
+Iris puts a small Go program around the engines (Servo and Electron on Windows,
+Servo and Chromium on Linux) that decides what each page may cost.
 
 <table>
 <tr>
@@ -186,7 +186,7 @@ They work while a page has the keyboard too.
 
 | System | Web engine | Status |
 |---|---|---|
-| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Iris's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, the menu) are covered by tests with a stand-in engine and still need a pass on a real PC. |
+| Windows 10 and 11 (x64, ARM64) | Servo and Electron, which Iris ships | Runs. The newest features (downloads, split view, sandbox, the menu) are covered by tests with a stand-in engine and still need a pass on a real PC. |
 | Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Chromium, through CEF (the Chromium Embedded Framework), which Iris carries | Built on every push; the Flatpak is installed and started on Wayland, and Iris is checked at a fractional scale (1.25). Packages: Flatpak, Snap and Nix. |
 | Android 8 and newer | Android System WebView | **Iris for Android**, a separate app in Kotlin (`android/`): shields, Iris results for Web searches, tabs, containers (WebView 123 or newer), eleven palettes, phone and tablet layouts, and sync with the computer. `Iris-android.apk` is in each release. |
 
@@ -308,8 +308,8 @@ cmd/iris          the program: window, resident process, system hooks
     |               addresses, HTTPS, the memory plan, history, settings
     +-- shields     filter lists, hiding rules, link cleaning, fingerprinting
     +-- webview     one small interface over two engines:
-                      WebView2 from pure Go (COM vtables, profiles, sandbox, suspend,
-                      request filtering, downloads)
+                      Electron (Chromium, its own helper process) and Servo
+                      (in process), drawing into Iris's window
                       Chromium (CEF) through cgo, off screen in a GTK window (Linux)
 ```
 
