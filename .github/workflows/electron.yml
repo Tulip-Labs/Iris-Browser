@@ -21,9 +21,13 @@ jobs:
         with:
           node-version: 22
       - name: Tools
+        timeout-minutes: 15
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev ffmpeg
+          # GitHub's package mirror sometimes hangs: give each try 4 minutes
+          for i in 1 2 3; do
+            timeout 240 sudo apt-get update -qq && timeout 240 sudo apt-get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev ffmpeg && break
+            echo "apt try $i failed"; sleep 10
+          done
       - name: Build Iris with Electron
         run: sh webview/electron/build.sh dist/linux-electron
       - name: Test videos (H.264 + AAC, and VP9)
