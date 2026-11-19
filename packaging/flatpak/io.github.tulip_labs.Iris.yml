@@ -1,0 +1,76 @@
+# Iris as a Flatpak: the way to install Iris on Linux (Fedora Atomic, SteamOS,
+# Mint, Ubuntu and the rest).
+#
+# This manifest packages dist/linux, the folder ./build-iris.sh linux makes
+# (the program and its engine), so CI builds the bundle published with each
+# release from the exact files it tested. A Flathub submission builds from
+# source instead, with every download listed: see README.md here.
+app-id: io.github.tulip_labs.Iris
+runtime: org.gnome.Platform # GTK 4 (the freedesktop runtime has no GTK)
+runtime-version: "50" # on freedesktop 25.08
+sdk: org.gnome.Sdk
+command: iris
+separate-locales: false
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  - --filesystem=xdg-download
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.freedesktop.FileManager1 # "show in folder" for downloads
+  - --talk-name=org.freedesktop.ScreenSaver # no screen saver while a video plays
+  - --own-name=org.mpris.MediaPlayer2.Iris.* # media keys and the desktop's player controls
+  - --system-talk-name=org.freedesktop.UPower # battery saving
+
+# H.264 and H.265 for engines that take ffmpeg from the system: mounted at
+# /app/lib/ffmpeg and put on the library path
+add-extensions:
+  org.freedesktop.Platform.ffmpeg-full:
+    directory: lib/ffmpeg
+    version: "25.08"
+    add-ld-path: .
+    autodelete: false
+
+cleanup-commands:
+  - mkdir -p /app/lib/ffmpeg
+
+modules:
+  # Chromium's sandbox inside Flatpak's (no setuid helper or user namespaces
+  # here): zypak runs the sandboxed processes through flatpak-spawn. The
+  # Electron engine starts through it; the current engine (CEF, with its
+  # own helper program) cannot yet, and runs its pages inside Flatpak's
+  # sandbox only (IRIS_NO_SANDBOX in the launcher below)
+  - name: zypak
+    sources:
+      - type: git
+        url: https://github.com/refi64/zypak
+        tag: v2025.09
+        commit: 693a71c5ffa80ec9c9ce2ae03b1ccc493c698e53
+    buildsystem: simple
+    build-commands:
+      - make install PREFIX=/app
+
+  - name: iris
+    buildsystem: simple
+    sources:
+      - type: dir
+        path: ../../dist/linux
+      - type: script
+        dest-filename: iris.sh
+        commands:
+          - export TMPDIR="$XDG_RUNTIME_DIR/app/$FLATPAK_ID"
+          - export IRIS_NO_SANDBOX=1
+          - exec /app/lib/iris-browser/iris "$@"
+    build-commands:
+      - mkdir -p /app/lib/iris-browser
+      - cp -a . /app/lib/iris-browser/
+      # not used in Flatpak (zypak), and setuid files are not allowed
+      - rm -f /app/lib/iris-browser/chrome-sandbox /app/lib/iris-browser/iris.sh
+      - install -Dm755 iris.sh /app/bin/iris
+      - install -Dm644 io.github.tulip_labs.Iris.png /app/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
+      - install -Dm644 io.github.tulip_labs.Iris.desktop /app/share/applications/io.github.tulip_labs.Iris.desktop
+      - install -Dm644 io.github.tulip_labs.Iris.metainfo.xml /app/share/metainfo/io.github.tulip_labs.Iris.metainfo.xml

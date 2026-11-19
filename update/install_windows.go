@@ -42,6 +42,3 @@ func (e *managedErr) Error() string { return "updates for this copy come from " 
 
 // Restart is done by Iris Setup on Windows.
 func Restart() error { return nil }
-
-// MigrateUserInstall has nothing to move on Windows (Iris Setup does it).
-func MigrateUserInstall() {}

@@ -13,7 +13,6 @@ import (
 	"iris/core"
 	"iris/giox"
 	"iris/shell"
-	"iris/update"
 )
 
 const version = "1.0.22"
@@ -43,7 +42,6 @@ func main() {
 		return
 	}
 	reqs := listen(conf)
-	go update.MigrateUserInstall() // a copy installed in the home folder as Lite Go takes Iris's names
 	r := &resident{conf: conf, webDir: webDir, core: shell.LoadCore(conf), gfx: giox.NewGfx()}
 	if r.core.Settings.Boost {
 		// nothing runs in the background any more: undo "Open instantly"

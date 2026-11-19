@@ -145,10 +145,37 @@ Castlabs' Electron builds, which carry Widevine.
 
 ### The Servo engine (`webview/servo/`)
 
-Servo from crates.io (0.x LTS), linked as a C library through `servo-capi`
-and called from Go with cgo. It renders with WebRender into a GL texture of
-its own context, shared with GTK the same way (dmabuf). Servo runs in Iris's
-own process: no start-up cost for a light page.
+Servo 0.4 from crates.io, through a small C library of Iris's own
+(`webview/servo/rust/`, a few hundred lines over Servo's embedding API;
+`servo-capi` only covers creating Servo so far), called from Go with cgo.
+Servo runs in Iris's own process, on GTK's thread: no start-up cost for a
+light page. Each page renders into a software context whose frames are drawn
+by GTK one pixel on one screen pixel, like Chromium's; sharing them on the
+graphics chip (dmabuf) is the next step. Its requests pass Iris Shields in
+process (Servo's resource-load hook), its links to heavy sites move the tab to
+Chromium (Servo's navigation hook), and its cookies go to and from Iris's
+shared store before each page and after it loads.
+
+#### Neither engine may become a resource hog
+
+- **One Servo** for every light tab, in Iris's process.
+- **Hidden tabs stop drawing** at once (Servo throttles them and nothing is
+  painted), and after a minute hidden their page is let go; it opens again at
+  its address when the tab is shown (as Iris's tabs rest today).
+- **A memory budget.** Every 10 seconds Iris reads its own memory
+  (`/proc/self`); above a sixth of the computer's memory (600 MB at least,
+  `IRIS_SERVO_BUDGET_MB` to change it) the hidden Servo pages are let go at
+  once, the longest hidden first. Servo 0.4's API has no call to drop its
+  image, font or layout caches; when it gains one, Iris calls it here too.
+- **No light tab, no pages.** Servo 0.4 cannot be shut down and started
+  again in the same process, so it stays, idle, but every page it held is
+  closed, which frees what they used. (When Servo can restart, Iris will shut
+  it down after two minutes without a light tab.)
+- **A tab is in one engine only.** Moving a tab between engines closes it in
+  the old engine before the new one makes it.
+- **Measured.** With `IRIS_GL_DEBUG=1` Iris logs its memory and Servo's
+  shown, hidden and rested pages every 10 seconds, and each tab's engine
+  whenever it changes; CI prints both.
 
 ## Extensions (Chrome Web Store, unpacked)
 

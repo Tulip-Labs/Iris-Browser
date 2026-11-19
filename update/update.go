@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -124,29 +123,23 @@ func parts(v string) []int {
 type Kind string
 
 const (
-	KindUser     Kind = "user"     // the .tar.gz, in a folder of the user's (~/.local/bin)
-	KindDeb      Kind = "deb"      // the .deb package (apt)
-	KindRPM      Kind = "rpm"      // the .rpm package (dnf, zypper)
-	KindOSTree   Kind = "ostree"   // the .rpm layered on Fedora Atomic (rpm-ostree)
-	KindArch     Kind = "arch"     // the AUR package (pacman)
-	KindFlatpak  Kind = "flatpak"  // a Flatpak bundle from the releases
-	KindFlathub  Kind = "flathub"  // a Flatpak from a remote, which updates it
-	KindNix      Kind = "nix"      // Nix
+	KindFlatpak  Kind = "flatpak"  // Linux: a Flatpak (Flathub or a bundle from the releases)
+	KindSnap     Kind = "snap"     // Linux: the Snap
+	KindNix      Kind = "nix"      // Linux: Nix
 	KindSetup    Kind = "setup"    // Windows: installed by Iris Setup
 	KindStore    Kind = "store"    // Windows: the Microsoft Store package
 	KindPortable Kind = "portable" // a copy run from wherever it was unpacked
 	KindDev      Kind = "dev"      // a build from source
 )
 
-// Managed says who updates copies Iris does not update itself.
+// Managed says who updates copies Iris does not update itself. On Linux
+// that is every copy: Flatpak, Snap and Nix update Iris.
 func (k Kind) Managed() string {
 	switch k {
-	case KindOSTree:
-		return "rpm-ostree upgrade"
-	case KindArch:
-		return "your AUR helper (yay -Syu or paru)"
-	case KindFlathub:
+	case KindFlatpak:
 		return "Flatpak (Software, or flatpak update)"
+	case KindSnap:
+		return "Snap (snap refresh)"
 	case KindNix:
 		return "Nix (nix profile upgrade)"
 	case KindStore:
@@ -162,36 +155,9 @@ func (k Kind) Managed() string {
 // CanSelf reports whether Iris can install updates for this kind itself.
 func (k Kind) CanSelf() bool { return k.Managed() == "" }
 
-// arch is the machine name the release files use.
-func arch() string {
-	switch runtime.GOARCH {
-	case "amd64":
-		return "x86_64"
-	case "arm64":
-		return "aarch64"
-	}
-	return runtime.GOARCH
-}
-
-func debArch() string {
-	if runtime.GOARCH == "arm64" {
-		return "arm64"
-	}
-	return "amd64"
-}
-
 // AssetName is the release file for a kind and version.
 func AssetName(k Kind, version string) string {
-	switch k {
-	case KindUser:
-		return "Iris-linux-" + arch() + ".tar.gz"
-	case KindDeb:
-		return "iris-browser_" + version + "_" + debArch() + ".deb"
-	case KindRPM:
-		return "iris-browser-" + version + "-1." + arch() + ".rpm"
-	case KindFlatpak:
-		return "Iris-" + arch() + ".flatpak"
-	case KindSetup:
+	if k == KindSetup {
 		return "Iris-Setup.exe"
 	}
 	return ""

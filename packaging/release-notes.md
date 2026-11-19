@@ -1,5 +1,9 @@
 Iris: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.1.0 (in progress)
+
+- **Iris for Linux is a Flatpak, a Snap or a Nix package.** One way to install it on every distribution, Fedora Atomic included: `Iris-x86_64.flatpak` (with the GNOME runtime from Flathub) or `Iris-x86_64.snap` from the release, or `nix profile install github:Tulip-Labs/Iris-Browser`. Each keeps Iris up to date. The .deb, .rpm, AUR and .tar.gz packages and their apt and dnf repositories are no longer made, and Iris no longer installs updates itself on Linux: remove the old package and install the Flatpak.
+
 ## New in 1.0.22
 
 - **Sharp on every GTK.** GTK older than 4.14 (Ubuntu 22.04, many distrobox and toolbox images) draws a 1.25 or 1.5 window at 2 and lets the compositor shrink it, while Iris made its interface and pages at 1.25: GTK stretched them to 2 (pixelated) and the compositor shrank them again (soft), so only GTK's own menus looked sharp. Iris now draws at the scale GTK really draws at, on every version. Nothing changes in size.

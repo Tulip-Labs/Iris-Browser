@@ -8,7 +8,6 @@ import (
 
 	"iris/core"
 	"iris/ui"
-	"iris/update"
 )
 
 // drawPanel is the side panel: the menu (tools, then the settings in
@@ -365,12 +364,7 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 					a.set.AutoUpdate = v
 					a.set.Save()
 				}
-				switch k {
-				case update.KindUser:
-					note("New versions download and install in the background, checked against the release's checksums, and open with the next start.")
-				default:
-					note("New versions download in the background; installing one takes a click and your password.")
-				}
+				note("New versions download in the background, checked against the release's checksums; installing one takes a click.")
 			} else {
 				note("Updates for this copy come from " + k.Managed() + ".")
 			}

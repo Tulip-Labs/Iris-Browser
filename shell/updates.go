@@ -10,10 +10,10 @@ import (
 	"iris/update"
 )
 
-// Updates from the GitHub releases. Copies in the home folder and Flatpak
-// bundles update by themselves in the background; packages (.deb, .rpm) and
-// the Windows installer are downloaded in the background and installed with
-// one click, since they ask for a password or show the installer.
+// Updates from the GitHub releases. Iris Setup copies (Windows) download the
+// new installer in the background and install it with one click. Everywhere
+// else something else updates Iris (Flatpak, Snap, Nix, the Microsoft
+// Store): Iris only says when a new version is out.
 
 type updater struct {
 	busy    bool
@@ -27,13 +27,8 @@ type updater struct {
 const updateEvery = 6 * 3600 // seconds between automatic checks
 
 var kindLabels = map[update.Kind]string{
-	update.KindUser:     "in your home folder (.tar.gz)",
-	update.KindDeb:      "as a .deb package",
-	update.KindRPM:      "as an .rpm package",
-	update.KindOSTree:   "layered on Fedora Atomic (rpm-ostree)",
-	update.KindArch:     "from the AUR",
-	update.KindFlatpak:  "as a Flatpak bundle",
-	update.KindFlathub:  "as a Flatpak from a remote",
+	update.KindFlatpak:  "as a Flatpak",
+	update.KindSnap:     "as a Snap",
 	update.KindNix:      "with Nix",
 	update.KindSetup:    "with Iris Setup",
 	update.KindStore:    "from the Microsoft Store",
@@ -98,7 +93,7 @@ func updateDir() string {
 func (a *App) fetchUpdate(r update.Release, k update.Kind, asked bool) {
 	ver := r.Version()
 	a.upd.status = "Downloading Iris " + ver + "…"
-	silent := k == update.KindUser || k == update.KindFlatpak
+	silent := false // Iris Setup shows itself: one click first
 	go func() {
 		dir := updateDir()
 		os.RemoveAll(dir) // what an earlier update left

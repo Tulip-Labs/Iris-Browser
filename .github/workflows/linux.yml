@@ -1,7 +1,8 @@
-# Iris for Linux: builds the .tar.gz, .deb and .rpm on every
-# push, then installs them on several distributions and starts Iris on
-# each (in a virtual display) to check it opens. The release workflow calls
-# this too and publishes what it makes.
+# Iris for Linux: builds the program and its engine (dist/linux) on every
+# push, then the Flatpak and the Snap from it, starts Iris at a fractional
+# scale and from the Flatpak (in a virtual display) to check it opens, and
+# builds the Nix flake. The release workflow calls this too and publishes
+# the Flatpak bundle and the Snap.
 name: Linux
 
 on:
@@ -31,18 +32,15 @@ jobs:
         with:
           path: third_party/cef
           key: cef-${{ hashFiles('packaging/cef/cef.env') }}
-      - name: Build the program, the .tar.gz, the .deb and the .rpm (tests run first)
-        run: ./build-iris.sh packages
-      - name: Collect
-        run: |
-          mkdir out
-          cp dist/Iris-linux-x86_64.tar.gz dist/LiteGo-linux-x86_64.tar.gz dist/*.deb dist/*.rpm out/
-          ls -l out
+      - name: Build the program and its engine (tests run first)
+        run: ./build-iris.sh linux
+      - name: Collect (a tarball keeps the files' modes)
+        run: tar -C dist -czf iris-linux.tar.gz linux && ls -l iris-linux.tar.gz
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux
-          path: out/*
+          path: iris-linux.tar.gz
 
   # Windows: the program, the setup and the Store package build, and the
   # shared tests pass (the release builds the same way)
@@ -59,121 +57,6 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq zip
           ./build-iris.sh windows
           ls -l dist
-
-  # Installs each package the way a reader would, then starts Iris in a
-  # virtual display: it must still be running after 20 seconds.
-  install:
-    needs: build
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {distro: "debian:12", kind: deb}
-          - {distro: "debian:13", kind: deb}
-          - {distro: "ubuntu:22.04", kind: deb}
-          - {distro: "ubuntu:24.04", kind: deb, shots: true}
-          - {distro: "fedora:42", kind: rpm}
-          - {distro: "fedora:43", kind: rpm, shots: true, scale: 2}
-          - {distro: "opensuse/tumbleweed", kind: zypper}
-          - {distro: "archlinux:latest", kind: tar}
-    container:
-      image: ${{ matrix.distro }}
-      options: --shm-size=1g # Chromium keeps its frames in shared memory
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: linux
-          path: pkg
-      - name: Install (and Weston, a Wayland compositor that runs without a screen)
-        run: |
-          set -e
-          case "${{ matrix.kind }}" in
-          deb)
-            apt-get update -qq
-            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./pkg/*.deb weston procps ffmpeg fonts-dejavu-core dbus python3
-            ;;
-          rpm)
-            dnf install -y ./pkg/*.rpm weston procps-ng mesa-dri-drivers which ffmpeg-free dejavu-sans-fonts util-linux dbus-daemon
-            ;;
-          zypper)
-            zypper --non-interactive install --allow-unsigned-rpm ./pkg/*.rpm weston procps Mesa-dri which dbus-1
-            ;;
-          tar)
-            pacman -Syu --noconfirm --needed gtk4 libepoxy libglvnd mesa nss alsa-lib libdrm libxkbcommon at-spi2-core libcups libxcomposite libxdamage libxrandr weston procps-ng which tar gzip ttf-dejavu dbus
-            tar -xzf pkg/Iris-linux-x86_64.tar.gz -C /tmp
-            useradd -m tester
-            su tester -c "/tmp/Iris-linux-x86_64/install.sh"
-            ln -s /home/tester/.local/bin/iris /usr/local/bin/iris
-            ;;
-          esac
-      - name: Libraries are all there
-        run: |
-          exe=$(readlink -f "$(command -v iris)")
-          dir=$(dirname "$exe")
-          echo "$exe"
-          ls -l "$dir"
-          ! ldd "$exe" "$dir/libcef.so" "$dir/iris-helper" | grep "not found"
-      - name: Test pages (text, and a VP9 video made here where ffmpeg is at hand)
-        run: |
-          mkdir -p /tmp/page
-          command -v ffmpeg >/dev/null && ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime /tmp/page/v.webm
-          cat > /tmp/page/video.html <<'HTML'
-          <!doctype html><body style="margin:0;background:#202020;font:24px sans-serif;color:#fff">
-          <h1 style="color:#f5a">Iris on Chromium</h1>
-          <p id=s>video: loading</p>
-          <p id=ua></p>
-          <video id=v src="v.webm" autoplay muted loop width=320 height=180></video>
-          <script>
-          const v = document.getElementById('v'), s = document.getElementById('s');
-          v.addEventListener('playing', () => s.textContent = 'video: playing, VP9 ' + v.videoWidth + 'x' + v.videoHeight);
-          v.addEventListener('error', () => s.textContent = 'video: error ' + (v.error && v.error.code));
-          document.getElementById('ua').textContent = navigator.userAgent;
-          </script>
-          HTML
-          chmod -R a+rX /tmp/page
-      - name: Iris starts on Wayland and keeps running
-        run: |
-          id -u tester >/dev/null 2>&1 || useradd -m tester
-          cat > /tmp/wl.sh <<'SH'
-          export XDG_RUNTIME_DIR=$(mktemp -d) LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1
-          sc="--scale=${{ matrix.scale || 1 }}"
-          for b in "--backend=headless --renderer=gl" "--backend=headless-backend.so --use-gl" "--backend=headless" "--backend=headless-backend.so"; do
-            weston $b $sc --socket=wl-test --width=1280 --height=800 --debug > /tmp/weston.txt 2>&1 &
-            for i in $(seq 1 30); do [ -S "$XDG_RUNTIME_DIR/wl-test" ] && break; sleep 0.2; done
-            [ -S "$XDG_RUNTIME_DIR/wl-test" ] && break
-          done
-          [ -S "$XDG_RUNTIME_DIR/wl-test" ] || { echo "Weston did not start"; cat /tmp/weston.txt; exit 1; }
-          export WAYLAND_DISPLAY=wl-test GDK_BACKEND=wayland
-          page=about:blank
-          if [ -f /tmp/page/video.html ] && command -v python3 >/dev/null; then
-            (cd /tmp/page && python3 -m http.server 8765 --bind 127.0.0.2 >/dev/null 2>&1 &)
-            sleep 1
-            page=http://127.0.0.2:8765/video.html
-          elif [ -f /tmp/page/video.html ]; then
-            page=file:///tmp/page/video.html
-          fi
-          mkdir -p /tmp/shots
-          export IRIS_RELAY_LOCAL=1 IRIS_CEF_VERBOSE=1 IRIS_SHOT=/tmp/shots/page IRIS_CEF_ARGS="--enable-logging=stderr --v=0"
-          run=""; command -v dbus-run-session >/dev/null && run="dbus-run-session --"
-          $run iris "$page" > /tmp/log.txt 2>&1 &
-          pid=$!
-          sleep 20
-          alive=0; kill -0 $pid 2>/dev/null && alive=1
-          kill $pid 2>/dev/null; sleep 1; kill -9 $pid 2>/dev/null
-          grep -v "dbus" /tmp/log.txt | tail -200
-          for f in /tmp/shots/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
-          [ $alive = 1 ] || { echo "Iris exited on Wayland before 20 seconds"; exit 1; }
-          ! grep -q "no GPU drawing\|no OpenGL context\|could not start" /tmp/log.txt || { echo "Iris ran on Wayland but could not draw"; exit 1; }
-          echo "Iris ran for 20 seconds on Wayland."
-          SH
-          su tester -c "sh /tmp/wl.sh"
-      - uses: actions/upload-artifact@v4
-        if: matrix.shots && always()
-        with:
-          name: shots-${{ matrix.kind }}
-          path: /tmp/shots/*.png
-          if-no-files-found: ignore
 
   # Fractional scale, as on niri at 1.25: sway (which scales fractionally the
   # same way) on a 1920x1200 screen, Iris filling it, then resized. The
@@ -192,7 +75,15 @@ jobs:
           path: pkg
       - name: Install Iris and sway
         run: |
-          dnf install -y -q ./pkg/iris-browser-*.rpm sway grim mesa-dri-drivers python3 dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype
+          # the libraries the program and Chromium need, by the names they load
+          dnf install -y -q sway grim mesa-dri-drivers python3 dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip \
+            'libgtk-4.so.1()(64bit)' 'libepoxy.so.0()(64bit)' 'libGLESv2.so.2()(64bit)' 'libnss3.so()(64bit)' 'libnspr4.so()(64bit)' \
+            'libasound.so.2()(64bit)' 'libgbm.so.1()(64bit)' 'libdrm.so.2()(64bit)' 'libxkbcommon.so.0()(64bit)' \
+            'libatk-bridge-2.0.so.0()(64bit)' 'libcups.so.2()(64bit)' 'libXcomposite.so.1()(64bit)' 'libXdamage.so.1()(64bit)' \
+            'libXrandr.so.2()(64bit)'
+          mkdir -p /opt && tar -xzf pkg/iris-linux.tar.gz -C /opt && mv /opt/linux /opt/iris
+          ln -s /opt/iris/iris /usr/local/bin/iris
+          ! ldd /opt/iris/iris /opt/iris/libcef.so /opt/iris/iris-helper | grep "not found"
           # a copy without the file capabilities a container cannot grant
           cp /usr/bin/sway /usr/local/bin/sway-plain
       - name: Iris at 1.25, resized
@@ -219,7 +110,7 @@ jobs:
           export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           sleep 1
-          export GIORENDERER=forcecompute LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CEF_VERBOSE=1 IRIS_CEF_ARGS="--enable-logging=stderr --v=0"
+          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CEF_VERBOSE=1 IRIS_CEF_ARGS="--enable-logging=stderr --v=0"
           dbus-run-session -- iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 18
           grim /tmp/fs/1-full.png
@@ -260,6 +151,88 @@ jobs:
           name: shots-fractional
           path: /tmp/fs/*.png
           if-no-files-found: ignore
+
+  # The Flatpak bundle, from dist/linux, built with flatpak-builder (the
+  # GNOME runtime and SDK from Flathub), then installed the way a reader
+  # would and started on Wayland (Weston, no screen): it must still be
+  # running after 25 seconds, in a Wayland window of its own.
+  flatpak:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: pkg
+      - name: The program and its engine in dist/linux
+        run: mkdir -p dist && tar -xzf pkg/iris-linux.tar.gz -C dist && ls dist/linux | head
+      - name: Flatpak, flatpak-builder and Weston
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq flatpak flatpak-builder weston dbus-user-session procps
+          # bubblewrap needs user namespaces, which Ubuntu limits by default
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - name: Build the bundle
+        run: |
+          flatpak-builder --user --install-deps-from=flathub --force-clean --repo=repo --default-branch=stable \
+            build packaging/flatpak/io.github.tulip_labs.Iris.yml
+          flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            repo Iris-x86_64.flatpak io.github.tulip_labs.Iris stable
+          ls -l Iris-x86_64.flatpak
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: Iris-x86_64.flatpak
+      - name: Install the bundle and start Iris on Wayland
+        run: |
+          set -x
+          flatpak install --user -y --noninteractive ./Iris-x86_64.flatpak
+          flatpak info --user io.github.tulip_labs.Iris
+          export XDG_RUNTIME_DIR=$(mktemp -d)
+          chmod 700 $XDG_RUNTIME_DIR
+          weston --backend=headless --socket=wayland-1 --width=1280 --height=800 > /tmp/weston.txt 2>&1 &
+          for i in $(seq 1 50); do [ -S $XDG_RUNTIME_DIR/wayland-1 ] && break; sleep 0.2; done
+          [ -S $XDG_RUNTIME_DIR/wayland-1 ] || { cat /tmp/weston.txt; exit 1; }
+          export WAYLAND_DISPLAY=wayland-1
+          dbus-run-session -- flatpak run --user --env=LIBGL_ALWAYS_SOFTWARE=1 --env=IRIS_GL_DEBUG=1 \
+            io.github.tulip_labs.Iris about:blank > /tmp/log.txt 2>&1 &
+          sleep 25
+          alive=0; pgrep -f /app/lib/iris-browser/iris >/dev/null && alive=1
+          grep -v dbus /tmp/log.txt | tail -80
+          flatpak kill io.github.tulip_labs.Iris 2>/dev/null || true
+          [ $alive = 1 ] || { echo "Iris from the Flatpak exited before 25 seconds"; exit 1; }
+          grep -q "native Wayland" /tmp/log.txt || { echo "Iris did not open a Wayland window"; exit 1; }
+          echo "Iris from the Flatpak ran for 25 seconds on Wayland."
+
+  # The Snap, from dist/linux, then installed (not started: a strict snap
+  # needs snapd's desktop session, which CI does not have).
+  snap:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: pkg
+      - name: The program and its engine in packaging/snap/dist (snapcraft sees only that folder)
+        run: tar -xzf pkg/iris-linux.tar.gz -C packaging/snap && mv packaging/snap/linux packaging/snap/dist
+      - uses: snapcore/action-build@v1
+        id: snap
+        with:
+          path: packaging/snap
+      - name: Install it
+        run: |
+          sudo snap install --dangerous ${{ steps.snap.outputs.snap }}
+          snap info --verbose iris-browser | head -20
+          ls /snap/iris-browser/current/lib/iris-browser | head
+          cp ${{ steps.snap.outputs.snap }} Iris-x86_64.snap
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snap
+          path: Iris-x86_64.snap
 
   # nix build github:Tulip-Labs/Iris-Browser must keep working
   nix:

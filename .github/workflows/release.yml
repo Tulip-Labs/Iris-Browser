@@ -1,7 +1,6 @@
-# Builds Iris for Windows, Linux (.tar.gz, .deb, .rpm, Flatpak, AUR) and
+# Builds Iris for Windows, Linux (the Flatpak bundle and the Snap) and
 # Android, and publishes them as a GitHub release with one SHA256SUMS file
-# (Iris's updater checks every download against it). The Linux packages
-# also go to the apt and dnf repositories on the project's GitHub Pages.
+# (Iris's updater checks every download against it).
 # Runs when a tag like v1.0.0 is pushed, or by hand from the Actions tab
 # (give the tag to publish).
 name: Release
@@ -81,49 +80,32 @@ jobs:
           sha256sum Iris-android.apk
           gh release upload "$TAG" Iris-android.apk --clobber
 
-  # the Linux files, the checksums of every file, the AUR recipe, and the
-  # apt and dnf repositories
+  # the Linux files and the checksums of every file
   publish:
     needs: [windows, linux, android]
     runs-on: ubuntu-24.04
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
       GH_TOKEN: ${{ github.token }}
-      REPO_GPG_KEY: ${{ secrets.REPO_GPG_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: art
           merge-multiple: true
-      - name: apt and dnf repositories (indexes on GitHub Pages and on the release; the .rpm is signed here)
+      - name: Linux files to the release (the Flatpak bundle and the Snap)
         run: |
-          rm -f art/*.png # the test screenshots
           ls -l art
-          sudo apt-get update -qq && sudo apt-get install -y -qq dpkg-dev apt-utils createrepo-c gnupg rpm
-          ./packaging/repo/update-repo.sh art site flat
-      - name: Linux files to the release
-        run: |
-          # Iris 1.0.19 and older (Lite Go) update themselves from these names:
-          # the same packages (iris-browser replaces lite-go-browser)
-          mkdir legacy
-          ver=${TAG#v}
-          for f in art/iris-browser_*.deb; do cp "$f" "legacy/$(basename "$f" | sed 's/^iris-browser_/lite-go-browser_/')"; done
-          for f in art/iris-browser-*.rpm; do cp "$f" "legacy/$(basename "$f" | sed 's/^iris-browser-/lite-go-browser-/')"; done
-          ls -l legacy
-          gh release upload "$TAG" art/* flat/* legacy/* --clobber
-      - name: Checksums of every file, and the AUR recipe
+          gh release upload "$TAG" art/*.flatpak art/*.snap --clobber
+      - name: Checksums of every file
         run: |
           mkdir all && cd all
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --skip-existing
-          rm -f SHA256SUMS SHA256SUMS.txt PKGBUILD
+          rm -f SHA256SUMS SHA256SUMS.txt
           sha256sum * > ../SHA256SUMS
           cd ..
           cat SHA256SUMS
-          ver=${TAG#v}
-          sum=$(sha256sum all/Iris-linux-x86_64.tar.gz | cut -d' ' -f1)
-          sed -e "s/@VERSION@/$ver/" -e "s/@SHA256@/$sum/" packaging/aur/PKGBUILD.in > PKGBUILD
-          gh release upload "$TAG" SHA256SUMS PKGBUILD --clobber
+          gh release upload "$TAG" SHA256SUMS --clobber
       - name: winget manifests
         run: |
           ver=${TAG#v}
@@ -135,15 +117,6 @@ jobs:
           cat winget/*.yaml
           (cd winget && zip -q ../Iris-winget-manifests.zip *.yaml)
           gh release upload "$TAG" Iris-winget-manifests.zip --clobber
-      - name: Publish the repositories
-        run: |
-          cd site
-          git init -q -b gh-pages
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -q -m "Iris $TAG packages"
-          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
 
   # winget: sends this version to microsoft/winget-pkgs (needs the
   # WINGET_TOKEN secret, a GitHub token that may open pull requests there;
