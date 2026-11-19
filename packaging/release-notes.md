@@ -1,5 +1,18 @@
 Iris: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
+## New in 1.0.24
+
+A release about safety and steadiness; nothing changes in how Iris looks.
+
+- **HTTPS-only can no longer be dodged by a look-alike name.** Addresses such as `10.example.com` or `localhost.example.net` were taken for addresses on your own network, so Iris opened them over plain HTTP and skipped its warnings about suspicious addresses. Only real local addresses (localhost, and network addresses such as 192.168.1.1) get that exception now.
+- **No more memory blow-ups from pictures.** A tiny picture file can claim to be enormous once opened. Iris now checks a picture's size before opening it and refuses anything over about 40 megapixels, so a search thumbnail or the artwork of what is playing cannot eat your memory.
+- **Pages cannot point Iris at your own network.** When Iris fetches artwork, thumbnails or YouTube results itself, it only connects to addresses on the internet, never to this computer or your router, even after a redirect.
+- **Settings survive a crash or a power cut.** Settings and Iris's other small files are written to the disk completely before they replace the old ones. If a settings file is ever damaged, Iris keeps a copy of it as `settings.json.damaged` instead of quietly writing over it.
+- **Safer updates on Windows.** Iris Setup updates are only downloaded over HTTPS and never grow larger than the release says.
+- **Ad-block lists are never saved half.** A list that was cut off while downloading is thrown away and fetched again later.
+- **Phone link and sync hold up better.** A phone that stops sending in the middle of a file no longer keeps the transfer open forever, and connections that go quiet are closed.
+- **Fewer surprises in downloads.** More kinds of files that can run programs (installers, disk images, shortcuts, scripts) are shown in their folder instead of opened with a click, and the time left on a download never shows a negative number.
+
 ## New in 1.0.23
 
 - **Iris for Linux is a Flatpak, a Snap or a Nix package.** One way to install it on every distribution, Fedora Atomic included: `Iris-x86_64.flatpak` (with the GNOME runtime from Flathub) or `Iris-x86_64.snap` from the release, or `nix profile install github:Tulip-Labs/Iris-Browser`. Each keeps Iris up to date. The .deb, .rpm, AUR and .tar.gz packages and their apt and dnf repositories are no longer made, and Iris no longer installs updates itself on Linux: remove the old package and install the Flatpak.
