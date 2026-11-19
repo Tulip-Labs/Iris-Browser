@@ -102,7 +102,7 @@ var tag = new(int)
 func (r *resident) loop(w *app.Window, urls []string) error {
 	webDir := r.webDir
 	h := &host{w: w}
-	eng := webview.New()
+	eng := newEngine(r.conf)
 	a := shell.New(h, shell.Config{Engine: eng, DataDir: r.conf, TotalMB: totalMB(), Version: version, SelfMB: webview.SelfMB,
 		Core: r.core, SetBoost: setStartup, Sys: sysHooks(), UpdateKind: installKind()})
 	eng.SetPolicy(a.Policy())
