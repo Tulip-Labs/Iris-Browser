@@ -13,12 +13,21 @@ on:
   workflow_call:
 
 jobs:
+  # Servo's bridge, for the light pages (docs/engines.md)
+  servo-lib:
+    uses: ./.github/workflows/servo-lib.yml
+
   build:
-    # the oldest supported Ubuntu, so the program runs on older systems too
-    # (it needs glibc 2.35 or newer: Debian 12, Ubuntu 22.04, Fedora 36 and later)
-    runs-on: ubuntu-22.04
+    # Linux ships only as a Flatpak, a Snap and with Nix, which bring their
+    # own (newer) libraries: the program is built where Servo's is
+    needs: servo-lib
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: libirisservo
+          path: webview/servo/lib
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
@@ -26,7 +35,7 @@ jobs:
       - name: Build tools and GTK development files
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev curl bzip2
+          sudo apt-get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev libfreetype-dev curl bzip2
       - name: Chromium (CEF), from the cache when it is there
         uses: actions/cache@v4
         with:

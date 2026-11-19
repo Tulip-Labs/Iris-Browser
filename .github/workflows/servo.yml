@@ -10,52 +10,7 @@ on:
 
 jobs:
   servo-lib:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 180
-    steps:
-      - uses: actions/checkout@v4
-      - name: Room on the disk (Servo's build is large)
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
-          df -h /
-      - name: Servo's build dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq build-essential clang llvm-dev libclang-dev cmake curl git gperf m4 python3 \
-            libdbus-1-dev libfreetype6-dev libfontconfig1-dev libgl1-mesa-dri libgles2-mesa-dev libegl1-mesa-dev \
-            libglib2.0-dev libharfbuzz-dev liblzma-dev libudev-dev libunwind-dev libx11-dev libxcb-render0-dev \
-            libxcb-shape0-dev libxcb-xfixes0-dev libxmu-dev xorg-dev libxkbcommon-dev libssl-dev pkg-config
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Cargo's cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            webview/servo/rust/target
-          key: servo-${{ hashFiles('webview/servo/rust/Cargo.toml', 'webview/servo/rust/src/**') }}
-          restore-keys: servo-
-      - name: Servo's own locked versions (its crate carries its Cargo.lock)
-        run: |
-          cd webview/servo/rust
-          if [ ! -f Cargo.lock ]; then
-            mkdir -p /tmp/servo-crate
-            curl -fsSL https://static.crates.io/crates/servo/servo-0.4.0.crate | tar -xz -C /tmp/servo-crate
-            cp /tmp/servo-crate/servo-0.4.0/Cargo.lock Cargo.lock
-          fi
-      - name: Build the bridge
-        run: |
-          cd webview/servo/rust
-          start=$(date +%s)
-          cargo build --release 2>&1 | tail -80
-          echo "built in $(( $(date +%s) - start )) s"
-          ls -l target/release/libirisservo.so
-          du -sh target
-          echo "LOCK-BEGIN"; gzip -c Cargo.lock | base64 -w0; echo; echo "LOCK-END"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: libirisservo
-          path: webview/servo/rust/target/release/libirisservo.so
+    uses: ./.github/workflows/servo-lib.yml
 
   app:
     needs: servo-lib
@@ -83,10 +38,7 @@ jobs:
         run: go test ./core/route/ ./core/session/... ./webview/route/
       - name: Build Iris with Servo
         run: |
-          ./build-iris.sh linux
-          CGO_ENABLED=1 go build -tags "webkit cef novulkan servo" -trimpath -ldflags "-s -w" -o dist/linux/iris ./cmd/iris
-          go run tools/sum.go dist/linux/iris
-          cp webview/servo/lib/libirisservo.so dist/linux/
+          ./build-iris.sh linux # with Servo: its bridge is in webview/servo/lib
           ldd dist/linux/iris | grep -i servo
           du -sh dist/linux dist/linux/libirisservo.so
           tar -C dist -czf iris-servo.tar.gz linux
@@ -147,8 +99,9 @@ jobs:
           grim /tmp/fs/2-heavy.png
           pgrep -x iris >/dev/null || touch /tmp/fs/exited
           pkill -x iris; sleep 2; pkill -9 -x iris; pkill -9 -f iris-helper
+          true # nothing left to stop is fine
           SH
-          sh /tmp/run.sh
+          sh /tmp/run.sh || true
           echo "== log"; grep -v "dbus" /tmp/fs/log.txt | tail -80
           for f in /tmp/fs/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
           [ ! -e /tmp/fs/exited ] || { echo "Iris exited"; exit 1; }
