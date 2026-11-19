@@ -1,6 +1,6 @@
 // Command iris is Iris: a light browser whose interface is drawn with Gio
-// and whose pages are shown by the system web view: WebView2 on Windows,
-// Chromium (CEF) on Linux.
+// and whose pages are shown by Servo and Electron on Windows, and by Servo
+// and Chromium (CEF) on Linux.
 package main
 
 import (
@@ -19,7 +19,7 @@ const version = "1.0.24"
 
 func main() {
 	// a small, steady footprint: collect garbage sooner and keep the Go heap
-	// under a soft ceiling (pages live in WebView2's own processes)
+	// under a soft ceiling (pages live in the engines' own processes)
 	debug.SetGCPercent(50)
 	debug.SetMemoryLimit(128 << 20)
 	background := false
