@@ -265,7 +265,20 @@ func (e *elxEngine) run(dataDir string, low bool, scale float64) {
 	_ = os.Chmod(sock, 0o600)
 	data := filepath.Join(dataDir, "electron")
 	_ = os.MkdirAll(data, 0o700)
+	// Electron draws no window of its own (every page is offscreen), but it
+	// still joins a display: the one Iris runs on. Left to itself it tries X11,
+	// and on a Wayland-only desktop (niri, sway, a Flatpak without X) it found
+	// no X server and quit at once. Wayland also lets it share frames on the
+	// graphics chip; headless is the last resort.
 	var args []string
+	switch {
+	case os.Getenv("WAYLAND_DISPLAY") != "":
+		args = append(args, "--ozone-platform=wayland")
+	case os.Getenv("DISPLAY") != "":
+		args = append(args, "--ozone-platform=x11")
+	default:
+		args = append(args, "--ozone-platform=headless")
+	}
 	if app != "" {
 		args = append(args, app)
 	}
