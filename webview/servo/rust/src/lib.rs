@@ -386,8 +386,10 @@ pub extern "C" fn iris_servo_reload(id: u64) {
 pub extern "C" fn iris_servo_resize(id: u64, w: i32, h: i32) {
     with_page(id, |p| {
         let size = PhysicalSize::new(w.max(16) as u32, h.max(16) as u32);
+        // the WebView resizes its rendering context itself and lays the page
+        // out again; resizing the context first made the sizes match already,
+        // so the page kept the width it opened with (a third of the window)
         if p.ctx.size() != size {
-            p.ctx.resize(size);
             p.webview.resize(size);
             p.dirty.set(true);
         }
