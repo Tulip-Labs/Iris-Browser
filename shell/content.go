@@ -25,7 +25,7 @@ func (a *App) content(r ui.Rect) {
 		why := "Its process ended (it may have run out of memory). Reload to open it again."
 		a.message(r, ui.IWarning, "This page stopped working", why, "Reload", func() { a.reload(t) })
 	case a.engErr != nil || a.eng == nil:
-		msg := "Iris shows pages with Microsoft Edge WebView2, which is not installed. Run the Iris installer again, or get the runtime from Microsoft."
+		msg := "Iris shows pages with its own page engines (Servo and Electron), which are missing. Run the Iris installer again."
 		if a.engErr != nil && !strings.Contains(a.engErr.Error(), "not available") {
 			msg = "The web engine did not start: " + a.engErr.Error()
 		}
