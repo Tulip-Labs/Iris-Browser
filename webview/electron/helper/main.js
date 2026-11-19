@@ -24,7 +24,7 @@ const fs = require('fs');
 
 const SOCK = process.env.IRIS_SOCK;
 const DATA = process.env.IRIS_DATA || path.join(app.getPath('temp'), 'iris-pages');
-const SCALE = Math.min(8, Math.max(0.5, parseFloat(process.env.IRIS_SCALE || '1') || 1));
+let SCALE = Math.min(8, Math.max(0.5, parseFloat(process.env.IRIS_SCALE || '1') || 1));
 const MEM = parseInt(process.env.IRIS_MEM || '0', 10) || 0;
 const LOW = process.env.IRIS_LOW === '1' || (MEM > 0 && MEM <= 8192);
 const DEBUG = !!process.env.IRIS_GL_DEBUG;
@@ -41,8 +41,12 @@ if (!SOCK) {
 app.setName('Iris');
 app.setPath('userData', DATA);
 const sw = (k, v) => (v === undefined ? app.commandLine.appendSwitch(k) : app.commandLine.appendSwitch(k, String(v)));
-// pages at exactly the window's scale: one page pixel on one screen pixel
-sw('force-device-scale-factor', SCALE);
+// Pages at exactly the window's scale, one page pixel on one screen pixel.
+// Offscreen pages ignore a forced device scale (they take the display's),
+// so each page is sized in screen pixels at scale 1 and zoomed by the
+// window's scale: Chromium lays it out in CSS pixels of 1.25 screen pixels
+// (devicePixelRatio 1.25) and draws every screen pixel itself.
+sw('force-device-scale-factor', 1);
 // lighter Chromium: pages of one site share a process, and few run
 sw('process-per-site');
 sw('renderer-process-limit', LOW ? 3 : 5);
@@ -239,6 +243,11 @@ function prefs(ses) {
   };
 }
 
+// a page's zoom: the window's scale times the reader's own zoom (Ctrl +/-)
+function applyZoom(v) {
+  if (v && !v.wc.isDestroyed()) v.wc.setZoomFactor(SCALE * (v.zoom || 1));
+}
+
 function idleCheck() {
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = null;
@@ -280,7 +289,10 @@ function attach(v) {
     const [b, f] = history(wc);
     send({ t: 'loading', id, on: false, back: b, fwd: f });
   });
-  wc.on('did-navigate', (e, url) => send({ t: 'url', id, url }));
+  wc.on('did-navigate', (e, url) => {
+    applyZoom(views.get(id)); // a new site starts at Chromium's own zoom
+    send({ t: 'url', id, url });
+  });
   wc.on('did-navigate-in-page', (e, url, isMain) => {
     if (isMain !== false) send({ t: 'url', id, url });
   });
@@ -342,9 +354,8 @@ function paint(v, dirty, image) {
   if (!W || !H || bmp.length < W * H * 4) return;
   let x = 0, y = 0, w = W, h = H;
   if (!v.full && dirty && v.fw === W && v.fh === H) {
-    // the changed part, made a little larger: Electron's rectangle may be in
-    // page units or in pixels
-    const k = SCALE > 1 ? SCALE : 1;
+    // the changed part (in pixels: the page is at scale 1), a little larger
+    const k = 1;
     x = Math.max(0, Math.floor(dirty.x * k) - 1);
     y = Math.max(0, Math.floor(dirty.y * k) - 1);
     w = Math.min(W - x, Math.ceil(dirty.width * k) + 2);
@@ -612,6 +623,12 @@ function handle(m) {
       return idleCheck();
     }
     case 'close': return close(m.id);
+    case 'scale':
+      if (m.s >= 0.5 && m.s <= 8 && m.s !== SCALE) {
+        SCALE = m.s;
+        for (const v of views.values()) applyZoom(v);
+      }
+      return;
     case 'scripts': scripts = Array.isArray(m.list) ? m.list : []; return;
     case 'scheme': nativeTheme.themeSource = m.dark ? 'dark' : 'light'; return;
     case 'ext': return void ext(m);
@@ -652,7 +669,9 @@ function handle(m) {
         () => m.n && send({ t: 'reply', n: m.n, r: null }),
       );
     case 'mute': return wc.setAudioMuted(!!m.on);
-    case 'zoom': return wc.setZoomFactor(m.f > 0 ? m.f : 1);
+    case 'zoom':
+      v.zoom = m.f > 0 ? m.f : 1;
+      return applyZoom(v);
     case 'in':
       try {
         if (m.e.type === 'mouseDown' && !wc.isFocused()) wc.focus();

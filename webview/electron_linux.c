@@ -338,10 +338,13 @@ static EV *pageAt(double x, double y) {
 }
 
 // inPage is (x, y) of the view in the page's own units (CSS pixels at zoom 1).
+// inPage is where (x, y) falls in page v, in screen pixels: pages are drawn
+// at scale 1 and zoomed by the window's scale, so their own coordinates are
+// screen pixels.
 static void inPage(EV *v, double x, double y, double *ox, double *oy) {
 	double s = scaleOf();
-	*ox = (x * s - v->px[0]) / s;
-	*oy = (y * s - v->px[1]) / s;
+	*ox = x * s - v->px[0];
+	*oy = y * s - v->px[1];
 }
 
 static void setCursor(const char *name) {
@@ -436,6 +439,7 @@ int lgxPagePointer(GdkEvent *e, double x, double y) {
 		}
 		}
 		if ((state & GDK_SHIFT_MASK) && dx == 0) dx = dy, dy = 0; // Shift + wheel scrolls sideways
+		dx *= scaleOf(), dy *= scaleOf(); // in screen pixels, like the page
 		accX += dx, accY += dy;
 		double sx = trunc(accX), sy = trunc(accY);
 		accX -= sx, accY -= sy;

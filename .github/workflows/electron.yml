@@ -54,7 +54,7 @@ jobs:
         run: |
           dnf install -y -q gtk4 libepoxy gtk3 nss atk at-spi2-atk cups-libs libdrm mesa-libgbm mesa-dri-drivers alsa-lib \
             libXcomposite libXdamage libXrandr libxkbcommon libxshmfence pango cairo sway grim python3 python3-pillow \
-            dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip
+            dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip strace
           cp /usr/bin/sway /usr/local/bin/sway-plain
           mkdir -p /opt && tar -C /opt -xzf iris-electron.tar.gz && ls -l /opt/linux-electron
       - name: Iris at 1.25 on Electron
@@ -98,14 +98,11 @@ jobs:
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           sleep 1
           export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CONSOLE=1 IRIS_MEM_LOG=1 ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1
-          # Electron alone first: does it start here at all?
           E=/opt/linux-electron/electron/electron
-          { echo "-- missing libraries:"; ldd $E | grep "not found"; echo "-- version:"; $E --version; echo "exit $?"; } > /tmp/fs/smoke.txt 2>&1
-          for oz in "" "--ozone-platform=wayland" "--ozone-platform=headless" "--disable-gpu"; do
-            echo "-- helper with: $oz" >> /tmp/fs/smoke.txt
-            timeout 15 env IRIS_SOCK=/tmp/none.sock $E --no-sandbox $oz --enable-logging=stderr --v=0 /opt/linux-electron/electron-helper >> /tmp/fs/smoke.txt 2>&1
-            echo "exit $?" >> /tmp/fs/smoke.txt
-          done
+          ls -la /opt/linux-electron/electron/resources /opt/linux-electron/electron/resources/app > /tmp/fs/smoke.txt 2>&1
+          timeout 20 env IRIS_SOCK=/tmp/none.sock strace -f -qq -s 300 -e trace=openat,exit_group,write -o /tmp/fs/strace.txt $E --no-sandbox --enable-logging=stderr --v=1 >> /tmp/fs/smoke.txt 2>&1
+          echo "exit $?" >> /tmp/fs/smoke.txt
+          grep -E 'resources/app|main\.js|exit_group|write\(2,' /tmp/fs/strace.txt | grep -v ENOENT.*locale | head -80 >> /tmp/fs/smoke.txt
           dbus-run-session -- /opt/linux-electron/iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 25
           grim /tmp/fs/1-full.png
@@ -136,7 +133,7 @@ jobs:
           pkill -x iris
           SH
           su tester -c "sh /tmp/run.sh"
-          echo "== Electron alone"; grep -v "dbus/bus.cc" /tmp/fs/smoke.txt | tail -60
+          echo "== Electron alone"; grep -v "dbus/bus.cc\|scheduler_loop" /tmp/fs/smoke.txt | tail -150
           grep -v dbus /tmp/fs/log.txt | grep -v "Iris: engine \|portal\|fuse" | tail -80
           echo "== the engine's memory and tabs, as Iris sees them"
           grep "Iris: engine " /tmp/fs/log.txt | tail -6
