@@ -202,11 +202,13 @@ do the work of an ad blocker.
 
 ## Install on Windows
 
+From the Microsoft Store — signed by Microsoft, installs without warnings and updates itself. Or:
+
 ```
 winget install TulipLabs.Iris
 ```
 
-Or download `Iris-Setup.exe` from the [releases](https://github.com/Tulip-Labs/Iris-Browser/releases) (installs for the current user, no administrator rights; `Iris-Setup.exe --silent` installs without a window). Iris updates itself; `winget upgrade TulipLabs.Iris` works too.
+`winget` installs the same MSIX package. The `Iris.msixbundle` on the [releases](https://github.com/Tulip-Labs/Iris-Browser/releases) page is that package; it is signed before `winget` can install it (see [Publishing Iris in the Microsoft Store](packaging/STORE.md)).
 
 Extensions from the Chrome Web Store run in Iris on Windows: open an extension's page in the store and choose **Add to Iris**. Iris checks each package's signature before adding it.
 
@@ -236,9 +238,7 @@ tests and makes:
 
 | File | What it is |
 |---|---|
-| `dist\Iris Setup.exe` | The installer: current user only, no administrator rights |
-| `dist\Iris\Iris.exe` | The portable app (also `dist\Iris-portable.zip`) |
-| `dist\Iris.msixbundle` | For the Microsoft Store, packed without the Windows SDK |
+| `dist\Iris.msixbundle` | The only Windows package (x64 and ARM64): for the Microsoft Store, which signs it, and for winget, which installs the signed bundle |
 
 No C compiler is needed, and builds stay well under 2 GB of memory.
 
