@@ -1,6 +1,7 @@
 @echo off
 rem Iris build for Windows. Double-click it.
-rem Makes dist\Iris Setup.exe (the installer) and dist\Iris\Iris.exe (portable).
+rem Makes dist\Iris.msixbundle (x64 and ARM64), the only Windows package:
+rem the Microsoft Store signs it, and winget installs the same bundle.
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
@@ -32,14 +33,6 @@ copy /y LICENSE "dist\Iris\" >nul
 copy /y NOTICE "dist\Iris\" >nul
 copy /y THIRD_PARTY_NOTICES.md "dist\Iris\" >nul
 
-echo Packing the setup...
-go run tools\gz.go "dist\Iris\Iris.exe" setup\payload\Iris.exe.gz || ( pause & exit /b 1 )
-copy /y LICENSE setup\payload\ >nul
-copy /y NOTICE setup\payload\ >nul
-copy /y THIRD_PARTY_NOTICES.md setup\payload\ >nul
-go build -trimpath -ldflags "-H windowsgui -s -w" -o "dist\Iris Setup.exe" .\cmd\iris-setup || ( echo Setup build failed. & pause & exit /b 1 )
-powershell -NoProfile -Command "Compress-Archive -Force -Path 'dist\Iris' -DestinationPath 'dist\Iris-portable.zip'"
-
 echo Packing for the Microsoft Store (MSIX for x64 and ARM64, and a bundle of both)...
 go run tools\msix.go -exe "dist\Iris\Iris.exe" -arch x64 -out dist\Iris_x64.msix || ( pause & exit /b 1 )
 set GOARCH=arm64
@@ -51,7 +44,5 @@ del dist\Iris-arm64.exe
 
 echo.
 echo Done:
-echo   dist\Iris Setup.exe      the installer
-echo   dist\Iris\Iris.exe    portable (needs the WebView2 runtime, which Windows 10 and 11 have)
-echo   dist\Iris.msixbundle      for the Microsoft Store (x64 and ARM64; the Store signs it)
+echo   dist\Iris.msixbundle      the only Windows package: for the Microsoft Store (x64 and ARM64; the Store signs it) and winget
 pause
