@@ -19,8 +19,13 @@ jobs:
           df -h /
       - name: Servo's build dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq build-essential clang llvm-dev libclang-dev cmake curl git gperf m4 python3 \
+          # the man pages' index is rebuilt after every install and can hang the
+          # runner for half an hour: not needed here. apt gets 10 minutes, then
+          # one more try.
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo apt-get "$@" || { sleep 10; timeout 600 sudo apt-get "$@"; }; }
+          apt_get update -qq
+          apt_get install -y -qq build-essential clang llvm-dev libclang-dev cmake curl git gperf m4 python3 \
             libdbus-1-dev libfreetype6-dev libfontconfig1-dev libgl1-mesa-dri libgles2-mesa-dev libegl1-mesa-dev \
             libglib2.0-dev libharfbuzz-dev liblzma-dev libudev-dev libunwind-dev libx11-dev libxcb-render0-dev \
             libxcb-shape0-dev libxcb-xfixes0-dev libxmu-dev xorg-dev libxkbcommon-dev libssl-dev pkg-config
