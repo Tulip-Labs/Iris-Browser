@@ -4,5 +4,6 @@ setup/payload/*
 go.local.mod
 go.local.sum
 webview/litego_android.jar
+webview/servo/rust/target/
 build/
 third_party/
