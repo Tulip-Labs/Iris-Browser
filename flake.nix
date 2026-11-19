@@ -41,6 +41,10 @@
           preBuild = ''
             export AS="$CC"
           '';
+          # Nix's format hardening adds -Wformat-security without -Wformat,
+          # which SpiderMonkey's -Werror turns into an error (nixpkgs'
+          # spidermonkey turns it off the same way)
+          hardeningDisable = [ "format" ];
           doCheck = false;
           installPhase = ''
             runHook preInstall
