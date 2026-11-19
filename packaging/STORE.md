@@ -69,13 +69,27 @@ Center asks why; answer:
 
 **Search terms:** browser, web browser, ad blocker, privacy, lightweight, split view, fast
 
+## winget installs the same bundle
+
+`winget install TulipLabs.Iris` installs the `Iris.msixbundle` from the release — the
+same file uploaded to the Store. The release workflow makes the winget manifests and,
+when the `WINGET_TOKEN` secret is set, submits them to microsoft/winget-pkgs. One
+condition: the bundle has to be signed first (see below), or `winget` cannot install it
+on a normal PC. The Store signs its own copy, so the Store listing works with or
+without that step.
+
 ## What the Store does not cover
 
-The setup `.exe` and the portable `.zip` on GitHub stay unsigned, so SmartScreen warns
-about them. Signing those needs a certificate:
+Windows is MSIX-only now: there is no setup `.exe` and no portable `.zip` anymore, so
+nothing unsigned is handed out. One thing still needs a signature: the bundle `winget`
+installs. The Store signs the copy it distributes, but the bundle on the GitHub release
+is unsigned until someone signs it, and `winget` cannot install an unsigned MSIX on a
+normal PC. Signing it needs a certificate:
 
 - **SignPath Foundation** signs open-source projects for free. Iris's GPL license
   qualifies in principle; they review each project. Apply at https://signpath.org
+  (this is the route to take: once the release bundle is signed, the Store submission
+  and `winget install TulipLabs.Iris` use the same file)
 - **Azure Artifact Signing** costs about 10 USD a month, and for individuals is open only
   in the USA and Canada.
 - A certificate from a certificate authority costs roughly 150 to 300 USD a year.
