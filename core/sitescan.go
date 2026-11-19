@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"iris/core/safefile"
 )
 
 // SiteScan is the memory of adaptive shields: what the shield found on each
@@ -194,8 +196,5 @@ func (s *SiteScan) Flush() {
 	if err != nil {
 		return
 	}
-	tmp := s.path + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, s.path)
-	}
+	_ = safefile.WriteFile(s.path, b, 0o600)
 }

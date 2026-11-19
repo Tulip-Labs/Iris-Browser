@@ -17,13 +17,38 @@
           hash = "sha1-C0whieO5MDO77xOt0ahvZoScHmI=";
         };
 
+        # Servo's bridge for the light pages (webview/servo/rust): every crate
+        # is pinned by its Cargo.lock, all from crates.io; SpiderMonkey is
+        # built from its source (the build has no network to fetch it)
+        irisservo = pkgs.rustPlatform.buildRustPackage {
+          pname = "irisservo";
+          version = "0.1.0";
+          src = ./webview/servo/rust;
+          cargoLock.lockFile = ./webview/servo/rust/Cargo.lock;
+          env.MOZJS_FROM_SOURCE = "1";
+          nativeBuildInputs = with pkgs; [
+            pkg-config cmake python3 perl m4 gperf yasm which rustPlatform.bindgenHook llvmPackages.bintools
+          ];
+          buildInputs = with pkgs; [
+            fontconfig freetype harfbuzz libunwind libGL libxkbcommon dbus udev openssl zlib
+            xorg.libX11 xorg.libxcb xorg.libXcursor xorg.libXrandr xorg.libXi
+          ];
+          doCheck = false;
+          installPhase = ''
+            runHook preInstall
+            install -Dm755 target/*/release/libirisservo.so $out/lib/libirisservo.so 2>/dev/null \
+              || install -Dm755 target/release/libirisservo.so $out/lib/libirisservo.so
+            runHook postInstall
+          '';
+        };
+
         iris-browser = pkgs.buildGoModule {
           pname = "iris-browser";
-          version = "1.0.22";
+          version = "1.0.24";
           src = self;
           vendorHash = "sha256-DUuIMLR+RLt5e6kRZcxRdGo4Q4i9ZGR7ia629F8Vp2o=";
           subPackages = [ "cmd/iris" ];
-          tags = [ "webkit" "cef" "novulkan" ];
+          tags = [ "webkit" "cef" "novulkan" "servo" ];
           ldflags = [ "-s" "-w" ];
           doCheck = false;
           overrideModAttrs = _: { preBuild = ""; };
@@ -33,10 +58,13 @@
           nativeBuildInputs = with pkgs; [ pkg-config wrapGAppsHook4 autoPatchelfHook ];
           buildInputs = with pkgs; [
             gtk4 libepoxy libGL glib nss nspr alsa-lib libdrm libxkbcommon at-spi2-atk at-spi2-core
+            fontconfig freetype harfbuzz libunwind udev
             cups dbus expat pango cairo (pkgs.libgbm or pkgs.mesa) systemd
             xorg.libX11 xorg.libxcb xorg.libXcomposite xorg.libXdamage xorg.libXext xorg.libXfixes xorg.libXrandr
           ];
           preBuild = ''
+            mkdir -p webview/servo/lib
+            cp ${irisservo}/lib/libirisservo.so webview/servo/lib/
             mkdir -p third_party/cef
             tar -xjf ${cef} -C third_party/cef --strip-components=1
             strip --strip-unneeded third_party/cef/Release/libcef.so
@@ -47,6 +75,7 @@
             mv $out/bin/iris $lib/iris
             gcc -O2 -fno-stack-protector -Ithird_party/cef -DCEF_API_VERSION=15600 packaging/cef/helper.c \
               -Lthird_party/cef/Release -lcef -Wl,--allow-shlib-undefined -Wl,-rpath,'$ORIGIN' -o $lib/iris-helper
+            cp ${irisservo}/lib/libirisservo.so $lib/
             for f in libcef.so libvk_swiftshader.so libvulkan.so.1 vk_swiftshader_icd.json v8_context_snapshot.bin; do
               cp third_party/cef/Release/$f $lib/
             done

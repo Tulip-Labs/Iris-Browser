@@ -138,10 +138,16 @@ func fileName(d webview.Download) string {
 // program (a launcher, a script, an installer): such files are shown in
 // their folder instead of opened, so a click on a download never runs one.
 func runnable(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".desktop", ".sh", ".bash", ".zsh", ".fish", ".run", ".bin", ".appimage", ".flatpakref", ".flatpak",
-		".jar", ".py", ".pl", ".rb", ".exe", ".msi", ".bat", ".cmd", ".com", ".scr", ".ps1", ".vbs", ".js", ".jse",
-		".wsf", ".hta", ".lnk", ".reg", ".deb", ".rpm", ".apk", ".elf", ".so", ".ko":
+	// Windows ignores trailing dots and spaces ("setup.exe." runs setup.exe)
+	ext := strings.ToLower(filepath.Ext(strings.TrimRight(path, ". ")))
+	switch ext {
+	case ".desktop", ".sh", ".bash", ".zsh", ".fish", ".csh", ".ksh", ".command", ".run", ".bin", ".appimage",
+		".flatpakref", ".flatpakrepo", ".flatpak", ".snap", ".x86_64",
+		".jar", ".jnlp", ".py", ".pyw", ".pyz", ".pl", ".rb", ".php", ".exe", ".msi", ".msp", ".msix", ".msixbundle",
+		".appx", ".appxbundle", ".appinstaller", ".application", ".bat", ".cmd", ".com", ".scr", ".pif", ".cpl",
+		".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse", ".mjs", ".wsf", ".wsh", ".hta", ".lnk", ".url", ".scf",
+		".reg", ".inf", ".gadget", ".settingcontent-ms", ".library-ms", ".iso", ".img", ".vhd", ".vhdx",
+		".deb", ".rpm", ".apk", ".elf", ".so", ".ko":
 		return true
 	}
 	return false
@@ -236,11 +242,15 @@ func bytesText(n int64) string {
 }
 
 func timeLeft(sec float64) string {
+	// a server may send more than it announced: never a negative time
+	sec = max(0, sec)
 	switch {
 	case sec < 60:
 		return strconv.Itoa(int(sec)+1) + " s left"
 	case sec < 3600:
 		return strconv.Itoa(int(sec/60)+1) + " min left"
+	case sec > 99*3600:
+		return "more than 99 h left"
 	}
 	return strconv.FormatFloat(sec/3600, 'f', 1, 64) + " h left"
 }

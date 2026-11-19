@@ -67,7 +67,15 @@ build_linux() {
 	CGO_ENABLED=1 go test ./core ./shields ./shell ./update ./link
 	rm -rf dist/linux
 	mkdir -p dist/linux
-	CGO_ENABLED=1 go build -tags "webkit cef novulkan" -trimpath -ldflags "-s -w" -o dist/linux/iris ./cmd/iris
+	# Servo for the light pages, when its bridge is built (webview/servo/lib,
+	# from .github/workflows/servo-lib.yml or cargo in webview/servo/rust)
+	tags="webkit cef novulkan"
+	if [ -f webview/servo/lib/libirisservo.so ]; then
+		tags="$tags servo"
+		cp webview/servo/lib/libirisservo.so dist/linux/
+		echo "With Servo for light pages"
+	fi
+	CGO_ENABLED=1 go build -tags "$tags" -trimpath -ldflags "-s -w" -o dist/linux/iris ./cmd/iris
 	go run tools/sum.go dist/linux/iris # the record Iris checks itself against
 	cef=third_party/cef
 	gcc -O2 -fno-stack-protector -I"$cef" -DCEF_API_VERSION=15600 packaging/cef/helper.c -L"$cef/Release" -lcef -Wl,-rpath,'$ORIGIN' -o dist/linux/iris-helper

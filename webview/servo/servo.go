@@ -57,7 +57,8 @@ type Engine struct {
 
 var (
 	eng     *Engine
-	views   = map[uint64]*view{}
+	views   = map[uint64]*view{} // the pages open in Servo, by number
+	all     = map[*view]bool{}   // every Servo view, rested ones included
 	nextID  uint64
 	runs    = map[uint64]func(string){}
 	nextRun uint64
@@ -360,7 +361,7 @@ func lsvGoTick() {
 	}
 	if os.Getenv("IRIS_GL_DEBUG") != "" {
 		rested := 0
-		for _, v := range all {
+		for v := range all {
 			if v.rested && !v.closed {
 				rested++
 			}

@@ -1,8 +1,30 @@
 Iris: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
-## New in 1.1.0 (in progress)
+## New in 1.0.25
+
+- **Google's own results, cleaned.** Searches open on Google's real page again (Iris's own results page is gone), with the AI Overview kept and the ads, sponsored results, "People also ask" and shopping blocks taken out. The best sources come first and carry a small label (Reference, Docs, Research, Official, Academic, Discussion, News), shops go last unless you are shopping, and content farms, coupon and download sites and listicles built for ads are left out.
+- **Filters over every Google search:** any time, past hour, day, week, month or year; exact words (no guesses or synonyms); all, forums, news, videos or PDFs; and "No SEO spam", on by default, to see everything Google found when you turn it off.
+- **Sharper interface on Linux.** Gio, which draws Iris's interface, now draws into an sRGB frame that Iris copies to the screen pixel for pixel; before, Gio drew into a frame of its own and copied it over itself, which left every edge and letter a pixel softer.
+
+## New in 1.0.24
+
+A release about safety and steadiness; nothing changes in how Iris looks.
+
+- **HTTPS-only can no longer be dodged by a look-alike name.** Addresses such as `10.example.com` or `localhost.example.net` were taken for addresses on your own network, so Iris opened them over plain HTTP and skipped its warnings about suspicious addresses. Only real local addresses (localhost, and network addresses such as 192.168.1.1) get that exception now.
+- **No more memory blow-ups from pictures.** A tiny picture file can claim to be enormous once opened. Iris now checks a picture's size before opening it and refuses anything over about 40 megapixels, so a search thumbnail or the artwork of what is playing cannot eat your memory.
+- **Pages cannot point Iris at your own network.** When Iris fetches artwork, thumbnails or YouTube results itself, it only connects to addresses on the internet, never to this computer or your router, even after a redirect.
+- **Settings survive a crash or a power cut.** Settings and Iris's other small files are written to the disk completely before they replace the old ones. If a settings file is ever damaged, Iris keeps a copy of it as `settings.json.damaged` instead of quietly writing over it.
+- **Safer updates on Windows.** Iris Setup updates are only downloaded over HTTPS and never grow larger than the release says.
+- **Ad-block lists are never saved half.** A list that was cut off while downloading is thrown away and fetched again later.
+- **Phone link and sync hold up better.** A phone that stops sending in the middle of a file no longer keeps the transfer open forever, and connections that go quiet are closed.
+- **Fewer surprises in downloads.** More kinds of files that can run programs (installers, disk images, shortcuts, scripts) are shown in their folder instead of opened with a click, and the time left on a download never shows a negative number.
+
+## New in 1.0.23
 
 - **Iris for Linux is a Flatpak, a Snap or a Nix package.** One way to install it on every distribution, Fedora Atomic included: `Iris-x86_64.flatpak` (with the GNOME runtime from Flathub) or `Iris-x86_64.snap` from the release, or `nix profile install github:Tulip-Labs/Iris-Browser`. Each keeps Iris up to date. The .deb, .rpm, AUR and .tar.gz packages and their apt and dnf repositories are no longer made, and Iris no longer installs updates itself on Linux: remove the old package and install the Flatpak.
+- **If you installed Iris from a .rpm or .deb (also inside distrobox or toolbox):** that copy gets no more updates. Remove it (`sudo dnf remove iris-browser` or `sudo apt remove iris-browser`) and install `Iris-x86_64.flatpak` from this release with `flatpak install --user ./Iris-x86_64.flatpak`; on Fedora Atomic it installs straight on the system, no distrobox needed. Your settings and history stay in your home folder.
+- **Touchpad scrolling in pages** is now sent to Chromium as exact pixel moves, so the page follows your fingers instead of easing after each one.
+- `IRIS_INPUT_DEBUG=1 iris` prints what the pointer, touchpad and keyboard send, to find input problems.
 
 ## New in 1.0.22
 

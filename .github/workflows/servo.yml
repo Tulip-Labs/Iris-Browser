@@ -10,52 +10,7 @@ on:
 
 jobs:
   servo-lib:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 180
-    steps:
-      - uses: actions/checkout@v4
-      - name: Room on the disk (Servo's build is large)
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
-          df -h /
-      - name: Servo's build dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq build-essential clang llvm-dev libclang-dev cmake curl git gperf m4 python3 \
-            libdbus-1-dev libfreetype6-dev libfontconfig1-dev libgl1-mesa-dri libgles2-mesa-dev libegl1-mesa-dev \
-            libglib2.0-dev libharfbuzz-dev liblzma-dev libudev-dev libunwind-dev libx11-dev libxcb-render0-dev \
-            libxcb-shape0-dev libxcb-xfixes0-dev libxmu-dev xorg-dev libxkbcommon-dev libssl-dev pkg-config
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Cargo's cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            webview/servo/rust/target
-          key: servo-${{ hashFiles('webview/servo/rust/Cargo.toml', 'webview/servo/rust/src/**') }}
-          restore-keys: servo-
-      - name: Servo's own locked versions (its crate carries its Cargo.lock)
-        run: |
-          cd webview/servo/rust
-          if [ ! -f Cargo.lock ]; then
-            mkdir -p /tmp/servo-crate
-            curl -fsSL https://static.crates.io/crates/servo/servo-0.4.0.crate | tar -xz -C /tmp/servo-crate
-            cp /tmp/servo-crate/servo-0.4.0/Cargo.lock Cargo.lock
-          fi
-      - name: Build the bridge
-        run: |
-          cd webview/servo/rust
-          start=$(date +%s)
-          cargo build --release 2>&1 | tail -80
-          echo "built in $(( $(date +%s) - start )) s"
-          ls -l target/release/libirisservo.so
-          du -sh target
-          echo "LOCK-BEGIN"; gzip -c Cargo.lock | base64 -w0; echo; echo "LOCK-END"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: libirisservo
-          path: webview/servo/rust/target/release/libirisservo.so
+    uses: ./.github/workflows/servo-lib.yml
 
   app:
     needs: servo-lib
@@ -68,8 +23,13 @@ jobs:
           cache: false
       - name: Build tools and GTK development files
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev libfreetype-dev curl bzip2
+          # the man pages' index is rebuilt after every install and can hang the
+          # runner for half an hour: not needed here. apt gets 10 minutes, then
+          # one more try.
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo apt-get "$@" || { sleep 10; timeout 600 sudo apt-get "$@"; }; }
+          apt_get update -qq
+          apt_get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev libfreetype-dev curl bzip2
       - uses: actions/download-artifact@v4
         with:
           name: libirisservo
@@ -83,10 +43,7 @@ jobs:
         run: go test ./core/route/ ./core/session/... ./webview/route/
       - name: Build Iris with Servo
         run: |
-          ./build-iris.sh linux
-          CGO_ENABLED=1 go build -tags "webkit cef novulkan servo" -trimpath -ldflags "-s -w" -o dist/linux/iris ./cmd/iris
-          go run tools/sum.go dist/linux/iris
-          cp webview/servo/lib/libirisservo.so dist/linux/
+          ./build-iris.sh linux # with Servo: its bridge is in webview/servo/lib
           ldd dist/linux/iris | grep -i servo
           du -sh dist/linux dist/linux/libirisservo.so
           tar -C dist -czf iris-servo.tar.gz linux
@@ -104,8 +61,13 @@ jobs:
           name: iris-servo
       - name: Install what Iris needs, and sway
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq sway grim python3 dbus fonts-dejavu-core libgtk-4-1 libepoxy0 libnss3 libnspr4 \
+          # the man pages' index is rebuilt after every install and can hang the
+          # runner for half an hour: not needed here. apt gets 10 minutes, then
+          # one more try.
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo apt-get "$@" || { sleep 10; timeout 600 sudo apt-get "$@"; }; }
+          apt_get update -qq
+          apt_get install -y -qq sway grim python3 dbus fonts-dejavu-core libgtk-4-1 libepoxy0 libnss3 libnspr4 \
             libasound2t64 libgbm1 libdrm2 libxkbcommon0 libatk-bridge2.0-0t64 libatk1.0-0t64 libcups2t64 libxcomposite1 \
             libxdamage1 libxrandr2 libgl1-mesa-dri libegl1 libgles2 libfontconfig1 libharfbuzz0b python3-pil
           tar -xzf iris-servo.tar.gz
@@ -137,7 +99,7 @@ jobs:
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           (cd /tmp/page && python3 -m http.server 8767 --bind 127.0.0.3 >/dev/null 2>&1 &)
           sleep 1
-          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_HEAVY_HOSTS=127.0.0.3
+          export RUST_LOG=warn LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_HEAVY_HOSTS=127.0.0.3
           dbus-run-session -- $PWD/linux/iris http://127.0.0.2:8766/article.html > /tmp/fs/log.txt 2>&1 &
           sleep 25
           grim /tmp/fs/1-servo.png
@@ -147,11 +109,13 @@ jobs:
           grim /tmp/fs/2-heavy.png
           pgrep -x iris >/dev/null || touch /tmp/fs/exited
           pkill -x iris; sleep 2; pkill -9 -x iris; pkill -9 -f iris-helper
+          true # nothing left to stop is fine
           SH
-          sh /tmp/run.sh
+          sh /tmp/run.sh || true
           echo "== log"; grep -v "dbus" /tmp/fs/log.txt | tail -80
           for f in /tmp/fs/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
           [ ! -e /tmp/fs/exited ] || { echo "Iris exited"; exit 1; }
+          echo "== Servo"; grep -a "Iris: Servo\|WARN\|ERROR" /tmp/fs/log.txt | head -60
           echo "== engines"; grep -a "drawn by" /tmp/fs/log.txt
           echo "== memory"; grep -a "Iris: memory" /tmp/fs/log.txt | tail -5
           grep -aq "drawn by Servo (127.0.0.2" /tmp/fs/log.txt || { echo "the article did not go to Servo"; exit 1; }

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"iris/core/safefile"
 )
 
 // Settings are Iris's preferences, kept in a small JSON file that loads instantly.
@@ -74,7 +76,16 @@ func LoadSettings(dir string) *Settings {
 	}
 	s.path = filepath.Join(dir, "settings.json")
 	if b, err := os.ReadFile(s.path); err == nil {
-		_ = json.Unmarshal(b, s)
+		if json.Unmarshal(b, s) != nil {
+			// a damaged file is kept aside, not silently written over with
+			// the defaults at the next change
+			_ = os.WriteFile(s.path+".damaged", b, 0o600)
+		}
+	}
+	// a window size from the file is only a hint; anything absurd (an edited
+	// or damaged file) falls back to the default size
+	if s.Window.W < 480 || s.Window.H < 420 || s.Window.W > 16384 || s.Window.H > 16384 {
+		s.Window.W, s.Window.H = 0, 0
 	}
 	// The shield has no switches: it blocks everywhere but YouTube, where
 	// the ads load and are skipped (core.YouTubeScript)
@@ -103,10 +114,7 @@ func (s *Settings) write() {
 	if err != nil {
 		return
 	}
-	tmp := s.path + ".tmp"
-	if os.WriteFile(tmp, b, 0o600) == nil {
-		_ = os.Rename(tmp, s.path)
-	}
+	_ = safefile.WriteFile(s.path, b, 0o600)
 }
 
 // Flush writes pending changes now (on exit).

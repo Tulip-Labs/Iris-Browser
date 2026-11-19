@@ -4,6 +4,7 @@
 package core
 
 import (
+	"net"
 	"net/url"
 	"regexp"
 	"strings"
@@ -40,12 +41,27 @@ func (m Mode) URL(q string) string {
 }
 
 var (
-	reScheme  = regexp.MustCompile(`(?i)^([a-z][a-z0-9+.-]*):(.*)$`)
-	rePort    = regexp.MustCompile(`^\d+([/?#]|$)`)
-	reLocal   = regexp.MustCompile(`^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)`)
-	reYT      = regexp.MustCompile(`(?i)^yt\s+(.+)$`)
-	rePrivate = regexp.MustCompile(`(?i)^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[::1\])`)
+	reScheme = regexp.MustCompile(`(?i)^([a-z][a-z0-9+.-]*):(.*)$`)
+	rePort   = regexp.MustCompile(`^\d+([/?#]|$)`)
+	reYT     = regexp.MustCompile(`(?i)^yt\s+(.+)$`)
 )
+
+// privateHostname reports whether a host name (no port) is this computer or
+// an address on the local network: localhost and *.localhost, or an IP
+// address in the loopback or private ranges. A name that only starts like
+// one ("10.example.com", "localhost.example.com", "192.168.evil.net") is a
+// public site and gets no exception from HTTPS-only or the address checks.
+func privateHostname(h string) bool {
+	h = strings.TrimSuffix(strings.ToLower(strings.Trim(h, "[]")), ".")
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	if i := strings.IndexByte(h, '%'); i >= 0 { // fe80::1%eth0
+		h = h[:i]
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate())
+}
 
 func hasScheme(t string) bool {
 	m := reScheme.FindStringSubmatch(t)
@@ -85,8 +101,14 @@ func URLFor(text string) string {
 	if hasScheme(t) {
 		return t
 	}
-	host := strings.SplitN(strings.SplitN(t, "/", 2)[0], ":", 2)[0]
-	if reLocal.MatchString(host) {
+	host := strings.SplitN(t, "/", 2)[0]
+	if i := strings.IndexAny(host, "?#"); i >= 0 {
+		host = host[:i]
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if privateHostname(host) {
 		return "http://" + t
 	}
 	return "https://" + t
@@ -114,7 +136,7 @@ func HTTPSUpgrade(u string) string {
 		return ""
 	}
 	p, err := url.Parse(u)
-	if err != nil || p.Hostname() == "" || rePrivate.MatchString(p.Hostname()) {
+	if err != nil || p.Hostname() == "" || privateHostname(p.Hostname()) {
 		return ""
 	}
 	return "https://" + u[7:]
@@ -123,7 +145,7 @@ func HTTPSUpgrade(u string) string {
 // IsPrivateHost reports a local network address (allowed over plain http).
 func IsPrivateHost(u string) bool {
 	p, err := url.Parse(u)
-	return err == nil && rePrivate.MatchString(p.Hostname())
+	return err == nil && privateHostname(p.Hostname())
 }
 
 // Host returns the lower-case host of a URL ("" if none).
