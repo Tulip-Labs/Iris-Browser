@@ -132,7 +132,7 @@ func runInstall(s *Setup) {
 	dir := installDir()
 	mark(0, 1, 0.05)
 	if !engineInstalled() {
-		s.set(func() { s.steps[0].label = "Installing Microsoft Edge WebView2" })
+		s.set(func() { s.steps[0].label = "Installing the page engine (Electron)" })
 		if err := installEngine(func(p float32) { s.set(func() { s.progress = 0.05 + p*0.4 }) }); err != nil {
 			s.fail(err)
 			return
