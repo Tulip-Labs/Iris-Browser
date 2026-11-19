@@ -15,7 +15,7 @@ import (
 	"iris/shell"
 )
 
-const version = "1.0.22"
+const version = "1.0.23"
 
 func main() {
 	// a small, steady footprint: collect garbage sooner and keep the Go heap

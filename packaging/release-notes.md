@@ -1,8 +1,11 @@
 Iris: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
 
-## New in 1.1.0 (in progress)
+## New in 1.0.23
 
 - **Iris for Linux is a Flatpak, a Snap or a Nix package.** One way to install it on every distribution, Fedora Atomic included: `Iris-x86_64.flatpak` (with the GNOME runtime from Flathub) or `Iris-x86_64.snap` from the release, or `nix profile install github:Tulip-Labs/Iris-Browser`. Each keeps Iris up to date. The .deb, .rpm, AUR and .tar.gz packages and their apt and dnf repositories are no longer made, and Iris no longer installs updates itself on Linux: remove the old package and install the Flatpak.
+- **If you installed Iris from a .rpm or .deb (also inside distrobox or toolbox):** that copy gets no more updates. Remove it (`sudo dnf remove iris-browser` or `sudo apt remove iris-browser`) and install `Iris-x86_64.flatpak` from this release with `flatpak install --user ./Iris-x86_64.flatpak`; on Fedora Atomic it installs straight on the system, no distrobox needed. Your settings and history stay in your home folder.
+- **Touchpad scrolling in pages** is now sent to Chromium as exact pixel moves, so the page follows your fingers instead of easing after each one.
+- `IRIS_INPUT_DEBUG=1 iris` prints what the pointer, touchpad and keyboard send, to find input problems.
 
 ## New in 1.0.22
 
