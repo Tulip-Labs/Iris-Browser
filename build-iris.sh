@@ -103,17 +103,13 @@ build_windows() {
 	GOOS=windows GOARCH=$ARCH go build -trimpath -ldflags "-H windowsgui -s -w" -o "dist/Iris/Iris.exe" ./cmd/iris
 	go run tools/sum.go "dist/Iris/Iris.exe" # the record Iris checks itself against
 	cp LICENSE NOTICE THIRD_PARTY_NOTICES.md "dist/Iris/"
-	go run tools/gz.go "dist/Iris/Iris.exe" setup/payload/Iris.exe.gz
-	cp LICENSE NOTICE THIRD_PARTY_NOTICES.md setup/payload/
-	GOOS=windows GOARCH=$ARCH go build -trimpath -ldflags "-H windowsgui -s -w" -o "dist/Iris Setup.exe" ./cmd/iris-setup
-	(cd dist && rm -f Iris-portable.zip && zip -qr Iris-portable.zip "Iris")
 	go run tools/msix.go -exe "dist/Iris/Iris.exe" -arch x64 -out dist/Iris_x64.msix
 	GOOS=windows GOARCH=arm64 go build -trimpath -ldflags "-H windowsgui -s -w" -o dist/Iris-arm64.exe ./cmd/iris
 	go run tools/msix.go -exe dist/Iris-arm64.exe -arch arm64 -out dist/Iris_arm64.msix
 	go run tools/msix.go -bundle dist/Iris.msixbundle dist/Iris_x64.msix dist/Iris_arm64.msix
 	rm -f dist/Iris-arm64.exe
 	unset CGO_ENABLED
-	echo "Done: dist/Iris Setup.exe, dist/Iris/Iris.exe and dist/Iris.msixbundle"
+	echo "Done: dist/Iris.msixbundle (the only Windows package)"
 }
 
 case "$target" in
