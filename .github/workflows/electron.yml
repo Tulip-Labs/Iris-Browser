@@ -116,22 +116,22 @@ jobs:
           export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           sleep 1
-          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CONSOLE=1 IRIS_MEM_LOG=1 ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1
+          export IRIS_INPUT_DEBUG=1 LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CONSOLE=1 IRIS_MEM_LOG=1 ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1
           dbus-run-session -- /opt/linux-electron/iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 25
           grim /tmp/fs/1-full.png
           # a click on the page's button (page units 20..320 × 80..160, the page
           # starts about 83 screen units down and 8 across)
-          swaymsg 'seat seat0 cursor set 160 205'
-          swaymsg 'seat seat0 cursor press button1'
-          swaymsg 'seat seat0 cursor release button1'
+          swaymsg 'seat seat0 cursor set 160 205' >> /tmp/fs/swayin.txt 2>&1
+          swaymsg 'seat seat0 cursor press button1' >> /tmp/fs/swayin.txt 2>&1
+          swaymsg 'seat seat0 cursor release button1' >> /tmp/fs/swayin.txt 2>&1
           sleep 2
           # into the text field, and typing
-          swaymsg 'seat seat0 cursor set 160 285'
-          swaymsg 'seat seat0 cursor press button1'
-          swaymsg 'seat seat0 cursor release button1'
+          swaymsg 'seat seat0 cursor set 160 285' >> /tmp/fs/swayin.txt 2>&1
+          swaymsg 'seat seat0 cursor press button1' >> /tmp/fs/swayin.txt 2>&1
+          swaymsg 'seat seat0 cursor release button1' >> /tmp/fs/swayin.txt 2>&1
           sleep 1
-          wtype hello
+          wtype hello >> /tmp/fs/swayin.txt 2>&1; echo "wtype $?" >> /tmp/fs/swayin.txt
           sleep 3
           grim /tmp/fs/2-after-input.png
           sleep 8
@@ -151,6 +151,8 @@ jobs:
           echo "== the engine's memory and tabs, as Iris sees them"
           grep "Iris: engine " /tmp/fs/log.txt | tail -6
           cat /tmp/fs/mem.txt
+          echo "== input"; cat /tmp/fs/swayin.txt 2>/dev/null | tr -d '\n' | cut -c1-400; echo
+          grep -E "Iris: event|Iris pages: input|IRIS-CLICK|IRIS-TYPED" /tmp/fs/log.txt | head -40
           echo "== budget test"
           grep -E "Iris: engine |restarting|IRIS-DPR|Iris pages:" /tmp/fs/log-budget.txt | tail -20
           for f in /tmp/fs/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
