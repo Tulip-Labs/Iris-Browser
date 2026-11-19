@@ -74,6 +74,12 @@ struct State {
     scale: Cell<f32>,
 }
 
+/// IRIS_GL_DEBUG: what Servo does with each page, on stderr.
+fn debug() -> bool {
+    thread_local! { static ON: bool = std::env::var_os("IRIS_GL_DEBUG").is_some(); }
+    ON.with(|o| *o)
+}
+
 thread_local! {
     static STATE: RefCell<Option<Rc<State>>> = const { RefCell::new(None) };
 }
@@ -134,12 +140,18 @@ fn kebab(name: &str) -> String {
 
 impl WebViewDelegate for Delegate {
     fn notify_url_changed(&self, _wv: WebView, url: Url) {
+        if debug() {
+            eprintln!("Iris: Servo page {}: at {url}", self.id);
+        }
         self.emit(EV_URL, url.as_str(), 0, 0);
     }
     fn notify_page_title_changed(&self, _wv: WebView, title: Option<String>) {
         self.emit(EV_TITLE, title.as_deref().unwrap_or(""), 0, 0);
     }
     fn notify_load_status_changed(&self, _wv: WebView, status: LoadStatus) {
+        if debug() {
+            eprintln!("Iris: Servo page {}: {status:?}", self.id);
+        }
         if status == LoadStatus::HeadParsed {
             self.emit(EV_HEAD, "", 0, 0);
         }
@@ -153,6 +165,9 @@ impl WebViewDelegate for Delegate {
         self.emit(EV_HISTORY, "", (current > 0) as i32, (current + 1 < entries.len()) as i32);
     }
     fn notify_new_frame_ready(&self, _wv: WebView) {
+        if debug() {
+            eprintln!("Iris: Servo page {}: a new frame is ready", self.id);
+        }
         if let Some(st) = state() {
             if let Some(p) = st.pages.borrow().get(&self.id) {
                 p.dirty.set(true);
@@ -269,13 +284,28 @@ pub extern "C" fn iris_servo_spin() {
         if !p.dirty.replace(false) || !p.shown.get() {
             continue;
         }
-        let _ = p.ctx.make_current();
+        if let Err(e) = p.ctx.make_current() {
+            if debug() {
+                eprintln!("Iris: Servo page {id}: its drawing context cannot be made current: {e:?}");
+            }
+        }
         p.webview.paint();
         let size = p.ctx.size();
         let rect = Box2D::new(Point2D::zero(), Point2D::new(size.width as i32, size.height as i32));
-        if let Some(img) = p.ctx.read_to_image(rect) {
-            let (w, h) = (img.width() as i32, img.height() as i32);
-            (st.cb.frame)(id, img.as_raw().as_ptr(), w, h);
+        match p.ctx.read_to_image(rect) {
+            Some(img) => {
+                let (w, h) = (img.width() as i32, img.height() as i32);
+                if debug() {
+                    let c = img.get_pixel(img.width() / 2, img.height().min(200) / 2);
+                    eprintln!("Iris: Servo page {id}: frame {w}x{h}, a pixel near the top {:?}", c.0);
+                }
+                (st.cb.frame)(id, img.as_raw().as_ptr(), w, h);
+            }
+            None => {
+                if debug() {
+                    eprintln!("Iris: Servo page {id}: painted, but its pixels could not be read");
+                }
+            }
         }
         p.ctx.present();
     }

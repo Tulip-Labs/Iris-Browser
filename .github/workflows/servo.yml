@@ -89,7 +89,7 @@ jobs:
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           (cd /tmp/page && python3 -m http.server 8767 --bind 127.0.0.3 >/dev/null 2>&1 &)
           sleep 1
-          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_HEAVY_HOSTS=127.0.0.3
+          export RUST_LOG=warn LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_HEAVY_HOSTS=127.0.0.3
           dbus-run-session -- $PWD/linux/iris http://127.0.0.2:8766/article.html > /tmp/fs/log.txt 2>&1 &
           sleep 25
           grim /tmp/fs/1-servo.png
@@ -105,6 +105,7 @@ jobs:
           echo "== log"; grep -v "dbus" /tmp/fs/log.txt | tail -80
           for f in /tmp/fs/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
           [ ! -e /tmp/fs/exited ] || { echo "Iris exited"; exit 1; }
+          echo "== Servo"; grep -a "Iris: Servo\|WARN\|ERROR" /tmp/fs/log.txt | head -60
           echo "== engines"; grep -a "drawn by" /tmp/fs/log.txt
           echo "== memory"; grep -a "Iris: memory" /tmp/fs/log.txt | tail -5
           grep -aq "drawn by Servo (127.0.0.2" /tmp/fs/log.txt || { echo "the article did not go to Servo"; exit 1; }
