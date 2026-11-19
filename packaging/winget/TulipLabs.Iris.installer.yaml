@@ -1,25 +1,28 @@
 # winget manifest (installer), made by the release workflow from this file.
+# The installer is the MSIX bundle: one file holds both architectures, so
+# both entries below point at the same URL (the Windows Terminal pattern).
+# PackageFamilyName and SignatureSha256 are filled in by wingetcreate when
+# it submits: they come from the signed bundle, so the bundle on the release
+# must be signed (SignPath, free for open source) before winget can install
+# it; the unsigned bundle the Store signs is not enough for winget.
 PackageIdentifier: TulipLabs.Iris
 PackageVersion: "@VERSION@"
 MinimumOSVersion: 10.0.17763.0
-InstallerType: exe
+InstallerType: msix
 Scope: user
 InstallModes:
-  - interactive
   - silent
-  - silentWithProgress
-InstallerSwitches:
-  Silent: --silent
-  SilentWithProgress: --silent
 UpgradeBehavior: install
 ReleaseDate: "@DATE@"
 AppsAndFeaturesEntries:
   - DisplayName: Iris
     Publisher: Tulipan Labs
-    ProductCode: LiteGo
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/Tulip-Labs/Iris-Browser/releases/download/v@VERSION@/Iris-Setup.exe
+    InstallerUrl: https://github.com/Tulip-Labs/Iris-Browser/releases/download/v@VERSION@/Iris.msixbundle
+    InstallerSha256: "@SHA256@"
+  - Architecture: arm64
+    InstallerUrl: https://github.com/Tulip-Labs/Iris-Browser/releases/download/v@VERSION@/Iris.msixbundle
     InstallerSha256: "@SHA256@"
 ManifestType: installer
 ManifestVersion: 1.6.0
