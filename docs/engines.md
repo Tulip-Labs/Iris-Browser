@@ -1,7 +1,8 @@
-# Iris on Linux: two engines, one browser
+# Iris: two engines, one browser
 
-This is the plan for Iris on Linux from 1.1 on. Windows keeps WebView2 and
-is not part of it. Android keeps its own engine.
+This is the plan for Iris from 1.1 on. On Linux the engines are Servo and
+Chromium (CEF); on Windows they are Servo and Electron (docs/windows-engines.md).
+Android keeps its own engine.
 
 ## What changes
 
