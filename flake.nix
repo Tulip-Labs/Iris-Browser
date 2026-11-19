@@ -34,6 +34,15 @@
             xorg.libX11 xorg.libxcb xorg.libXcursor xorg.libXrandr xorg.libXi
           ];
           doCheck = false;
+          # nixpkgs' cargo hook exports JEMALLOC_OVERRIDE pointing at a
+          # sentinel path that deliberately does not exist, to force system
+          # libraries; tikv-jemalloc-sys instead treats it as a library to
+          # link and panics when it is missing (nix build, run 44519762797).
+          # Unsetting it keeps the crate on its vendored static jemalloc,
+          # the same fix nixpkgs uses for deltalake and daft.
+          postConfigure = ''
+            unset JEMALLOC_OVERRIDE
+          '';
           installPhase = ''
             runHook preInstall
             install -Dm755 target/*/release/libirisservo.so $out/lib/libirisservo.so 2>/dev/null \
