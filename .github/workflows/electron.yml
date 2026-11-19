@@ -54,7 +54,7 @@ jobs:
         run: |
           dnf install -y -q gtk4 libepoxy gtk3 nss atk at-spi2-atk cups-libs libdrm mesa-libgbm mesa-dri-drivers alsa-lib \
             libXcomposite libXdamage libXrandr libxkbcommon libxshmfence pango cairo sway grim python3 python3-pillow \
-            dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip
+            dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip strace
           cp /usr/bin/sway /usr/local/bin/sway-plain
           mkdir -p /opt && tar -C /opt -xzf iris-electron.tar.gz && ls -l /opt/linux-electron
       - name: Iris at 1.25 on Electron
@@ -101,6 +101,24 @@ jobs:
           # Electron alone first: does it start here at all?
           E=/opt/linux-electron/electron/electron
           { echo "-- missing libraries:"; ldd $E | grep "not found"; echo "-- version:"; $E --version; echo "exit $?"; } > /tmp/fs/smoke.txt 2>&1
+          echo "-- as node:" >> /tmp/fs/smoke.txt
+          ELECTRON_RUN_AS_NODE=1 $E -e "console.log(process.versions.electron, process.versions.chrome)" >> /tmp/fs/smoke.txt 2>&1; echo "exit $?" >> /tmp/fs/smoke.txt
+          ELECTRON_RUN_AS_NODE=1 $E --check /opt/linux-electron/electron-helper/main.js >> /tmp/fs/smoke.txt 2>&1; echo "syntax exit $?" >> /tmp/fs/smoke.txt
+          mkdir -p /tmp/hello && cat > /tmp/hello/main.js <<'JS'
+          const { app } = require('electron');
+          console.error('hello: loaded');
+          app.whenReady().then(() => { console.error('hello: ready'); app.quit(); });
+          JS
+          echo '{"name":"hello","main":"main.js"}' > /tmp/hello/package.json
+          for oz in "" "--ozone-platform=headless"; do
+            echo "-- hello with: $oz" >> /tmp/fs/smoke.txt
+            timeout 15 $E --no-sandbox $oz --enable-logging=stderr --v=1 /tmp/hello >> /tmp/fs/smoke.txt 2>&1
+            echo "exit $?" >> /tmp/fs/smoke.txt
+          done
+          echo "-- strace of the helper" >> /tmp/fs/smoke.txt
+          timeout 20 env IRIS_SOCK=/tmp/none.sock strace -f -qq -e trace=execve,exit_group,openat,connect -o /tmp/fs/strace.txt $E --no-sandbox --enable-logging=stderr /opt/linux-electron/electron-helper >> /tmp/fs/smoke.txt 2>&1
+          echo "exit $?" >> /tmp/fs/smoke.txt
+          grep -E "ENOENT|EACCES|exit_group|execve" /tmp/fs/strace.txt | grep -v "/usr/share/locale\|\.mo\"\|fonts\|icons\|/etc/ld.so\|gconv\|glibc-hwcaps\|tls/\|x86_64/" | tail -60 >> /tmp/fs/smoke.txt
           for oz in "" "--ozone-platform=wayland" "--ozone-platform=headless" "--disable-gpu"; do
             echo "-- helper with: $oz" >> /tmp/fs/smoke.txt
             timeout 15 env IRIS_SOCK=/tmp/none.sock $E --no-sandbox $oz --enable-logging=stderr --v=0 /opt/linux-electron/electron-helper >> /tmp/fs/smoke.txt 2>&1
@@ -136,7 +154,7 @@ jobs:
           pkill -x iris
           SH
           su tester -c "sh /tmp/run.sh"
-          echo "== Electron alone"; grep -v "dbus/bus.cc" /tmp/fs/smoke.txt | tail -60
+          echo "== Electron alone"; grep -v "dbus/bus.cc" /tmp/fs/smoke.txt | tail -150
           grep -v dbus /tmp/fs/log.txt | grep -v "Iris: engine \|portal\|fuse" | tail -80
           echo "== the engine's memory and tabs, as Iris sees them"
           grep "Iris: engine " /tmp/fs/log.txt | tail -6
