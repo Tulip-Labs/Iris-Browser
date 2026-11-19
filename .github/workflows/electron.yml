@@ -98,6 +98,11 @@ jobs:
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           sleep 1
           export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CONSOLE=1 IRIS_MEM_LOG=1 ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1
+          E=/opt/linux-electron/electron/electron
+          ls -la /opt/linux-electron/electron/resources /opt/linux-electron/electron/resources/app > /tmp/fs/smoke.txt 2>&1
+          timeout 20 env IRIS_SOCK=/tmp/none.sock strace -f -qq -s 300 -e trace=openat,exit_group,write -o /tmp/fs/strace.txt $E --no-sandbox --enable-logging=stderr --v=1 >> /tmp/fs/smoke.txt 2>&1
+          echo "exit $?" >> /tmp/fs/smoke.txt
+          grep -E 'resources/app|main\.js|exit_group|write\(2,' /tmp/fs/strace.txt | grep -v ENOENT.*locale | head -80 >> /tmp/fs/smoke.txt
           dbus-run-session -- /opt/linux-electron/iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 25
           grim /tmp/fs/1-full.png
@@ -128,6 +133,7 @@ jobs:
           pkill -x iris
           SH
           su tester -c "sh /tmp/run.sh"
+          echo "== Electron alone"; grep -v "dbus/bus.cc\|scheduler_loop" /tmp/fs/smoke.txt | tail -150
           grep -v dbus /tmp/fs/log.txt | grep -v "Iris: engine \|portal\|fuse" | tail -80
           echo "== the engine's memory and tabs, as Iris sees them"
           grep "Iris: engine " /tmp/fs/log.txt | tail -6
