@@ -12,7 +12,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    # in Fedora's container: its package mirrors, not Ubuntu's (which hung)
+    container:
+      image: fedora:latest
     steps:
+      - name: Tools
+        timeout-minutes: 15
+        run: dnf install -y -q --setopt=install_weak_deps=False git gcc pkgconf-pkg-config gtk4-devel libepoxy-devel tar gzip xz findutils
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
@@ -20,32 +26,34 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Tools
-        timeout-minutes: 15
-        run: |
-          # GitHub's package mirror sometimes hangs: give each try 4 minutes
-          for i in 1 2 3; do
-            timeout 240 sudo apt-get update -qq && timeout 240 sudo apt-get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev ffmpeg && break
-            echo "apt try $i failed"; sleep 10
-          done
       - name: Build Iris with Electron
         run: sh webview/electron/build.sh dist/linux-electron
-      - name: Test videos (H.264 + AAC, and VP9)
-        run: |
-          mkdir -p dist/page
-          ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=frequency=440 -t 20 \
-            -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -movflags +faststart dist/page/h.mp4
-          ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime dist/page/v.webm
-          ls -l dist/page
       - name: Pack
-        run: tar -C dist -czf iris-electron.tar.gz linux-electron page
+        run: tar -C dist -czf iris-electron.tar.gz linux-electron
       - uses: actions/upload-artifact@v4
         with:
           name: iris-electron
           path: iris-electron.tar.gz
 
+  # the test videos, made by a ready-made ffmpeg image (x264 and VP9 encoders)
+  videos:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Test videos (H.264 + AAC, and VP9)
+        run: |
+          mkdir -p page
+          f="docker run --rm -v $PWD/page:/out -w /out jrottenberg/ffmpeg:7.1-ubuntu -loglevel error"
+          $f -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=frequency=440 -t 20 \
+            -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -movflags +faststart h.mp4
+          $f -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime v.webm
+          ls -l page
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iris-electron-videos
+          path: page/
+
   run:
-    needs: build
+    needs: [build, videos]
     runs-on: ubuntu-24.04
     container:
       image: fedora:latest
@@ -54,11 +62,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: iris-electron
+      - uses: actions/download-artifact@v4
+        with:
+          name: iris-electron-videos
+          path: /opt/page
       - name: Install what Iris and Electron need, and sway
         run: |
           dnf install -y -q gtk4 libepoxy gtk3 nss atk at-spi2-atk cups-libs libdrm mesa-libgbm mesa-dri-drivers alsa-lib \
             libXcomposite libXdamage libXrandr libxkbcommon libxshmfence pango cairo sway grim python3 python3-pillow \
-            dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip strace
+            dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip
           cp /usr/bin/sway /usr/local/bin/sway-plain
           mkdir -p /opt && tar -C /opt -xzf iris-electron.tar.gz && ls -l /opt/linux-electron
       - name: Iris at 1.25 on Electron
@@ -102,11 +114,6 @@ jobs:
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           sleep 1
           export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CONSOLE=1 IRIS_MEM_LOG=1 ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1
-          E=/opt/linux-electron/electron/electron
-          ls -la /opt/linux-electron/electron/resources /opt/linux-electron/electron/resources/app > /tmp/fs/smoke.txt 2>&1
-          timeout 20 env IRIS_SOCK=/tmp/none.sock strace -f -qq -s 300 -e trace=openat,exit_group,write -o /tmp/fs/strace.txt $E --no-sandbox --enable-logging=stderr --v=1 >> /tmp/fs/smoke.txt 2>&1
-          echo "exit $?" >> /tmp/fs/smoke.txt
-          grep -E 'resources/app|main\.js|exit_group|write\(2,' /tmp/fs/strace.txt | grep -v ENOENT.*locale | head -80 >> /tmp/fs/smoke.txt
           dbus-run-session -- /opt/linux-electron/iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 25
           grim /tmp/fs/1-full.png
