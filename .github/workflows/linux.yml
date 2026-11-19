@@ -246,7 +246,12 @@ jobs:
   # nix build github:Tulip-Labs/Iris-Browser must keep working
   nix:
     runs-on: ubuntu-24.04
+    timeout-minutes: 300
     steps:
+      - name: Room on the disk (Servo's build is large)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
         with:
@@ -259,4 +264,4 @@ jobs:
         run: |
           nix build -L .#default
           ls -l result/bin result/lib/iris-browser
-          ! ldd result/lib/iris-browser/.iris-wrapped result/lib/iris-browser/libcef.so | grep "=> not found"
+          ! ldd result/lib/iris-browser/.iris-wrapped result/lib/iris-browser/libcef.so result/lib/iris-browser/libirisservo.so | grep "=> not found"

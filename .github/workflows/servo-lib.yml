@@ -32,7 +32,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             webview/servo/rust/target
-          key: servo-${{ hashFiles('webview/servo/rust/Cargo.toml', 'webview/servo/rust/src/**') }}
+          key: servo-${{ hashFiles('webview/servo/rust/Cargo.toml', 'webview/servo/rust/Cargo.lock', 'webview/servo/rust/src/**') }}
           restore-keys: servo-
       - name: Servo's own locked versions (its crate carries its Cargo.lock)
         run: |
