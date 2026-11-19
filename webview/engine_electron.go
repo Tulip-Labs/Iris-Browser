@@ -740,7 +740,9 @@ func (e *elxEngine) menu(m in) {
 	if s <= 0 {
 		s = 1
 	}
-	mm := &Menu{X: float32(float64(bx)/s + m.X), Y: float32(float64(by)/s + m.Y)}
+	// the click's place in the page is in screen pixels (pages are drawn at
+	// scale 1, zoomed): back to the window's units
+	mm := &Menu{X: float32((float64(bx) + m.X) / s), Y: float32((float64(by) + m.Y) / s)}
 	for _, it := range m.Items {
 		if it.C == 0 {
 			mm.Items = append(mm.Items, MenuItem{Sep: true})
@@ -836,15 +838,28 @@ func (e *elxEngine) reopen(v *wkView) {
 	}
 }
 
+// bounds sizes a page in screen pixels (w, h): the helper draws it at scale
+// 1 and zooms it by the window's scale, read now (GTK's first guess at a
+// window's scale is often corrected a frame later).
 func (e *elxEngine) bounds(id uintptr, x, y, w, h int) {
-	e.mu.Lock()
-	s := e.scale
-	e.mu.Unlock()
-	if s <= 0 {
+	s := float64(C.elxScale())
+	if s < 0.5 || s > 8 {
 		s = 1
 	}
+	if v := os.Getenv("IRIS_SCALE"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0.5 && f <= 8 {
+			s = f
+		}
+	}
+	e.mu.Lock()
+	changed := math.Abs(s-e.scale) > 1e-4
+	e.scale = s
+	e.mu.Unlock()
+	if changed {
+		e.send(msg{"t": "scale", "s": s})
+	}
 	if w > 0 && h > 0 {
-		e.send(msg{"t": "bounds", "id": id, "w": int(math.Round(float64(w) / s)), "h": int(math.Round(float64(h) / s))})
+		e.send(msg{"t": "bounds", "id": id, "w": w, "h": h})
 	}
 }
 
