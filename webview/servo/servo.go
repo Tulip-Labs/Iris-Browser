@@ -1,29 +1,14 @@
-//go:build linux && webkit && servo
+//go:build (linux && webkit && servo) || (windows && servo)
 
-// Package servo is Iris's light engine on Linux: Servo (servo.org), drawing
-// articles, Wikipedia, search and docs in Iris's own process, with nothing to
-// start. The router (webview/route) gives it the pages it can draw and the
-// rest to Chromium. Its frames are drawn in the GTK window like Chromium's
-// (servo_linux.c); its requests pass Iris Shields; its cookies are shared
-// with Chromium through Iris's own store (core/session).
+// Package servo is Iris's light engine: Servo (servo.org), drawing articles,
+// Wikipedia, search and docs in Iris's own process, with nothing to start.
+// The router (webview/route) gives it the pages it can draw and the rest to
+// Chromium. Its frames are drawn in Iris's window like Chromium's
+// (servo_linux.c on Linux, servo_windows.c on Windows); its requests pass
+// Iris Shields; its cookies are shared with Chromium through Iris's own
+// store (core/session).
 package servo
 
-/*
-#cgo pkg-config: gtk4
-#cgo LDFLAGS: -L${SRCDIR}/lib -lirisservo -Wl,-rpath,$ORIGIN
-#include <stdint.h>
-#include <stdlib.h>
-#include "irisservo.h"
-
-int lsvStart(uintptr_t view);
-int lsvOpen(uint64_t id, const char *url);
-void lsvClose(uint64_t id);
-void lsvBounds(uint64_t id, int x, int y, int w, int h);
-void lsvShow(uint64_t id, int on);
-void lsvFocus(uint64_t id);
-void lsvWake(void);
-void lsvTicks(void);
-*/
 import "C"
 
 import (
@@ -79,7 +64,8 @@ func (e *Engine) Start(window uintptr, dataDir string, low bool, ready func(erro
 	}
 	e.started = true
 	e.budget = budgetMB()
-	C.lsvTicks() // the memory check, every 10 seconds (lsvGoTick)
+	svPlatformStart(window)
+	svPlatformTicks()
 	ready(nil)
 }
 
@@ -298,18 +284,7 @@ func (v *view) Close() {
 const restAfter = time.Minute
 
 // rssMB is this process's resident memory.
-func rssMB() float64 {
-	b, err := os.ReadFile("/proc/self/statm")
-	if err != nil {
-		return 0
-	}
-	f := strings.Fields(string(b))
-	if len(f) < 2 {
-		return 0
-	}
-	pages, _ := strconv.ParseFloat(f[1], 64)
-	return pages * float64(os.Getpagesize()) / (1 << 20)
-}
+func rssMB() float64 { return svRssMB() }
 
 // budgetMB is what Iris's own process may use before hidden Servo pages rest.
 func budgetMB() float64 {
@@ -318,18 +293,7 @@ func budgetMB() float64 {
 			return v
 		}
 	}
-	total := 8192.0
-	if f, err := os.Open("/proc/meminfo"); err == nil {
-		sc := bufio.NewScanner(f)
-		for sc.Scan() {
-			if fs := strings.Fields(sc.Text()); len(fs) >= 2 && fs[0] == "MemTotal:" {
-				kb, _ := strconv.ParseFloat(fs[1], 64)
-				total = kb / 1024
-			}
-		}
-		f.Close()
-	}
-	return max(600, total/6)
+	return max(600, svTotalMemMB()/6)
 }
 
 //export lsvGoTick
