@@ -1,12 +1,13 @@
-// Package webview embeds the operating system's web engine under Iris's
-// own Gio interface: WebView2 on Windows and Chromium (CEF) on Linux. Every method must be
+// Package webview embeds the web engines under Iris's
+// own Gio interface: Servo and Electron on Windows, Servo and Chromium (CEF)
+// on Linux. Every method must be
 // called on the window's UI thread; events arrive on that thread too.
 package webview
 
 import "errors"
 
 // SleepFreesMemory says whether putting a page to sleep gives its memory
-// back (WebView2 does; on Linux a hidden page keeps its memory, so under
+// back (Electron does; on Linux a hidden page keeps its memory, so under
 // memory pressure Iris unloads pages there instead).
 var SleepFreesMemory = true
 
@@ -15,7 +16,7 @@ var SleepFreesMemory = true
 type Options struct {
 	Profile string // "" is the default container
 	Private bool
-	// Popup is set when WebView2 asked for a new window (sign-in, payment):
+	// Popup is set when the engine asked for a new window (sign-in, payment):
 	// the view is attached to the opener so window.opener keeps working.
 	Popup *Popup
 	// Sandbox is for pages that may be unsafe: the engine refuses their
@@ -180,8 +181,8 @@ type Extension struct {
 	Enabled  bool
 }
 
-// ExtensionHost is an engine that runs browser extensions (WebView2 on
-// Windows; CEF drawing pages off screen, as on Linux, cannot). Extensions
+// ExtensionHost is an engine that runs browser extensions (Electron;
+// CEF drawing pages off screen, as on Linux, cannot). Extensions
 // live in the default container; private, sandbox and container tabs run
 // without them. Every callback arrives on the window's thread.
 type ExtensionHost interface {
