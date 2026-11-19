@@ -36,6 +36,11 @@
             fontconfig freetype harfbuzz libunwind libGL libxkbcommon dbus udev openssl zlib
             xorg.libX11 xorg.libxcb xorg.libXcursor xorg.libXrandr xorg.libXi
           ];
+          # SpiderMonkey assembles through the C compiler (it passes -D flags);
+          # Nix's environment points AS at the bare assembler
+          preBuild = ''
+            export AS="$CC"
+          '';
           doCheck = false;
           installPhase = ''
             runHook preInstall
