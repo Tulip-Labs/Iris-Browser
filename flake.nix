@@ -30,9 +30,12 @@
             pkg-config cmake python3 perl m4 gperf yasm which rustPlatform.bindgenHook llvmPackages.bintools
           ];
           buildInputs = with pkgs; [
-            fontconfig freetype harfbuzz libunwind libGL libxkbcommon dbus udev openssl zlib
+            fontconfig freetype harfbuzz libunwind libGL libxkbcommon dbus udev openssl zlib zstd
             xorg.libX11 xorg.libxcb xorg.libXcursor xorg.libXrandr xorg.libXi
           ];
+          # zstd-sys links the system library via pkg-config; without zstd
+          # here libzstd.pc is missing and its build script panics
+          # (nix build, run 44545625923).
           doCheck = false;
           # nixpkgs' cargo hook exports JEMALLOC_OVERRIDE pointing at a
           # sentinel path that deliberately does not exist, to force system
