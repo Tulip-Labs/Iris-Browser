@@ -3,12 +3,14 @@
 package setup
 
 import (
+	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -55,17 +57,77 @@ func installedVersion() string {
 
 func engineInstalled() bool { return webview.Installed() }
 
-// installEngine downloads Microsoft's WebView2 bootstrapper and runs it silently.
-func installEngine(progress func(float32)) error {
-	resp, err := http.Get("https://go.microsoft.com/fwlink/p/?LinkId=2124703")
+// electronVersion is the Electron the helper was built with, written by the
+// build that stages the setup's payload (setup/payload/ELECTRON_VERSION).
+func electronVersion() string {
+	if b, err := payload.ReadFile("payload/ELECTRON_VERSION"); err == nil {
+		if v := strings.TrimSpace(string(b)); v != "" {
+			return strings.TrimPrefix(v, "v")
+		}
+	}
+	return ""
+}
+
+// latestElectron asks GitHub for the newest Electron release.
+func latestElectron() (string, error) {
+	resp, err := http.Get("https://api.github.com/repos/electron/electron/releases/latest")
 	if err != nil {
-		return fmt.Errorf("could not download the web engine: %w", err)
+		return "", fmt.Errorf("could not check Electron's latest release: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("could not download the web engine (HTTP %d)", resp.StatusCode)
+		return "", fmt.Errorf("could not check Electron's latest release (HTTP %d)", resp.StatusCode)
 	}
-	tmp := filepath.Join(os.TempDir(), "MicrosoftEdgeWebview2Setup.exe")
+	var r struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+		return "", err
+	}
+	if v := strings.TrimPrefix(r.TagName, "v"); v != "" {
+		return v, nil
+	}
+	return "", errors.New("Electron's latest release has no version")
+}
+
+func fileThere(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+// installEngine fetches the page engine: Electron's Windows build (too big
+// to ride inside the setup) plus Iris's helper, which the setup carries in
+// its payload. Both land in the install folder, next to Iris.exe.
+func installEngine(progress func(float32)) error {
+	dir := filepath.Join(installDir(), "electron")
+	exe := filepath.Join(dir, "electron.exe")
+	helper := filepath.Join(dir, "resources", "app", "main.js")
+	if fileThere(exe) && fileThere(helper) {
+		return nil // already there (a repair run)
+	}
+	version := electronVersion()
+	if version == "" {
+		v, err := latestElectron()
+		if err != nil {
+			return err
+		}
+		version = v
+	}
+	progress(0.1)
+	arch := "x64"
+	if runtime.GOARCH == "arm64" {
+		arch = "arm64"
+	}
+	url := fmt.Sprintf("https://github.com/electron/electron/releases/download/v%s/electron-v%s-win32-%s.zip", version, version, arch)
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("could not download the page engine: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("could not download the page engine (HTTP %d)", resp.StatusCode)
+	}
+	tmp := filepath.Join(os.TempDir(), "iris-electron.zip")
 	f, err := os.Create(tmp)
 	if err != nil {
 		return err
@@ -77,15 +139,106 @@ func installEngine(progress func(float32)) error {
 	}
 	defer os.Remove(tmp)
 	progress(0.5)
-	cmd := exec.Command(tmp, "/silent", "/install")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("the web engine installer failed: %w", err)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
 	}
-	if !webview.Installed() {
-		return errors.New("the web engine is still missing after its installer ran")
+	if err := unzip(tmp, dir); err != nil {
+		return fmt.Errorf("could not unpack the page engine: %w", err)
+	}
+	// the zip may hold one folder with the files inside it
+	if !fileThere(exe) {
+		if ents, err := os.ReadDir(dir); err == nil && len(ents) == 1 && ents[0].IsDir() {
+			inner := filepath.Join(dir, ents[0].Name())
+			if fileThere(filepath.Join(inner, "electron.exe")) {
+				for _, e := range mustReadDir(inner) {
+					_ = os.Rename(filepath.Join(inner, e.Name()), filepath.Join(dir, e.Name()))
+				}
+				_ = os.Remove(inner)
+			}
+		}
+	}
+	if !fileThere(exe) {
+		return errors.New("the page engine download has no electron.exe")
+	}
+	// Iris's helper (main.js, preload.js, its libraries) rides in the
+	// setup's payload, next to the app
+	if !fileThere(helper) {
+		if err := copyHelper(filepath.Join(dir, "resources", "app")); err != nil {
+			return err
+		}
+	}
+	progress(0.9)
+	if !fileThere(helper) {
+		return errors.New("this setup was built without the page helper; install Iris from the Microsoft Store or winget instead")
 	}
 	return nil
+}
+
+func mustReadDir(dir string) []os.DirEntry {
+	ents, _ := os.ReadDir(dir)
+	return ents
+}
+
+// unzip extracts a zip file into dir.
+func unzip(zipPath, dir string) error {
+	z, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return err
+	}
+	defer z.Close()
+	for _, f := range z.File {
+		if strings.Contains(f.Name, "..") {
+			continue
+		}
+		p := filepath.Join(dir, filepath.FromSlash(f.Name))
+		if f.FileInfo().IsDir() {
+			_ = os.MkdirAll(p, 0o755)
+			continue
+		}
+		_ = os.MkdirAll(filepath.Dir(p), 0o755)
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		out, err := os.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			rc.Close()
+			return err
+		}
+		_, err = io.Copy(out, rc)
+		out.Close()
+		rc.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// copyHelper writes the embedded helper (payload/electron-helper) to dir.
+func copyHelper(dir string) error {
+	if _, err := payload.ReadDir("payload/electron-helper"); err != nil {
+		return errors.New("this setup was built without the page helper")
+	}
+	return fs.WalkDir(payload, "payload/electron-helper", func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel("payload/electron-helper", p)
+		if err != nil {
+			return err
+		}
+		dst := filepath.Join(dir, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dst, 0o755)
+		}
+		b, err := payload.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		_ = os.MkdirAll(filepath.Dir(dst), 0o755)
+		return os.WriteFile(dst, b, 0o644)
+	})
 }
 
 // quitRunning asks a running Iris (also one waiting in the background) to
