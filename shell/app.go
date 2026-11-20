@@ -165,20 +165,20 @@ type App struct {
 
 	blockedTotal int
 
-	workers      [4]*worker
-	wakeAt       float64
-	np           nowPlaying // the now-playing pill (nowplaying.go)
-	ext          extState   // browser extensions (extensions.go)
-	thumbs       map[string]*thumb
-	thumbSem     chan struct{}
-	fetchImage   func(ctx context.Context, src string, maxW int) (image.Image, error)
-	ai           aiPanel
-	side         sideView
+	workers    [4]*worker
+	wakeAt     float64
+	np         nowPlaying // the now-playing pill (nowplaying.go)
+	ext        extState   // browser extensions (extensions.go)
+	thumbs     map[string]*thumb
+	thumbSem   chan struct{}
+	fetchImage func(ctx context.Context, src string, maxW int) (image.Image, error)
+	ai         aiPanel
+	side       sideView
 	// the window's background picture (ui.Wall) and what it was made for
-	wall       *ui.Wall
-	wallKey    string
-	wallBusy   bool
-	wallThumbs map[string]*ui.Wall
+	wall         *ui.Wall
+	wallKey      string
+	wallBusy     bool
+	wallThumbs   map[string]*ui.Wall
 	sideRect     ui.Rect
 	sideURL      string
 	sideFull     bool

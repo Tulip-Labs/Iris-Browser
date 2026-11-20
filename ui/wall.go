@@ -76,7 +76,7 @@ func (s WallStyle) Render(w, h int) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
 	base := Hex(s.base)
 	type bl struct {
-		x, y, r2 float64
+		x, y, r2      float64
 		cr, cg, cb, k float64
 	}
 	var bs []bl
@@ -91,7 +91,7 @@ func (s WallStyle) Render(w, h int) *image.RGBA {
 			r, g, bb := float64(base.R()), float64(base.G()), float64(base.B())
 			for _, b := range bs {
 				dx, dy := float64(x)-b.x, float64(y)-b.y
-				t := math.Exp(-(dx*dx + dy*dy) / (0.5 * b.r2)) * b.k
+				t := math.Exp(-(dx*dx+dy*dy)/(0.5*b.r2)) * b.k
 				r += (b.cr - r) * t
 				g += (b.cg - g) * t
 				bb += (b.cb - bb) * t
