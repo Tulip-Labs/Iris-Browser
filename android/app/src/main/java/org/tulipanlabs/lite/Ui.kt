@@ -244,3 +244,35 @@ fun siteColor(host: String): Int {
 
 fun monogram(host: String): String =
     host.removePrefix("www.").removePrefix("m.").firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+
+/**
+ * The glass band Iris's bars sit on (the desktop's GlassBand): frosted white
+ * over the background, brighter at the top, with a hairline on its inner
+ * edge (the bottom for the top band, the top for the bottom one).
+ */
+fun Context.glassBand(p: Palette, lineAtBottom: Boolean): Drawable {
+    val fill = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+        intArrayOf(Palette.alpha(Palette.WHITE, 0.58f), p.band))
+    val line = GradientDrawable()
+    line.setColor(p.outlineVariant)
+    val ld = android.graphics.drawable.LayerDrawable(arrayOf(fill, line))
+    val h = maxOf(1, dp(0.5f))
+    if (lineAtBottom) ld.setLayerGravity(1, Gravity.BOTTOM or Gravity.FILL_HORIZONTAL)
+    else ld.setLayerGravity(1, Gravity.TOP or Gravity.FILL_HORIZONTAL)
+    ld.setLayerHeight(1, h)
+    return ld
+}
+
+/** a pane of glass: frosted white, a bright rim, rounded */
+fun glass(p: Palette, color: Int, radius: Float, rimWidth: Int): GradientDrawable =
+    rounded(color, radius, rimWidth, p.rim)
+
+/** clips a view to rounded corners (pages, previews) */
+fun View.roundCorners(radius: Float) {
+    outlineProvider = object : android.view.ViewOutlineProvider() {
+        override fun getOutline(v: View, o: android.graphics.Outline) {
+            o.setRoundRect(0, 0, v.width, v.height, radius)
+        }
+    }
+    clipToOutline = true
+}

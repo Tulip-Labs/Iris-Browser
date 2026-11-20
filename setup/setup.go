@@ -120,7 +120,7 @@ func sentence(s string) string {
 // runInstall does the install, reporting each step.
 func runInstall(s *Setup) {
 	s.set(func() {
-		s.steps = []step{{"Checking the web engine", 0}, {"Copying Iris", 0}, {"Adding shortcuts", 0}, {"Registering Iris as a browser", 0}}
+		s.steps = []step{{"Copying the page engine (Electron)", 0}, {"Copying Iris", 0}, {"Adding shortcuts", 0}, {"Registering Iris as a browser", 0}}
 		s.progress = 0
 	})
 	mark := func(i int, st uint8, p float32) { s.set(func() { s.steps[i].state, s.progress = st, p }) }
@@ -131,12 +131,10 @@ func runInstall(s *Setup) {
 	}
 	dir := installDir()
 	mark(0, 1, 0.05)
-	if !engineInstalled() {
-		s.set(func() { s.steps[0].label = "Installing Microsoft Edge WebView2" })
-		if err := installEngine(func(p float32) { s.set(func() { s.progress = 0.05 + p*0.4 }) }); err != nil {
-			s.fail(err)
-			return
-		}
+	// Iris's page engine travels inside the setup: nothing to download
+	if err := installEngine(dir, func(p float32) { s.set(func() { s.progress = 0.05 + p*0.4 }) }); err != nil {
+		s.fail(err)
+		return
 	}
 	mark(0, 2, 0.45)
 	mark(1, 1, 0.5)
@@ -426,12 +424,10 @@ func Silent(uninstallMode bool) error {
 	if app == nil {
 		return errString("this setup was built without the app inside; build it with build-iris")
 	}
-	if !engineInstalled() {
-		if err := installEngine(func(float32) {}); err != nil {
-			return err
-		}
-	}
 	dir := installDir()
+	if err := installEngine(dir, func(float32) {}); err != nil {
+		return err
+	}
 	if err := copyApp(dir, app); err != nil {
 		return err
 	}

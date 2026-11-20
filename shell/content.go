@@ -19,18 +19,16 @@ func (a *App) content(r ui.Rect) {
 	switch {
 	case t.URL == "":
 		a.ntp(r, t)
-	case t.search != nil:
-		a.results(r, t)
 	case t.Crashed:
 		why := "Its process ended (it may have run out of memory). Reload to open it again."
 		a.message(r, ui.IWarning, "This page stopped working", why, "Reload", func() { a.reload(t) })
 	case a.engErr != nil || a.eng == nil:
-		msg := "Iris shows pages with Microsoft Edge WebView2, which is not installed. Run the Iris installer again, or get the runtime from Microsoft."
+		msg := "Electron, which shows the pages, is missing from Iris's folder. Run the Iris installer again."
 		if a.engErr != nil && !strings.Contains(a.engErr.Error(), "not available") {
 			msg = "The web engine did not start: " + a.engErr.Error()
 		}
 		if runtime.GOOS == "linux" {
-			msg = "Chromium, which shows the pages, did not start. Install Iris again, or run iris from a terminal to see why."
+			msg = "The page engines (WebKitGTK and Electron) did not start. Install Iris again, or run iris from a terminal to see why."
 		}
 		a.message(r, ui.IGlobe, "The web engine is not available", msg, "", nil)
 	case t.view == nil:
@@ -40,14 +38,23 @@ func (a *App) content(r ui.Rect) {
 		ph := float32(math.Mod(a.now()*360, 360))
 		ui.Pen(g, ui.NewPath().Arc(r.CX(), r.CY(), 14, ph, ph+100, true), 3, th.Primary)
 	default:
-		// the live page covers this; a hairline frames it
-		ui.StrokeRound(g, ui.Rect{X: r.X - 1, Y: r.Y - 1, W: r.W + 2, H: r.H + 2}, 3, 1, th.OutlineVariant)
+		// the live page covers this, with rounded corners (the engines clip
+		// it); a soft shadow lifts it off the background and a hairline frames it
+		ui.Shadow(g, r, 12, th.Shadow, 0.5, 2)
+		ui.FillRound(g, r, 12, ui.White)
+		ui.StrokeRound(g, ui.Rect{X: r.X - 0.5, Y: r.Y - 0.5, W: r.W + 1, H: r.H + 1}, 12.5, 1, th.OutlineVariant)
 	}
 }
 
-// fillPage paints the surface of Iris's own pages (new tab, results): the
-// page color, or a pale version of the palette's merging pastels.
+// fillPage paints the surface of Iris's own pages (the new tab page): the
+// background behind the glass, or the page color when there is none.
 func fillPage(g ui.Gfx, r ui.Rect, rad float32, th *ui.Theme) {
+	if w := th.Wall; w != nil && w.Sharp != nil {
+		// Iris's own pages show the background itself, with a soft rim
+		g.Backdrop(w.Sharp, w.Win, r, rad)
+		ui.StrokeRound(g, r, rad, 1, ui.White.Alpha(0.5))
+		return
+	}
 	if th.Grad == nil {
 		ui.FillRound(g, r, rad, pageColor(th))
 		return
@@ -165,13 +172,15 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 	id := ID("ntp")
 	focused := a.st.Focus == id
 	ui.Glass(g, sr, 28, th, true, true)
-	if focused {
-		ui.FillRound(g, sr, 28, th.Primary.Alpha(0.04))
-		ui.StrokeRound(g, sr.Inset(1), 27, 2, th.Primary)
+	// Liquid Glass's focus: a soft ring of the system blue fades in, no dark
+	// outline
+	if fo := a.u.Ease(id.Sub("focus"), ui.On(focused), ui.RateQuick); fo > 0.01 {
+		ui.StrokeRound(g, sr.Inset(-2*fo), 28+2*fo, 3, th.Focus.Alpha(0.18*fo))
+		ui.StrokeRound(g, sr.Inset(0.5), 27.5, 1.5, th.Focus.Alpha(0.6*fo))
 	}
-	ui.DrawIcon(g, ui.ISearch, sr.X+20, sr.CY()-11, 22, th.Primary)
+	ui.DrawIcon(g, ui.ISparkle, sr.X+20, sr.CY()-11, 22, th.OnSurfaceVariant)
 	fr := ui.Rect{X: sr.X + 54, Y: sr.Y, W: sr.W - 72, H: sr.H}
-	if a.u.TextField(id, fr, a.ntpQ, ui.FieldOpt{Bare: true, Font: ui.Font{Size: 16.5}, Placeholder: "Search Google and YouTube, or type an address", OnEnter: func() { a.open(a.ntpQ.Text()) }}) {
+	if a.u.TextField(id, fr, a.ntpQ, ui.FieldOpt{Bare: true, Font: ui.Font{Size: 16.5}, Placeholder: "Ask Google AI Mode, or type an address", OnEnter: func() { a.open(a.ntpQ.Text()) }}) {
 		a.suggest(a.ntpQ.Text())
 	}
 	a.suggestKeys(id, func() { a.st.Focus = ui.ID{} })

@@ -66,6 +66,9 @@ type Sys struct {
 	// PickFiles shows the system's file box and returns what was chosen
 	// (it waits for the reader; called off the loop).
 	PickFiles func() []string
+	// PickPicture asks for one picture (the background); "" when none was
+	// chosen. It waits for the reader; called off the loop.
+	PickPicture func() string
 	// FreeMB is the system memory still free (0 = unknown).
 	FreeMB func() int
 	// Integrity checks Iris's own program file against the record made
@@ -162,16 +165,20 @@ type App struct {
 
 	blockedTotal int
 
-	workers      [4]*worker
-	wakeAt       float64
-	np           nowPlaying // the now-playing pill (nowplaying.go)
-	ext          extState   // browser extensions (extensions.go)
-	thumbs       map[string]*thumb
-	thumbSem     chan struct{}
-	fetchImage   func(ctx context.Context, src string, maxW int) (image.Image, error)
-	ytSearch     func(ctx context.Context, q string) ([]core.VideoResult, error)
-	ai           aiPanel
-	side         sideView
+	workers    [4]*worker
+	wakeAt     float64
+	np         nowPlaying // the now-playing pill (nowplaying.go)
+	ext        extState   // browser extensions (extensions.go)
+	thumbs     map[string]*thumb
+	thumbSem   chan struct{}
+	fetchImage func(ctx context.Context, src string, maxW int) (image.Image, error)
+	ai         aiPanel
+	side       sideView
+	// the window's background picture (ui.Wall) and what it was made for
+	wall         *ui.Wall
+	wallKey      string
+	wallBusy     bool
+	wallThumbs   map[string]*ui.Wall
 	sideRect     ui.Rect
 	sideURL      string
 	sideFull     bool
@@ -205,7 +212,7 @@ func New(h Host, cfg Config) *App {
 	a := &App{h: h, cfg: cfg, eng: cfg.Engine, In: ui.NewInput(), Scale: 1,
 		addr: ui.NewTextEdit("", false), ntpQ: ui.NewTextEdit("", false), newCont: ui.NewTextEdit("", false), contName: ui.NewTextEdit("", false), editCont: -1,
 		insecureOK: map[string]bool{}, start: time.Now(), lastMem: -10,
-		thumbs: map[string]*thumb{}, thumbSem: make(chan struct{}, 6), fetchImage: core.FetchImage, ytSearch: core.YouTubeSearch}
+		thumbs: map[string]*thumb{}, thumbSem: make(chan struct{}, 6), fetchImage: core.FetchImage}
 	a.ai.input = ui.NewTextEdit("", false)
 	a.histQ, a.find.q = ui.NewTextEdit("", false), ui.NewTextEdit("", false)
 	a.split.ratio = 0.5
@@ -214,9 +221,20 @@ func New(h Host, cfg Config) *App {
 		c = LoadCore(cfg.DataDir)
 	}
 	a.set, a.hist, a.shield, a.scan, a.core = c.Settings, c.History, c.Shield, c.Scan, c
-	// one way to search: Google's own page, cleaned, with Iris's filters (no
-	// Iris results page, no modes, no background part)
-	a.set.Mode, a.set.LiteResults, a.set.Boost, a.set.VerticalTabs = core.ModeWeb, false, false, false
+	// engines that compile the shield (WebKit) get it again once the lists
+	// are in place
+	if c.OnLists == nil {
+		c.OnLists = func() { a.post(a.applyPolicy) }
+	}
+	if c.Shield != nil {
+		go func() {
+			c.Shield.Wait()
+			a.post(a.applyPolicy)
+		}()
+	}
+	// one way to search: Google AI Mode in the tab, asked for the best and
+	// newest sources (core.AIInstruction); no results page, no modes
+	a.set.Mode, a.set.LiteResults, a.set.Boost, a.set.VerticalTabs = core.ModeAI, false, false, false
 	a.plan = core.Plan(cfg.TotalMB, a.set.Memory)
 	a.newTab(KNormal, "", "", true)
 	a.restoreSession()
@@ -261,7 +279,6 @@ func (a *App) Policy() webview.Policy {
 	if a.set.Farble {
 		scripts = append(scripts, shields.FarbleScript())
 	}
-	scripts = append(scripts, core.GoogleCleanScript())
 	adaptive, scan := a.set.Adaptive, a.scan
 	ytPass := a.set.YouTube
 	var rewrite func(string) string
@@ -309,6 +326,18 @@ func (a *App) Policy() webview.Policy {
 				return false // nothing to check with the shield off
 			}
 			return !adaptive || scan.Need(u)
+		},
+		// the same shield for WebKit, which matches requests itself
+		ContentRules: func() []byte {
+			if !sh.On {
+				return shields.ContentRules(nil, shields.ContentRuleSet{})
+			}
+			off := sh.OffSites()
+			if ytPass {
+				off = append(off, "youtube.com", "youtube-nocookie.com")
+			}
+			return shields.ContentRules(c.Filters.Load(), shields.ContentRuleSet{
+				Domains: sh.Domains(150000), Never: core.NeverBlock(), Off: off, MaxRules: 220000})
 		},
 		Unsafe:   func(u string) bool { return core.Risk(u) != "" && !a.allowedInsecure(u) },
 		Download: func(d webview.Download) { a.post(func() { a.onDownload(d) }) },
@@ -432,7 +461,7 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	th := a.theme()
 	if want := map[bool]int{false: 1, true: 2}[th.Dark]; a.scheme != want {
 		a.scheme = want
-		webview.SetColorScheme(th.Dark) // pages follow the palette: dark or light
+		webview.SetColorScheme(th.Dark) // pages are told the look: always light
 	}
 	u := &a.u
 	u.G, u.In, u.Th, u.St, u.Clip = g, a.In, th, &a.st, a.h.Clipboard()
@@ -454,16 +483,19 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	a.runWorkers()
 
 	full := ui.Rect{W: w, H: h}
+	a.ensureWall()
+	th.Wall = a.wall
+	if a.wall != nil {
+		a.wall.Win = full
+	}
 	var page ui.Rect
 	if a.Fullscreen() {
 		g.FillRect(full, ui.Black)
 		page = full
 	} else {
-		if th.Grad != nil {
-			ui.FillGradient3(g, full, 0, th.Grad)
-		} else {
-			g.FillRect(full, frameColor(th))
-		}
+		ui.DrawWall(g, full, th)
+		// the tabs and the bar on one band of frosted glass
+		ui.GlassBand(g, ui.Rect{W: w, H: stripH + barH}, th)
 		page = a.chrome(full)
 	}
 	a.sideRect, a.sideURL = ui.Rect{}, ""
@@ -471,7 +503,6 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 		a.sideURL = a.side.url
 	}
 	page, beside, other := a.panes(page)
-	page = a.googleBar(page)
 	a.content(page)
 	if other != nil {
 		a.otherPane(beside, other)

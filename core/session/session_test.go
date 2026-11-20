@@ -35,7 +35,7 @@ func TestSharedAcrossEngines(t *testing.T) {
 	if !s.SetFromHeader("", "https://accounts.google.com/signin", "SID=abc; Domain=.google.com; Path=/; Secure; HttpOnly; Max-Age=3600") {
 		t.Fatal("not taken")
 	}
-	// the search page (Servo) gets it
+	// the search page (WebKit) gets it
 	if h := s.Header("", "https://www.google.com/search?q=x"); h != "SID=abc" {
 		t.Errorf("header %q", h)
 	}
@@ -95,5 +95,46 @@ func TestRules(t *testing.T) {
 	s3.SetFromHeader("", "https://example.com/x/", c.SetCookie())
 	if s3.Header("", "https://example.com/x/y") != "b=2" {
 		t.Errorf("round trip %q", c.SetCookie())
+	}
+}
+
+// The bridge: a cookie WebKit sets reaches Electron once, and Electron's
+// echo of it goes no further; a removal travels the same way.
+func TestBridge(t *testing.T) {
+	s := New(nil)
+	var toElectron, toWebKit []string
+	s.Watch("electron", func(c Cookie, removed bool) {
+		toElectron = append(toElectron, c.Name+map[bool]string{true: "-", false: "+"}[removed])
+	})
+	s.Watch("webkit", func(c Cookie, removed bool) {
+		toWebKit = append(toWebKit, c.Name+map[bool]string{true: "-", false: "+"}[removed])
+	})
+	sid := Cookie{Name: "SID", Value: "abc", Domain: "google.com", Path: "/", Secure: true, HTTPOnly: true, Expires: 1_900_000_000}
+	var seen map[string]Cookie
+	seen = s.Diff("webkit", seen, []Cookie{sid})
+	if len(toElectron) != 1 || toElectron[0] != "SID+" || len(toWebKit) != 0 {
+		t.Fatalf("WebKit's cookie should reach Electron once: %v %v", toElectron, toWebKit)
+	}
+	// Electron echoes it (its own rounding of the expiry): nothing moves
+	echo := sid
+	echo.Expires++
+	echo.SameSite = "None"
+	if s.Report("electron", echo, false) || len(toWebKit) != 0 {
+		t.Fatalf("an echo must not travel: %v", toWebKit)
+	}
+	// Electron signs out: WebKit loses the cookie
+	if !s.Report("electron", sid, true) || len(toWebKit) != 1 || toWebKit[0] != "SID-" {
+		t.Fatalf("a removal should reach WebKit: %v", toWebKit)
+	}
+	// WebKit then reports its jar without it: already gone, nothing new
+	seen = s.Diff("webkit", seen, nil)
+	if len(toElectron) != 1 || len(seen) != 0 {
+		t.Fatalf("no second removal: %v", toElectron)
+	}
+	if len(s.Jar("")) != 0 {
+		t.Fatal("the jar should be empty")
+	}
+	if JarFor("Work", false, false) != "c-Work" || JarFor("", true, false) != "private" || !Memory(JarFor("", false, true)) {
+		t.Fatal("jar names")
 	}
 }

@@ -16,7 +16,7 @@ type settingsSection struct {
 }
 
 var settingsSections = []settingsSection{
-	{"look", "Appearance", "Palettes", ui.IPalette},
+	{"look", "Background", "The picture behind the glass: one of Iris's, your own or none", ui.IPalette},
 	{"containers", "Containers", "Separate sign-ins: their names, icons and colors", ui.IContainer},
 	{"extensions", "Extensions", "Add-ons from the Chrome Web Store", ui.IPuzzle},
 	{"memory", "Memory", "How soon tabs rest, and freeing memory now", ui.IMemory2},

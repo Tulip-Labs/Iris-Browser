@@ -18,11 +18,8 @@ class Settings(ctx: Context) {
     private val p: SharedPreferences = ctx.getSharedPreferences("lite", Context.MODE_PRIVATE)
 
     var theme: String
-        get() = p.getString("theme", "liquid") ?: "liquid"
+        get() = p.getString("theme", "sky") ?: "sky"
         set(v) = p.edit().putString("theme", v).apply()
-    var mode: Mode
-        get() = try { Mode.valueOf(p.getString("mode", "AI") ?: "AI") } catch (e: Exception) { Mode.AI }
-        set(v) = p.edit().putString("mode", v.name).apply()
 
     private fun flag(key: String, def: Boolean) = p.getBoolean(key, def)
     private fun setFlag(key: String, v: Boolean) = p.edit().putBoolean(key, v).apply()
@@ -62,10 +59,6 @@ class Settings(ctx: Context) {
         get() = p.getInt("sessionIndex", 0)
         set(v) = p.edit().putInt("sessionIndex", v).apply()
 
-    /** Iris results: Google searches shown on Iris's own page */
-    var liteResults: Boolean
-        get() = p.getBoolean("liteResults", true)
-        set(v) = p.edit().putBoolean("liteResults", v).apply()
 
     /** containers: a name and a color each ("name\tcolor" lines) */
     var containers: List<Container>

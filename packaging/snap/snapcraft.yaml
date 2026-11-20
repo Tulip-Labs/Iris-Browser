@@ -9,7 +9,8 @@ name: iris-browser
 title: Iris
 summary: A light, fast browser with shields built in
 description: |
-  Iris is a small browser written in Go. Iris Shields blocks ads, trackers,
+  Iris is a small browser written in Go, with WebKitGTK for most pages and
+  Electron for video, social sites and web apps. Iris Shields blocks ads, trackers,
   cookie notices and fingerprinting; containers keep separate sign-ins; tabs
   in the background sleep and give their memory back.
 license: GPL-3.0-only
@@ -60,8 +61,15 @@ parts:
       install -Dm644 io.desktop share/applications/io.github.tulip_labs.Iris.desktop
       rm io.desktop
       craftctl set version="$(cat lib/iris-browser/VERSION)"
-    # Chromium's libraries the GNOME content snap does not carry
+    # WebKitGTK 6 (most pages), its media plugins and its sandbox, and the
+    # libraries Electron's Chromium needs that the GNOME content snap does
+    # not carry
     stage-packages:
+      - libwebkitgtk-6.0-4
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-plugins-bad
+      - gstreamer1.0-libav
+      - bubblewrap
       - libnss3
       - libnspr4
       - libasound2t64
@@ -73,3 +81,9 @@ parts:
       - libxdamage1
       - libxrandr2
       - libxshmfence1
+
+# WebKit starts its page and network processes from the path it was built
+# with: inside the snap they are under $SNAP
+layout:
+  /usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/webkitgtk-6.0:
+    bind: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/webkitgtk-6.0

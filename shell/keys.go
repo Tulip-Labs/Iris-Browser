@@ -253,7 +253,7 @@ func (a *App) do(act action) {
 	case act == actFind:
 		a.openFind()
 	case act == actPrint:
-		if t != nil && t.view != nil && t.search == nil && t.URL != "" {
+		if t != nil && t.view != nil && t.URL != "" {
 			v := t.view
 			a.web(func() { v.Eval("window.print()") })
 		} else {
@@ -288,12 +288,6 @@ func (a *App) do(act action) {
 
 func (a *App) reload(t *Tab) {
 	if t.URL == "" {
-		return
-	}
-	if s := t.search; s != nil {
-		n := a.startSearch(s.Q, s.Mode, s.URL, t.private())
-		n.aiOpen = s.aiOpen
-		t.search = n
 		return
 	}
 	if t.Crashed || t.view == nil {

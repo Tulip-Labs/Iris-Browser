@@ -4,11 +4,12 @@
 
 <h1 align="center">Iris</h1>
 
-<p align="center"><i>Formerly Iris. Iris is the Greek goddess of the rainbow, who carries light between worlds.</i></p>
+<p align="center"><i>Formerly Lite Go. Iris is the Greek goddess of the rainbow, who carries light between worlds.</i></p>
 
 <p align="center">
   <b>A light, fast browser written in Go.</b><br>
-  The interface is drawn with Gio. Pages are shown by the web view your system already has.
+  One light Liquid Glass interface, drawn with Gio and sharp at every display scale.<br>
+  Pages: WebKitGTK and Electron on Linux; Electron on Windows. Every search asks Google AI Mode.
 </p>
 
 <p align="center">
@@ -20,6 +21,7 @@
 </p>
 
 <p align="center">
+  <a href="#whats-new-in-1025">New</a> ·
   <a href="#what-it-does">Features</a> ·
   <a href="#shortcuts">Shortcuts</a> ·
   <a href="#platforms">Platforms</a> ·
@@ -28,16 +30,27 @@
 </p>
 
 <p align="center">
-  <img src="assets/screens/results.png" width="860" alt="Iris results: pictures, videos and ranked websites on one page">
+  <img src="assets/screens/glass.png" width="860" alt="Iris in light Liquid Glass: the new tab page">
 </p>
 
 ---
 
+## What's new in 1.0.25
+
+- **Liquid Glass, light.** One look for the whole browser: frosted white panes with bright rims over an airy backdrop, near-black text, colorless glass controls and a soft blue focus ring. The palettes and their chooser are gone.
+- **Every search asks Google AI Mode,** with an instruction to answer from high-quality, authoritative and current sources, cite them, and stay clear, precise and concise. The address bar shows only your words. Iris's own results page and its filters over Google are gone.
+- **Backgrounds.** Six built-in backdrops behind the glass (Sky is the default), a plain one, or your own picture: Menu, Background.
+- **Linux: WebKitGTK and Electron.** Most pages are drawn by WebKitGTK (the engine of GNOME Web); video, social sites, web apps and sign-ins go to Electron (Chromium with H.264, H.265 and AAC). One cookie store is shared both ways, so a sign-in in one engine works in the other. Shields run in WebKit as compiled content rules. Servo and Chromium (CEF) are gone. Flatpak, Snap and Nix all carry the new engines.
+- **Windows: Electron.** Electron replaces WebView2 and comes inside the installer, the portable zip and the MSIX, so Iris no longer depends on the system's Edge runtime.
+- **Android: the same glass and tabs.** The desktop's look, backgrounds and tab strip on top; every search in Google AI Mode; Chromium (Cefrium) still draws the pages.
+- **Containers.** An image for Podman and Docker (`ghcr.io/tulip-labs/iris-browser`) with a launcher that gives it the GPU, video decoding and sound.
+- **Sharp on Linux.** The interface reaches the screen pixel for pixel at scales 1 to 2 (it used to go through sRGB twice and look washed out and soft).
+
 ## Why Iris
 
 Most browsers spend your memory on their web engine without asking what each page is worth.
-Iris puts a small Go program around the engine (WebView2 on Windows, which the system keeps
-up to date; Electron's Chromium on Linux) that decides what each page may cost.
+Iris puts a small Go program around the engines (WebKitGTK and Electron on Linux, Electron
+on Windows) that decides what each page may cost and which engine draws it.
 
 <table>
 <tr>
@@ -60,8 +73,8 @@ the name and a search, nothing else.
 
 **Clean**
 
-Ads, trackers, cookie notices and tracking links are removed. Google searches are shown on
-a page of Iris's own, in your theme. No bookmarks, no tiles, no feeds.
+Ads, trackers, cookie notices and tracking links are removed. Every search is answered by
+Google AI Mode from the best current sources. No bookmarks, no tiles, no feeds.
 
 </td>
 </tr>
@@ -87,38 +100,27 @@ a page of Iris's own, in your theme. No bookmarks, no tiles, no feeds.
 <td align="center"><sub><b>Sandbox.</b> Unsafe addresses are stopped first.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="assets/screens/results.png" alt="Iris results: websites, pictures and videos"></td>
+<td width="50%"><img src="assets/screens/ai.png" alt="Ask AI: Google AI Mode's answer beside the page, with its sources"></td>
 <td width="50%"><img src="assets/screens/tabs.png" alt="The tabs on top"></td>
 </tr>
 <tr>
-<td align="center"><sub><b>Iris results.</b> Glass cards for the websites, stacks of pictures and videos.</sub></td>
+<td align="center"><sub><b>Ask AI.</b> Google AI Mode beside any page, with its sources.</sub></td>
 <td align="center"><sub><b>Tabs.</b> A compact strip on top, centered.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="assets/screens/menu.png" alt="The menu"></td>
-<td width="50%"><img src="assets/screens/glass.png" alt="Iris results in the Mist palette"></td>
+<td width="50%"><img src="assets/screens/backgrounds.png" alt="The backgrounds behind the glass"></td>
+<td width="50%"><img src="assets/screens/search.png" alt="Typing a search: Ask Google AI Mode"></td>
 </tr>
 <tr>
-<td align="center"><sub><b>The menu.</b> Tools, then the settings in sections that open in place.</sub></td>
-<td align="center"><sub><b>Glass themes.</b> Shared with Ember.</sub></td>
-</tr>
-</table>
-
-<table>
-<tr>
-<td width="33%"><img src="assets/screens/android-results.png" alt="Iris results on Android"></td>
-<td width="33%"><img src="assets/screens/android-palettes.png" alt="The palettes on Android"></td>
-<td width="33%"><img src="assets/screens/android-new-tab.png" alt="Private and container tabs on Android"></td>
-</tr>
-<tr>
-<td align="center"><sub><b>Iris for Android.</b> Iris results.</sub></td>
-<td align="center"><sub>Eleven palettes.</sub></td>
-<td align="center"><sub>Hold + for private and container tabs.</sub></td>
+<td align="center"><sub><b>Backgrounds.</b> Six of Iris's, none, or your own picture.</sub></td>
+<td align="center"><sub><b>Search.</b> Every search asks Google AI Mode.</sub></td>
 </tr>
 </table>
 
 <sub>The desktop pictures are drawn by the test suite with Iris's software renderer (page areas
-and thumbnails are placeholders); the Android ones come from an emulator.</sub>
+and thumbnails are placeholders) and refreshed by CI (`.github/workflows/screens.yml`) whenever
+the interface changes. Iris for Android's pictures come from an emulator
+(`.github/workflows/android-screens.yml`, kept on the `android-screens` branch).</sub>
 
 ## What it does
 
@@ -126,14 +128,14 @@ and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 
 | | |
 |---|---|
-| **Iris results** | Google searches on a page of Iris's own, minimal like Kagi. The websites as clear glass cards that keep loading as long as Google has relevant ones, ranked by source quality (references, official sites and docs rise; shops, coupon farms and listicles sink), and stacks of picture cards (each in its own shape, sharp at the front) and video cards. "On Google" shows the original; "AI Mode" asks Google AI Mode in its own tab. Type `yt ` before words to search YouTube. |
-| **Your say over sites** | Raise, lower or hide any site in your results, and it stays that way. |
+| **Search** | Words typed in the address bar or on the new tab page open Google AI Mode in the tab, with a short instruction after them: answer from high-quality, authoritative and up-to-date sources (official sites, documentation, peer-reviewed research, reputable news), cite them, and be clear, precise and concise. The address bar and the tab show only your words. Type `yt ` before words to search YouTube. |
+| **The look** | Liquid Glass, light: frosted white panes with bright rims over an airy backdrop, near-black text, colorless glass controls, and Apple's system blue only for the ring around what has the keyboard. One look, no palettes to pick. |
 | **Websites in new tabs** | A result, an address typed while a site is open, or a link to another website opens in a new tab beside the one you are on. Back from its first page (or closing it) returns there. Sign-in steps stay in their tab. |
 | **Ask AI** (Ctrl+J) | On any page, a side panel sends your question and the page's text (or your selection) to Google AI Mode and writes the answer with its sources. No API key. |
 | **Split view** | Two pages side by side. The pane you click takes the keyboard and the address bar. |
 | **Downloads** | A toolbar icon with a progress ring; a list with speed, time left, pause, resume, cancel, open and show in folder. |
 | **One slim bar** | Back, forward and reload at the left, the address in the middle, then the shield and the menu. It narrows to what is needed on a small window. A Sign in button shows only while Iris is not signed in to Google. |
-| **The menu** | Tools (private tab, history, downloads, reopen, split view, find, print, free memory), zoom, your name for the AI answers, and the settings in sections that open in place: appearance (the palettes, shared with Ember), shields and privacy, containers, memory, history and data, about and updates. |
+| **The menu** | Tools (private tab, history, downloads, reopen, split view, find, print, free memory), zoom, your name for the AI answers, and the settings in sections that open in place: containers, extensions, memory, history and data, about and updates. |
 | **The usual** | Find in page, zoom, print, a searchable history by day, reopen a closed tab, and the last tabs brought back at start (unloaded until you open them). |
 | **Tabs** | A compact strip on top, centered, above the bar; tabs shrink to their icons as more open, and the strip scrolls with the wheel when they do not fit. The arrow beside + opens private, temporary, sandbox and container tabs. Containers keep their own sign-ins, each with an icon and a color. |
 
@@ -186,19 +188,21 @@ They work while a page has the keyboard too.
 
 | System | Web engine | Status |
 |---|---|---|
-| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Iris's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, the menu) are covered by tests with a stand-in engine and still need a pass on a real PC. |
-| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Electron (Chromium with H.264 and AAC), which Iris carries; Servo draws the light pages | Built on every push; the Flatpak is installed and started on Wayland, and Iris is checked at a fractional scale (1.25). Packages: Flatpak, Snap and Nix. |
-| Android 8 and newer | Android System WebView | **Iris for Android**, a separate app in Kotlin (`android/`): shields, Iris results for Web searches, tabs, containers (WebView 123 or newer), eleven palettes, phone and tablet layouts, and sync with the computer. `Iris-android.apk` is in each release. |
+| Windows 10 and 11 (x64, ARM64) | Electron (Chromium with H.264 and AAC), carried by Iris; the program itself stays pure Go (no cgo) | New in 1.0.25: built on every push and started on a Windows runner, where Electron must draw a test page. Still needs a pass on a real PC. |
+| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | WebKitGTK 6 for most pages, Electron (Chromium with H.264 and AAC) for video, social sites, web apps and sign-ins; one shared cookie store | Built on every push; the Flatpak is installed and started on Wayland, and Iris is checked at a fractional scale (1.25), where the interface reaches the screen pixel for pixel. Packages: Flatpak, Snap and Nix. |
+| Android 10 and newer (64-bit) | Chromium, carried by the app (CEF for Android, through Cefrium) | **Iris for Android**, a separate app in Kotlin (`android/`): the desktop's light Liquid Glass and its six backgrounds, the desktop's tab strip on top, every search in Google AI Mode, shields, containers, phone and tablet layouts, and sync with the computer. `Iris-android.apk` is in each release. |
 
-On Windows the engine comes with the system. On Linux, Iris carries its own Electron
-(Chromium, with H.264 and AAC) inside its Flatpak or Snap package, and each release brings the newer one. (The Nix package still carries the old Chromium (CEF) engine until its flake is reworked; see `flake.nix`.)
+Iris carries its own Electron (Chromium, with H.264 and AAC) on both systems, and each release
+brings the newer one. On Linux, WebKitGTK comes from the GNOME runtime (Flatpak), the Snap
+itself or nixpkgs, and runs its web processes in a bubblewrap sandbox. The Nix package uses
+nixpkgs' WebKitGTK and Electron.
 
 On Linux the window is a GTK window, because Wayland does not let one program's surface sit
 inside another's. GTK owns the window, Gio's GPU renderer draws the interface into a GL area
-in it, and Electron draws each page off screen: Iris paints the page into its own area of
-the window and passes it the pointer, the wheel and the keys. One window, one connection to
-the display. Chrome extensions run in the Electron engine; the shields
-do the work of an ad blocker where no extension is installed.
+in it. WebKitGTK pages are GTK widgets placed in that window, with rounded corners; Electron
+draws its pages off screen, and Iris paints them into their area and passes them the
+pointer, the wheel and the keys. One window, one connection to the display. Chrome
+extensions run in the Electron engine; the shields do the work of an ad blocker in both.
 
 ## Install on Windows
 
@@ -208,11 +212,11 @@ winget install TulipLabs.Iris
 
 Or download `Iris-Setup.exe` from the [releases](https://github.com/Tulip-Labs/Iris-Browser/releases) (installs for the current user, no administrator rights; `Iris-Setup.exe --silent` installs without a window). Iris updates itself; `winget upgrade TulipLabs.Iris` works too.
 
-Extensions from the Chrome Web Store run in Iris on Windows: open an extension's page in the store and choose **Add to Iris**. Iris checks each package's signature before adding it.
+Extensions from the Chrome Web Store run in Iris on Windows (Electron draws every page there): open an extension's page in the store and choose **Add to Iris**. Iris checks each package's signature before adding it.
 
 ## Install on Linux
 
-Iris for Linux comes three ways, and each of them keeps it up to date. It needs a Wayland session.
+Iris for Linux comes as a Flatpak, a Snap, a Nix package or a container image. It needs a Wayland session.
 
 **Flatpak** (every distribution, Fedora Atomic, SteamOS, Mint and Ubuntu included): download `Iris-x86_64.flatpak` from the [latest release](https://github.com/Tulip-Labs/Iris-Browser/releases/latest), then
 
@@ -226,6 +230,8 @@ flatpak install --user Iris-x86_64.flatpak
 **Snap** (Ubuntu and other systems with Snap): download `Iris-x86_64.snap` from the latest release and run `sudo snap install --dangerous Iris-x86_64.snap` (the Snap Store listing is planned).
 
 **Nix** (NixOS and Nix anywhere): `nix profile install github:Tulip-Labs/Iris-Browser`, or try it with `nix run github:Tulip-Labs/Iris-Browser`. Fonts and graphics drivers are found on their own, NixOS's `/run/opengl-driver` included.
+
+**Podman or Docker**: `podman pull ghcr.io/tulip-labs/iris-browser`, then `sh iris-container` (from the release; see [packaging/container](packaging/container/README.md)). GPU, video decoding and sound work as in the Flatpak.
 
 **Updates.** Flatpak, Snap and Nix update Iris; Iris itself only says, in Settings, About Iris, when a new version is out. The `.deb`, `.rpm`, AUR and `.tar.gz` packages of Iris 1.0 are no longer made: remove them (`sudo apt remove iris-browser`, `sudo dnf remove iris-browser`, `rpm-ostree uninstall iris-browser`) and install the Flatpak.
 
@@ -243,19 +249,19 @@ tests and makes:
 No C compiler is needed, and builds stay well under 2 GB of memory.
 
 **Linux.** On Linux, `./build-iris.sh` builds Iris for Linux first and then the Windows
-files. It fetches Electron (through npm, once) and Servo's bridge when it is built,
-checks for the build tools and GTK development files and says what to install if
+files. It fetches Electron (through npm, once), checks for the build tools and the GTK
+and WebKitGTK development files and says what to install if
 something is missing:
 
 ```sh
 # Fedora
-sudo dnf install gcc pkgconf gtk4-devel libepoxy-devel nodejs npm
+sudo dnf install gcc pkgconf gtk4-devel webkitgtk6.0-devel libepoxy-devel nodejs npm
 # Fedora Atomic (Silverblue, Kinoite): build inside a toolbox
 toolbox create && toolbox enter   # then the Fedora line above
 # Debian, Ubuntu
-sudo apt install gcc pkg-config libgtk-4-dev libepoxy-dev nodejs npm
+sudo apt install gcc pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libepoxy-dev nodejs npm
 # Arch
-sudo pacman -S gcc pkgconf gtk4 libepoxy nodejs npm
+sudo pacman -S gcc pkgconf gtk4 webkitgtk-6.0 libepoxy nodejs npm
 
 ./build-iris.sh             # Linux (dist/linux), then Windows
 ./build-iris.sh linux       # Linux only
@@ -301,17 +307,17 @@ used, which is a paid service.
 cmd/iris          the program: window, resident process, system hooks
     |
   shell             the interface: tabs, split view, address bar, new tab page,
-    |               results, downloads, history, the balancer, the side panel
+    |               downloads, history, the balancer, the Ask AI panel
     |
-    +-- ui, giox    the interface toolkit (Material 3, liquid glass) and its Gio backend
+    +-- ui, giox    the interface toolkit (light Liquid Glass) and its Gio backend
     +-- core        rules with no window: search, shields, adaptive scans, unsafe
     |               addresses, HTTPS, the memory plan, history, settings
     +-- shields     filter lists, hiding rules, link cleaning, fingerprinting
     +-- webview     one small interface over the engines:
-                      WebView2 from pure Go (COM vtables, profiles, sandbox, suspend,
-                      request filtering, downloads)
-                      Electron through a helper process, off screen in a GTK window (Linux)
-                      Servo in process, for the light pages (Linux)
+                      WebKitGTK in process, for most pages (Linux)
+                      Electron through a helper process, drawn off screen into Iris's
+                      window (Linux and Windows)
+                      route: which engine draws a page; one cookie bridge between them
 ```
 
 | Folder | What it is |

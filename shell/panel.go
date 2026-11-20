@@ -1,7 +1,6 @@
 package shell
 
 import (
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -199,46 +198,65 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 	}
 	_, _ = divider, check
 	if sec == "look" {
-		// look
-		section("Appearance")
-		// each palette as a tile with its name
-		const thh, gap = 76, 8
+		section("Background")
+		// Iris's backgrounds, none, and your own picture, as tiles
+		const thh, gap = 74, 8
 		tw := (w - 2*gap) / 3
 		per := max(1, int((w+gap)/(tw+gap)))
-		for i, tm := range ui.Themes {
+		type tile struct{ id, label string }
+		tiles := make([]tile, 0, len(ui.Walls)+2)
+		for _, s := range ui.Walls {
+			tiles = append(tiles, tile{s.ID, s.Label})
+		}
+		tiles = append(tiles, tile{ui.WallPlain, "None"}, tile{ui.WallPicture, "Your picture"})
+		cur := a.set.Background
+		if cur == "" {
+			cur = ui.Walls[0].ID
+		}
+		for i, tl := range tiles {
 			cr := ui.Rect{X: x + float32(i%per)*(tw+gap), Y: y + float32(i/per)*(thh+gap), W: tw, H: thh}
-			sw := ui.Rect{X: cr.X + 6, Y: cr.Y + 6, W: cr.W - 12, H: 44}
-			if tm.Grad != nil {
-				ui.FillGradient3(g, sw, 10, tm.Grad)
-			} else {
-				// the backdrop: the base with its fields of colored light
-				ui.FillRound(g, sw, 10, tm.G5)
-				g.FillPathGradient(ui.NewPath().RoundRect(sw, 10), tm.G1.Alpha(0.95), tm.G3.Alpha(0.6), sw.Y, sw.B())
+			sw := ui.Rect{X: cr.X + 5, Y: cr.Y + 5, W: cr.W - 10, H: 44}
+			switch tl.id {
+			case ui.WallPlain:
+				if th.Grad != nil {
+					ui.FillGradient3(g, sw, 10, th.Grad)
+				} else {
+					ui.FillRound(g, sw, 10, th.SurfaceHigh)
+				}
+			case ui.WallPicture:
+				if a.wall != nil && a.wall.ID == ui.WallPicture {
+					g.Image(a.wall.Sharp, sw, 10)
+				} else {
+					ui.FillRound(g, sw, 10, th.Ink.Alpha(0.05))
+					ui.DrawIcon(g, ui.IPlus, sw.CX()-9, sw.CY()-9, 18, th.OnSurfaceVariant)
+				}
+			default:
+				g.Image(a.wallThumb(tl.id).Sharp, sw, 10)
 			}
-			// a drop of the theme's clear glass
-			ui.Liquid(g, ui.RectAround(sw.R()-16, sw.Y+16, 18, 18), 6, tm.Ink)
-			on := tm.ID == a.set.Theme
+			ui.StrokeRound(g, sw, 10, 1, ui.White.Alpha(0.6))
+			on := tl.id == cur
 			switch {
 			case on:
-				ui.StrokeRound(g, cr, 14, 2, th.Primary)
+				ui.StrokeRound(g, cr.Inset(0.5), 13, 2, th.Focus)
 			case u.Hover(cr):
-				ui.FillRound(g, cr, 14, th.Ink.Alpha(0.05))
-			default:
-				ui.StrokeRound(g, cr, 14, 1, th.OutlineVariant)
+				ui.FillRound(g, cr, 13, th.Ink.Alpha(0.05))
 			}
 			f := ui.FSmall
 			if on {
 				f = ui.FSmallBold
 			}
-			ui.TextCenter(g, ui.Fit(g, tm.Label, f, tw-12), ui.Rect{X: cr.X, Y: sw.B() + 4, W: cr.W, H: 24}, f, th.OnSurface)
-			if u.Clickable(ui.IdN("theme", i), cr) {
-				a.set.Theme, a.set.ThemeAt = tm.ID, time.Now().Unix()
-				a.set.Save()
+			ui.TextCenter(g, ui.Fit(g, tl.label, f, tw-10), ui.Rect{X: cr.X, Y: sw.B() + 2, W: cr.W, H: 22}, f, th.OnSurface)
+			if u.Clickable(ui.Id("wall/"+tl.id), cr) {
+				if tl.id == ui.WallPicture {
+					a.pickPicture()
+				} else {
+					a.setBackground(tl.id)
+				}
 			}
 		}
-		y += float32((len(ui.Themes)+per-1)/per)*(thh+gap) + 4
+		y += float32((len(tiles)+per-1)/per)*(thh+gap) + 2
+		note("Glass frosts whatever is behind it. Over a busy picture it turns milkier, so text stays easy to read.")
 		divider()
-
 	}
 	if sec == "memory" {
 		// memory
@@ -339,11 +357,7 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 		section("About Iris")
 		ver := "Iris " + a.cfg.Version
 		if a.eng != nil && a.eng.Version() != "" {
-			engine := "WebView2 "
-			if runtime.GOOS == "linux" {
-				engine = ""
-			}
-			ver += " · " + engine + a.eng.Version()
+			ver += " · " + a.eng.Version()
 		}
 		note(ver)
 		switch a.integrity {
@@ -412,6 +426,7 @@ func (a *App) setSiteOff(host string, off bool) {
 	a.set.ShieldOff = keep
 	a.set.Save()
 	a.shield.SetSiteOff(host, off)
+	a.applyPolicy() // WebKit's compiled shield changes with it
 }
 
 // applyPolicy sends changed settings to the engine (new pages pick up scripts and strictness).

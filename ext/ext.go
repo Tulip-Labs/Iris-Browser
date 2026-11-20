@@ -3,8 +3,8 @@
 // the extension's own key (the same check Chrome makes), and unpacks it into
 // a folder the web engine loads it from.
 //
-// Only engines that run extensions use it (WebView2 on Windows, Electron on
-// Linux). On Linux the Electron engine runs them; Servo's pages never do
+// Only engines that run extensions use it (Electron on Windows and
+// Linux). On Linux the Electron engine runs them; WebKit's pages never do
 // (a page an extension must see goes to Electron).
 package ext
 

@@ -2,6 +2,9 @@
 
 package webview
 
+// SetOverlay: no pages here.
+func SetOverlay(x, y, w, h int) {}
+
 type unsupported struct{}
 
 // New returns an engine that reports it is unavailable (Linux needs the webkit build tag).

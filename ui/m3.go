@@ -1,6 +1,6 @@
 package ui
 
-// Material 3 components, blended with Flowcode's palettes and glass.
+// Material 3 components in Iris's light Liquid Glass.
 
 // stateLayer paints M3's hover/press overlay in the content color; hot and
 // down are how far the pointer is over it and pressing it (0 to 1).

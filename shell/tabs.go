@@ -36,20 +36,16 @@ type Tab struct {
 	Audio, Muted, Crashed    bool
 	Blocked                  int
 
-	view    webview.View
-	bind    *binding
-	making  bool
-	asleep  bool
-	shown   bool
-	bounds  [4]int
-	pending string
-	popup   *webview.Popup
-	// Iris results: search is shown instead of the page; lastSearch is where Back returns
-	search       *Search
-	lastSearch   *Search
+	view         webview.View
+	bind         *binding
+	making       bool
+	asleep       bool
+	shown        bool
+	bounds       [4]int
+	pending      string
+	popup        *webview.Popup
 	landing      string
 	awaitLanding bool
-	pageURL      string
 	last         float64 // when it was last the current tab
 	closed       bool
 	zoom         float64 // 0 or 1 = the page's normal size
@@ -248,15 +244,11 @@ func (a *App) navigate(t *Tab, url string) {
 			return
 		}
 	}
-	// Google searches open on Google's own page, cleaned by
-	// core.GoogleCleanScript, with Iris's filters over it (googleBar)
-	if t.search != nil {
-		t.lastSearch = t.search
-	}
-	t.search = nil
 	t.hydrate, t.scrollY = false, 0
 	t.URL, t.Loading, t.Crashed, t.Blocked = url, true, false, 0
-	if t.Title == "" {
+	if q, ok := core.AIQuery(url); ok {
+		t.Title = q // a search's tab is named by its words
+	} else if t.Title == "" {
 		t.Title = core.Display(url)
 	}
 	if t.view != nil {
@@ -334,9 +326,6 @@ func (a *App) events(b *binding) webview.Events {
 				if url == "about:blank" && t.URL == "" {
 					return
 				}
-				if t.search != nil {
-					return // the page behind the results moved; the results stay in front
-				}
 				if a.signedIn(t, url) {
 					return
 				}
@@ -357,8 +346,8 @@ func (a *App) events(b *binding) webview.Events {
 		},
 		Title: func(title string) {
 			on(func(t *Tab) {
-				if t.search != nil {
-					return
+				if q, ok := core.AIQuery(t.URL); ok {
+					title = q // Google's title repeats Iris's instruction
 				}
 				t.Title = title
 				if !t.private() {
@@ -474,7 +463,7 @@ func (a *App) openSandbox(t *Tab, url string) {
 		return
 	}
 	a.unload(t)
-	t.Kind, t.Container, t.search, t.lastSearch = KSandbox, "", nil, nil
+	t.Kind, t.Container = KSandbox, ""
 	t.URL, t.Title = "", ""
 	a.navigate(t, url)
 	if t == a.tab() {
@@ -556,7 +545,7 @@ func (a *App) unload(t *Tab) {
 	a.finishScan(t)
 	v := t.view
 	t.view, t.asleep, t.shown, t.Loading, t.background = nil, false, false, false, false
-	if t.URL == "" || t.search != nil || t.Crashed {
+	if t.URL == "" || t.Crashed {
 		a.web(v.Close)
 		return
 	}
@@ -629,7 +618,7 @@ func (a *App) sync(page, beside ui.Rect, other *Tab) {
 		if t == other {
 			r = beside
 		}
-		want := (t == cur || t == other) && t.URL != "" && !t.Crashed && t.search == nil && !r.Empty()
+		want := (t == cur || t == other) && t.URL != "" && !t.Crashed && !r.Empty()
 		if want {
 			s := a.Scale
 			b := [4]int{int(r.X*s + 0.5), int(r.Y*s + 0.5), int(r.W*s + 0.5), int(r.H*s + 0.5)}
@@ -673,15 +662,10 @@ func (a *App) visitFromResults(url string) {
 	n.opener = t
 }
 
-// back goes back in the page, or from the first page opened from results to the results.
+// back goes back in the page, or from the first page of a tab opened from
+// another to that one.
 func (a *App) back(t *Tab) {
-	if t.search == nil && t.lastSearch != nil && (!t.CanBack || t.URL == t.landing) {
-		t.pageURL = t.URL
-		t.search, t.lastSearch = t.lastSearch, nil
-		t.URL, t.Title, t.Loading = t.search.URL, t.search.Q, false
-		return
-	}
-	if !t.CanBack && t.search == nil && t.opener != nil && !t.opener.closed {
+	if !t.CanBack && t.opener != nil && !t.opener.closed {
 		// the first page of a tab opened from another: Back returns there
 		for i, x := range a.tabs {
 			if x == t {
@@ -691,39 +675,29 @@ func (a *App) back(t *Tab) {
 		}
 		return
 	}
-	if v := t.view; v != nil && t.search == nil {
+	if v := t.view; v != nil {
 		a.web(v.Back)
 	}
 }
 
-// forward returns from the results to the page that was open.
+// forward goes forward in the page.
 func (a *App) forward(t *Tab) {
-	if t.search != nil && t.pageURL != "" && t.view != nil {
-		t.lastSearch, t.search = t.search, nil
-		t.URL, t.pageURL = t.pageURL, ""
-		t.landing = t.URL
-		return
-	}
-	if v := t.view; v != nil && t.search == nil {
+	if v := t.view; v != nil {
 		a.web(v.Forward)
 	}
 }
 
 func (t *Tab) canBack() bool {
-	return t.search == nil && (t.CanBack || t.lastSearch != nil || t.opener != nil && !t.opener.closed)
+	return t.CanBack || t.opener != nil && !t.opener.closed
 }
 
-func (t *Tab) canForward() bool {
-	if t.search != nil {
-		return t.pageURL != "" && t.view != nil
-	}
-	return t.CanFwd
-}
+func (t *Tab) canForward() bool { return t.CanFwd }
 
-// addrText is what the address bar edits: the words of a search, or the address.
+// addrText is what the address bar edits: the words of an AI Mode search, or
+// the address.
 func (t *Tab) addrText() string {
-	if t.search != nil {
-		return t.search.Q
+	if q, ok := core.AIQuery(t.URL); ok {
+		return q
 	}
 	return t.URL
 }

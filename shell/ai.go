@@ -65,9 +65,6 @@ func (a *App) askAI(q string) {
 		})
 	}
 	switch {
-	case t != nil && t.search != nil:
-		turn.title = "Search: " + t.search.Q
-		ask(q + "\n\nContext: my Google search was \"" + t.search.Q + "\"")
 	case t != nil && t.view != nil && t.URL != "":
 		turn.title, turn.url = t.Title, t.URL
 		v := t.view
@@ -112,8 +109,6 @@ func (a *App) drawAI(r ui.Rect) {
 	title, sub := "New tab", "Ask anything"
 	host := ""
 	switch {
-	case t != nil && t.search != nil:
-		title, sub = t.search.Q, "Google search"
 	case t != nil && t.URL != "":
 		host = core.Host(t.URL)
 		title, sub = t.label(), strings.TrimPrefix(host, "www.")

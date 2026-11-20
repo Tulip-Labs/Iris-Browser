@@ -17,11 +17,6 @@ const (
 	panelW = 360
 )
 
-var (
-	modeLabels = []string{"AI Mode", "Web", "Images", "Videos", "YouTube"}
-	modeIcons  = []ui.Icon{ui.ISparkle, ui.IGlobe, ui.IImage, ui.IVideo, ui.IYouTube}
-)
-
 type suggestion struct {
 	icon       ui.Icon
 	title, sub string
@@ -64,9 +59,17 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 	}
 	x := float32(8)
 	right := w - 8
-	// panels slide in from the right edge (only the drawing moves: the page
-	// takes its final size at once, Chromium would redraw it every frame)
-	slide := (1 - ui.Smooth(a.u.Ease(ID("panel-in"), ui.On(a.panel || a.ai.open), ui.RateCalm))) * 28
+	// panels grow out of the menu button, at the top right, as Liquid Glass
+	// does (only the drawing moves: the page takes its final size at once,
+	// an engine would redraw it every frame)
+	open := ui.Smooth(a.u.Ease(ID("panel-in"), ui.On(a.panel || a.ai.open), ui.RateCalm))
+	grow := func(pr ui.Rect) {
+		s := 0.92 + 0.08*open
+		px, py := pr.R(), pr.Y
+		a.u.G.Translate(px+(1-open)*10, py)
+		a.u.G.Scale(s)
+		a.u.G.Translate(-px, -py)
+	}
 	if a.panel {
 		pw := min(float32(panelW), max(280, w*0.42))
 		if w < 560 {
@@ -74,7 +77,7 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 		}
 		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - 8}
 		a.u.G.Save()
-		a.u.G.Translate(slide, 0)
+		grow(pr)
 		a.drawPanel(pr)
 		a.u.G.Restore()
 		right = pr.X - 8
@@ -85,7 +88,7 @@ func (a *App) chrome(full ui.Rect) ui.Rect {
 		}
 		pr := ui.Rect{X: w - pw - 8, Y: sugTop, W: pw, H: full.H - sugTop - 8}
 		a.u.G.Save()
-		a.u.G.Translate(slide, 0)
+		grow(pr)
 		a.drawAI(pr)
 		a.u.G.Restore()
 		right = pr.X - 8
@@ -131,9 +134,9 @@ func (a *App) tabIcon(t *Tab, x, y float32) {
 		ph := float32(math.Mod(a.now()*400, 360))
 		ui.StrokeOval(g, ui.Rect{X: x + 1.5, Y: y + 1.5, W: 13, H: 13}, 2, th.Primary.Alpha(0.18))
 		ui.Pen(g, ui.NewPath().Arc(x+8, y+8, 6.5, ph, ph+110, true), 2, th.Primary)
-	case t.search != nil:
+	case isAISearch(t.URL):
 		ui.Liquid(g, ui.Rect{X: x, Y: y, W: 16, H: 16}, 5, th.Ink)
-		ui.DrawIcon(g, modeIcons[t.search.Mode], x+2, y+2, 12, th.Ink)
+		ui.DrawIcon(g, ui.ISparkle, x+2, y+2, 12, th.Ink)
 	case t.URL == "":
 		ic, col := a.kindIcon(t)
 		if t.Kind == KNormal {
@@ -536,18 +539,18 @@ func (a *App) addressBar(r ui.Rect, t *Tab) {
 		}
 	}
 	if fo > 0.01 {
-		glow := r.Inset(-5 * fo)
-		ui.FillRound(g, glow, glow.H/2, th.Primary.Alpha(0.10*fo))
+		// Liquid Glass's focus: clear glass and a soft ring of the system blue
+		glow := r.Inset(-4 * fo)
+		ui.FillRound(g, glow, glow.H/2, th.Focus.Alpha(0.14*fo))
 		ui.Glass(g, r, rad, th, true, true)
-		ui.FillRound(g, r, rad, th.Primary.Alpha(0.04*fo))
-		ui.StrokeRound(g, r.Inset(1), rad-1, 1+fo, th.Primary.Fade(fo))
+		ui.StrokeRound(g, r.Inset(0.75), rad-0.75, 1.5, th.Focus.Alpha(0.6*fo))
 	}
 	// leading icon: security, or the search mode while typing
 	ic, icCol := ui.IGlobe, th.OnSurfaceVariant
 	tip := ""
 	switch {
 	case focused:
-		ic, icCol = ui.ISearch, th.Primary
+		ic, icCol = ui.ISparkle, th.OnSurfaceVariant
 	case t != nil && strings.HasPrefix(t.URL, "https://"):
 		ic, tip = ui.ILock, "Secure connection"
 	case t != nil && strings.HasPrefix(t.URL, "http://"):
@@ -555,8 +558,8 @@ func (a *App) addressBar(r ui.Rect, t *Tab) {
 	case t == nil || t.URL == "":
 		ic = ui.ISearch
 	}
-	if t != nil && t.search != nil && !focused {
-		ic, icCol, tip = modeIcons[t.search.Mode], th.Primary, "Iris results"
+	if t != nil && isAISearch(t.URL) && !focused {
+		ic, icCol, tip = ui.ISparkle, th.Primary, "Google AI Mode"
 	}
 	ui.DrawIcon(g, ic, r.X+13, r.CY()-8, 16, icCol)
 	u.Tooltip(tip, ui.Rect{X: r.X, Y: r.Y, W: 38, H: r.H})
@@ -575,11 +578,11 @@ func (a *App) addressBar(r ui.Rect, t *Tab) {
 	if !focused {
 		text := ""
 		col := th.OnSurface
-		if t != nil && t.search != nil {
-			ui.TextFit(g, t.search.Q, inner.X, ui.Mid(g, r.Y, r.H, ui.FBody), ui.FBody, th.OnSurface, inner.W)
+		if q, ok := core.AIQuery(urlOf(t)); ok {
+			ui.TextFit(g, q, inner.X, ui.Mid(g, r.Y, r.H, ui.FBody), ui.FBody, th.OnSurface, inner.W)
 			if u.Live() && in.Pressed && r.Contains(in.MX, in.MY) {
 				a.st.Focus = id
-				a.addr.Set(t.search.Q)
+				a.addr.Set(q)
 				a.addr.SelectAll()
 				a.sugg, a.sugSel = nil, 0
 				in.Pressed = false
@@ -639,7 +642,7 @@ func addrFill(th *ui.Theme) ui.Color {
 	if th.Dark {
 		return ui.Mix(th.G5, ui.White, 0.07)
 	}
-	return th.Surface
+	return ui.White.Alpha(0.62) // a pill of clear glass on the frosted bar
 }
 
 // suggestKeys moves the selection with the arrows; Escape runs cancel.
@@ -679,7 +682,7 @@ func (a *App) suggest(text string) {
 		seen[u] = true
 	} else {
 		m := a.set.Mode
-		out = append(out, suggestion{ui.ISearch, q, "Search", core.Resolve(q, m)})
+		out = append(out, suggestion{ui.ISparkle, q, "Ask Google AI Mode", core.Resolve(q, m)})
 	}
 	for _, e := range a.hist.Suggest(q, 6) {
 		if seen[e.URL] {
@@ -715,7 +718,7 @@ func (a *App) visit(url string) {
 	if url == "" || t == nil {
 		return
 	}
-	if t.URL != "" && t.search == nil && !t.Crashed && core.SiteKey(url) != core.SiteKey(t.URL) {
+	if t.URL != "" && !t.Crashed && core.SiteKey(url) != core.SiteKey(t.URL) {
 		// another website opens in a new tab; the page here stays
 		n := a.newTab(t.Kind, t.Container, url, true)
 		n.opener = t
@@ -798,4 +801,15 @@ func (a *App) infobar(r ui.Rect) {
 		right = br.X - 8
 	}
 	ui.TextFit(g, a.bar.text, r.X+40, ui.Mid(g, r.Y, r.H, ui.FBody), ui.FBody, fg, right-r.X-44)
+}
+
+// isAISearch reports a Google AI Mode search made by Iris.
+func isAISearch(u string) bool { _, ok := core.AIQuery(u); return ok }
+
+// urlOf is t's address ("" for no tab).
+func urlOf(t *Tab) string {
+	if t == nil {
+		return ""
+	}
+	return t.URL
 }

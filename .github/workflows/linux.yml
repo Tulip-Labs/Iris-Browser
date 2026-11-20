@@ -12,22 +12,19 @@ on:
   workflow_dispatch:
   workflow_call:
 
-jobs:
-  # Servo's bridge, for the light pages (docs/engines.md)
-  servo-lib:
-    uses: ./.github/workflows/servo-lib.yml
+# a newer push (or the run started by hand after a patch is applied) replaces
+# the run still going on the same branch
+concurrency:
+  group: linux-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
   build:
     # Linux ships only as a Flatpak, a Snap and with Nix, which bring their
-    # own (newer) libraries: the program is built where Servo's is
-    needs: servo-lib
+    # own (newer) libraries, WebKitGTK 6 among them
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: libirisservo
-          path: webview/servo/lib
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
@@ -37,8 +34,12 @@ jobs:
           node-version: 22
       - name: Build tools and GTK development files
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev libfreetype-dev curl
+          # no man-page index after installs (it can hang the runner); apt gets
+          # 10 minutes, then one more try
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@" || { sleep 10; timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@"; }; }
+          apt_get update -qq
+          apt_get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev libfreetype-dev libwebkitgtk-6.0-dev curl
       - name: Build the program and its engine (tests run first)
         run: ./build-iris.sh linux
       - name: Collect (a tarball keeps the files' modes)
@@ -61,7 +62,11 @@ jobs:
           cache: false
       - name: Build Iris for Windows
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq zip
+          # no man-page index after installs (it can hang the runner); apt gets
+          # 10 minutes, then one more try
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@" || { sleep 10; timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@"; }; }
+          apt_get update -qq && apt_get install -y -qq zip
           ./build-iris.sh windows
           ls -l dist
 
@@ -82,8 +87,9 @@ jobs:
           path: pkg
       - name: Install Iris and sway
         run: |
-          # the libraries the program and Electron need, by the names they load
+          # the libraries the program, WebKit and Electron need, by the names they load
           dnf install -y -q sway grim mesa-dri-drivers python3 dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip \
+            webkitgtk6.0 gstreamer1-plugins-good glib-networking bubblewrap \
             'libgtk-4.so.1()(64bit)' 'libgtk-3.so.0()(64bit)' 'libepoxy.so.0()(64bit)' 'libGLESv2.so.2()(64bit)' 'libnss3.so()(64bit)' 'libnspr4.so()(64bit)' \
             'libasound.so.2()(64bit)' 'libgbm.so.1()(64bit)' 'libdrm.so.2()(64bit)' 'libxkbcommon.so.0()(64bit)' 'libxshmfence.so.1()(64bit)' \
             'libatk-bridge-2.0.so.0()(64bit)' 'libcups.so.2()(64bit)' 'libXcomposite.so.1()(64bit)' 'libXdamage.so.1()(64bit)' \
@@ -117,7 +123,13 @@ jobs:
           export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           sleep 1
-          export GDK_DEBUG=gl-no-fractional GDK_DISABLE=gl-fractional LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland ELECTRON_ENABLE_LOGGING=1
+          # WebKit first (most pages), then the same page in Electron
+          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland
+          dbus-run-session -- iris http://127.0.0.2:8766/ > /tmp/fs/log-webkit.txt 2>&1 &
+          sleep 15
+          grim /tmp/fs/0-webkit.png
+          pkill -x iris; sleep 2; pkill -9 -x iris; sleep 1
+          export IRIS_HEAVY_HOSTS=127.0.0.2 LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland ELECTRON_ENABLE_LOGGING=1
           dbus-run-session -- iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 18
           grim /tmp/fs/1-full.png
@@ -151,7 +163,9 @@ jobs:
           [ ! -e /tmp/fs/exited ] || { echo "Iris exited"; exit 1; }
           for f in 1.25 1.5 2; do echo "== forced $f"; grep -i "scale\|dsf\|device" /tmp/fs/log-$f.txt | grep -v dbus | head -12; done
           grep -a -o "IRIS-DPR [0-9.]*" /tmp/fs/log*.txt | sort | uniq -c
-          grep -q "IRIS-DPR 1.25" /tmp/fs/log.txt || { echo "the page is not drawn at the screen's scale (1.25)"; exit 1; }
+          grep -q "IRIS-DPR 1.25" /tmp/fs/log.txt || { echo "the Electron page is not drawn at the screen's scale (1.25)"; exit 1; }
+          grep -a "drawn by\|CONSOLE" /tmp/fs/log-webkit.txt | head
+          grep -q "drawn by WebKit" /tmp/fs/log-webkit.txt && grep -q "CONSOLE LOG IRIS-DPR" /tmp/fs/log-webkit.txt || { echo "WebKit did not draw the page"; exit 1; }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -176,8 +190,12 @@ jobs:
         run: mkdir -p dist && tar -xzf pkg/iris-linux.tar.gz -C dist && ls dist/linux | head
       - name: Flatpak, flatpak-builder and Weston
         run: |
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq flatpak flatpak-builder weston dbus-user-session procps
+          # no man-page index after installs (it can hang the runner); apt gets
+          # 10 minutes, then one more try
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@" || { sleep 10; timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@"; }; }
+          apt_get update -qq
+          apt_get install -y -qq flatpak flatpak-builder weston dbus-user-session procps
           # bubblewrap needs user namespaces, which Ubuntu limits by default
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
@@ -246,7 +264,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     steps:
-      - name: Room on the disk (Servo's build is large)
+      - name: Room on the disk
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
           df -h /
@@ -262,4 +280,4 @@ jobs:
         run: |
           nix build -L .#default
           ls -l result/bin result/lib/iris-browser
-          ! ldd result/lib/iris-browser/.iris-wrapped result/lib/iris-browser/libcef.so result/lib/iris-browser/libirisservo.so | grep "=> not found"
+          ! ldd result/lib/iris-browser/.iris-wrapped | grep "=> not found"

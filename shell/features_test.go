@@ -432,26 +432,44 @@ func TestKindPickerAndSession(t *testing.T) {
 	}
 }
 
-// The pastel palettes: every screen drawn in each, for the eye.
-func TestPastelThemes(t *testing.T) {
-	for _, id := range []string{"daylight", "mist", "rose", "sunrise", "mint"} {
-		th := ui.ThemeByID(id)
-		if th.ID != id || len(th.Grad) != 3 {
-			t.Fatalf("palette %s is missing its gradient", id)
-		}
-		d := newResultsDriver(t, 1280, 800)
-		d.a.set.Theme = id
-		d.frames(2)
-		d.shot("theme-" + id)
-		d.a.togglePanel(panelSettings)
-		d.frames(2)
-		d.shot("theme-" + id + "-menu")
-		d.a.panel = false
-		d.typeText("red pandas")
-		d.key(ui.KEnter, false, false)
-		d.settle(14)
-		d.shot("theme-" + id + "-results")
+// One look: light Liquid Glass, whatever palette a saved setting names.
+func TestLightGlassOnly(t *testing.T) {
+	if len(ui.Themes) != 1 {
+		t.Fatalf("Iris has one theme, found %d", len(ui.Themes))
 	}
+	for _, id := range []string{"", "glass", "liquid", "daylight", "graphite"} {
+		th := ui.ThemeByID(id)
+		if th.Dark || th.ID != "glass" || len(th.Grad) != 3 {
+			t.Fatalf("palette %q should open in light Liquid Glass, got %s (dark %v)", id, th.ID, th.Dark)
+		}
+	}
+	d := newResultsDriver(t, 1280, 800)
+	d.a.set.Theme = "liquid" // a dark palette saved by an older Iris
+	d.frames(2)
+	d.shot("theme-glass")
+	d.a.togglePanel(panelSettings)
+	d.frames(2)
+	d.shot("theme-glass-menu")
+	// the menu chooses the background, not a palette
+	d.a.openSettings("look")
+	d.frames(2)
+	d.shot("theme-glass-backgrounds")
+	for _, id := range []string{"dawn", ui.WallPlain, "sky"} {
+		d.a.setBackground(id)
+		d.settle(6)
+		if d.a.set.Background != id || d.a.wallKey != id+"\x00" {
+			t.Fatalf("background %s not made: %q", id, d.a.wallKey)
+		}
+		if (id == ui.WallPlain) != (d.a.wall == nil) {
+			t.Fatalf("background %s: wall %v", id, d.a.wall)
+		}
+	}
+	if w := ui.MakeWall("sky"); w.Sharp == nil || w.Frost == nil || w.Busy > 0.5 {
+		t.Fatal("Iris's own backgrounds are calm, with a frosted copy")
+	}
+	d.a.panel = false
+	d.frames(2)
+	d.shot("theme-glass-ntp")
 }
 
 func TestMenuAndTabStrip(t *testing.T) {
@@ -474,7 +492,7 @@ func TestMenuAndTabStrip(t *testing.T) {
 	}
 	n := len(d.a.tabs)
 	// the menu holds the settings, in sections that open in place
-	d.a.openSettings("look")
+	d.a.openSettings("memory")
 	d.frames(2)
 	if !d.a.panel || d.a.panelMode != panelSettings || len(d.a.tabs) != n {
 		t.Fatal("settings open in the menu, not in a tab")

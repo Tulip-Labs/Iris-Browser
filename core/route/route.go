@@ -1,6 +1,6 @@
-// Package route decides which engine draws a page: Servo for light pages
+// Package route decides which engine draws a page: WebKitGTK for most pages
 // (articles, Wikipedia, search, docs), the heavy engine (Electron) for the
-// sites that need it and for any site Servo failed on. See docs/engines.md.
+// sites that need it and for any site WebKit failed on. See docs/engines.md.
 package route
 
 import (
@@ -19,7 +19,7 @@ import (
 type Engine int
 
 const (
-	Light Engine = iota // Servo
+	Light Engine = iota // WebKit
 	Heavy               // Electron (Chromium with H.264, H.265 and AAC)
 )
 
@@ -31,7 +31,7 @@ func (e Engine) String() string {
 }
 
 // heavySites are drawn by the heavy engine with all their subdomains:
-// video, social sites and web apps, which need what only Chromium has today.
+// video, social sites and web apps, which need what only Electron has today.
 var heavySites = []string{
 	// video and media
 	"youtube.com", "youtu.be", "youtube-nocookie.com", "netflix.com", "twitch.tv",
@@ -50,7 +50,7 @@ var heavySites = []string{
 	"appleid.apple.com", "github.com/login",
 }
 
-// Router keeps the reader's choices and the sites Servo failed on, in
+// Router keeps the reader's choices and the sites WebKit failed on, in
 // routes.json in its folder.
 type Router struct {
 	mu   sync.Mutex
@@ -64,8 +64,8 @@ type Router struct {
 type state struct {
 	// Choice is the reader's: a site always drawn by one engine.
 	Choice map[string]Engine `json:"choice,omitempty"`
-	// Failed are sites Servo could not draw, and when (they are tried in
-	// Servo again after a month: Servo improves every month).
+	// Failed are sites WebKit could not draw, and when (they are tried in
+	// WebKit again after a month: WebKit improves with each release).
 	Failed map[string]int64 `json:"failed,omitempty"`
 }
 
@@ -140,7 +140,7 @@ func (r *Router) Pick(u string) Engine {
 	return Light
 }
 
-// Failed remembers that Servo could not draw the site of u (it crashed or
+// Failed remembers that WebKit could not draw the site of u (it crashed or
 // drew nothing): it goes to the heavy engine from now on, for a month.
 func (r *Router) Failed(u string) {
 	host, _ := site(u)

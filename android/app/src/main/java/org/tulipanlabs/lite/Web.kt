@@ -32,8 +32,6 @@ import java.security.SecureRandom
 
 class Tab(val id: Long, val private: Boolean, val container: String = "") {
     var url = ""
-    /** the search shown on Iris's own results page, while it is open */
-    var lite = ""
     var title = ""
     var web: Page? = null
     var saved: Bundle? = null // the page's history while its browser is put away to save memory
@@ -194,18 +192,6 @@ class Pages(private val act: Activity, private val set: Settings, private val ev
         b.setNavigationClient(Nav(t, w))
         b.setChromeClient(Chrome(t))
         b.setDownloadHandler(Downloads())
-        return w
-    }
-
-    /** a plain page with no tab, for reading Google's results off screen */
-    fun plain(): Page {
-        val w = Page(ctx, CefriumBrowser.createWithSurface(act, CefriumProfile.getDefault()))
-        w.answers { u -> hostOf(u).let { it == "google.com" || it.endsWith(".google.com") } }
-        w.b.setNavigationClient(object : CefriumNavigationClient {
-            override fun onLoadingStateChanged(browser: CefriumBrowser, loading: Boolean, canGoBack: Boolean, canGoForward: Boolean) {
-                if (!loading) w.onFinished?.invoke(browser.url ?: "")
-            }
-        })
         return w
     }
 

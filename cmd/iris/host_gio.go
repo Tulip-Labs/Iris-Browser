@@ -102,7 +102,7 @@ var tag = new(int)
 func (r *resident) loop(w *app.Window, urls []string) error {
 	webDir := r.webDir
 	h := &host{w: w}
-	eng := webview.New()
+	eng := newEngine(r.conf)
 	a := shell.New(h, shell.Config{Engine: eng, DataDir: r.conf, TotalMB: totalMB(), Version: version, SelfMB: webview.SelfMB,
 		Core: r.core, SetBoost: setStartup, Sys: sysHooks(), UpdateKind: installKind()})
 	eng.SetPolicy(a.Policy())
@@ -175,6 +175,9 @@ func (r *resident) loop(w *app.Window, urls []string) error {
 			g.Begin(gtx.Ops, scale)
 			a.Frame(g, float32(e.Size.X)/scale, float32(e.Size.Y)/scale)
 			g.End()
+			// a menu Iris draws over the pages: their windows make way for it
+			ov := a.Overlay
+			webview.SetOverlay(int(ov.X*scale), int(ov.Y*scale), int(ov.W*scale+0.5), int(ov.H*scale+0.5))
 			// the drag areas of our own title bar
 			for _, r := range a.MoveAreas {
 				st := clip.Rect{Min: pt(r.X*scale, r.Y*scale), Max: pt((r.X+r.W)*scale, (r.Y+r.H)*scale)}.Push(gtx.Ops)

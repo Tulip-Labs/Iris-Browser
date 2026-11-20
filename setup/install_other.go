@@ -14,12 +14,11 @@ func installDir() string {
 	h, _ := os.UserHomeDir()
 	return filepath.Join(h, ".local", "share", "Iris")
 }
-func installedVersion() string          { return "" }
-func engineInstalled() bool             { return true }
-func installEngine(func(float32)) error { return errWindowsOnly }
-func copyApp(string, []byte) error      { return errWindowsOnly }
-func makeShortcuts(string, bool) error  { return errWindowsOnly }
-func register(string, int) error        { return errWindowsOnly }
-func uninstall(bool) error              { return errWindowsOnly }
-func launch(string)                     {}
-func isWindows() bool                   { return false }
+func installedVersion() string                  { return "" }
+func installEngine(string, func(float32)) error { return errWindowsOnly }
+func copyApp(string, []byte) error              { return errWindowsOnly }
+func makeShortcuts(string, bool) error          { return errWindowsOnly }
+func register(string, int) error                { return errWindowsOnly }
+func uninstall(bool) error                      { return errWindowsOnly }
+func launch(string)                             {}
+func isWindows() bool                           { return false }

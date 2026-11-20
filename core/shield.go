@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -202,6 +203,21 @@ func (s *Shield) SetSiteOff(host string, off bool) {
 	s.mu.Unlock()
 }
 
+// NeverBlock are the hosts never blocked: sign-in, messaging, human checks.
+func NeverBlock() []string { return append([]string(nil), neverBlock...) }
+
+// OffSites are the sites where the reader turned the shield off.
+func (s *Shield) OffSites() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]string, 0, len(s.Off))
+	for h := range s.Off {
+		out = append(out, h)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Wait blocks until the list is loaded (tests).
 func (s *Shield) Wait() { <-s.ready }
 
@@ -212,12 +228,14 @@ func (s *Shield) Domains(n int) []string {
 	default:
 		return nil
 	}
-	out := make([]string, 0, min(n, len(s.domains)))
+	out := make([]string, 0, len(s.domains))
 	for d := range s.domains {
-		if len(out) >= n {
-			break
-		}
 		out = append(out, d)
+	}
+	// the same ones every time (an engine compiles the list once and keeps it)
+	sort.Strings(out)
+	if len(out) > n {
+		out = out[:n]
 	}
 	return out
 }

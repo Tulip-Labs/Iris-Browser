@@ -1,0 +1,10 @@
+#!/bin/sh
+# Iris's start inside the container: a private runtime folder (Iris keeps its
+# line to Electron there), the Downloads folder Iris saves to, and a session
+# bus for WebKit and GTK.
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$(mktemp -d)}"
+chmod 700 "$XDG_RUNTIME_DIR"
+mkdir -p "$HOME/Downloads" "$HOME/.config"
+# GLib and Electron find Downloads through user-dirs.dirs
+[ -f "$HOME/.config/user-dirs.dirs" ] || echo 'XDG_DOWNLOAD_DIR="$HOME/Downloads"' > "$HOME/.config/user-dirs.dirs"
+exec dbus-run-session -- /opt/iris/iris "$@"

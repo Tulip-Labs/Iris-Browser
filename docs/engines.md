@@ -1,240 +1,121 @@
-# Iris on Linux: two engines, one browser
+# Iris's web engines
 
-This is the plan for Iris on Linux from 1.1 on. Windows keeps WebView2 and
-is not part of it. Android keeps its own engine.
+| System | Most pages | Heavy pages | Interface |
+|---|---|---|---|
+| Linux | **WebKitGTK 6** (from the system, the Flatpak's GNOME runtime, the Snap or nixpkgs) | **Electron** (Chromium with H.264, H.265 and AAC), started on demand | Gio, in a GTK 4 window |
+| Windows | **Electron**, carried by Iris | (the same Electron) | Gio, in a Win32 window |
+| Android | Cefrium (Chromium) | | Kotlin (Android views), the desktop's Liquid Glass and tab strip |
 
-## What changes
-
-| | Before (1.0) | After (1.1) |
-|---|---|---|
-| Light pages (articles, Wikipedia, search, docs) | Chromium (CEF, minimal build) | **Servo** |
-| Heavy pages (YouTube, LinkedIn, Facebook, web apps, anything Servo cannot draw) | Chromium (CEF) | **Electron** (Chromium with H.264, H.265 and AAC) |
-| How a page's frames reach the screen | copied through the processor, about 9 MB a frame | **shared on the graphics chip** (dmabuf), never copied |
-| Interface | Gio, drawn by GTK | the same |
-| Linux packages | .deb, .rpm, AUR, .tar.gz, Nix | **Flatpak** (first), **Snap**, **Nix** |
-
-Why Electron and not CEF for the heavy engine: CEF's builds have H.264 and AAC
-switched off when Chromium is compiled, and only a build of our own could
-switch them on. Electron's builds have them on, so LinkedIn, X and the news
-sites play with nothing to compile.
-
-## The pieces
+## Linux
 
 ```
-              Gio interface (Go)  ──  drawn by GTK 4, one window
-                    │
-              engine router (Go)
-               │            │
-        Servo engine   Electron engine
-        (servo-capi,   (one helper process,
-         in process)    started on demand)
-               │            │
-          frames on the graphics chip (dmabuf) → GTK textures
-                    │
-            shared session store (Go): cookies, sign-ins,
-            history, settings, containers
+                 Gio interface (Go), one GTK 4 window
+                              │
+                    engine router (webview/route)
+                 │                              │
+       WebKitGTK engine                  Electron engine
+   (webview/webkit_linux.c,          (one helper process,
+    engine_webkit.go)                 webview/electron/helper)
+   pages are GTK widgets,             pages drawn off screen,
+   children of Iris's view            copied into Iris's view
+                 │                              │
+                 └──── cookie bridge (core/session) ────┘
+                      one store, every jar, both engines
 ```
 
-### The router (Go, `shell/route.go`)
+### Which engine draws a page (`core/route`)
 
-Each tab has an engine, chosen when it navigates:
+1. **Electron** for the heavy list: video (YouTube, Netflix, Twitch...),
+   social sites (LinkedIn, Facebook, Instagram, X, Reddit, TikTok...), web
+   apps (Google Docs, Gmail, Drive, Meet, Outlook, Teams, Figma, Discord,
+   Slack, Notion, Canva) and sign-in pages (Google, Microsoft, Apple).
+2. **Electron** for a site WebKit failed on (its page process crashed), or
+   one the reader moved with "Open in full engine"; remembered per site and
+   tried in WebKit again after a month.
+3. **WebKitGTK** for everything else.
 
-1. **Electron** for the heavy list: youtube.com, linkedin.com, facebook.com,
-   instagram.com, x.com, netflix.com, twitch.tv, web apps (docs.google.com,
-   mail.google.com, outlook, figma, discord, slack, teams), and Google's
-   sign-in pages (accounts.google.com).
-2. **Electron** for a site Servo failed on: a page that crashes Servo, draws
-   nothing, or that the reader moves with "Open in full engine" (in the three
-   dots menu) is remembered per site.
-3. **Servo** for everything else.
+Containers and private tabs route the same way: WebKit has a network
+session per container, one for private tabs (in memory) and one for
+sandbox tabs (in memory, never shared). A pop-up stays with the engine of
+the page that opened it, so `window.opener` keeps working.
 
-The list lives in `core/route.go` with tests, and the reader can move any site
-either way from the three dots menu.
+### WebKitGTK pages
 
-### The shared session store (Go, `core/session/`)
+Each page is a `WebKitWebView`, a child widget of Iris's view, placed where
+the tab's page goes (on a whole pixel of the screen at any scale). GTK draws
+it on the graphics chip and gives it the pointer, touch, the wheel, the input
+method and the keys itself. Iris keeps:
 
-Iris keeps the cookies, not the engines. Each engine starts with an empty
-cookie jar and:
+- its **shortcuts**: a key controller in the capture phase sends Ctrl+T,
+  Ctrl+L, Alt+Left and the rest to Iris before the page sees them;
+- its **menus**: while Iris draws a menu over the pages they take no input;
+- **navigation policy**: HTTPS-only, unsafe addresses, links to another
+  website in a new tab, tracking parameters cut from links, and the router's
+  move to Electron, all decided before a navigation starts;
+- **downloads** (to the Downloads folder, refused in a sandbox) and
+  **permissions** (pointer lock, storage access and clipboard; never the
+  camera, the microphone, the location or notifications).
 
-- before a navigation, gets the cookies for that site from Iris;
-- on every Set-Cookie (and `document.cookie` write), hands it to Iris.
+**The shield** in WebKit is WebKit's own content blocker: Iris converts its
+lists (the 100,000 built-in domains and the host, start and plain rules of
+EasyList, EasyPrivacy and uBlock, with their kinds, party and domains) into
+WebKit's rule format (`shields.ContentRules`), and WebKit compiles them once
+(a few seconds, in the background) and keeps the result on disk. Sign-in,
+messaging and human checks are never blocked; on YouTube and on sites where
+the reader turned the shield off nothing is. Hiding rules and the YouTube
+helpers run as page scripts, as in Electron.
 
-So signing in to Google in one engine signs in both. Containers, private and
-temporary tabs are separate jars in the same store, as now. History,
-settings, passwords and the shield already live in Iris's Go code and work
-with both engines unchanged.
+**The sandbox**: WebKit's page processes run in bubblewrap (Flatpak's own
+sandbox inside the Flatpak). On a system where it cannot run, WebKit is
+left out and Electron draws every page; `IRIS_NO_SANDBOX=1` is the reader's
+choice to run pages without it.
 
-### The Electron engine (`webview/electron/`)
+**Scale**: WebKitGTK draws a page at the next whole scale and GTK shrinks it
+to a fractional one (1.25, 1.5), as in GNOME Web. Iris's interface is drawn
+at the exact scale.
 
-One small Electron program (`helper/main.js`, a few hundred lines, no web
-interface of its own) that Iris starts when the first heavy tab opens, and
-drives over a Unix socket with short JSON messages: open, navigate, resize,
-show, hide, input events, close, cookies. Pages are `BrowserWindow`s with
-`offscreen: { useSharedTexture: true }`; each frame arrives as a dmabuf, which
-a tiny native module passes to Iris with the file descriptors (SCM_RIGHTS), and
-Iris hands to GTK as a `GdkDmabufTexture` (GTK 4.14+). Where the graphics chip
-cannot share (software drawing), frames come through shared memory instead.
+### The cookie bridge
 
-#### Keeping Electron light
+Iris owns the cookies (`core/session`, kept in `cookies.sqlite`). WebKit
+says when a jar changed; Iris reads it and reports the differences. Electron
+reports each change (`session.cookies` "changed"). Each change goes to the
+other engine; an engine's echo of a cookie it was just given changes
+nothing, so nothing loops. A page waits for its jar's cookies before it
+loads, so a sign-in in one engine is a sign-in in the other at once.
 
-Electron is Chromium plus Node.js; Iris keeps both on a diet:
+### Electron
 
-- **Started on demand, stopped when idle.** The helper only runs while a heavy
-  tab is open, and quits 2 minutes after the last one closes or rests: no
-  memory at all while browsing light sites.
-- **No Node.js in pages.** `nodeIntegration` off, `contextIsolation` and the
-  sandbox on; Node runs only in the helper's main process (one small script).
-- **Few processes.** One renderer per site (`process-per-site`), at most 3 on
-  8 GB and less, 5 above; no spare renderer, no back-forward cache, no
-  prerendering.
-- **Hidden tabs cost nothing to draw.** A tab not on screen stops painting
-  (`stopPainting`), is throttled, and after a minute rests (closed and
-  restored from Iris's own copy of its history and scroll position), except
-  tabs playing sound or video and YouTube, as now.
-- **Paint only what changed, at the screen's rate.** Frames come only when
-  the page changes, at most at the screen's refresh rate.
-- **Video on the graphics chip.** VA-API decoding (H.264, H.265, VP9, AV1)
-  where the driver has it.
-- **Small V8 heaps.** `--max-old-space-size` sized to the computer's memory,
-  `--optimize-for-size` on 8 GB and less.
-- **Nothing in the background.** No crash reporter, component updater,
-  spellchecker downloads, safe browsing pings, translate, or media router.
-- **A small package.** Only the English and the reader's own locale files,
-  no Electron sample apps, the helper as one plain script (no bundler; the
-  only npm dependency is `electron-chrome-extensions`, see Extensions).
+One helper process for every heavy tab and every extension, started on
+demand and gone two minutes after the last needs it; a memory budget,
+hidden pages that stop painting, one renderer per site, nothing running in
+the background. Chrome extensions run there; their content scripts only in
+Electron's pages.
 
-#### Never a resource hog
+## Windows
 
-Neither engine may take over the computer. For Electron:
+Electron alone, with the same helper and the same `engine_electron.go` as on
+Linux. What differs (`electron_windows.go`, `winpresent`):
 
-1. **One helper.** A single shared helper process serves every heavy tab and
-   every extension; never one per tab.
-2. **Gone when unneeded.** It quits two minutes after no page, pop-up,
-   download or extension needs it.
-3. **A hard memory budget.** Every 3 seconds Iris reads the memory (resident
-   set) of the helper and all its processes from /proc. That number is the
-   engine's memory in Iris's memory panel, and Iris's balancer compares it
-   with the budget of the memory setting (Saver, Balanced, Speed: 22, 35 or
-   55% of the computer's memory; `IRIS_ENGINE_BUDGET_MB` overrides it). Over
-   the budget, background tabs rest, the one used longest ago first, and
-   never the tab in front, tabs playing sound or video, YouTube or a tab
-   downloading. If the helper stays over the budget for 20 seconds with no
-   background page left to rest, it is restarted: the tabs come back from
-   their last address, the tab in front at once and the others when shown.
-   At most one restart every two minutes, and none again while a restart
-   did not help.
-4. **Shared, capped caches.** One HTTP disk cache per session (the default
-   container and each named container), kept across restarts in Iris's data
-   folder and capped at 100 MB each; private and sandbox tabs keep theirs in
-   memory only.
-5. **Visible.** With `IRIS_GL_DEBUG=1` Iris logs the engine's memory, its
-   number of processes, the budget and each tab's state (shown, hidden,
-   rested, playing) every reading; CI prints them and checks a restart.
-
-What the diet never touches, because pages break without it: the graphics
-chip (GPU compositing, WebGL, WebGPU), JIT-compiled JavaScript, workers and
-service workers (offline pages, YouTube), WebRTC (calls, Meet), notifications
-and permissions, file pickers, clipboard, fullscreen, picture-in-picture, the
-HTTP cache, password and form filling (Iris's own), and the codecs. Each
-switch above is checked in CI against a page set (YouTube, LinkedIn video,
-Google sign-in, a Meet test call, a service-worker page) before it ships.
-
-Not in Electron's builds and so not in Iris: Widevine (Netflix, Disney+,
-Spotify's web player need it). Those sites say so; playing them would need
-Castlabs' Electron builds, which carry Widevine.
-
-### The Servo engine (`webview/servo/`)
-
-Servo 0.4 from crates.io, through a small C library of Iris's own
-(`webview/servo/rust/`, a few hundred lines over Servo's embedding API;
-`servo-capi` only covers creating Servo so far), called from Go with cgo.
-Servo runs in Iris's own process, on GTK's thread: no start-up cost for a
-light page. Each page renders into a software context whose frames are drawn
-by GTK one pixel on one screen pixel, like Electron's; sharing them on the
-graphics chip (dmabuf) is the next step. Its requests pass Iris Shields in
-process (Servo's resource-load hook), its links to heavy sites move the tab to
-Electron (Servo's navigation hook), and its cookies go to and from Iris's
-shared store before each page and after it loads.
-
-#### Neither engine may become a resource hog
-
-- **One Servo** for every light tab, in Iris's process.
-- **Hidden tabs stop drawing** at once (Servo throttles them and nothing is
-  painted), and after a minute hidden their page is let go; it opens again at
-  its address when the tab is shown (as Iris's tabs rest today).
-- **A memory budget.** Every 10 seconds Iris reads its own memory
-  (`/proc/self`); above a sixth of the computer's memory (600 MB at least,
-  `IRIS_SERVO_BUDGET_MB` to change it) the hidden Servo pages are let go at
-  once, the longest hidden first. Servo 0.4's API has no call to drop its
-  image, font or layout caches; when it gains one, Iris calls it here too.
-- **No light tab, no pages.** Servo 0.4 cannot be shut down and started
-  again in the same process, so it stays, idle, but every page it held is
-  closed, which frees what they used. (When Servo can restart, Iris will shut
-  it down after two minutes without a light tab.)
-- **A tab is in one engine only.** Moving a tab between engines closes it in
-  the old engine before the new one makes it.
-- **Measured.** With `IRIS_GL_DEBUG=1` Iris logs its memory and Servo's
-  shown, hidden and rested pages every 10 seconds, and each tab's engine
-  whenever it changes; CI prints both.
-
-## Extensions (Chrome Web Store, unpacked)
-
-Extensions run in the Electron engine; Iris draws everything they show.
-
-**In Electron.** The helper's main process carries `electron-chrome-extensions`
-(the one npm dependency, vendored and pinned), which provides the
-`chrome.tabs`, `chrome.runtime`, `chrome.webRequest`, `chrome.action` and
-related APIs on top of Electron's own extension support. Extensions are
-loaded unpacked with `session.loadExtension()`: Iris unpacks a .crx (from
-the Web Store or a file) into its data folder first and checks its
-signature; Electron never opens a .crx. Their background pages and service
-workers run in the helper, which therefore also starts when an installed
-extension needs to run, and stays as small as above otherwise.
-
-**In Go and Gio.** Over the same socket the helper reports each extension's
-icon, title, badge text and color, and popup address; Gio draws the icons and
-their badges (an ad blocker's count, say) in the toolbar beside the address,
-in Iris's own style. A click on an icon asks the helper to open the popup
-(`chrome-extension://<id>/popup.html`) as an offscreen page of its own,
-which Iris draws under the icon, sized to the popup's content, on the same
-overlay over the pages that the right-click menu uses, and closes on a click
-outside or Escape. Tabs the extensions see (`chrome.tabs`) are Iris's tabs,
-mapped by Iris, Servo tabs included (their address and title).
-
-**The limit.** Content scripts run only in pages Electron draws. When an
-installed extension's content scripts match a site (a password manager on
-a sign-in page, say), the router sends that site to Electron, and the reader
-can turn that off per extension.
-
-**Blocking in both engines, natively.** Iris Shields already matches
-EasyList, EasyPrivacy and uBlock's lists in Go (about 110,000 rules in
-microseconds). Both engines ask it before every request: Electron through
-`session.webRequest.onBeforeRequest`, answered over the socket; Servo through
-its embedding API's resource-load hook, answered in process. A proxy is not
-used: for https it would see only the host name, not the address, and
-blocking by host alone breaks sites. So an ad-blocking extension is optional,
-not needed for the shield to work everywhere.
+- **The line to the helper** is TCP on 127.0.0.1 (Node on Windows has no Unix
+  sockets) with a random port. Iris passes a random token in `IRIS_TOKEN`; the
+  helper sends it first and Iris drops any connection that does not.
+- **Drawing**: each page is a child window of Iris's window, painted from the
+  helper's frames with StretchDIBits. Its region is rounded (12 px, square in
+  full screen) and has a hole where Iris's menus overlap the page.
+- **Shipping**: `build-iris.sh windows` stages Electron for x64 and ARM64 from
+  npm into `electron/` beside `Iris.exe`, with the helper as
+  `resources/app`. The setup embeds it as `payload/electron.zip` and unpacks it
+  next to the program (`.new`, then swapped in, so an update is never half
+  done); the portable zip and the MSIX (`tools/msix.go -extra`) carry it as a
+  folder.
+- **CI**: `windows.yml` builds the portable app and starts it on a Windows
+  runner, which must show Electron's console line from a test page.
 
 ## Packaging (Linux)
 
-- **Flatpak** (`packaging/flatpak/io.github.tulip_labs.Iris.yml`), the first
-  way to install Iris on every distribution, Fedora Atomic included: built on
-  `org.electronjs.Electron2.BaseApp`, with zypak for Electron's sandbox, and
-  the `org.freedesktop.Platform.ffmpeg-full` extension. Published on Flathub
-  and as a .flatpak file on each GitHub release.
-- **Snap** (`packaging/snap/snapcraft.yaml`) with the `desktop`, `wayland`,
-  `x11`, `opengl`, `audio-playback`, `network` and `browser-support` plugs.
-- **Nix** (`flake.nix`): Servo, Electron, fonts and the graphics drivers'
-  paths set by the flake, so it runs on NixOS as is.
-
-The .deb, .rpm, AUR and .tar.gz packages, their repositories and the in-app
-updater for them are removed. Flatpak, Snap and Nix update Iris themselves.
-
-## Order of work
-
-1. Packaging: remove the old packages; Flatpak, Snap and Nix with the current
-   engine, so there is something to install meanwhile.
-2. The Electron engine with frames on the graphics chip; CEF removed (done —
-   Electron is the Linux engine now, Servo for the light pages).
-3. The Servo engine, the router and the shared session store.
-4. Measure: memory and frame times against 1.0 on the same pages, in CI.
+- **Flatpak**: the GNOME 50 runtime carries GTK 4, WebKitGTK 6 and
+  GStreamer; the ffmpeg-full extension adds H.264 and AAC for WebKit.
+- **Snap**: WebKitGTK 6, its GStreamer plugins and bubblewrap are staged
+  with the program; the GNOME extension brings GTK.
+- **Nix**: `webkitgtk_6_0`, GStreamer and glib-networking from nixpkgs, and
+  nixpkgs' Electron.

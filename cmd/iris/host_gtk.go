@@ -30,6 +30,7 @@ void lgwSendState(void);
 void lgwDo(uintptr_t h);
 int lgwWayland(void);
 void lgwSetOverlay(int on, double x, double y, double w, double h, double radius);
+void lgwPickPicture(uintptr_t h);
 */
 import "C"
 
@@ -72,6 +73,22 @@ func runMain() {
 
 // onMain runs f on the GTK thread.
 func onMain(f func()) { C.lgwDo(C.uintptr_t(cgo.NewHandle(f))) }
+
+// pickPicture asks for a picture with the desktop's own file box (through
+// the file chooser portal inside Flatpak and Snap); it waits for the reader.
+func pickPicture() string {
+	ch := make(chan string, 1)
+	onMain(func() { C.lgwPickPicture(C.uintptr_t(cgo.NewHandle(ch))) })
+	return <-ch
+}
+
+//export lgwGoPicked
+func lgwGoPicked(h C.uintptr_t, path *C.char) {
+	hh := cgo.Handle(h)
+	ch := hh.Value().(chan string)
+	hh.Delete()
+	ch <- C.GoString(path)
+}
 
 //export lgwGoDo
 func lgwGoDo(h C.uintptr_t) {

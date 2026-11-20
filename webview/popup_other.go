@@ -3,3 +3,5 @@
 package webview
 
 type popupImpl struct{}
+
+func (popupImpl) kitPage() bool { return false }

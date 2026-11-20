@@ -5,122 +5,60 @@
 
   outputs = { self, nixpkgs }:
     let
-      # Chromium (CEF) is published for x86_64 here
+      # Electron (the engine for heavy pages) is built for x86_64 here
       systems = [ "x86_64-linux" ];
       forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
     {
       packages = forAll (pkgs: rec {
-        # the Chromium Embedded Framework named in packaging/cef/cef.env
-        cef = pkgs.fetchurl {
-          url = "https://cef-builds.spotifycdn.com/cef_binary_156.0.30%2Bg6028375%2Bchromium-156.0.8078.96_linux64_minimal.tar.bz2";
-          hash = "sha1-C0whieO5MDO77xOt0ahvZoScHmI=";
-        };
-
-        # Servo's bridge for the light pages (webview/servo/rust): every crate
-        # is pinned by its Cargo.lock, all from crates.io; SpiderMonkey is
-        # built from its source (the build has no network to fetch it)
-        irisservo = pkgs.rustPlatform.buildRustPackage {
-          pname = "irisservo";
-          version = "0.1.0";
-          src = ./webview/servo/rust;
-          cargoLock.lockFile = ./webview/servo/rust/Cargo.lock;
-          env.MOZJS_FROM_SOURCE = "1";
-          # Cap cargo at 2 jobs: the Nix sandbox's GNU make 4.4.1 is the
-          # version mozjs_sys's build.rs works around by passing --jobs=4
-          # to the mozjs make, creating a second independent jobserver, so
-          # up to ~7 heavy compiles ran at once on a 16 GB runner and the
-          # mozjs_sys build died with make Error 2 (suspected OOM-killer;
-          # nix build, run 44567641833). build.rs takes NUM_JOBS from cargo,
-          # so this also caps the mozjs make at --jobs=2.
-          env.CARGO_BUILD_JOBS = "2";
-          nativeBuildInputs = with pkgs; [
-            pkg-config cmake python3 perl m4 gperf yasm which rustPlatform.bindgenHook llvmPackages.bintools
-          ];
-          buildInputs = with pkgs; [
-            fontconfig freetype harfbuzz libunwind libGL libxkbcommon dbus udev openssl zlib zstd
-            xorg.libX11 xorg.libxcb xorg.libXcursor xorg.libXrandr xorg.libXi
-          ];
-          # zstd-sys links the system library via pkg-config; without zstd
-          # here libzstd.pc is missing and its build script panics
-          # (nix build, run 44545625923).
-          doCheck = false;
-          # nixpkgs' cargo hook exports JEMALLOC_OVERRIDE pointing at a
-          # sentinel path that deliberately does not exist, to force system
-          # libraries; tikv-jemalloc-sys instead treats it as a library to
-          # link and panics when it is missing (nix build, run 44519762797).
-          # Unsetting it keeps the crate on its vendored static jemalloc,
-          # the same fix nixpkgs uses for deltalake and daft.
-          postConfigure = ''
-            unset JEMALLOC_OVERRIDE
-          '';
-          installPhase = ''
-            runHook preInstall
-            install -Dm755 target/*/release/libirisservo.so $out/lib/libirisservo.so 2>/dev/null \
-              || install -Dm755 target/release/libirisservo.so $out/lib/libirisservo.so
-            runHook postInstall
-          '';
-        };
-
         iris-browser = pkgs.buildGoModule {
           pname = "iris-browser";
-          version = "1.0.24";
+          version = "1.0.25";
           src = self;
           vendorHash = "sha256-DUuIMLR+RLt5e6kRZcxRdGo4Q4i9ZGR7ia629F8Vp2o=";
           subPackages = [ "cmd/iris" ];
-          tags = [ "webkit" "cef" "novulkan" "servo" ];
+          # the pages: WebKitGTK for most, Electron (from nixpkgs, H.264 and
+          # AAC included) for video, social sites and web apps
+          tags = [ "webkit" "electron" "novulkan" ];
           ldflags = [ "-s" "-w" ];
           doCheck = false;
           overrideModAttrs = _: { preBuild = ""; };
-          # libcef.so's own libraries are found at run time (autoPatchelf)
-          env.CGO_LDFLAGS = "-Wl,--allow-shlib-undefined";
-          dontStrip = true; # libcef.so is stripped when it is unpacked
-          nativeBuildInputs = with pkgs; [ pkg-config wrapGAppsHook4 autoPatchelfHook ];
+          nativeBuildInputs = with pkgs; [ pkg-config wrapGAppsHook4 makeWrapper ];
+          # WebKit's media through GStreamer (H.264 and AAC with libav), and
+          # TLS through glib-networking (wrapGAppsHook sets their paths)
           buildInputs = with pkgs; [
-            gtk4 libepoxy libGL glib nss nspr alsa-lib libdrm libxkbcommon at-spi2-atk at-spi2-core
-            fontconfig freetype harfbuzz libunwind udev
-            cups dbus expat pango cairo (pkgs.libgbm or pkgs.mesa) systemd
-            xorg.libX11 xorg.libxcb xorg.libXcomposite xorg.libXdamage xorg.libXext xorg.libXfixes xorg.libXrandr
+            gtk4 libepoxy libGL glib fontconfig freetype harfbuzz webkitgtk_6_0 libsoup_3 glib-networking
+            gst_all_1.gstreamer gst_all_1.gst-plugins-base gst_all_1.gst-plugins-good gst_all_1.gst-plugins-bad gst_all_1.gst-libav
           ];
-          preBuild = ''
-            mkdir -p webview/servo/lib
-            cp ${irisservo}/lib/libirisservo.so webview/servo/lib/
-            mkdir -p third_party/cef
-            tar -xjf ${cef} -C third_party/cef --strip-components=1
-            strip --strip-unneeded third_party/cef/Release/libcef.so
-          '';
           postInstall = ''
             lib=$out/lib/iris-browser
-            mkdir -p $lib/locales
+            mkdir -p $lib/electron-helper
             mv $out/bin/iris $lib/iris
-            gcc -O2 -fno-stack-protector -Ithird_party/cef -DCEF_API_VERSION=15600 packaging/cef/helper.c \
-              -Lthird_party/cef/Release -lcef -Wl,--allow-shlib-undefined -Wl,-rpath,'$ORIGIN' -o $lib/iris-helper
-            cp ${irisservo}/lib/libirisservo.so $lib/
-            for f in libcef.so libvk_swiftshader.so libvulkan.so.1 vk_swiftshader_icd.json v8_context_snapshot.bin; do
-              cp third_party/cef/Release/$f $lib/
-            done
-            cp third_party/cef/Resources/*.pak third_party/cef/Resources/icudtl.dat $lib/
-            cp third_party/cef/Resources/locales/*.pak $lib/locales/
-            ln -s $lib/iris $out/bin/iris
+            # Iris's helper app for Electron: one script, no web interface
+            # (Chrome extensions need electron-chrome-extensions from npm, which
+            # this build leaves out; the shields block ads without them)
+            cp webview/electron/helper/main.js webview/electron/helper/preload.js webview/electron/helper/package.json $lib/electron-helper/
+            echo $version > $lib/VERSION
             install -Dm644 assets/icon.png $out/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
             install -Dm644 packaging/linux/io.github.tulip_labs.Iris.desktop $out/share/applications/io.github.tulip_labs.Iris.desktop
             install -Dm644 packaging/linux/io.github.tulip_labs.Iris.metainfo.xml $out/share/metainfo/io.github.tulip_labs.Iris.metainfo.xml
           '';
-          # Gio loads OpenGL ES at run time, Chromium libudev and the graphics
-          # drivers: NixOS keeps those in /run/opengl-driver. Fonts: the
-          # system's where there is a fontconfig (NixOS, most distributions),
-          # else DejaVu and Noto from the store. The Nix store has no setuid
-          # helper, so Chromium uses user namespaces for its sandbox.
+          # Gio and WebKit load OpenGL ES and the graphics drivers at run time:
+          # NixOS keeps those in /run/opengl-driver. Fonts: the system's where
+          # there is a fontconfig (NixOS, most distributions), else DejaVu and
+          # Noto from the store. Electron is nixpkgs' own.
           preFixup = let
             fonts = pkgs.makeFontsConf { fontDirectories = with pkgs; [ dejavu_fonts noto-fonts noto-fonts-color-emoji ]; };
           in ''
             gappsWrapperArgs+=(
               --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [ pkgs.libGL pkgs.libdrm (pkgs.libgbm or pkgs.mesa) pkgs.systemd ]}
               --suffix LD_LIBRARY_PATH : /run/opengl-driver/lib
+              --set-default IRIS_ELECTRON ${pkgs.electron}/bin/electron
+              --set-default IRIS_ELECTRON_APP $out/lib/iris-browser/electron-helper
             )
             wrapGApp $out/lib/iris-browser/iris
             # the launcher: the store's fonts only where the system has no fontconfig
-            rm $out/bin/iris
+            mkdir -p $out/bin
             cat > $out/bin/iris <<EOF
             #!${pkgs.runtimeShell}
             if [ -z "\''${FONTCONFIG_FILE:-}" ] && [ ! -e /etc/fonts/fonts.conf ]; then export FONTCONFIG_FILE=${fonts}; fi
