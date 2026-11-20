@@ -7,14 +7,9 @@ set -e
 cd "$(dirname "$0")/../.."
 out=${1:-dist/linux-electron}
 mkdir -p "$out"
-# Servo for the light pages, when its bridge is built (webview/servo/lib,
-# from .github/workflows/servo-lib.yml or cargo in webview/servo/rust)
+# WebKitGTK (from the system, the Flatpak's GNOME runtime or the Snap's
+# GNOME extension) for most pages, Electron for the heavy ones
 tags="webkit electron"
-if [ -f webview/servo/lib/libirisservo.so ]; then
-	tags="$tags servo"
-	cp webview/servo/lib/libirisservo.so "$out/"
-	echo "With Servo for light pages"
-fi
 CGO_ENABLED=1 go build -tags "$tags" -trimpath -ldflags "-s -w" -o "$out/iris" ./cmd/iris
 
 helper=webview/electron/helper

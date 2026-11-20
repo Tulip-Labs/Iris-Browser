@@ -1,5 +1,5 @@
-// Package webview embeds the operating system's web engine under Iris's
-// own Gio interface: WebView2 on Windows and Electron on Linux. Every method must be
+// Package webview embeds the web engines under Iris's own Gio interface:
+// WebView2 on Windows; WebKitGTK and Electron on Linux. Every method must be
 // called on the window's UI thread; events arrive on that thread too.
 package webview
 
@@ -122,6 +122,10 @@ type Policy struct {
 	Unsafe func(url string) bool
 	// Download reports every download as it starts and as it changes.
 	Download func(d Download)
+	// ContentRules is the shield for an engine that matches requests itself
+	// (WebKit's content blockers, shields.ContentRules): the rules as JSON.
+	// It may take a moment; engines call it off the window's thread.
+	ContentRules func() []byte
 	// MemoryBudgetMB is how much memory the engine's processes may hold
 	// together (the memory setting's budget; 0 = a quarter of the computer's).
 	// Iris's balancer rests background tabs first; an engine that can (Linux,
@@ -134,6 +138,10 @@ type Popup struct {
 	URL  string
 	impl popupImpl
 }
+
+// FromWebKit says whether the pop-up is a WebKit page (Linux): it opens in
+// WebKit, beside its opener.
+func (p *Popup) FromWebKit() bool { return p != nil && p.impl.kitPage() }
 
 // View is one tab's page.
 type View interface {

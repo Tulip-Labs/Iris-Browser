@@ -213,6 +213,17 @@ func New(h Host, cfg Config) *App {
 		c = LoadCore(cfg.DataDir)
 	}
 	a.set, a.hist, a.shield, a.scan, a.core = c.Settings, c.History, c.Shield, c.Scan, c
+	// engines that compile the shield (WebKit) get it again once the lists
+	// are in place
+	if c.OnLists == nil {
+		c.OnLists = func() { a.post(a.applyPolicy) }
+	}
+	if c.Shield != nil {
+		go func() {
+			c.Shield.Wait()
+			a.post(a.applyPolicy)
+		}()
+	}
 	// one way to search: Google AI Mode in the tab, asked for the best and
 	// newest sources (core.AIInstruction); no results page, no modes
 	a.set.Mode, a.set.LiteResults, a.set.Boost, a.set.VerticalTabs = core.ModeAI, false, false, false
@@ -307,6 +318,18 @@ func (a *App) Policy() webview.Policy {
 				return false // nothing to check with the shield off
 			}
 			return !adaptive || scan.Need(u)
+		},
+		// the same shield for WebKit, which matches requests itself
+		ContentRules: func() []byte {
+			if !sh.On {
+				return shields.ContentRules(nil, shields.ContentRuleSet{})
+			}
+			off := sh.OffSites()
+			if ytPass {
+				off = append(off, "youtube.com", "youtube-nocookie.com")
+			}
+			return shields.ContentRules(c.Filters.Load(), shields.ContentRuleSet{
+				Domains: sh.Domains(150000), Never: core.NeverBlock(), Off: off, MaxRules: 220000})
 		},
 		Unsafe:   func(u string) bool { return core.Risk(u) != "" && !a.allowedInsecure(u) },
 		Download: func(d webview.Download) { a.post(func() { a.onDownload(d) }) },

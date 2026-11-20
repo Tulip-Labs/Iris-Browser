@@ -66,10 +66,11 @@ type Persister interface {
 
 // Store is the shared cookie store.
 type Store struct {
-	mu   sync.Mutex
-	all  map[string]*Cookie
-	disk Persister
-	now  func() time.Time
+	mu       sync.Mutex
+	all      map[string]*Cookie
+	disk     Persister
+	now      func() time.Time
+	watchers []watcher
 }
 
 // New makes a store kept by p (nil: in memory only).
@@ -84,6 +85,22 @@ func New(p Persister) *Store {
 		}
 	}
 	return s
+}
+
+// Jar names: "" is the default; containers are "c-" and their name;
+// private tabs share "private"; sandbox tabs "sandbox".
+
+// JarFor is the jar of a tab in container profile (""), private or a sandbox.
+func JarFor(profile string, private, sandbox bool) string {
+	switch {
+	case sandbox:
+		return "sandbox"
+	case private:
+		return "private"
+	case profile != "":
+		return "c-" + profile
+	}
+	return ""
 }
 
 // Memory reports whether jar is kept only in memory (private, temporary and

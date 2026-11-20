@@ -370,6 +370,7 @@ func (a *App) setSiteOff(host string, off bool) {
 	a.set.ShieldOff = keep
 	a.set.Save()
 	a.shield.SetSiteOff(host, off)
+	a.applyPolicy() // WebKit's compiled shield changes with it
 }
 
 // applyPolicy sends changed settings to the engine (new pages pick up scripts and strictness).

@@ -49,34 +49,34 @@ extern int lgxPagePointer(GdkEvent *e, double x, double y) __attribute__((weak))
 extern int lgxPageKey(GdkEvent *e) __attribute__((weak));
 extern void lgxPagesLeave(void) __attribute__((weak));
 extern void lgxUIFocus(void) __attribute__((weak));
-// Servo's pages (webview/servo/servo_linux.c), when Iris is built with them
-extern void lsvSnapshotPages(GtkSnapshot *s, double scale) __attribute__((weak));
-extern int lsvPagePointer(GdkEvent *e, double x, double y) __attribute__((weak));
-extern int lsvPageKey(GdkEvent *e) __attribute__((weak));
-extern void lsvPagesLeave(void) __attribute__((weak));
-extern void lsvUIFocus(void) __attribute__((weak));
+// WebKit's pages (webview/webkit_linux.c): real GTK widgets, children of
+// the view, which GTK gives the pointer and the keys itself
+extern void lwkSnapshotPages(GtkSnapshot *s, double scale) __attribute__((weak));
+extern int lwkPagePointer(GdkEvent *e, double x, double y) __attribute__((weak));
+extern void lwkUIFocus(void) __attribute__((weak));
+extern void lwkAllocate(void) __attribute__((weak));
+extern void lwkOverlay(int on) __attribute__((weak));
 
 // The pages of both engines: a press on one engine's page takes the keys
 // from the other's.
 static int pagePointer(GdkEvent *e, double x, double y) {
 	int press = gdk_event_get_event_type(e) == GDK_BUTTON_PRESS;
-	if (lsvPagePointer && lsvPagePointer(e, x, y)) {
+	if (lwkPagePointer && lwkPagePointer(e, x, y)) {
 		if (press && lgxUIFocus) lgxUIFocus();
 		return 1;
 	}
 	if (lgxPagePointer && lgxPagePointer(e, x, y)) {
-		if (press && lsvUIFocus) lsvUIFocus();
+		if (press && lwkUIFocus) lwkUIFocus();
 		return 1;
 	}
 	return 0;
 }
-static int pageKey(GdkEvent *e) { return (lsvPageKey && lsvPageKey(e)) || (lgxPageKey && lgxPageKey(e)); }
+static int pageKey(GdkEvent *e) { return lgxPageKey && lgxPageKey(e); }
 static void leavePages(void) {
-	if (lsvPagesLeave) lsvPagesLeave();
 	if (lgxPagesLeave) lgxPagesLeave();
 }
 static void uiFocus(void) {
-	if (lsvUIFocus) lsvUIFocus();
+	if (lwkUIFocus) lwkUIFocus();
 	if (lgxUIFocus) lgxUIFocus();
 }
 
@@ -162,6 +162,9 @@ static double scaleOf(GtkWidget *w) {
 	double sc = p_surface_get_scale && drawsFractional() ? p_surface_get_scale(s) : gdk_surface_get_scale_factor(s);
 	return sc > 0.25 ? sc : 1;
 }
+
+// lgwScale is the view's scale (the engines place their pages with it).
+double lgwScale(void) { return view ? scaleOf(view) : 1; }
 
 // origin is where the view starts on its window's surface (past the shadow
 // of client-side decorations), in GTK units.
@@ -425,6 +428,7 @@ void lgwSetOverlay(int on, double x, double y, double w, double h, double radius
 	ovRect = GRAPHENE_RECT_INIT(x, y, w, h);
 	ovRadius = radius;
 	if (ovOn && !was) g_idle_add(pagesLeave, NULL);
+	if (ovOn != was && lwkOverlay) lwkOverlay(ovOn);
 }
 
 static void appendTexture(GtkSnapshot *s, GdkTexture *t, const graphene_rect_t *r, int sharp) {
@@ -462,7 +466,7 @@ static void iris_view_snapshot(GtkWidget *w, GtkSnapshot *sn) {
 		gtk_snapshot_append_color(sn, &bg, &all);
 	}
 	if (lgxSnapshotPages) lgxSnapshotPages(sn, s);
-	if (lsvSnapshotPages) lsvSnapshotPages(sn, s);
+	if (lwkSnapshotPages) lwkSnapshotPages(sn, s);
 	if (ovOn && uiTex && uiW == pw && uiH == ph) {
 		// the overlay's part of the interface again, over the pages
 		GskRoundedRect rr;
@@ -511,8 +515,14 @@ static void iris_view_dispose(GObject *o) {
 	G_OBJECT_CLASS(iris_view_parent_class)->dispose(o);
 }
 
+// the view's children are WebKit's pages: each where its tab's page goes
+static void iris_view_size_allocate(GtkWidget *w, int width, int height, int baseline) {
+	if (lwkAllocate) lwkAllocate();
+}
+
 static void iris_view_class_init(IrisViewClass *k) {
 	GTK_WIDGET_CLASS(k)->snapshot = iris_view_snapshot;
+	GTK_WIDGET_CLASS(k)->size_allocate = iris_view_size_allocate;
 	GTK_WIDGET_CLASS(k)->unrealize = iris_view_unrealize;
 	G_OBJECT_CLASS(k)->dispose = iris_view_dispose;
 }
@@ -611,9 +621,14 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 	case GDK_BUTTON_RELEASE: {
 		local(e, &x, &y);
 		int press = t == GDK_BUTTON_PRESS;
+		// with the overlay up only a page's own release goes to it; a WebKit
+		// page is a widget of its own and takes the keyboard itself, an
+		// Electron page gets its keys through the view
+		if (!(pressedOnUI && !press) && !(ovOn && press) && pagePointer(e, x, y)) {
+			if (press && !(lwkPagePointer && lwkPagePointer(e, x, y))) gtk_widget_grab_focus(view);
+			return TRUE;
+		}
 		if (press) gtk_widget_grab_focus(view);
-		// with the overlay up only a page's own release goes to it
-		if (!(pressedOnUI && !press) && !(ovOn && press) && pagePointer(e, x, y)) return TRUE;
 		if (press) {
 			pressedOnUI = 1;
 			if (!ovOn) uiFocus(); // the menu's choice (Paste) goes to the page that had the keys

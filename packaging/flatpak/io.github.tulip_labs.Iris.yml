@@ -6,7 +6,7 @@
 # release from the exact files it tested. A Flathub submission builds from
 # source instead, with every download listed: see README.md here.
 app-id: io.github.tulip_labs.Iris
-runtime: org.gnome.Platform # GTK 4 (the freedesktop runtime has no GTK)
+runtime: org.gnome.Platform # GTK 4 and WebKitGTK 6 (the freedesktop runtime has neither)
 runtime-version: "50" # on freedesktop 25.08
 sdk: org.gnome.Sdk
 command: iris

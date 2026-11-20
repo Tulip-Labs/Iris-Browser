@@ -156,6 +156,67 @@ function partitionOf(m) {
   return 'persist:iris';
 }
 
+// ---- the cookie bridge (core/session): Iris's store holds the cookies of
+// both engines; each change here goes to Iris, and Iris's changes come here,
+// so a sign-in in WebKit is a sign-in here too ----
+
+// jarOf is Iris's jar for a tab's options (null: a sandbox, never shared)
+function jarOf(m) {
+  if (m.sandbox) return null;
+  if (m.private) return 'private';
+  if (m.profile) return 'c-' + m.profile;
+  return '';
+}
+
+const cookieWait = new Map(); // partition -> Promise of the cookies being set
+const sameSiteOf = { lax: 'Lax', strict: 'Strict', no_restriction: 'None' };
+
+function cookieOut(c) {
+  return {
+    name: c.name,
+    value: c.value,
+    domain: (c.domain || '').replace(/^\./, ''),
+    hostOnly: !!c.hostOnly,
+    path: c.path || '/',
+    expires: c.session || !c.expirationDate ? 0 : Math.floor(c.expirationDate),
+    secure: !!c.secure,
+    httpOnly: !!c.httpOnly,
+    sameSite: sameSiteOf[c.sameSite] || '',
+  };
+}
+
+function cookieURL(c) {
+  return (c.secure ? 'https://' : 'http://') + c.domain + (c.path || '/');
+}
+
+// cookies: Iris gives a jar's cookies (set) or takes some away (del)
+function cookies(m) {
+  const ses = sessionFor(m);
+  const name = partitionOf(m);
+  const jobs = [];
+  for (const c of m.set || []) {
+    const d = {
+      url: cookieURL(c),
+      name: c.name,
+      value: c.value,
+      path: c.path || '/',
+      secure: !!c.secure,
+      httpOnly: !!c.httpOnly,
+      sameSite: c.sameSite === 'Lax' ? 'lax' : c.sameSite === 'Strict' ? 'strict' : c.sameSite === 'None' && c.secure ? 'no_restriction' : 'unspecified',
+    };
+    if (!c.hostOnly) d.domain = '.' + c.domain;
+    if (c.expires > 0) d.expirationDate = c.expires;
+    jobs.push(ses.cookies.set(d).catch(() => {}));
+  }
+  for (const c of m.del || []) jobs.push(ses.cookies.remove(cookieURL(c), c.name).catch(() => {}));
+  const before = cookieWait.get(name) || Promise.resolve();
+  const p = before.then(() => Promise.all(jobs));
+  cookieWait.set(name, p);
+  p.then(() => {
+    if (cookieWait.get(name) === p) cookieWait.delete(name);
+  });
+}
+
 function viewOfContents(id) {
   for (const v of views.values()) if (v.wc && !v.wc.isDestroyed() && v.wc.id === id) return v;
   return null;
@@ -169,6 +230,13 @@ function sessionFor(m) {
   if (ses) return ses;
   ses = session.fromPartition(name, { cache: !m.private && !m.sandbox });
   sessions.set(name, ses);
+  const jar = jarOf(m);
+  if (jar !== null) {
+    ses.cookies.on('changed', (e, c, cause, removed) => {
+      if (removed && cause === 'overwrite') return; // the new value follows
+      send({ t: 'cookie', jar, c: cookieOut(c), rm: !!removed });
+    });
+  }
   ses.setUserAgent(ses.getUserAgent().replace(/\s(Iris|iris-pages|Electron)\/\S+/g, ''));
   ses.setSpellCheckerEnabled && ses.setSpellCheckerEnabled(false);
   const sandbox = !!m.sandbox;
@@ -377,7 +445,7 @@ function open(m) {
   if (views.has(m.id)) return;
   const ses = sessionFor(m);
   const win = new BrowserWindow({ show: false, width: 800, height: 600, frame: false, paintWhenInitiallyHidden: true, webPreferences: prefs(ses) });
-  const v = { id: m.id, win, wc: win.webContents, shown: false, full: true, main: partitionOf(m) === 'persist:iris' };
+  const v = { id: m.id, win, wc: win.webContents, shown: false, full: true, main: partitionOf(m) === 'persist:iris', part: partitionOf(m) };
   views.set(m.id, v);
   attach(v);
   extTab(v);
@@ -629,6 +697,7 @@ function handle(m) {
         for (const v of views.values()) applyZoom(v);
       }
       return;
+    case 'cookies': return cookies(m);
     case 'scripts': scripts = Array.isArray(m.list) ? m.list : []; return;
     case 'scheme': nativeTheme.themeSource = m.dark ? 'dark' : 'light'; return;
     case 'ext': return void ext(m);
@@ -648,7 +717,12 @@ function handle(m) {
   const wc = v.wc;
   const h = wc.navigationHistory || wc;
   switch (m.t) {
-    case 'nav': return void wc.loadURL(m.url).catch(() => {});
+    case 'nav': {
+      // the jar's cookies from Iris first, so a page opens signed in
+      const wait = v.part && cookieWait.get(v.part);
+      if (wait) return void wait.then(() => !wc.isDestroyed() && wc.loadURL(m.url).catch(() => {}));
+      return void wc.loadURL(m.url).catch(() => {});
+    }
     case 'back': return h.canGoBack() && h.goBack();
     case 'fwd': return h.canGoForward() && h.goForward();
     case 'reload': return wc.reload();

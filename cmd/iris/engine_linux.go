@@ -1,4 +1,4 @@
-//go:build linux && webkit && servo
+//go:build linux && webkit
 
 package main
 
@@ -10,11 +10,11 @@ import (
 	"iris/core/session/sqlitestore"
 	"iris/webview"
 	"iris/webview/route"
-	"iris/webview/servo"
 )
 
-// newEngine is Servo for light pages and Electron for the rest, sharing one
-// cookie store (docs/engines.md).
+// newEngine is WebKitGTK for most pages and Electron for the heavy ones
+// (video, social sites, web apps), sharing one cookie store: a sign-in in
+// one engine is a sign-in in the other (docs/engines.md).
 func newEngine(conf string) webview.Engine {
 	var p session.Persister
 	if conf != "" {
@@ -25,5 +25,6 @@ func newEngine(conf string) webview.Engine {
 		}
 	}
 	cookies := session.New(p)
-	return route.Wrap(servo.New(cookies), webview.New(), rules.Open(conf))
+	webview.SetCookies(cookies)
+	return route.Wrap(webview.NewWebKit(cookies), webview.New(), rules.Open(conf))
 }

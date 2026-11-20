@@ -27,7 +27,11 @@ var (
 	wkEng   *wkEngine
 )
 
-type popupImpl struct{ native, id uintptr }
+// popupImpl is a pending pop-up: Electron's (native, id) or WebKit's page
+// (kit), made by the page that opened it.
+type popupImpl struct{ native, id, kit uintptr }
+
+func (i popupImpl) kitPage() bool { return i.kit != 0 }
 
 func wkAdd(v *wkView) uintptr {
 	wkMu.Lock()

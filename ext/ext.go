@@ -4,7 +4,7 @@
 // a folder the web engine loads it from.
 //
 // Only engines that run extensions use it (WebView2 on Windows, Electron on
-// Linux). On Linux the Electron engine runs them; Servo's pages never do
+// Linux). On Linux the Electron engine runs them; WebKit's pages never do
 // (a page an extension must see goes to Electron).
 package ext
 

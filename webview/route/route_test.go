@@ -77,7 +77,7 @@ func (e *fEngine) MemoryMB() float64        { return 1 }
 func (e *fEngine) Version() string          { return e.name }
 
 func setup() (*Engine, *fEngine, *fEngine, *[]string) {
-	light := &fEngine{name: "Servo 0.4", divert: true}
+	light := &fEngine{name: "WebKitGTK 2.54", divert: true}
 	heavy := &fEngine{name: "156.0"}
 	e := New(light, heavy, rules.Open(""))
 	var urls []string
@@ -100,60 +100,64 @@ func TestLightThenHeavy(t *testing.T) {
 	v.SetZoom(1.25)
 	v.Navigate("https://en.wikipedia.org/wiki/Red_panda")
 	if len(light.views) != 1 || len(heavy.views) != 0 || light.views[0].nav[0] != "https://en.wikipedia.org/wiki/Red_panda" {
-		t.Fatal("Wikipedia goes to Servo")
+		t.Fatal("Wikipedia goes to WebKit")
 	}
 	if light.views[0].w != 800 || light.views[0].zoom != 1.25 {
 		t.Error("the view starts where the tab is")
 	}
-	// typed into the address bar: YouTube goes to Chromium, Servo's view closes
+	// typed into the address bar: YouTube goes to Electron, WebKit's view closes
 	v.Navigate("https://www.youtube.com/")
 	if len(heavy.views) != 1 || !light.views[0].closed || heavy.views[0].w != 800 || heavy.views[0].zoom != 1.25 {
-		t.Fatal("YouTube moves the tab to Chromium, as it was")
+		t.Fatal("YouTube moves the tab to Electron, as it was")
 	}
 	// and back
 	v.Navigate("https://example.com/")
 	if len(light.views) != 2 || !heavy.views[0].closed {
-		t.Error("an article goes back to Servo")
+		t.Error("an article goes back to WebKit")
 	}
-	if e.Version() != "156.0 · Servo 0.4" {
+	if e.Version() != "156.0 · WebKitGTK 2.54" {
 		t.Errorf("version %q", e.Version())
 	}
 }
 
-func TestLinkInServoDiverts(t *testing.T) {
+func TestLinkInWebKitDiverts(t *testing.T) {
 	e, light, heavy, urls := setup()
 	v := newTab(t, e, urls)
 	v.Navigate("https://news.example/")
-	// a link in the page (Servo asks before it goes)
+	// a link in the page (WebKit asks before it goes)
 	light.views[0].Navigate("https://www.linkedin.com/feed/")
 	if len(heavy.views) != 1 || len(heavy.views[0].nav) != 1 || heavy.views[0].nav[0] != "https://www.linkedin.com/feed/" {
-		t.Fatal("a link to LinkedIn opens in Chromium")
+		t.Fatal("a link to LinkedIn opens in Electron")
 	}
 	if len(light.views[0].nav) != 1 {
-		t.Error("Servo did not go to LinkedIn itself")
+		t.Error("WebKit did not go to LinkedIn itself")
 	}
 }
 
-func TestServoCrashRemembered(t *testing.T) {
+func TestWebKitCrashRemembered(t *testing.T) {
 	e, light, heavy, urls := setup()
 	v := newTab(t, e, urls)
 	v.Navigate("https://fancy.example/app")
 	light.views[0].ev.Crashed()
 	if len(heavy.views) != 1 || heavy.views[0].nav[0] != "https://fancy.example/app" {
-		t.Fatal("the page opens again in Chromium")
+		t.Fatal("the page opens again in Electron")
 	}
 	if e.Rules().Pick("https://fancy.example/other") != rules.Heavy {
 		t.Error("the site is remembered")
 	}
 }
 
-func TestContainersStayHeavy(t *testing.T) {
+// WebKit has a session per container and for private tabs: they route by
+// site like any tab (the cookie bridge keeps each jar the same in both).
+func TestContainersRouteBySite(t *testing.T) {
 	e, light, heavy, _ := setup()
-	var v webview.View
-	e.NewView(webview.Options{Profile: "c-work"}, webview.Events{}, func(nv webview.View, err error) { v = nv })
-	v.Navigate("https://en.wikipedia.org/")
-	if len(light.views) != 0 || len(heavy.views) != 1 {
-		t.Error("containers have their own cookies: Chromium")
+	for _, o := range []webview.Options{{Profile: "work"}, {Private: true}} {
+		var v webview.View
+		e.NewView(o, webview.Events{}, func(nv webview.View, err error) { v = nv })
+		v.Navigate("https://en.wikipedia.org/")
+	}
+	if len(light.views) != 2 || len(heavy.views) != 0 {
+		t.Errorf("containers and private tabs open articles in WebKit: %d %d", len(light.views), len(heavy.views))
 	}
 }
 
@@ -164,7 +168,7 @@ func TestCallsWhileMaking(t *testing.T) {
 	v.Navigate("https://example.com/")
 	v.Navigate("https://www.youtube.com/")
 	if !e.light.(*fEngine).views[0].closed {
-		t.Error("the tab left Servo the moment it moved, not once Chromium was ready")
+		t.Error("the tab left WebKit the moment it moved, not once Electron was ready")
 	}
 	v.SetBounds(5, 0, 640, 480)
 	v.SetVisible(false)
@@ -183,14 +187,14 @@ func TestCallsWhileMaking(t *testing.T) {
 	}
 }
 
-func TestNoServo(t *testing.T) {
+func TestNoWebKit(t *testing.T) {
 	heavy := &fEngine{name: "156.0"}
 	e := New(nil, heavy, nil)
 	var v webview.View
 	e.NewView(webview.Options{}, webview.Events{}, func(nv webview.View, err error) { v = nv })
 	v.Navigate("https://en.wikipedia.org/")
 	if len(heavy.views) != 1 || e.Version() != "156.0" {
-		t.Error("without Servo every page goes to Chromium")
+		t.Error("without WebKit every page goes to Electron")
 	}
 }
 

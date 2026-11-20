@@ -53,14 +53,14 @@ func (v *view) become(k rules.Engine, why string, then func()) {
 	v.making = true
 	v.gen++
 	gen := v.gen
-	name := map[rules.Engine]string{rules.Light: "Servo", rules.Heavy: "Electron"}[k]
+	name := map[rules.Engine]string{rules.Light: "WebKit", rules.Heavy: "Electron"}[k]
 	log.Printf("Iris: tab %d drawn by %s%s", v.n, name, why)
 	v.e.engine(k).NewView(v.o, v.events(gen, k), func(nv webview.View, err error) {
 		v.making = false
 		if err != nil || nv == nil {
 			if k == rules.Light {
-				// Servo could not make the page: Electron does
-				v.become(rules.Heavy, " (Servo failed)", then)
+				// WebKit could not make the page: Electron does
+				v.become(rules.Heavy, " (WebKit failed)", then)
 			} else if v.ev.Crashed != nil {
 				v.ev.Crashed()
 			}
@@ -142,10 +142,10 @@ func (v *view) events(gen int, k rules.Engine) webview.Events {
 			return
 		}
 		if k == rules.Light && v.url != "" {
-			// Servo could not draw this site: Chromium does, from now on
+			// WebKit could not draw this site: Electron does, from now on
 			u := v.url
 			v.e.rules.Failed(u)
-			v.become(rules.Heavy, " (Servo crashed on "+host(u)+")", func() { v.cur.Navigate(u) })
+			v.become(rules.Heavy, " (WebKit crashed on "+host(u)+")", func() { v.cur.Navigate(u) })
 			return
 		}
 		if ev.Crashed != nil {

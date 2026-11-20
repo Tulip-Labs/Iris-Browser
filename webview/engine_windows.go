@@ -21,6 +21,8 @@ type rect struct{ left, top, right, bottom int32 }
 
 type popupImpl struct{ args, deferral uintptr }
 
+func (popupImpl) kitPage() bool { return false }
+
 var (
 	user32          = windows.NewLazySystemDLL("user32.dll")
 	procGetKeyState = user32.NewProc("GetKeyState")

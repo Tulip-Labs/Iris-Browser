@@ -1,6 +1,7 @@
 package shields
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -139,5 +140,45 @@ func itoa(i int) string {
 		if i == 0 {
 			return s
 		}
+	}
+}
+
+// The shield as WebKit content rules: host rules, kinds, third party,
+// exceptions after blocks, and the sites that are never blocked.
+func TestContentRules(t *testing.T) {
+	e := New()
+	e.Add(strings.NewReader("||doubleclick.net^\n||ads.example.com^$script,third-party\n/banner/ad.\n@@||doubleclick.net/ok/$script\n/^regex$/\n"))
+	js := ContentRules(e, ContentRuleSet{Domains: []string{"tracker.test"}, Never: []string{"accounts.google.com"}, Off: []string{"mysite.org"}})
+	var rules []struct {
+		Trigger map[string]any        `json:"trigger"`
+		Action  struct{ Type string } `json:"action"`
+	}
+	if err := json.Unmarshal(js, &rules); err != nil {
+		t.Fatal(err)
+	}
+	var kinds []string
+	lastBlock, firstAllow := -1, len(rules)
+	for i, r := range rules {
+		kinds = append(kinds, r.Action.Type)
+		if r.Action.Type == "block" {
+			lastBlock = i
+		} else if i < firstAllow {
+			firstAllow = i
+		}
+	}
+	if lastBlock > firstAllow {
+		t.Fatalf("exceptions must follow every block: %v", kinds)
+	}
+	s := string(js)
+	for _, want := range []string{`doubleclick\\.net`, `tracker\\.test`, `"third-party"`, `banner`, `accounts\\.google\\.com`, `"*mysite.org"`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %s in %s", want, s)
+		}
+	}
+	if strings.Contains(s, "regex") {
+		t.Error("regular-expression rules are left out")
+	}
+	if len(rules) != 7 {
+		t.Errorf("%d rules: %v", len(rules), kinds)
 	}
 }

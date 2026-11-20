@@ -54,6 +54,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"iris/core/session"
 )
 
 const engineName = "Electron "
@@ -127,6 +129,10 @@ type elxEngine struct {
 	restartAt  time.Time // the last restart for memory
 	restarting bool      // the helper is being restarted (not a crash)
 	afterMB    float64   // the memory a minute after that restart
+	// the cookie bridge (core/session): the shared store, and the jars the
+	// running helper already has from it
+	cookies *session.Store
+	jars    map[string]bool
 }
 
 type elxView struct {
@@ -352,6 +358,7 @@ func (e *elxEngine) helperGone() {
 	}
 	e.conn = nil
 	e.queue = nil
+	e.jars = nil // a new helper gets every jar again
 	open := make([]*elxView, 0, len(e.views))
 	for _, ev := range e.views {
 		open = append(open, ev)
@@ -532,6 +539,94 @@ type in struct {
 	MB      float64         `json:"mb"`
 	R       json.RawMessage `json:"r"`
 	Version string          `json:"version"`
+	Jar     *string         `json:"jar"`
+	C       *elxCookie      `json:"c"`
+	Rm      bool            `json:"rm"`
+}
+
+// elxCookie is a cookie as the helper and Iris pass it.
+type elxCookie struct {
+	Name     string `json:"name"`
+	Value    string `json:"value"`
+	Domain   string `json:"domain"`
+	HostOnly bool   `json:"hostOnly"`
+	Path     string `json:"path"`
+	Expires  int64  `json:"expires"`
+	Secure   bool   `json:"secure"`
+	HTTPOnly bool   `json:"httpOnly"`
+	SameSite string `json:"sameSite"`
+}
+
+func cookieOf(jar string, c *elxCookie) session.Cookie {
+	return session.Cookie{Jar: jar, Name: c.Name, Value: c.Value, Domain: strings.ToLower(c.Domain), HostOnly: c.HostOnly, Path: c.Path,
+		Expires: c.Expires, Secure: c.Secure, HTTPOnly: c.HTTPOnly, SameSite: c.SameSite}
+}
+
+func elxCookieOf(c session.Cookie) elxCookie {
+	return elxCookie{Name: c.Name, Value: c.Value, Domain: c.Domain, HostOnly: c.HostOnly, Path: c.Path, Expires: c.Expires,
+		Secure: c.Secure, HTTPOnly: c.HTTPOnly, SameSite: c.SameSite}
+}
+
+// jarMsg names a jar the way the helper's sessions are named.
+func jarMsg(jar string) msg {
+	m := msg{"t": "cookies"}
+	switch {
+	case jar == "private":
+		m["private"] = true
+	case strings.HasPrefix(jar, "c-"):
+		m["profile"] = jar[2:]
+	}
+	return m
+}
+
+// SetCookies joins Electron to the cookie bridge: what its pages set goes to
+// the shared store, and what the other engine sets comes here.
+func SetCookies(s *session.Store) {
+	elx.mu.Lock()
+	elx.cookies = s
+	elx.mu.Unlock()
+	s.Watch("electron", func(c session.Cookie, removed bool) {
+		elx.mu.Lock()
+		has := elx.jars[c.Jar] && elx.running
+		elx.mu.Unlock()
+		if !has {
+			return // the helper gets the whole jar when a page first needs it
+		}
+		m := jarMsg(c.Jar)
+		if removed {
+			m["del"] = []elxCookie{elxCookieOf(c)}
+		} else {
+			m["set"] = []elxCookie{elxCookieOf(c)}
+		}
+		elx.send(m)
+	})
+}
+
+// fillJar gives the running helper a jar's cookies before its first page.
+func (e *elxEngine) fillJar(o Options) {
+	if o.Sandbox {
+		return
+	}
+	jar := session.JarFor(o.Profile, o.Private, false)
+	e.mu.Lock()
+	s := e.cookies
+	if s == nil || e.jars[jar] {
+		e.mu.Unlock()
+		return
+	}
+	if e.jars == nil {
+		e.jars = map[string]bool{}
+	}
+	e.jars[jar] = true
+	e.mu.Unlock()
+	cs := s.Jar(jar)
+	set := make([]elxCookie, len(cs))
+	for i, c := range cs {
+		set[i] = elxCookieOf(c)
+	}
+	m := jarMsg(jar)
+	m["set"] = set
+	e.send(m)
 }
 
 type menuItemIn struct {
@@ -554,6 +649,13 @@ func (e *elxEngine) handle(p []byte) {
 		return
 	}
 	switch m.T {
+	case "cookie":
+		e.mu.Lock()
+		s := e.cookies
+		e.mu.Unlock()
+		if s != nil && m.Jar != nil && m.C != nil {
+			s.Report("electron", cookieOf(*m.Jar, m.C), m.Rm)
+		}
 	case "hello":
 		e.mu.Lock()
 		e.version = m.Version
@@ -813,6 +915,7 @@ func (e *elxEngine) NewView(o Options, evs Events, done func(View, error)) {
 	e.mu.Lock()
 	e.views[id] = &elxView{v: v, opts: o, opened: true}
 	e.mu.Unlock()
+	e.fillJar(o)
 	e.send(msg{"t": "open", "id": id, "profile": o.Profile, "private": o.Private, "sandbox": o.Sandbox})
 	done(v, nil)
 }
@@ -828,6 +931,7 @@ func (e *elxEngine) reopen(v *wkView) {
 	ev.opened = true
 	o, url, x, y, w, h, shown := ev.opts, ev.url, ev.x, ev.y, ev.w, ev.h, ev.shown
 	e.mu.Unlock()
+	e.fillJar(o)
 	e.send(msg{"t": "open", "id": v.id, "profile": o.Profile, "private": o.Private, "sandbox": o.Sandbox})
 	e.bounds(v.id, x, y, w, h)
 	if shown {

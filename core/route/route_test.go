@@ -42,11 +42,11 @@ func TestFailedAndChoice(t *testing.T) {
 	r.now = func() time.Time { return now }
 	u := "https://heavy-blog.example/post"
 	if r.Pick(u) != Light {
-		t.Fatal("a blog starts in Servo")
+		t.Fatal("a blog starts in WebKit")
 	}
 	r.Failed(u)
 	if r.Pick("https://heavy-blog.example/other") != Heavy {
-		t.Error("a site Servo failed on goes to the heavy engine")
+		t.Error("a site WebKit failed on goes to the heavy engine")
 	}
 	// remembered across starts
 	r2 := Open(dir)
@@ -54,7 +54,7 @@ func TestFailedAndChoice(t *testing.T) {
 	if r2.Pick(u) != Heavy {
 		t.Error("failures are kept")
 	}
-	// tried in Servo again after a month
+	// tried in WebKit again after a month
 	now = now.Add(31 * 24 * time.Hour)
 	if r2.Pick(u) != Light {
 		t.Error("a failure is forgotten after a month")
@@ -62,7 +62,7 @@ func TestFailedAndChoice(t *testing.T) {
 	// the reader's choice wins both ways
 	r2.Choose("https://www.youtube.com/", Light)
 	if r2.Pick("https://www.youtube.com/watch") != Light {
-		t.Error("the reader moved YouTube to Servo")
+		t.Error("the reader moved YouTube to WebKit")
 	}
 	r2.Choose("https://en.wikipedia.org/", Heavy)
 	if r2.Pick("https://en.wikipedia.org/wiki/X") != Heavy {

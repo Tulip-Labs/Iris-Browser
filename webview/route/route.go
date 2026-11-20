@@ -1,6 +1,7 @@
 // Package route is the engine Iris's shell talks to on Linux: it draws each
-// tab with Servo (light pages) or the heavy engine (Electron), as core/route
-// decides, and moves a tab between them when it crosses over. The shell sees
+// tab with WebKitGTK (most pages) or the heavy engine (Electron: video,
+// social sites, web apps), as core/route decides, and moves a tab between
+// them when it crosses over. The shell sees
 // one engine and one view per tab, as before. See docs/engines.md.
 package route
 
@@ -26,8 +27,8 @@ type Engine struct {
 	next         int
 }
 
-// New makes the routing engine. light may be nil (Servo missing): every tab
-// then goes to heavy.
+// New makes the routing engine. light may be nil (WebKit missing): every
+// tab then goes to heavy.
 func New(light, heavy webview.Engine, r *rules.Router) *Engine {
 	if r == nil {
 		r = rules.Open("")
@@ -42,7 +43,7 @@ func (e *Engine) Start(window uintptr, dataDir string, low bool, ready func(err 
 	if e.light != nil {
 		e.light.Start(window, dataDir, low, func(err error) {
 			if err != nil {
-				log.Println("Iris: Servo did not start, every page goes to Electron:", err)
+				log.Println("Iris: WebKit did not start, every page goes to Electron:", err)
 				e.lightOK = false
 			}
 		})
@@ -66,7 +67,7 @@ func (e *Engine) MemoryMB() float64 {
 }
 
 // Version is the heavy engine's (the shell reads Electron's version from it)
-// followed by Servo's.
+// followed by WebKit's.
 func (e *Engine) Version() string {
 	if e.light != nil && e.lightOK {
 		return e.heavy.Version() + " · " + e.light.Version()
@@ -76,9 +77,14 @@ func (e *Engine) Version() string {
 
 // pick is the engine for a tab with options o going to address u.
 func (e *Engine) pick(o webview.Options, u string) rules.Engine {
-	// Servo has one cookie jar: containers, private tabs and the heavy
-	// engine's own pop-ups stay in the heavy engine
-	if !e.lightOK || o.Profile != "" || o.Private || o.Sandbox || o.Popup != nil {
+	// a pop-up stays with the engine of the page that opened it (window.opener)
+	if o.Popup != nil {
+		if o.Popup.FromWebKit() && e.lightOK {
+			return rules.Light
+		}
+		return rules.Heavy
+	}
+	if !e.lightOK {
 		return rules.Heavy
 	}
 	return e.rules.Pick(u)
@@ -95,8 +101,8 @@ func (e *Engine) NewView(o webview.Options, ev webview.Events, done func(webview
 	e.next++
 	v := &view{e: e, n: e.next, o: o, ev: ev, zoom: 1, visible: true}
 	if o.Popup != nil {
-		// a pop-up the heavy engine opened: its page is already there
-		v.become(rules.Heavy, "", func() {})
+		// a pop-up an engine opened: its page is already there
+		v.become(e.pick(o, o.Popup.URL), "", func() {})
 	}
 	done(v, nil)
 }
