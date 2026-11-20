@@ -26,14 +26,34 @@
           src = ./webview/servo/rust;
           cargoLock.lockFile = ./webview/servo/rust/Cargo.lock;
           env.MOZJS_FROM_SOURCE = "1";
+          # Cap cargo at 2 jobs: the Nix sandbox's GNU make 4.4.1 is the
+          # version mozjs_sys's build.rs works around by passing --jobs=4
+          # to the mozjs make, creating a second independent jobserver, so
+          # up to ~7 heavy compiles ran at once on a 16 GB runner and the
+          # mozjs_sys build died with make Error 2 (suspected OOM-killer;
+          # nix build, run 44567641833). build.rs takes NUM_JOBS from cargo,
+          # so this also caps the mozjs make at --jobs=2.
+          env.CARGO_BUILD_JOBS = "2";
           nativeBuildInputs = with pkgs; [
             pkg-config cmake python3 perl m4 gperf yasm which rustPlatform.bindgenHook llvmPackages.bintools
           ];
           buildInputs = with pkgs; [
-            fontconfig freetype harfbuzz libunwind libGL libxkbcommon dbus udev openssl zlib
+            fontconfig freetype harfbuzz libunwind libGL libxkbcommon dbus udev openssl zlib zstd
             xorg.libX11 xorg.libxcb xorg.libXcursor xorg.libXrandr xorg.libXi
           ];
+          # zstd-sys links the system library via pkg-config; without zstd
+          # here libzstd.pc is missing and its build script panics
+          # (nix build, run 44545625923).
           doCheck = false;
+          # nixpkgs' cargo hook exports JEMALLOC_OVERRIDE pointing at a
+          # sentinel path that deliberately does not exist, to force system
+          # libraries; tikv-jemalloc-sys instead treats it as a library to
+          # link and panics when it is missing (nix build, run 44519762797).
+          # Unsetting it keeps the crate on its vendored static jemalloc,
+          # the same fix nixpkgs uses for deltalake and daft.
+          postConfigure = ''
+            unset JEMALLOC_OVERRIDE
+          '';
           installPhase = ''
             runHook preInstall
             install -Dm755 target/*/release/libirisservo.so $out/lib/libirisservo.so 2>/dev/null \
