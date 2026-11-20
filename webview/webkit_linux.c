@@ -567,7 +567,14 @@ void lwkSnapshotPages(GtkSnapshot *sn, double s) {
 	g_hash_table_iter_init(&it, views);
 	while (g_hash_table_iter_next(&it, &k, &val)) {
 		WV *v = val;
-		if (v->shown && gtk_widget_get_visible(GTK_WIDGET(v->web))) gtk_widget_snapshot_child(host, GTK_WIDGET(v->web), sn);
+		if (!v->shown || !gtk_widget_get_visible(GTK_WIDGET(v->web))) continue;
+		// a page has rounded corners like the glass around it (none full screen)
+		graphene_rect_t r = GRAPHENE_RECT_INIT(v->x / s, v->y / s, v->w / s, v->h / s);
+		GskRoundedRect rr;
+		gsk_rounded_rect_init_from_rect(&rr, &r, v->x == 0 && v->y == 0 ? 0 : 12);
+		gtk_snapshot_push_rounded_clip(sn, &rr);
+		gtk_widget_snapshot_child(host, GTK_WIDGET(v->web), sn);
+		gtk_snapshot_pop(sn);
 	}
 }
 

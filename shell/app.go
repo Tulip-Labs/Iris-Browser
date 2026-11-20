@@ -66,6 +66,9 @@ type Sys struct {
 	// PickFiles shows the system's file box and returns what was chosen
 	// (it waits for the reader; called off the loop).
 	PickFiles func() []string
+	// PickPicture asks for one picture (the background); "" when none was
+	// chosen. It waits for the reader; called off the loop.
+	PickPicture func() string
 	// FreeMB is the system memory still free (0 = unknown).
 	FreeMB func() int
 	// Integrity checks Iris's own program file against the record made
@@ -171,6 +174,11 @@ type App struct {
 	fetchImage   func(ctx context.Context, src string, maxW int) (image.Image, error)
 	ai           aiPanel
 	side         sideView
+	// the window's background picture (ui.Wall) and what it was made for
+	wall       *ui.Wall
+	wallKey    string
+	wallBusy   bool
+	wallThumbs map[string]*ui.Wall
 	sideRect     ui.Rect
 	sideURL      string
 	sideFull     bool
@@ -475,16 +483,19 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	a.runWorkers()
 
 	full := ui.Rect{W: w, H: h}
+	a.ensureWall()
+	th.Wall = a.wall
+	if a.wall != nil {
+		a.wall.Win = full
+	}
 	var page ui.Rect
 	if a.Fullscreen() {
 		g.FillRect(full, ui.Black)
 		page = full
 	} else {
-		if th.Grad != nil {
-			ui.FillGradient3(g, full, 0, th.Grad)
-		} else {
-			g.FillRect(full, frameColor(th))
-		}
+		ui.DrawWall(g, full, th)
+		// the tabs and the bar on one band of frosted glass
+		ui.GlassBand(g, ui.Rect{W: w, H: stripH + barH}, th)
 		page = a.chrome(full)
 	}
 	a.sideRect, a.sideURL = ui.Rect{}, ""

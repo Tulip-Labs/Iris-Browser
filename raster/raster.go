@@ -33,6 +33,7 @@ type Canvas struct {
 	stack []state
 	z     vector.Rasterizer
 	fonts *Fonts
+	base  float32 // device pixels per window unit
 }
 
 // Fonts parses the embedded faces once and caches sized faces.
@@ -84,7 +85,7 @@ func New(w, h int, scale float32, fs *Fonts) *Canvas {
 		fs = NewFonts()
 	}
 	img := image.NewRGBA(image.Rect(0, 0, int(float32(w)*scale), int(float32(h)*scale)))
-	return &Canvas{Img: img, st: state{s: scale, clip: img.Bounds()}, fonts: fs}
+	return &Canvas{Img: img, st: state{s: scale, clip: img.Bounds()}, fonts: fs, base: scale}
 }
 
 func (c *Canvas) Save()    { c.stack = append(c.stack, c.st) }
@@ -349,6 +350,44 @@ func (c *Canvas) SavePNG(path string) error {
 }
 
 var _ ui.Gfx = (*Canvas)(nil)
+
+// Backdrop draws img over win (in the window's units), seen through r.
+func (c *Canvas) Backdrop(img image.Image, win ui.Rect, r ui.Rect, radius float32) {
+	if img == nil || r.Empty() {
+		return
+	}
+	base := c.base
+	// the window's rectangle in device pixels, and the pane's
+	wx0, wy0, wx1, wy1 := win.X*base, win.Y*base, win.R()*base, win.B()*base
+	dr := c.devRect(r).Intersect(c.st.clip)
+	if dr.Empty() || wx1 <= wx0 || wy1 <= wy0 {
+		return
+	}
+	b := img.Bounds()
+	// the part of img under the pane
+	sx := float32(b.Dx()) / (wx1 - wx0)
+	sy := float32(b.Dy()) / (wy1 - wy0)
+	src := image.Rect(b.Min.X+int((float32(dr.Min.X)-wx0)*sx), b.Min.Y+int((float32(dr.Min.Y)-wy0)*sy),
+		b.Min.X+int(math.Ceil(float64((float32(dr.Max.X)-wx0)*sx))), b.Min.Y+int(math.Ceil(float64((float32(dr.Max.Y)-wy0)*sy)))).Intersect(b)
+	if src.Empty() {
+		return
+	}
+	tmp := image.NewRGBA(image.Rect(0, 0, dr.Dx(), dr.Dy()))
+	xdraw.ApproxBiLinear.Scale(tmp, tmp.Bounds(), img, src, xdraw.Src, nil)
+	full := c.devRect(r)
+	rad := radius * c.st.s
+	w, h := float32(full.Dx()), float32(full.Dy())
+	for y := 0; y < dr.Dy(); y++ {
+		for x := 0; x < dr.Dx(); x++ {
+			px, py := float32(dr.Min.X+x-full.Min.X)+0.5, float32(dr.Min.Y+y-full.Min.Y)+0.5
+			cx, cy := min(max(px, rad), w-rad), min(max(py, rad), h-rad)
+			if dx, dy := px-cx, py-cy; dx*dx+dy*dy > rad*rad {
+				continue
+			}
+			c.Img.SetRGBA(dr.Min.X+x, dr.Min.Y+y, tmp.RGBAAt(x, y))
+		}
+	}
+}
 var _ = draw.Over
 
 // Image draws img covering r (bilinear scaling), with rounded corners.

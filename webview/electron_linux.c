@@ -291,7 +291,10 @@ void lgxSnapshotPages(GtkSnapshot *sn, double s) {
 		EV *v = val;
 		if (!v->shown || v->px[2] <= 0 || v->px[3] <= 0) continue;
 		graphene_rect_t r = GRAPHENE_RECT_INIT(v->px[0] / s, v->px[1] / s, v->px[2] / s, v->px[3] / s);
-		gtk_snapshot_push_clip(sn, &r);
+		// a page has rounded corners like the glass around it (none full screen)
+		GskRoundedRect rr;
+		gsk_rounded_rect_init_from_rect(&rr, &r, v->px[0] == 0 && v->px[1] == 0 ? 0 : 12);
+		gtk_snapshot_push_rounded_clip(sn, &rr);
 		if (v->tex) {
 			int tw = gdk_texture_get_width(v->tex), th = gdk_texture_get_height(v->tex);
 			if (abs(tw - v->px[2]) <= 1 && abs(th - v->px[3]) <= 1)

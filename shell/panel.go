@@ -198,6 +198,67 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 		return nv
 	}
 	_, _ = divider, check
+	if sec == "look" {
+		section("Background")
+		// Iris's backgrounds, none, and your own picture, as tiles
+		const thh, gap = 74, 8
+		tw := (w - 2*gap) / 3
+		per := max(1, int((w+gap)/(tw+gap)))
+		type tile struct{ id, label string }
+		tiles := make([]tile, 0, len(ui.Walls)+2)
+		for _, s := range ui.Walls {
+			tiles = append(tiles, tile{s.ID, s.Label})
+		}
+		tiles = append(tiles, tile{ui.WallPlain, "None"}, tile{ui.WallPicture, "Your picture"})
+		cur := a.set.Background
+		if cur == "" {
+			cur = ui.Walls[0].ID
+		}
+		for i, tl := range tiles {
+			cr := ui.Rect{X: x + float32(i%per)*(tw+gap), Y: y + float32(i/per)*(thh+gap), W: tw, H: thh}
+			sw := ui.Rect{X: cr.X + 5, Y: cr.Y + 5, W: cr.W - 10, H: 44}
+			switch tl.id {
+			case ui.WallPlain:
+				if th.Grad != nil {
+					ui.FillGradient3(g, sw, 10, th.Grad)
+				} else {
+					ui.FillRound(g, sw, 10, th.SurfaceHigh)
+				}
+			case ui.WallPicture:
+				if a.wall != nil && a.wall.ID == ui.WallPicture {
+					g.Image(a.wall.Sharp, sw, 10)
+				} else {
+					ui.FillRound(g, sw, 10, th.Ink.Alpha(0.05))
+					ui.DrawIcon(g, ui.IPlus, sw.CX()-9, sw.CY()-9, 18, th.OnSurfaceVariant)
+				}
+			default:
+				g.Image(a.wallThumb(tl.id).Sharp, sw, 10)
+			}
+			ui.StrokeRound(g, sw, 10, 1, ui.White.Alpha(0.6))
+			on := tl.id == cur
+			switch {
+			case on:
+				ui.StrokeRound(g, cr.Inset(0.5), 13, 2, th.Focus)
+			case u.Hover(cr):
+				ui.FillRound(g, cr, 13, th.Ink.Alpha(0.05))
+			}
+			f := ui.FSmall
+			if on {
+				f = ui.FSmallBold
+			}
+			ui.TextCenter(g, ui.Fit(g, tl.label, f, tw-10), ui.Rect{X: cr.X, Y: sw.B() + 2, W: cr.W, H: 22}, f, th.OnSurface)
+			if u.Clickable(ui.Id("wall/"+tl.id), cr) {
+				if tl.id == ui.WallPicture {
+					a.pickPicture()
+				} else {
+					a.setBackground(tl.id)
+				}
+			}
+		}
+		y += float32((len(tiles)+per-1)/per)*(thh+gap) + 2
+		note("Glass frosts whatever is behind it. Over a busy picture it turns milkier, so text stays easy to read.")
+		divider()
+	}
 	if sec == "memory" {
 		// memory
 		section("Performance")

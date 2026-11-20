@@ -18,6 +18,9 @@ type Theme struct {
 	// Focus is the ring around the control that has the keyboard (Apple's
 	// system blue: the one color Liquid Glass keeps besides the content)
 	Focus Color
+	// Wall is the window's background picture (nil: the theme's wash); glass
+	// panes show it frosted.
+	Wall *Wall
 	// Grad, when set, is the window's backdrop: three pastel colors that
 	// merge from top to bottom (the page surfaces take a paler version).
 	Grad []Color

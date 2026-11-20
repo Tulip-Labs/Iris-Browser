@@ -780,6 +780,46 @@ void lgwFocus(void) {
 	uiFocus();
 }
 
+// ---- choosing a picture (the background) ----
+
+extern void lgwGoPicked(uintptr_t h, char *path);
+
+static void picked(GtkNativeDialog *d, int resp, gpointer h) {
+	char *path = NULL;
+	if (resp == GTK_RESPONSE_ACCEPT) {
+		G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+		GFile *f = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
+		G_GNUC_END_IGNORE_DEPRECATIONS
+		if (f) {
+			path = g_file_get_path(f);
+			g_object_unref(f);
+		}
+	}
+	lgwGoPicked((uintptr_t)h, path ? path : "");
+	g_free(path);
+	g_object_unref(d);
+}
+
+// lgwPickPicture shows the desktop's own file box for one picture; the
+// answer goes to Go (lgwGoPicked) with h.
+void lgwPickPicture(uintptr_t h) {
+	G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+	GtkFileChooserNative *d = gtk_file_chooser_native_new("Choose a background picture", win ? GTK_WINDOW(win) : NULL,
+	                                                      GTK_FILE_CHOOSER_ACTION_OPEN, "Choose", "Cancel");
+	GtkFileFilter *f = gtk_file_filter_new();
+	gtk_file_filter_set_name(f, "Pictures");
+	gtk_file_filter_add_mime_type(f, "image/jpeg");
+	gtk_file_filter_add_mime_type(f, "image/png");
+	gtk_file_filter_add_mime_type(f, "image/webp");
+	gtk_file_filter_add_mime_type(f, "image/gif");
+	gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(d), f);
+	g_object_unref(f);
+	G_GNUC_END_IGNORE_DEPRECATIONS
+	gtk_native_dialog_set_modal(GTK_NATIVE_DIALOG(d), TRUE);
+	g_signal_connect(d, "response", G_CALLBACK(picked), (gpointer)h);
+	gtk_native_dialog_show(GTK_NATIVE_DIALOG(d));
+}
+
 // ---- the tests' picture of the whole window (IRIS_SHOT) ----
 
 static gboolean windowShot(gpointer d) {

@@ -12,7 +12,7 @@ import (
 
 // sysHooks is what the operating system does for the interface.
 func sysHooks() shell.Sys {
-	return shell.Sys{Open: openPath, Reveal: revealPath, PickFiles: pickFiles, FreeMB: freeMB, Integrity: integrity}
+	return shell.Sys{Open: openPath, Reveal: revealPath, PickFiles: pickFiles, PickPicture: pickPicture, FreeMB: freeMB, Integrity: integrity}
 }
 
 // integrity compares the program file with the SHA-256 recorded beside it

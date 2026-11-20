@@ -450,11 +450,26 @@ func TestLightGlassOnly(t *testing.T) {
 	d.a.togglePanel(panelSettings)
 	d.frames(2)
 	d.shot("theme-glass-menu")
-	for _, sec := range settingsSections {
-		if sec.id == "look" {
-			t.Fatal("the menu has no palettes to choose any more")
+	// the menu chooses the background, not a palette
+	d.a.openSettings("look")
+	d.frames(2)
+	d.shot("theme-glass-backgrounds")
+	for _, id := range []string{"dawn", ui.WallPlain, "sky"} {
+		d.a.setBackground(id)
+		d.settle(6)
+		if d.a.set.Background != id || d.a.wallKey != id+"\x00" {
+			t.Fatalf("background %s not made: %q", id, d.a.wallKey)
+		}
+		if (id == ui.WallPlain) != (d.a.wall == nil) {
+			t.Fatalf("background %s: wall %v", id, d.a.wall)
 		}
 	}
+	if w := ui.MakeWall("sky"); w.Sharp == nil || w.Frost == nil || w.Busy > 0.5 {
+		t.Fatal("Iris's own backgrounds are calm, with a frosted copy")
+	}
+	d.a.panel = false
+	d.frames(2)
+	d.shot("theme-glass-ntp")
 }
 
 func TestMenuAndTabStrip(t *testing.T) {

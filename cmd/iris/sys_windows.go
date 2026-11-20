@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"unicode/utf16"
 	"unsafe"
 
 	"golang.org/x/sys/windows/registry"
@@ -51,6 +52,24 @@ type openFileName struct {
 	reserved      unsafe.Pointer
 	dwReserved    uint32
 	flagsEx       uint32
+}
+
+// pickPicture shows Windows' "Open" box for one picture.
+func pickPicture() string {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	buf := make([]uint16, 32768)
+	title, _ := windows.UTF16PtrFromString("Choose a background picture")
+	// the filter: its name, its patterns, each ended by a zero, then one more
+	filter := utf16.Encode([]rune("Pictures\x00*.jpg;*.jpeg;*.png;*.webp;*.gif\x00\x00"))
+	o := openFileName{file: &buf[0], maxFile: uint32(len(buf)), title: title, filter: &filter[0], filterIndex: 1,
+		// explorer style, existing files only, keep the working folder
+		flags: 0x80000 | 0x1000 | 0x800 | 0x8 | 0x4}
+	o.structSize = uint32(unsafe.Sizeof(o))
+	if r, _, _ := procOpenFile.Call(uintptr(unsafe.Pointer(&o))); r == 0 {
+		return ""
+	}
+	return windows.UTF16ToString(buf)
 }
 
 // pickFiles shows Windows' "Open" box and returns the files chosen. It

@@ -38,14 +38,23 @@ func (a *App) content(r ui.Rect) {
 		ph := float32(math.Mod(a.now()*360, 360))
 		ui.Pen(g, ui.NewPath().Arc(r.CX(), r.CY(), 14, ph, ph+100, true), 3, th.Primary)
 	default:
-		// the live page covers this; a hairline frames it
-		ui.StrokeRound(g, ui.Rect{X: r.X - 1, Y: r.Y - 1, W: r.W + 2, H: r.H + 2}, 3, 1, th.OutlineVariant)
+		// the live page covers this, with rounded corners (the engines clip
+		// it); a soft shadow lifts it off the background and a hairline frames it
+		ui.Shadow(g, r, 12, th.Shadow, 0.5, 2)
+		ui.FillRound(g, r, 12, ui.White)
+		ui.StrokeRound(g, ui.Rect{X: r.X - 0.5, Y: r.Y - 0.5, W: r.W + 1, H: r.H + 1}, 12.5, 1, th.OutlineVariant)
 	}
 }
 
 // fillPage paints the surface of Iris's own pages (new tab, results): the
 // page color, or a pale version of the palette's merging pastels.
 func fillPage(g ui.Gfx, r ui.Rect, rad float32, th *ui.Theme) {
+	if w := th.Wall; w != nil && w.Sharp != nil {
+		// Iris's own pages show the background itself, with a soft rim
+		g.Backdrop(w.Sharp, w.Win, r, rad)
+		ui.StrokeRound(g, r, rad, 1, ui.White.Alpha(0.5))
+		return
+	}
 	if th.Grad == nil {
 		ui.FillRound(g, r, rad, pageColor(th))
 		return
@@ -163,10 +172,11 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 	id := ID("ntp")
 	focused := a.st.Focus == id
 	ui.Glass(g, sr, 28, th, true, true)
-	if focused {
-		// Liquid Glass's focus: a soft ring of the system blue, no dark outline
-		ui.StrokeRound(g, sr.Inset(-2), 30, 3, th.Focus.Alpha(0.18))
-		ui.StrokeRound(g, sr.Inset(0.5), 27.5, 1.5, th.Focus.Alpha(0.6))
+	// Liquid Glass's focus: a soft ring of the system blue fades in, no dark
+	// outline
+	if fo := a.u.Ease(id.Sub("focus"), ui.On(focused), ui.RateQuick); fo > 0.01 {
+		ui.StrokeRound(g, sr.Inset(-2*fo), 28+2*fo, 3, th.Focus.Alpha(0.18*fo))
+		ui.StrokeRound(g, sr.Inset(0.5), 27.5, 1.5, th.Focus.Alpha(0.6*fo))
 	}
 	ui.DrawIcon(g, ui.ISparkle, sr.X+20, sr.CY()-11, 22, th.OnSurfaceVariant)
 	fr := ui.Rect{X: sr.X + 54, Y: sr.Y, W: sr.W - 72, H: sr.H}

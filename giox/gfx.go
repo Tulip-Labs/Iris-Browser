@@ -104,6 +104,17 @@ func (g *Gfx) Image(img image.Image, r ui.Rect, radius float32) {
 	paint.PaintOp{}.Add(g.ops)
 }
 
+// Backdrop draws img over win (in the window's units), seen through r.
+func (g *Gfx) Backdrop(img image.Image, win ui.Rect, r ui.Rect, radius float32) {
+	if img == nil || r.Empty() || g.scale <= 0 {
+		return
+	}
+	k := g.base / g.scale
+	w := ui.Rect{X: (win.X*g.base - g.tx) / g.scale, Y: (win.Y*g.base - g.ty) / g.scale, W: win.W * k, H: win.H * k}
+	defer clip.Outline{Path: g.spec(ui.NewPath().RoundRect(r, radius), true)}.Op().Push(g.ops).Pop()
+	g.Image(img, w, 0)
+}
+
 func (g *Gfx) End() {
 	if len(g.images) > len(g.used) {
 		for k := range g.images {
