@@ -1,0 +1,27 @@
+#!/bin/sh
+# Starts Iris from its container on this Wayland desktop with Podman:
+#   packaging/container/iris-podman [address]
+# IRIS_IMAGE picks the image (default ghcr.io/tulip-labs/iris-browser:latest).
+# Iris's settings, history and sign-ins live in the "iris-home" volume;
+# downloads land in your own Downloads folder.
+set -e
+image=${IRIS_IMAGE:-ghcr.io/tulip-labs/iris-browser:latest}
+: "${XDG_RUNTIME_DIR:?needs a desktop session (XDG_RUNTIME_DIR)}"
+: "${WAYLAND_DISPLAY:?needs a Wayland session (WAYLAND_DISPLAY)}"
+downloads=$(xdg-user-dir DOWNLOAD 2>/dev/null || echo "$HOME/Downloads")
+mkdir -p "$downloads"
+sound=""
+if [ -S "$XDG_RUNTIME_DIR/pulse/native" ]; then
+	sound="-v $XDG_RUNTIME_DIR/pulse/native:/run/host/pulse -e PULSE_SERVER=unix:/run/host/pulse"
+fi
+# shellcheck disable=SC2086 # $sound is a list of options
+exec podman run --rm --userns=keep-id \
+	--security-opt label=disable \
+	--device /dev/dri --shm-size=1g \
+	-e WAYLAND_DISPLAY=/run/host/wayland \
+	-v "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY:/run/host/wayland" \
+	-v iris-home:/home/iris:U \
+	-v "$downloads:/home/iris/Downloads" \
+	${IRIS_NO_SANDBOX:+-e IRIS_NO_SANDBOX} \
+	$sound \
+	"$image" "$@"

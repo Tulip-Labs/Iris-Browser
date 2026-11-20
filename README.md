@@ -226,7 +226,7 @@ Extensions from the Chrome Web Store run in Iris on Windows (Electron draws ever
 
 ## Install on Linux
 
-Iris for Linux comes three ways, and each of them keeps it up to date. It needs a Wayland session.
+Iris for Linux comes as a Flatpak, a Snap, a Nix package or a container image. It needs a Wayland session.
 
 **Flatpak** (every distribution, Fedora Atomic, SteamOS, Mint and Ubuntu included): download `Iris-x86_64.flatpak` from the [latest release](https://github.com/Tulip-Labs/Iris-Browser/releases/latest), then
 
@@ -240,6 +240,8 @@ flatpak install --user Iris-x86_64.flatpak
 **Snap** (Ubuntu and other systems with Snap): download `Iris-x86_64.snap` from the latest release and run `sudo snap install --dangerous Iris-x86_64.snap` (the Snap Store listing is planned).
 
 **Nix** (NixOS and Nix anywhere): `nix profile install github:Tulip-Labs/Iris-Browser`, or try it with `nix run github:Tulip-Labs/Iris-Browser`. Fonts and graphics drivers are found on their own, NixOS's `/run/opengl-driver` included.
+
+**Podman or Docker**: `podman pull ghcr.io/tulip-labs/iris-browser`, then `packaging/container/iris-podman` (see [packaging/container](packaging/container/README.md); Flatpak stays the recommended way).
 
 **Updates.** Flatpak, Snap and Nix update Iris; Iris itself only says, in Settings, About Iris, when a new version is out. The `.deb`, `.rpm`, AUR and `.tar.gz` packages of Iris 1.0 are no longer made: remove them (`sudo apt remove iris-browser`, `sudo dnf remove iris-browser`, `rpm-ostree uninstall iris-browser`) and install the Flatpak.
 

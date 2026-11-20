@@ -1,0 +1,8 @@
+# what the container build (packaging/container/Containerfile) leaves out
+.git
+dist
+result
+setup/payload/*
+!setup/payload/README.md
+webview/electron/helper/node_modules
+android
