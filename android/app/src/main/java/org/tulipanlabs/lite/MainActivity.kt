@@ -88,7 +88,6 @@ class MainActivity : Activity(), PageEvents {
     private lateinit var stripScroll: HorizontalScrollView
     private lateinit var stripTabs: LinearLayout
     private var stripSig = ""
-    private val results by lazy { Results(this) { pages.plain() } }
 
     // ---- lifecycle ----
 
@@ -610,7 +609,6 @@ class MainActivity : Activity(), PageEvents {
     }
 
     private fun open(t: Tab, url: String) {
-        t.lite = ""
         t.url = url
         t.page = url
         val w = t.web ?: pages.make(t).also { content.addView(it, 0, flp(MATCH, MATCH)) }
@@ -633,41 +631,11 @@ class MainActivity : Activity(), PageEvents {
     }
 
     private fun go(text: String) {
-        val url = Search.resolve(text, set.mode)
+        val url = Search.resolve(text)
         if (url.isEmpty()) return
         unfocusAddress()
         val t = tab() ?: newTab("", false)
-        val q = Search.query(url)
-        if (q != null && set.liteResults && set.mode == Mode.WEB && url.contains("udm=14") && !t.private && t.container.isEmpty()) {
-            liteSearch(t, q)
-            return
-        }
         open(t, url)
-    }
-
-    /** a web search shown on Iris's own page (see Results.kt) */
-    private fun liteSearch(t: Tab, q: String) {
-        val g = Search.url(q, Mode.WEB)
-        t.lite = g
-        t.url = g
-        t.page = g
-        t.title = q
-        val w = t.web ?: pages.make(t).also { content.addView(it, 0, flp(MATCH, MATCH)) }
-        w.loadUrl("about:blank")
-        if (t === tab()) show()
-        t.progress = 30
-        if (t === tab()) progress.progress = 0.3f
-        results.fetch(content, q) { web, images ->
-            if (t.web !== w || isFinishing) return@fetch
-            t.progress = 100
-            if (web == null) {
-                w.loadUrl(g) // Google wants a human check, or did not answer: its own page
-            } else {
-                w.loadDataWithBaseURL(g, Results.page(q, web, images, pal), "text/html", "utf-8", g) // the address stays the search
-                if (!t.private) hist.add(g, q)
-            }
-            if (t === tab()) updateBars()
-        }
     }
 
     // ---- the new tab menu: private and container tabs (hold the + button) ----
@@ -767,7 +735,6 @@ class MainActivity : Activity(), PageEvents {
     private fun askAI() {
         val t = tab()
         if (t == null || t.url.isEmpty() || Search.query(t.url) != null) {
-            set.mode = Mode.AI
             focusAddress()
             return
         }
@@ -878,13 +845,6 @@ class MainActivity : Activity(), PageEvents {
         list.setPadding(0, dp(6), 0, dp(6))
         for (e in h) list.addView(row(R.drawable.ic_history, e.title.ifEmpty { display(e.url) }, display(e.url)) { go(e.url) })
         for (s in g) list.addView(row(R.drawable.ic_search, s, "") { go(s) })
-        if (h.isEmpty() && g.isEmpty() && addr.text.isEmpty()) {
-            // modes to search with, while nothing is typed
-            val f = Flow(this, dp(8))
-            f.setPadding(dp(16), dp(10), dp(16), dp(10))
-            for (m in Mode.values()) f.addView(chip(pal, m.label, modeIcon(m), m == set.mode) { set.mode = m; showSuggestions(h, g) })
-            list.addView(f, lp(MATCH, WRAP))
-        }
         box.addView(list, FrameLayout.LayoutParams(MATCH, WRAP))
     }
 
@@ -914,14 +874,6 @@ class MainActivity : Activity(), PageEvents {
         r.addView(col, lp(0, WRAP, 1f))
         r.setOnClickListener { onClick() }
         return r
-    }
-
-    private fun modeIcon(m: Mode) = when (m) {
-        Mode.AI -> R.drawable.ic_sparkle
-        Mode.WEB -> R.drawable.ic_globe
-        Mode.IMAGES -> R.drawable.ic_image
-        Mode.VIDEOS -> R.drawable.ic_video
-        Mode.YOUTUBE -> R.drawable.ic_play
     }
 
     // ---- the new tab page ----
@@ -962,18 +914,15 @@ class MainActivity : Activity(), PageEvents {
         pill.background = ripple(pal, glass(pal, pal.field, dp(28).toFloat(), dp(1)), rounded(Palette.WHITE, dp(28).toFloat()))
         pill.elevation = dp(3).toFloat()
         val si = ImageView(this)
-        si.setImageResource(modeIcon(set.mode))
+        si.setImageResource(R.drawable.ic_sparkle)
         si.imageTintList = android.content.res.ColorStateList.valueOf(pal.primary)
         pill.addView(si, lp(dp(20), dp(20)))
-        val ph = text(if (set.mode == Mode.AI) "Ask AI Mode or type an address" else "Search or type an address", 16f, pal.faint)
+        val ph = text("Ask Google AI Mode or type an address", 16f, pal.faint)
         ph.setPadding(dp(12), 0, 0, 0)
         pill.addView(ph, lp(0, WRAP, 1f))
         pill.setOnClickListener { focusAddress() }
         col.addView(pill, lp(MATCH, dp(56)).also { it.topMargin = dp(28) })
 
-        val chips = Flow(this, dp(8))
-        for (m in Mode.values()) chips.addView(chip(pal, m.label, modeIcon(m), m == set.mode) { set.mode = m; showNtp() })
-        col.addView(chips, lp(MATCH, WRAP).also { it.topMargin = dp(16) })
 
         val spacer = View(this)
         col.addView(spacer, lp(1, 0, 1f))
@@ -1246,12 +1195,7 @@ class MainActivity : Activity(), PageEvents {
 
         // search
         col.addView(section("Search"))
-        val modes = Flow(this, dp(8))
-        for (m in Mode.values()) modes.addView(chip(pal, m.label, modeIcon(m), m == set.mode) { set.mode = m; closeSheet(); openSheet() })
-        col.addView(modes, lp(MATCH, WRAP))
-        col.addView(note("Google opens in the mode you pick. Type \"yt \" before words to search YouTube."))
-        col.addView(toggle("Iris results for Web searches", set.liteResults) { set.liteResults = it })
-        col.addView(note("Web searches are read in the background and shown on Iris's own page, in Iris's glass, without ads."))
+        col.addView(note("Every search asks Google AI Mode, which is told to answer from high-quality, authoritative and current sources, cite them, and stay clear, precise and concise. Type \"yt \" before words to search YouTube."))
 
         // sync
         col.addView(section("Sync with your computer"))
@@ -1365,15 +1309,6 @@ class MainActivity : Activity(), PageEvents {
 
     override fun onUrl(t: Tab, url: String) {
         if (url.startsWith("about:")) return
-        if (t.lite.isNotEmpty()) {
-            // Iris's results page reports Google's address: the tab keeps showing the search
-            if (url == t.lite || url.startsWith("data:") || (hostOf(url).contains("google.") && !url.contains("/search?"))) {
-                t.url = t.lite
-                if (t === tab()) updateBars()
-                return
-            }
-            t.lite = ""
-        }
         t.url = url
         if (t === tab()) {
             ntp?.let { if (t.web?.visibility == View.VISIBLE) { content.removeView(it); ntp = null } }
@@ -1496,7 +1431,6 @@ class MainActivity : Activity(), PageEvents {
         // screens for the screenshot run (debug builds only)
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             i.getStringExtra("lite.theme")?.let { th -> set.theme = th; pal = Palette.byId(th); buildUi() }
-            i.getStringExtra("lite.mode")?.let { m -> Mode.values().firstOrNull { it.name.equals(m, true) }?.let { set.mode = it } }
             i.getStringExtra("lite.url")?.let { u -> ui.postDelayed({ go(u) }, 300) }
             i.getStringExtra("lite.open")?.let { what ->
                 ui.postDelayed({
@@ -1523,13 +1457,13 @@ class MainActivity : Activity(), PageEvents {
             }
             Intent.ACTION_WEB_SEARCH -> {
                 val q = i.getStringExtra(SearchManager.QUERY) ?: return false
-                newTab(Search.resolve(q, set.mode), false)
+                newTab(Search.resolve(q), false)
                 return true
             }
             Intent.ACTION_SEND -> {
                 val s = i.getStringExtra(Intent.EXTRA_TEXT) ?: return false
                 val link = Regex("https?://\\S+").find(s)?.value
-                newTab(if (link != null) Links.clean(link) else Search.resolve(s, set.mode), false)
+                newTab(if (link != null) Links.clean(link) else Search.resolve(s), false)
                 return true
             }
         }

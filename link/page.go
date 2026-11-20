@@ -40,7 +40,7 @@ footer{color:var(--soft);font-size:12.5px;text-align:center;margin-top:18px}
 <p class="sub">Connected to <b>{{PC}}</b> over this network.</p>
 <section id="pairbox" style="display:none">
 <h2>Iris for Android</h2>
-<p class="empty" style="margin:0 0 12px">Keep history, open tabs and the palette the same on this phone and the computer. They sync by themselves whenever both are on this network.</p>
+<p class="empty" style="margin:0 0 12px">Keep history, open tabs and the background the same on this phone and the computer. They sync by themselves whenever both are on this network.</p>
 <a class="btn" id="pair" href="#">Pair with Iris</a>
 <p class="empty" style="margin-top:12px">Iris for Android must be installed first: <a href="https://github.com/Tulip-Labs/Iris-Browser/releases/latest" rel="noopener noreferrer" target="_blank" style="color:var(--pri)">get it here</a>.</p>
 </section>

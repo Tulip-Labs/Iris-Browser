@@ -42,7 +42,8 @@ modules:
   # Electron's sandbox inside Flatpak's (no setuid helper or user namespaces
   # here): zypak runs the sandboxed processes through flatpak-spawn. The
   # Electron engine starts through it; the pages still run inside Flatpak's
-  # sandbox only (IRIS_NO_SANDBOX in the launcher below)
+  # sandbox only (IRIS_ELECTRON_NO_SANDBOX in the launcher below); WebKit
+  # keeps its own sandbox, which runs through flatpak-spawn
   - name: zypak
     sources:
       - type: git
@@ -62,7 +63,7 @@ modules:
         dest-filename: iris.sh
         commands:
           - export TMPDIR="$XDG_RUNTIME_DIR/app/$FLATPAK_ID"
-          - export IRIS_NO_SANDBOX=1
+          - export IRIS_ELECTRON_NO_SANDBOX=1
           - exec /app/lib/iris-browser/iris "$@"
     build-commands:
       - mkdir -p /app/lib/iris-browser

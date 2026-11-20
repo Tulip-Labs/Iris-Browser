@@ -39,9 +39,11 @@
 
 - **Liquid Glass, light.** One look for the whole browser: frosted white panes with bright rims over an airy backdrop, near-black text, colorless glass controls and a soft blue focus ring. The palettes and their chooser are gone.
 - **Every search asks Google AI Mode,** with an instruction to answer from high-quality, authoritative and current sources, cite them, and stay clear, precise and concise. The address bar shows only your words. Iris's own results page and its filters over Google are gone.
-- **Backgrounds.** Six built-in backdrops behind the glass (Sky is the default), a plain one, or your own picture: Menu, Look, Background.
+- **Backgrounds.** Six built-in backdrops behind the glass (Sky is the default), a plain one, or your own picture: Menu, Background.
 - **Linux: WebKitGTK and Electron.** Most pages are drawn by WebKitGTK (the engine of GNOME Web); video, social sites, web apps and sign-ins go to Electron (Chromium with H.264, H.265 and AAC). One cookie store is shared both ways, so a sign-in in one engine works in the other. Shields run in WebKit as compiled content rules. Servo and Chromium (CEF) are gone. Flatpak, Snap and Nix all carry the new engines.
 - **Windows: Electron.** Electron replaces WebView2 and comes inside the installer, the portable zip and the MSIX, so Iris no longer depends on the system's Edge runtime.
+- **Android: the same glass and tabs.** The desktop's look, backgrounds and tab strip on top; every search in Google AI Mode; Chromium (Cefrium) still draws the pages.
+- **Containers.** An image for Podman and Docker (`ghcr.io/tulip-labs/iris-browser`) with a launcher that gives it the GPU, video decoding and sound.
 - **Sharp on Linux.** The interface reaches the screen pixel for pixel at scales 1 to 2 (it used to go through sRGB twice and look washed out and soft).
 
 ## Why Iris
@@ -106,31 +108,19 @@ Google AI Mode from the best current sources. No bookmarks, no tiles, no feeds.
 <td align="center"><sub><b>Tabs.</b> A compact strip on top, centered.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="assets/screens/menu.png" alt="The menu"></td>
+<td width="50%"><img src="assets/screens/backgrounds.png" alt="The backgrounds behind the glass"></td>
 <td width="50%"><img src="assets/screens/search.png" alt="Typing a search: Ask Google AI Mode"></td>
 </tr>
 <tr>
-<td align="center"><sub><b>The menu.</b> Tools, then the settings in sections that open in place.</sub></td>
+<td align="center"><sub><b>Backgrounds.</b> Six of Iris's, none, or your own picture.</sub></td>
 <td align="center"><sub><b>Search.</b> Every search asks Google AI Mode.</sub></td>
-</tr>
-</table>
-
-<table>
-<tr>
-<td width="33%"><img src="assets/screens/android-results.png" alt="Iris results on Android"></td>
-<td width="33%"><img src="assets/screens/android-palettes.png" alt="The palettes on Android"></td>
-<td width="33%"><img src="assets/screens/android-new-tab.png" alt="Private and container tabs on Android"></td>
-</tr>
-<tr>
-<td align="center"><sub><b>Iris for Android.</b> Iris results.</sub></td>
-<td align="center"><sub>Eleven palettes.</sub></td>
-<td align="center"><sub>Hold + for private and container tabs.</sub></td>
 </tr>
 </table>
 
 <sub>The desktop pictures are drawn by the test suite with Iris's software renderer (page areas
 and thumbnails are placeholders) and refreshed by CI (`.github/workflows/screens.yml`) whenever
-the interface changes; the Android ones come from an emulator.</sub>
+the interface changes. Iris for Android's pictures come from an emulator
+(`.github/workflows/android-screens.yml`, kept on the `android-screens` branch).</sub>
 
 ## What it does
 
@@ -200,7 +190,7 @@ They work while a page has the keyboard too.
 |---|---|---|
 | Windows 10 and 11 (x64, ARM64) | Electron (Chromium with H.264 and AAC), carried by Iris; the program itself stays pure Go (no cgo) | New in 1.0.25: built on every push and started on a Windows runner, where Electron must draw a test page. Still needs a pass on a real PC. |
 | Linux on Wayland (niri, KDE, Sway, Hyprland and others) | WebKitGTK 6 for most pages, Electron (Chromium with H.264 and AAC) for video, social sites, web apps and sign-ins; one shared cookie store | Built on every push; the Flatpak is installed and started on Wayland, and Iris is checked at a fractional scale (1.25), where the interface reaches the screen pixel for pixel. Packages: Flatpak, Snap and Nix. |
-| Android 10 and newer (64-bit) | Chromium, carried by the app (CEF for Android, through Cefrium) | **Iris for Android**, a separate app in Kotlin (`android/`): the desktop's light Liquid Glass and its six backgrounds, the desktop's tab strip on top, shields, containers, phone and tablet layouts, and sync with the computer. `Iris-android.apk` is in each release. |
+| Android 10 and newer (64-bit) | Chromium, carried by the app (CEF for Android, through Cefrium) | **Iris for Android**, a separate app in Kotlin (`android/`): the desktop's light Liquid Glass and its six backgrounds, the desktop's tab strip on top, every search in Google AI Mode, shields, containers, phone and tablet layouts, and sync with the computer. `Iris-android.apk` is in each release. |
 
 Iris carries its own Electron (Chromium, with H.264 and AAC) on both systems, and each release
 brings the newer one. On Linux, WebKitGTK comes from the GNOME runtime (Flatpak), the Snap
@@ -241,7 +231,7 @@ flatpak install --user Iris-x86_64.flatpak
 
 **Nix** (NixOS and Nix anywhere): `nix profile install github:Tulip-Labs/Iris-Browser`, or try it with `nix run github:Tulip-Labs/Iris-Browser`. Fonts and graphics drivers are found on their own, NixOS's `/run/opengl-driver` included.
 
-**Podman or Docker**: `podman pull ghcr.io/tulip-labs/iris-browser`, then `packaging/container/iris-podman` (see [packaging/container](packaging/container/README.md); Flatpak stays the recommended way).
+**Podman or Docker**: `podman pull ghcr.io/tulip-labs/iris-browser`, then `sh iris-container` (from the release; see [packaging/container](packaging/container/README.md)). GPU, video decoding and sound work as in the Flatpak.
 
 **Updates.** Flatpak, Snap and Nix update Iris; Iris itself only says, in Settings, About Iris, when a new version is out. The `.deb`, `.rpm`, AUR and `.tar.gz` packages of Iris 1.0 are no longer made: remove them (`sudo apt remove iris-browser`, `sudo dnf remove iris-browser`, `rpm-ostree uninstall iris-browser`) and install the Flatpak.
 

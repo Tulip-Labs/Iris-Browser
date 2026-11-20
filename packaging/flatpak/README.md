@@ -25,5 +25,6 @@ checks go.sum.
 
 The pages run inside Flatpak's sandbox. Electron's own sandbox inside it
 needs zypak, which the bundle carries: the Electron engine starts through it,
-and the launcher still sets `IRIS_NO_SANDBOX=1`, so the pages run inside
-Flatpak's sandbox only.
+and the launcher sets `IRIS_ELECTRON_NO_SANDBOX=1`, so Electron's pages run
+inside Flatpak's sandbox only. WebKit keeps its own sandbox: inside Flatpak
+it runs through flatpak-spawn.

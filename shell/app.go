@@ -461,7 +461,7 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	th := a.theme()
 	if want := map[bool]int{false: 1, true: 2}[th.Dark]; a.scheme != want {
 		a.scheme = want
-		webview.SetColorScheme(th.Dark) // pages follow the palette: dark or light
+		webview.SetColorScheme(th.Dark) // pages are told the look: always light
 	}
 	u := &a.u
 	u.G, u.In, u.Th, u.St, u.Clip = g, a.In, th, &a.st, a.h.Clipboard()

@@ -46,8 +46,8 @@ func (a *App) content(r ui.Rect) {
 	}
 }
 
-// fillPage paints the surface of Iris's own pages (new tab, results): the
-// page color, or a pale version of the palette's merging pastels.
+// fillPage paints the surface of Iris's own pages (the new tab page): the
+// background behind the glass, or the page color when there is none.
 func fillPage(g ui.Gfx, r ui.Rect, rad float32, th *ui.Theme) {
 	if w := th.Wall; w != nil && w.Sharp != nil {
 		// Iris's own pages show the background itself, with a soft rim

@@ -1,7 +1,7 @@
-# Iris in a container, for Podman (or Docker). It shows on the host's Wayland
-# display through the shared socket: run it with packaging/container/iris-podman
-# (see README.md here). Flatpak stays the better way to install Iris; this is
-# for systems where containers are the way programs arrive.
+# Iris in a container, for Podman (or Docker). It draws on the host's Wayland
+# display through the shared socket, with the GPU, and plays sound through
+# PipeWire or PulseAudio: run it with packaging/container/iris-container
+# (see README.md here).
 #
 #   podman build -f packaging/container/Containerfile -t iris-browser .
 
@@ -9,34 +9,44 @@
 FROM registry.fedoraproject.org/fedora:44 AS build
 RUN dnf -y install --setopt=install_weak_deps=False \
       golang gcc pkgconf git zip nodejs npm \
-      gtk4-devel libepoxy-devel webkitgtk6.0-devel \
-      libxkbcommon-devel wayland-devel mesa-libEGL-devel vulkan-headers \
+      gtk4-devel libepoxy-devel freetype-devel webkitgtk6.0-devel \
+      libxkbcommon-devel libxkbcommon-x11-devel libX11-devel libXcursor-devel libxcb-devel \
+      wayland-devel mesa-libEGL-devel vulkan-headers \
     && dnf clean all
 WORKDIR /src
 COPY . .
 RUN ./build-iris.sh linux
 
-# --- run: GTK 4, WebKitGTK 6 with its media and sandbox, what Electron loads
+# --- run
 FROM registry.fedoraproject.org/fedora:44
+# GTK 4 and WebKitGTK 6 with its sandbox; the GPU (Mesa: OpenGL, Vulkan and
+# VA-API video decoding); GStreamer for WebKit's video (OpenH264 and the
+# libav plugin for H.264 and AAC; Electron carries its own codecs); what
+# Electron loads; fonts and sound
 RUN dnf -y install --setopt=install_weak_deps=False \
       gtk4 gtk3 webkitgtk6.0 glib-networking bubblewrap xdg-dbus-proxy \
+      mesa-dri-drivers mesa-libEGL mesa-libgbm mesa-vulkan-drivers mesa-va-drivers \
+      libdrm vulkan-loader libva \
       gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free \
-      mesa-dri-drivers mesa-libEGL mesa-libgbm libdrm vulkan-loader \
       nss nspr alsa-lib cups-libs at-spi2-atk libxkbcommon libXcomposite \
       libXdamage libXrandr libXScrnSaver dbus-daemon dbus-tools \
-      pipewire-pulseaudio-libs pulseaudio-libs \
-      google-noto-sans-fonts google-noto-serif-fonts google-noto-emoji-fonts \
-      adwaita-icon-theme ca-certificates \
+      pipewire-libs pulseaudio-libs \
+      google-noto-sans-fonts google-noto-serif-fonts google-noto-sans-mono-fonts google-noto-color-emoji-fonts \
+      adwaita-icon-theme ca-certificates xdg-user-dirs glibc-langpack-en glibc-langpack-es \
     && dnf clean all
+# H.264 and AAC for WebKit's video, where the repositories carry them
+# (OpenH264 comes from Cisco's repository, which Fedora enables)
+RUN dnf -y install --setopt=install_weak_deps=False --skip-unavailable \
+      gstreamer1-plugin-libav gstreamer1-plugin-openh264 \
+    && dnf clean all && rm -rf /var/cache/dnf /var/cache/libdnf5 /var/log/dnf*
+# the font cache is built once here, not at every start
+RUN fc-cache -f
 COPY --from=build /src/dist/linux /opt/iris
-RUN ln -s /opt/iris/iris /usr/local/bin/iris \
+COPY packaging/container/start /opt/iris/start
+RUN chmod 755 /opt/iris/start \
+    && ln -s /opt/iris/iris /usr/local/bin/iris \
     && install -Dm644 /opt/iris/io.github.tulip_labs.Iris.desktop /usr/share/applications/io.github.tulip_labs.Iris.desktop \
     && install -Dm644 /opt/iris/io.github.tulip_labs.Iris.png /usr/share/icons/hicolor/512x512/apps/io.github.tulip_labs.Iris.png \
-    && printf '%s\n' '#!/bin/sh' \
-      '# a private runtime folder (Iris keeps its line to Electron there) and a session bus' \
-      'export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$(mktemp -d)}"' \
-      'exec dbus-run-session -- iris "$@"' > /opt/iris/start \
-    && chmod 755 /opt/iris/start \
     && useradd -m -u 1000 iris
 LABEL org.opencontainers.image.title="Iris" \
       org.opencontainers.image.description="A light, fast browser in Go: WebKitGTK for most pages, Electron for the heavy ones" \

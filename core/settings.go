@@ -53,9 +53,9 @@ type Settings struct {
 	// Window is how the reader left the window. Until they change it, Iris
 	// opens filling the screen.
 	Window WindowState `json:"window"`
-	// ThemeAt is when the palette was last chosen (sync keeps the newest choice).
+	// ThemeAt is when the look was last chosen (sync keeps the newest choice).
 	ThemeAt int64 `json:"themeAt,omitempty"`
-	// Sync keeps history, open tabs and the palette the same as on a paired phone.
+	// Sync keeps history, open tabs and the background the same as on a paired phone.
 	Sync    SyncSettings `json:"sync"`
 	Restore bool         `json:"restore"`
 	// AutoUpdate installs new versions from the GitHub releases by itself;

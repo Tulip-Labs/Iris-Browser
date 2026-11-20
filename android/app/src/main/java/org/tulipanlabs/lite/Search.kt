@@ -6,11 +6,17 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
-// What the address bar opens, Google's search modes, and the filter lists.
+// What the address bar opens, and the filter lists. Every search asks Google
+// AI Mode, as on the desktop (core/search.go), with the same instruction
+// after the reader's words; "yt " before words searches YouTube.
 
-enum class Mode(val label: String) { AI("AI Mode"), WEB("Web"), IMAGES("Images"), VIDEOS("Videos"), YOUTUBE("YouTube") }
+enum class Mode { AI, YOUTUBE }
 
 object Search {
+    /** goes with every search sent to AI Mode (the desktop's AIInstruction) */
+    const val AI_INSTRUCTION = "Use only high-quality, authoritative and up-to-date sources (official sites, documentation, peer-reviewed research, reputable news) and cite them. Answer clearly, precisely and concisely, with the most recent information."
+    private const val AI_SEP = "\n\n"
+
     // file types people type that are not web addresses ("node.js", "main.py")
     private val notTLD = setOf("js", "ts", "jsx", "tsx", "py", "kt", "java", "cpp", "rs", "json", "txt", "exe", "yml", "yaml", "toml", "css", "html", "pdf", "docx", "xlsx")
     private val ipv4 = Regex("\\d{1,3}(\\.\\d{1,3}){3}")
@@ -19,7 +25,7 @@ object Search {
     fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
 
     /** The address for what was typed: an address as is (https first), or a search. */
-    fun resolve(text: String, mode: Mode): String {
+    fun resolve(text: String): String {
         val t = text.trim()
         if (t.isEmpty()) return ""
         val lower = t.lowercase()
@@ -33,16 +39,13 @@ object Search {
             }
         }
         if (lower.startsWith("yt ")) return url(t.substring(3), Mode.YOUTUBE)
-        return url(t, mode)
+        return url(t, Mode.AI)
     }
 
     fun url(q: String, mode: Mode): String {
         val e = enc(q.trim())
         return when (mode) {
-            Mode.AI -> "https://www.google.com/search?q=$e&udm=50"
-            Mode.WEB -> "https://www.google.com/search?q=$e&udm=14"
-            Mode.IMAGES -> "https://www.google.com/search?q=$e&udm=2"
-            Mode.VIDEOS -> "https://www.google.com/search?q=$e&tbm=vid"
+            Mode.AI -> "https://www.google.com/search?q=" + enc(q.trim() + AI_SEP + AI_INSTRUCTION) + "&udm=50"
             Mode.YOUTUBE -> "https://m.youtube.com/results?search_query=$e"
         }
     }
@@ -56,7 +59,9 @@ object Search {
             else -> return null
         }
         val q = url.substringAfter('?').split('&').firstOrNull { it.startsWith("$key=") } ?: return null
-        return try { java.net.URLDecoder.decode(q.substringAfter('='), "UTF-8") } catch (e: Exception) { null }
+        val words = try { java.net.URLDecoder.decode(q.substringAfter('='), "UTF-8") } catch (e: Exception) { return null }
+        // the reader's own words, without the instruction Iris added
+        return words.substringBefore(AI_SEP + AI_INSTRUCTION).removeSuffix(AI_INSTRUCTION).trim().ifEmpty { null }
     }
 
     /** Google's suggestions for what is being typed (on a background thread). */

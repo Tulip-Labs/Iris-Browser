@@ -237,7 +237,10 @@ func (e *elxEngine) run(dataDir string, low bool, scale float64) {
 	if app != "" {
 		args = append(args, app)
 	}
-	if os.Getenv("IRIS_NO_SANDBOX") != "" {
+	// IRIS_NO_SANDBOX is the reader's choice for both engines;
+	// IRIS_ELECTRON_NO_SANDBOX is set by the Flatpak's launcher, where
+	// Electron's pages run inside Flatpak's sandbox (WebKit keeps its own)
+	if os.Getenv("IRIS_NO_SANDBOX") != "" || os.Getenv("IRIS_ELECTRON_NO_SANDBOX") != "" {
 		args = append([]string{"--no-sandbox"}, args...)
 	}
 	cmd := exec.Command(bin, args...)

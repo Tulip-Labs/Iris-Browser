@@ -63,7 +63,7 @@ Center asks why; answer:
 > - Private, temporary and container tabs, and a sandbox for addresses that look unsafe.
 > - Send files between your PC and your phone by scanning a QR code, with nothing to
 >   install on the phone.
-> - Eleven color palettes, including soft pastel gradients and a night mode.
+> - One light Liquid Glass look over a background you choose: six of Iris's or your own picture.
 >
 > Iris is free and open source (GPL 3.0). It has no account, no telemetry and no ads.
 
