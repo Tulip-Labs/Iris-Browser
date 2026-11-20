@@ -7,8 +7,8 @@
 // screen's exact scale, fractional ones (1.25, 1.5, 1.75) included:
 //   - Iris's interface, drawn by Gio's GPU renderer into a texture of the
 //     view's size in real pixels;
-//   - over it each page, drawn by Chromium off screen at that same scale and
-//     placed on whole pixels (webview/cef_linux.c, lgxSnapshotPages), so one
+//   - over it each page, drawn by Electron off screen at that same scale and
+//     placed on whole pixels (webview/electron_linux.c, lgxSnapshotPages), so one
 //     page pixel is one screen pixel: sharp, and no larger than it must be.
 // The pointer, the wheel and the keys go to the page under them (or the
 // focused one), else to the interface.
@@ -43,7 +43,7 @@ extern void lgwGoClose(void);
 extern void lgwGoDo(uintptr_t h);
 extern void lgwGoScale(double sf, double text, int motion);
 
-// the pages (webview/cef_linux.c)
+// the pages (webview/electron_linux.c)
 extern void lgxSnapshotPages(GtkSnapshot *s, double scale) __attribute__((weak));
 extern int lgxPagePointer(GdkEvent *e, double x, double y) __attribute__((weak));
 extern int lgxPageKey(GdkEvent *e) __attribute__((weak));
