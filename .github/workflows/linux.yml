@@ -12,6 +12,12 @@ on:
   workflow_dispatch:
   workflow_call:
 
+# a newer push (or the run started by hand after a patch is applied) replaces
+# the run still going on the same branch
+concurrency:
+  group: linux-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Servo's bridge, for the light pages (docs/engines.md)
   servo-lib:
