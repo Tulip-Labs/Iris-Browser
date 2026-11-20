@@ -53,13 +53,13 @@ func (v *view) become(k rules.Engine, why string, then func()) {
 	v.making = true
 	v.gen++
 	gen := v.gen
-	name := map[rules.Engine]string{rules.Light: "Servo", rules.Heavy: "Chromium"}[k]
+	name := map[rules.Engine]string{rules.Light: "Servo", rules.Heavy: "Electron"}[k]
 	log.Printf("Iris: tab %d drawn by %s%s", v.n, name, why)
 	v.e.engine(k).NewView(v.o, v.events(gen, k), func(nv webview.View, err error) {
 		v.making = false
 		if err != nil || nv == nil {
 			if k == rules.Light {
-				// Servo could not make the page: Chromium does
+				// Servo could not make the page: Electron does
 				v.become(rules.Heavy, " (Servo failed)", then)
 			} else if v.ev.Crashed != nil {
 				v.ev.Crashed()
