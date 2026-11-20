@@ -200,7 +200,7 @@ They work while a page has the keyboard too.
 |---|---|---|
 | Windows 10 and 11 (x64, ARM64) | Electron (Chromium with H.264 and AAC), carried by Iris; the program itself stays pure Go (no cgo) | New in 1.0.25: built on every push and started on a Windows runner, where Electron must draw a test page. Still needs a pass on a real PC. |
 | Linux on Wayland (niri, KDE, Sway, Hyprland and others) | WebKitGTK 6 for most pages, Electron (Chromium with H.264 and AAC) for video, social sites, web apps and sign-ins; one shared cookie store | Built on every push; the Flatpak is installed and started on Wayland, and Iris is checked at a fractional scale (1.25), where the interface reaches the screen pixel for pixel. Packages: Flatpak, Snap and Nix. |
-| Android 8 and newer | Android System WebView | **Iris for Android**, a separate app in Kotlin (`android/`): shields, Iris results for Web searches, tabs, containers (WebView 123 or newer), eleven palettes, phone and tablet layouts, and sync with the computer. `Iris-android.apk` is in each release. |
+| Android 10 and newer (64-bit) | Chromium, carried by the app (CEF for Android, through Cefrium) | **Iris for Android**, a separate app in Kotlin (`android/`): the desktop's light Liquid Glass and its six backgrounds, the desktop's tab strip on top, shields, containers, phone and tablet layouts, and sync with the computer. `Iris-android.apk` is in each release. |
 
 Iris carries its own Electron (Chromium, with H.264 and AAC) on both systems, and each release
 brings the newer one. On Linux, WebKitGTK comes from the GNOME runtime (Flatpak), the Snap

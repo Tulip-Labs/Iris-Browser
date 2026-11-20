@@ -32,6 +32,7 @@ import com.cefrium.CefriumBrowser
 import com.cefrium.CefriumProfile
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -82,6 +83,11 @@ class MainActivity : Activity(), PageEvents {
     private var suggestSeq = 0
     private var wide = false // a tablet, or a phone on its side: the buttons sit beside the address
     private lateinit var pill: LinearLayout
+    // the tabs on top, as on the desktop: a compact strip, centered
+    private lateinit var stripRow: LinearLayout
+    private lateinit var stripScroll: HorizontalScrollView
+    private lateinit var stripTabs: LinearLayout
+    private var stripSig = ""
     private val results by lazy { Results(this) { pages.plain() } }
 
     // ---- lifecycle ----
@@ -127,7 +133,7 @@ class MainActivity : Activity(), PageEvents {
     private var lastSyncTry = 0L
     private var syncing = false
 
-    /** trades history, tabs and the palette with the paired computer, if it is on this network */
+    /** trades history, tabs and the background with the paired computer, if it is on this network */
     private fun sync(quiet: Boolean) {
         if (!Sync.paired(set) || syncing) return
         syncing = true
@@ -251,6 +257,12 @@ class MainActivity : Activity(), PageEvents {
         column.orientation = LinearLayout.VERTICAL
         root.addView(column, flp(MATCH, MATCH))
 
+        // the top band of glass: the tabs, then the address row
+        val band = LinearLayout(this)
+        band.orientation = LinearLayout.VERTICAL
+        band.background = glassBand(pal, lineAtBottom = true)
+        band.addView(buildStrip(), lp(MATCH, dp(42)))
+
         // the address row: shield, address, AI
         val top = LinearLayout(this)
         top.orientation = LinearLayout.HORIZONTAL
@@ -308,20 +320,25 @@ class MainActivity : Activity(), PageEvents {
         top.addView(pill, lp(0, dp(44), 1f).also { it.leftMargin = dp(2); it.rightMargin = dp(2) })
         aiBtn = iconButton(pal, R.drawable.ic_sparkle, "Ask AI about this page", pal.primary) { askAI() }
         top.addView(aiBtn, lp(dp(48), dp(48)))
-        column.addView(top, lp(MATCH, WRAP))
+        band.addView(top, lp(MATCH, WRAP))
+        column.addView(band, lp(MATCH, WRAP))
 
         progress = ProgressLine(this)
-        progress.color = pal.primary
+        progress.color = pal.focus
         column.addView(progress, lp(MATCH, dp(3)))
 
+        // the page, in a frame with rounded corners over the background
         content = FrameLayout(this)
         content.setBackgroundColor(pal.surface)
-        column.addView(content, lp(MATCH, 0, 1f))
+        content.roundCorners(dp(14).toFloat())
+        content.elevation = dp(2).toFloat()
+        column.addView(content, lp(MATCH, 0, 1f).also { it.setMargins(dp(if (wide) 8 else 4), dp(2), dp(if (wide) 8 else 4), dp(if (wide) 8 else 2)) })
 
         // the bottom buttons, where the thumb is
         bottom = LinearLayout(this)
         bottom.orientation = LinearLayout.HORIZONTAL
         bottom.gravity = Gravity.CENTER_VERTICAL
+        bottom.background = glassBand(pal, lineAtBottom = false)
         backBtn = iconButton(pal, R.drawable.ic_back, "Back") { onBackPage() }
         fwdBtn = iconButton(pal, R.drawable.ic_forward, "Forward") { tab()?.web?.let { if (it.canGoForward()) it.goForward() } }
         val plus = iconButton(pal, R.drawable.ic_add, "New tab (hold for private and container tabs)", pal.primary) { newTab("", false); focusAddress() }
@@ -342,7 +359,7 @@ class MainActivity : Activity(), PageEvents {
             top.addView(backBtn, 0, lp(dp(48), dp(48)))
             top.addView(fwdBtn, 1, lp(dp(48), dp(48)))
             top.addView(reload, 2, lp(dp(48), dp(48)))
-            top.addView(plus, lp(dp(48), dp(48)))
+            // + is on the tab strip
             top.addView(tb, lp(dp(48), dp(48)))
             top.addView(menu, lp(dp(48), dp(48)))
             bottom.visibility = View.GONE
@@ -384,6 +401,132 @@ class MainActivity : Activity(), PageEvents {
             keyboard = kb
             bottom.visibility = if (kb || addr.hasFocus()) View.GONE else View.VISIBLE
         }
+    }
+
+    // ---- the tab strip (the desktop's tabs on top) ----
+
+    /** the row on top: the tabs, centered, then + and the other kinds of tab */
+    private fun buildStrip(): View {
+        stripSig = ""
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER
+        row.setPadding(dp(6), dp(4), dp(6), 0)
+        stripScroll = HorizontalScrollView(this)
+        stripScroll.isHorizontalScrollBarEnabled = false
+        stripScroll.overScrollMode = View.OVER_SCROLL_NEVER
+        stripTabs = LinearLayout(this)
+        stripTabs.orientation = LinearLayout.HORIZONTAL
+        stripScroll.addView(stripTabs, FrameLayout.LayoutParams(WRAP, MATCH))
+        row.addView(stripScroll, lp(WRAP, MATCH))
+        val plus = iconButton(pal, R.drawable.ic_add, "New tab", pal.onSurfaceVariant) { newTab("", false); focusAddress() }
+        plus.setPadding(dp(8), dp(8), dp(8), dp(8))
+        plus.setOnLongClickListener { newTabMenu(); true }
+        row.addView(plus, lp(dp(34), dp(34)))
+        val kinds = iconButton(pal, R.drawable.ic_chevron_down, "Private and container tabs", pal.onSurfaceVariant) { newTabMenu() }
+        kinds.setPadding(dp(3), dp(9), dp(3), dp(9))
+        row.addView(kinds, lp(dp(22), dp(34)))
+        row.addOnLayoutChangeListener { _, l, _, r, _, oldL, _, oldR, _ -> if (r - l != oldR - oldL) row.post { refreshStrip() } }
+        stripRow = row
+        return row
+    }
+
+    /** lays the tabs out again when something they show changed */
+    private fun refreshStrip() {
+        if (!::stripTabs.isInitialized) return
+        val sig = buildString {
+            append(cur).append('|').append(stripRow.width).append('|')
+            for (t in tabs) append(t.id).append(' ').append(t.title).append(' ').append(t.url).append(' ')
+                .append(t.private).append(t.container).append(t.web != null).append(';')
+        }
+        if (sig == stripSig) return
+        stripSig = sig
+        stripTabs.removeAllViews()
+        // tabs shrink as more open (to an icon on a wide screen); past that the strip scrolls
+        val width = if (stripRow.width > 0) stripRow.width else resources.displayMetrics.widthPixels
+        val avail = width - stripRow.paddingLeft - stripRow.paddingRight - dp(34) - dp(22) - dp(4)
+        val n = maxOf(1, tabs.size)
+        val tw = (avail / n).coerceIn(dp(if (wide) 40 else 88), dp(210))
+        val shown = minOf(tw * n, avail)
+        stripScroll.layoutParams = lp(shown, MATCH)
+        for ((i, t) in tabs.withIndex()) stripTabs.addView(stripTab(i, t, tw), lp(tw, MATCH))
+        val at = cur
+        stripScroll.post {
+            val v = stripTabs.getChildAt(at) ?: return@post
+            stripScroll.smoothScrollTo(maxOf(0, v.left - (stripScroll.width - v.width) / 2), 0)
+        }
+    }
+
+    private fun tabLabel(t: Tab): String = when {
+        t.title.isNotEmpty() -> t.title
+        t.url.isNotEmpty() -> Search.query(t.url) ?: display(t.url)
+        t.private -> "Private tab"
+        t.container.isNotEmpty() -> t.container
+        else -> "New tab"
+    }
+
+    /** one tab: icon and title; the selected one is a pane of glass with a close button */
+    private fun stripTab(i: Int, t: Tab, tw: Int): View {
+        val active = i == cur
+        val r = dp(11).toFloat()
+        val f = FrameLayout(this)
+        f.setPadding(dp(1), dp(2), dp(1), dp(2))
+        val cell = FrameLayout(this)
+        cell.background = ripple(pal, if (active) glass(pal, pal.tabGlass, r, dp(1)) else null, rounded(Palette.WHITE, r))
+        if (active) cell.elevation = dp(1).toFloat()
+        f.addView(cell, flp(MATCH, MATCH))
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER_VERTICAL
+        val narrow = tw < dp(76)
+        row.setPadding(if (narrow) 0 else dp(10), 0, dp(2), 0)
+        if (narrow) row.gravity = Gravity.CENTER
+        row.addView(tabIcon(t), lp(dp(16), dp(16)))
+        if (!narrow) {
+            val name = text(tabLabel(t), 12.5f, if (active) pal.onSurface else pal.onSurfaceVariant, bold = active)
+            name.setSingleLine(true)
+            name.ellipsize = TextUtils.TruncateAt.END
+            // a page that sleeps comes back when it is chosen
+            if (t.web == null && t.url.isNotEmpty() && !active) name.alpha = 0.6f
+            row.addView(name, lp(0, WRAP, 1f).also { it.leftMargin = dp(8) })
+            if (active || tw > dp(150)) {
+                val x = iconButton(pal, R.drawable.ic_close, "Close tab", pal.onSurfaceVariant) { closeTab(i) }
+                x.setPadding(dp(7), dp(7), dp(7), dp(7))
+                row.addView(x, lp(dp(28), dp(28)))
+            } else row.addView(View(this), lp(dp(8), 1))
+        }
+        cell.addView(row, flp(MATCH, MATCH))
+        // a private or container tab wears its color along the bottom
+        if (t.private || t.container.isNotEmpty()) {
+            val tone = if (t.private) pal.tone("") else pal.tone(set.containers.firstOrNull { it.name == t.container }?.color ?: "")
+            val bar = View(this)
+            bar.background = rounded(Palette.alpha(tone, 0.9f), dp(1.25f).toFloat())
+            cell.addView(bar, flp(if (active) MATCH else dp(28), maxOf(2, dp(2.5f)), Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+                .also { it.setMargins(dp(11), 0, dp(11), dp(1)) })
+        }
+        cell.contentDescription = tabLabel(t)
+        cell.setOnClickListener { if (i != cur) { closeGrid(); selectTab(i) } }
+        cell.setOnLongClickListener { if (grid == null) openGrid(); true }
+        return f
+    }
+
+    /** a tab's icon: its site's first letter, or what the tab is (new, private, a search) */
+    private fun tabIcon(t: Tab): View {
+        if (t.url.isEmpty() || Search.query(t.url) != null) {
+            val ic = ImageView(this)
+            ic.setImageResource(when {
+                t.url.isNotEmpty() -> R.drawable.ic_search
+                t.private -> R.drawable.ic_private
+                else -> R.drawable.ic_globe
+            })
+            ic.imageTintList = android.content.res.ColorStateList.valueOf(pal.onSurfaceVariant)
+            return ic
+        }
+        val m = text(monogram(hostOf(t.url)), 9.5f, pal.onSurface, bold = true)
+        m.gravity = Gravity.CENTER
+        m.includeFontPadding = false
+        m.background = rounded(Palette.alpha(Palette.WHITE, 0.9f), dp(5).toFloat(), dp(1), pal.outlineVariant)
+        return m
     }
 
     // ---- tabs ----
@@ -650,7 +793,12 @@ class MainActivity : Activity(), PageEvents {
         }
         // a container tab wears its color around the address
         val tone = t?.let { tt -> if (tt.container.isEmpty()) null else set.containers.firstOrNull { it.name == tt.container } }?.let { pal.tone(it.color) }
-        pill.background = if (tone != null) rounded(pal.field, dp(22).toFloat(), dp(2), tone) else rounded(pal.field, dp(22).toFloat())
+        pill.background = when {
+            addr.hasFocus() -> rounded(pal.field, dp(22).toFloat(), dp(2), pal.focus)
+            tone != null -> rounded(pal.field, dp(22).toFloat(), dp(2), tone)
+            else -> glass(pal, pal.field, dp(22).toFloat(), dp(1))
+        }
+        refreshStrip()
         backBtn.isEnabled = t?.web?.canGoBack() == true
         backBtn.alpha = if (backBtn.isEnabled) 1f else 0.38f
         fwdBtn.isEnabled = t?.web?.canGoForward() == true
@@ -682,6 +830,7 @@ class MainActivity : Activity(), PageEvents {
     private fun addressFocus(focused: Boolean) {
         bottom.visibility = if (focused || keyboard || wide) View.GONE else View.VISIBLE
         aiBtn.visibility = if (focused) View.GONE else View.VISIBLE
+        if (focused) pill.background = rounded(pal.field, dp(22).toFloat(), dp(2), pal.focus)
         if (focused) {
             val t = tab()
             val full = if (t == null || t.url.isEmpty()) "" else (Search.query(t.url) ?: t.url)
@@ -810,7 +959,7 @@ class MainActivity : Activity(), PageEvents {
         pill.orientation = LinearLayout.HORIZONTAL
         pill.gravity = Gravity.CENTER_VERTICAL
         pill.setPadding(dp(18), 0, dp(18), 0)
-        pill.background = ripple(pal, rounded(pal.field, dp(28).toFloat(), dp(2), pal.primary), rounded(Palette.WHITE, dp(28).toFloat()))
+        pill.background = ripple(pal, glass(pal, pal.field, dp(28).toFloat(), dp(1)), rounded(Palette.WHITE, dp(28).toFloat()))
         pill.elevation = dp(3).toFloat()
         val si = ImageView(this)
         si.setImageResource(modeIcon(set.mode))
@@ -1035,8 +1184,8 @@ class MainActivity : Activity(), PageEvents {
         col.addView(acts, lp(MATCH, WRAP).also { it.bottomMargin = dp(8) })
 
         // look
-        col.addView(section("Look"))
-        // each palette as a tile with its name
+        col.addView(section("Background"))
+        // each background as a tile with its name, under the same glass
         val tiles = Flow(this, dp(8))
         val sheetW = if (wide) minOf(dp(560), resources.displayMetrics.widthPixels) else resources.displayMetrics.widthPixels
         val tileW = ((sheetW - dp(40) - dp(8) * 3) / 3 - dp(2)).coerceAtMost(dp(160))
@@ -1046,16 +1195,15 @@ class MainActivity : Activity(), PageEvents {
             tile.gravity = Gravity.CENTER_HORIZONTAL
             tile.setPadding(dp(6), dp(6), dp(6), dp(4))
             val on = p.id == pal.id
-            tile.background = ripple(pal, rounded(pal.surfaceHigh, dp(16).toFloat(), dp(if (on) 2 else 1), if (on) pal.primary else pal.outlineVariant),
+            tile.background = ripple(pal, rounded(pal.surfaceHigh, dp(16).toFloat(), dp(if (on) 2 else 1), if (on) pal.focus else pal.outlineVariant),
                 rounded(Palette.WHITE, dp(16).toFloat()))
             val preview = FrameLayout(this)
-            val pd = if (p.grad != null) android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, p.grad.toIntArray())
-            else android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(p.surface, p.surface, p.primary, p.primary))
-            pd.cornerRadius = dp(11).toFloat()
-            preview.background = pd
-            val dot = View(this)
-            dot.background = oval(p.primary)
-            preview.addView(dot, flp(dp(14), dp(14), Gravity.TOP or Gravity.END).also { it.setMargins(0, dp(7), dp(7), 0) })
+            preview.background = p.frameDrawable()
+            preview.roundCorners(dp(11).toFloat())
+            // a pane of the glass on it
+            val pane = View(this)
+            pane.background = glass(p, p.tabGlass, dp(6).toFloat(), dp(1))
+            preview.addView(pane, flp(dp(34), dp(12), Gravity.TOP or Gravity.START).also { it.setMargins(dp(7), dp(7), 0, 0) })
             tile.addView(preview, lp(MATCH, dp(46)))
             val l = text(p.label, 12.5f, pal.onSurface, bold = on)
             l.setSingleLine(true)
@@ -1103,13 +1251,13 @@ class MainActivity : Activity(), PageEvents {
         col.addView(modes, lp(MATCH, WRAP))
         col.addView(note("Google opens in the mode you pick. Type \"yt \" before words to search YouTube."))
         col.addView(toggle("Iris results for Web searches", set.liteResults) { set.liteResults = it })
-        col.addView(note("Web searches are read in the background and shown on Iris's own page, in your palette, without ads."))
+        col.addView(note("Web searches are read in the background and shown on Iris's own page, in Iris's glass, without ads."))
 
         // sync
         col.addView(section("Sync with your computer"))
         if (Sync.paired(set)) {
             col.addView(note("Paired with " + set.syncName + (if (set.syncAt > 0) ", in sync " + ago(set.syncAt) else ", not synced yet") +
-                ". History, open tabs and the palette are traded directly whenever both are on the same Wi-Fi."))
+                ". History, open tabs and the background are traded directly whenever both are on the same Wi-Fi."))
             col.addView(button(pal, "Sync now", false) { sync(quiet = false) }, lp(WRAP, dp(40)).also { it.topMargin = dp(8) })
             val theirs = Sync.pcTabs(set)
             if (theirs.isNotEmpty()) {
@@ -1129,7 +1277,7 @@ class MainActivity : Activity(), PageEvents {
                 Toast.makeText(this, "This phone no longer syncs", Toast.LENGTH_SHORT).show()
             }, lp(WRAP, dp(40)).also { it.topMargin = dp(8) })
         } else {
-            col.addView(note("Iris on your computer can keep history, open tabs and the palette the same as here, with no account and no server. " +
+            col.addView(note("Iris on your computer can keep history, open tabs and the background the same as here, with no account and no server. " +
                 "On the computer open Menu, Phone, turn sync on and scan its code with this phone's camera; then tap \"Pair with Iris\" on the page that opens."))
         }
 
@@ -1238,6 +1386,7 @@ class MainActivity : Activity(), PageEvents {
         if (title.startsWith("http") || title.isEmpty()) return
         t.title = title
         if (!t.private) hist.title(t.url, title)
+        refreshStrip()
     }
 
     override fun onProgress(t: Tab, progress: Int) {

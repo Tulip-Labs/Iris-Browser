@@ -4,7 +4,7 @@
 |---|---|---|---|
 | Linux | **WebKitGTK 6** (from the system, the Flatpak's GNOME runtime, the Snap or nixpkgs) | **Electron** (Chromium with H.264, H.265 and AAC), started on demand | Gio, in a GTK 4 window |
 | Windows | **Electron**, carried by Iris | (the same Electron) | Gio, in a Win32 window |
-| Android | Cefrium (Chromium) | | Kotlin |
+| Android | Cefrium (Chromium) | | Kotlin (Android views), the desktop's Liquid Glass and tab strip |
 
 ## Linux
 
