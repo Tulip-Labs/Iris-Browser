@@ -60,6 +60,10 @@ static double scaleOf(void) {
 	return sc > 0.25 ? sc : 1;
 }
 
+// lastScale is the scale the pages were last told (lsvBounds refreshes it
+// when the window's changes, as lsvOpen does on open).
+static double lastScale;
+
 // ---- Servo's callbacks ----
 
 static volatile int spinWanted;
@@ -112,14 +116,16 @@ int lsvStart(uintptr_t view) {
 	p_append_scaled = dlsym(RTLD_DEFAULT, "gtk_snapshot_append_scaled_texture");
 	p_scroll_unit = dlsym(RTLD_DEFAULT, "gdk_scroll_event_get_unit");
 	pages = g_hash_table_new(g_int64_hash, g_int64_equal);
-	return iris_servo_init(onWake, onEvent, onFrame, onAllow, onNavigate, onResult, (float)scaleOf());
+	lastScale = scaleOf();
+	return iris_servo_init(onWake, onEvent, onFrame, onAllow, onNavigate, onResult, (float)lastScale);
 }
 
 int lsvOpen(uint64_t id, const char *url) {
 	SV *v = g_new0(SV, 1);
 	v->id = id;
 	g_hash_table_insert(pages, &v->id, v);
-	iris_servo_set_scale((float)scaleOf());
+	lastScale = scaleOf();
+	iris_servo_set_scale((float)lastScale);
 	int ok = iris_servo_open(id, 640, 480, url);
 	onWake();
 	return ok;
@@ -152,6 +158,15 @@ void lsvBounds(uint64_t id, int x, int y, int w, int h) {
 	SV *v = g_hash_table_lookup(pages, &id);
 	if (!v) return;
 	v->px[0] = x, v->px[1] = y, v->px[2] = w, v->px[3] = h;
+	// the window's scale can change after a page opened (the window moved
+	// to another screen, or the compositor corrected its first guess): the
+	// pages' scale follows it, as on open, instead of laying out at the
+	// old one until the page is reopened
+	double sc = scaleOf();
+	if (fabs(sc - lastScale) > 0.001) {
+		lastScale = sc;
+		iris_servo_set_scale((float)sc);
+	}
 	iris_servo_resize(id, w, h);
 	onWake();
 	if (host) gtk_widget_queue_draw(host);
