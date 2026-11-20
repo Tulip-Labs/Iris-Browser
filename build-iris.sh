@@ -2,9 +2,10 @@
 # Iris builds.
 #   ./build-iris.sh            on Linux: Iris for Linux, then the Windows files
 #                                elsewhere: the Windows files
-#   ./build-iris.sh linux      Iris for Linux only, in dist/linux (fetches Chromium (CEF),
-#                                needs the GTK development files); the Flatpak and the
-#                                Snap package that folder (packaging/flatpak, packaging/snap)
+#   ./build-iris.sh linux      Iris for Linux only, in dist/linux (fetches Electron
+#                                through npm, needs the GTK development files and
+#                                Node.js); the Flatpak and the Snap package that
+#                                folder (packaging/flatpak, packaging/snap)
 #   ./build-iris.sh windows    the Windows files only (cross-built, no C compiler needed)
 set -e
 cd "$(dirname "$0")"
@@ -15,8 +16,8 @@ need_linux_deps() {
 	missing=""
 	command -v gcc >/dev/null 2>&1 || missing="$missing gcc"
 	command -v pkg-config >/dev/null 2>&1 || missing="$missing pkg-config"
-	command -v curl >/dev/null 2>&1 || missing="$missing curl"
-	command -v bzip2 >/dev/null 2>&1 || missing="$missing bzip2"
+	command -v node >/dev/null 2>&1 || missing="$missing node"
+	command -v npm >/dev/null 2>&1 || missing="$missing npm"
 	if command -v pkg-config >/dev/null 2>&1; then
 		for p in gtk4 epoxy; do
 			pkg-config --exists "$p" || missing="$missing $p"
@@ -26,33 +27,12 @@ need_linux_deps() {
 	cat >&2 <<MSG
 Iris for Linux cannot be built yet. Missing:$missing
 Install the build tools and development files, then run this again:
-  Fedora:        sudo dnf install gcc pkgconf gtk4-devel libepoxy-devel curl bzip2
+  Fedora:        sudo dnf install gcc pkgconf gtk4-devel libepoxy-devel nodejs npm
   Fedora Atomic: toolbox create && toolbox enter, then the Fedora line above
-  Debian/Ubuntu: sudo apt install gcc pkg-config libgtk-4-dev libepoxy-dev curl bzip2
-  Arch:          sudo pacman -S gcc pkgconf gtk4 libepoxy curl bzip2
+  Debian/Ubuntu: sudo apt install gcc pkg-config libgtk-4-dev libepoxy-dev nodejs npm
+  Arch:          sudo pacman -S gcc pkgconf gtk4 libepoxy nodejs npm
 MSG
 	return 1
-}
-
-# fetch_cef unpacks the Chromium Embedded Framework named in
-# packaging/cef/cef.env into third_party/cef (once; the download is about
-# 300 MB, checked against its SHA-1), and strips libcef.so of its symbols.
-fetch_cef() {
-	. packaging/cef/cef.env
-	dir=third_party/cef
-	if [ -f "$dir/.version" ] && [ "$(cat "$dir/.version")" = "$CEF_VERSION" ]; then
-		return 0
-	fi
-	echo "Fetching Chromium (CEF $CEF_VERSION)..."
-	rm -rf "$dir" third_party/cef.tar.bz2
-	mkdir -p "$dir"
-	url="https://cef-builds.spotifycdn.com/$(printf %s "$CEF_FILE" | sed 's/+/%2B/g')"
-	curl -fL --retry 3 -o third_party/cef.tar.bz2 "$url"
-	echo "$CEF_SHA1  third_party/cef.tar.bz2" | sha1sum -c -
-	tar -xjf third_party/cef.tar.bz2 -C "$dir" --strip-components=1
-	rm -f third_party/cef.tar.bz2
-	strip --strip-unneeded "$dir/Release/libcef.so" "$dir/Release/libvk_swiftshader.so" "$dir/Release/libvulkan.so.1"
-	echo "$CEF_VERSION" > "$dir/.version"
 }
 
 # version is the one the program reports (cmd/iris/main.go).
@@ -60,36 +40,20 @@ version() { sed -n 's/^const version = "\(.*\)"/\1/p' cmd/iris/main.go; }
 
 build_linux() {
 	need_linux_deps || return 1
-	fetch_cef
 	# The window is a GTK window, native on Wayland; the interface is drawn by
-	# Gio's GPU renderer inside it, and the pages by Chromium (CEF, off screen).
+	# Gio's GPU renderer inside it, and the pages by the Electron engine
+	# (Servo draws the light ones when its bridge is built).
 	echo "Building Iris for Linux..."
 	CGO_ENABLED=1 go test ./core ./shields ./shell ./update ./link
 	rm -rf dist/linux
-	mkdir -p dist/linux
-	# Servo for the light pages, when its bridge is built (webview/servo/lib,
-	# from .github/workflows/servo-lib.yml or cargo in webview/servo/rust)
-	tags="webkit cef novulkan"
-	if [ -f webview/servo/lib/libirisservo.so ]; then
-		tags="$tags servo"
-		cp webview/servo/lib/libirisservo.so dist/linux/
-		echo "With Servo for light pages"
-	fi
-	CGO_ENABLED=1 go build -tags "$tags" -trimpath -ldflags "-s -w" -o dist/linux/iris ./cmd/iris
+	# The Electron engine: the program, Electron, and Iris's helper
+	# (webview/electron/build.sh; Servo's bridge joins it when built)
+	sh webview/electron/build.sh dist/linux
 	go run tools/sum.go dist/linux/iris # the record Iris checks itself against
-	cef=third_party/cef
-	gcc -O2 -fno-stack-protector -I"$cef" -DCEF_API_VERSION=15600 packaging/cef/helper.c -L"$cef/Release" -lcef -Wl,-rpath,'$ORIGIN' -o dist/linux/iris-helper
-	strip dist/linux/iris-helper
-	for f in libcef.so libvk_swiftshader.so libvulkan.so.1 vk_swiftshader_icd.json v8_context_snapshot.bin chrome-sandbox; do
-		cp "$cef/Release/$f" dist/linux/
-	done
-	cp -r "$cef/Resources/"* dist/linux/
 	cp assets/icon.png dist/linux/io.github.tulip_labs.Iris.png
 	cp packaging/linux/io.github.tulip_labs.Iris.desktop packaging/linux/io.github.tulip_labs.Iris.metainfo.xml dist/linux/
 	cp LICENSE NOTICE THIRD_PARTY_NOTICES.md dist/linux/
 	version > dist/linux/VERSION
-	cp "$cef/LICENSE.txt" dist/linux/CEF-LICENSE.txt
-	cp "$cef/CREDITS.html" dist/linux/CHROMIUM-CREDITS.html
 	du -sh dist/linux
 	echo "Done: dist/linux (packaged by packaging/flatpak and packaging/snap)"
 }
