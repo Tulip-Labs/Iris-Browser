@@ -150,10 +150,10 @@ Servo 0.4 from crates.io, through a small C library of Iris's own
 `servo-capi` only covers creating Servo so far), called from Go with cgo.
 Servo runs in Iris's own process, on GTK's thread: no start-up cost for a
 light page. Each page renders into a software context whose frames are drawn
-by GTK one pixel on one screen pixel, like Chromium's; sharing them on the
+by GTK one pixel on one screen pixel, like Electron's; sharing them on the
 graphics chip (dmabuf) is the next step. Its requests pass Iris Shields in
 process (Servo's resource-load hook), its links to heavy sites move the tab to
-Chromium (Servo's navigation hook), and its cookies go to and from Iris's
+Electron (Servo's navigation hook), and its cookies go to and from Iris's
 shared store before each page and after it loads.
 
 #### Neither engine may become a resource hog
@@ -219,7 +219,7 @@ not needed for the shield to work everywhere.
 
 - **Flatpak** (`packaging/flatpak/io.github.tulip_labs.Iris.yml`), the first
   way to install Iris on every distribution, Fedora Atomic included: built on
-  `org.electronjs.Electron2.BaseApp`, with zypak for Chromium's sandbox, and
+  `org.electronjs.Electron2.BaseApp`, with zypak for Electron's sandbox, and
   the `org.freedesktop.Platform.ffmpeg-full` extension. Published on Flathub
   and as a .flatpak file on each GitHub release.
 - **Snap** (`packaging/snap/snapcraft.yaml`) with the `desktop`, `wayland`,
@@ -234,6 +234,7 @@ updater for them are removed. Flatpak, Snap and Nix update Iris themselves.
 
 1. Packaging: remove the old packages; Flatpak, Snap and Nix with the current
    engine, so there is something to install meanwhile.
-2. The Electron engine with frames on the graphics chip; CEF removed.
+2. The Electron engine with frames on the graphics chip; CEF removed (done —
+   Electron is the Linux engine now, Servo for the light pages).
 3. The Servo engine, the router and the shared session store.
 4. Measure: memory and frame times against 1.0 on the same pages, in CI.

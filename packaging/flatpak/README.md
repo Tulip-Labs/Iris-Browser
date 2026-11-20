@@ -14,17 +14,16 @@ flathub https://dl.flathub.org/repo/flathub.flatpakrepo`).
 
 The release bundle holds exactly the files CI built and tested, and builds in
 minutes. Flathub builds every app from source without network access, so a
-Flathub manifest lists every download: the engine (Chromium, CEF; checksums
-in `packaging/cef/cef.env`) and each Go module. `go run tools/flatpaksrc.go >
+Flathub manifest lists every download: the engine (Electron, from npm) and
+each Go module. `go run tools/flatpaksrc.go >
 packaging/flatpak/go-sources.json` writes the Go part: each module's .info,
 .mod and .zip from the Go module proxy with its SHA-256, laid out as a module
 proxy (`GOPROXY=file://$PWD/goproxy`), so `go build` runs offline and still
 checks go.sum.
 
-## Chromium's sandbox
+## Electron's sandbox
 
-The pages run inside Flatpak's sandbox. Chromium's own sandbox inside it
-needs zypak, which the bundle carries: the Electron engine starts through it.
-The current engine (CEF) starts its page processes through a helper program
-of its own, which zypak cannot run yet, so it starts with `IRIS_NO_SANDBOX=1`
-(Flatpak's sandbox only) until the Electron engine replaces it.
+The pages run inside Flatpak's sandbox. Electron's own sandbox inside it
+needs zypak, which the bundle carries: the Electron engine starts through it,
+and the launcher still sets `IRIS_NO_SANDBOX=1`, so the pages run inside
+Flatpak's sandbox only.

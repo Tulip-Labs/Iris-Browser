@@ -1,5 +1,5 @@
 // Package route decides which engine draws a page: Servo for light pages
-// (articles, Wikipedia, search, docs), the heavy engine (Chromium) for the
+// (articles, Wikipedia, search, docs), the heavy engine (Electron) for the
 // sites that need it and for any site Servo failed on. See docs/engines.md.
 package route
 
@@ -20,7 +20,7 @@ type Engine int
 
 const (
 	Light Engine = iota // Servo
-	Heavy               // Chromium (Electron; CEF until it lands)
+	Heavy               // Electron (Chromium with H.264, H.265 and AAC)
 )
 
 func (e Engine) String() string {

@@ -1,5 +1,5 @@
 // Package route is the engine Iris's shell talks to on Linux: it draws each
-// tab with Servo (light pages) or the heavy engine (Chromium), as core/route
+// tab with Servo (light pages) or the heavy engine (Electron), as core/route
 // decides, and moves a tab between them when it crosses over. The shell sees
 // one engine and one view per tab, as before. See docs/engines.md.
 package route
@@ -42,7 +42,7 @@ func (e *Engine) Start(window uintptr, dataDir string, low bool, ready func(err 
 	if e.light != nil {
 		e.light.Start(window, dataDir, low, func(err error) {
 			if err != nil {
-				log.Println("Iris: Servo did not start, every page goes to Chromium:", err)
+				log.Println("Iris: Servo did not start, every page goes to Electron:", err)
 				e.lightOK = false
 			}
 		})
@@ -65,7 +65,7 @@ func (e *Engine) MemoryMB() float64 {
 	return m
 }
 
-// Version is the heavy engine's (the shell reads Chromium's version from it)
+// Version is the heavy engine's (the shell reads Electron's version from it)
 // followed by Servo's.
 func (e *Engine) Version() string {
 	if e.light != nil && e.lightOK {

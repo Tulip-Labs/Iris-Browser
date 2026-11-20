@@ -51,7 +51,7 @@ type fEngine struct {
 	name    string
 	views   []*fView
 	divert  bool
-	pending []func() // NewView answers later (as CEF does)
+	pending []func() // NewView answers later (as the Electron engine does)
 	async   bool
 }
 
@@ -203,7 +203,7 @@ func (e *extEngine) EnableExtension(string, bool, func(error))           {}
 
 func TestExtensionsOnlyWhereHeavyHasThem(t *testing.T) {
 	if _, ok := Wrap(&fEngine{}, &fEngine{}, nil).(webview.ExtensionHost); ok {
-		t.Error("CEF on Linux runs no extensions: the shell must not offer them")
+		t.Error("a heavy engine without extensions must not offer them")
 	}
 	if _, ok := Wrap(&fEngine{}, &extEngine{}, nil).(webview.ExtensionHost); !ok {
 		t.Error("Electron runs extensions")

@@ -1,5 +1,5 @@
 // Package webview embeds the operating system's web engine under Iris's
-// own Gio interface: WebView2 on Windows and Chromium (CEF) on Linux. Every method must be
+// own Gio interface: WebView2 on Windows and Electron on Linux. Every method must be
 // called on the window's UI thread; events arrive on that thread too.
 package webview
 
@@ -181,7 +181,7 @@ type Extension struct {
 }
 
 // ExtensionHost is an engine that runs browser extensions (WebView2 on
-// Windows; CEF drawing pages off screen, as on Linux, cannot). Extensions
+// Windows and Electron on Linux). Extensions
 // live in the default container; private, sandbox and container tabs run
 // without them. Every callback arrives on the window's thread.
 type ExtensionHost interface {

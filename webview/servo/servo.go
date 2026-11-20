@@ -3,9 +3,9 @@
 // Package servo is Iris's light engine on Linux: Servo (servo.org), drawing
 // articles, Wikipedia, search and docs in Iris's own process, with nothing to
 // start. The router (webview/route) gives it the pages it can draw and the
-// rest to Chromium. Its frames are drawn in the GTK window like Chromium's
+// rest to Electron. Its frames are drawn in the GTK window like Electron's
 // (servo_linux.c); its requests pass Iris Shields; its cookies are shared
-// with Chromium through Iris's own store (core/session).
+// with Electron through Iris's own store (core/session).
 package servo
 
 /*
@@ -50,7 +50,7 @@ type Engine struct {
 	mu      sync.Mutex
 	policy  webview.Policy
 	started bool
-	// Cookies is the store shared with Chromium (nil: Servo keeps its own).
+	// Cookies is the store shared with Electron (nil: Servo keeps its own).
 	Cookies *session.Store
 	budget  float64 // MB Iris's own process may use before Servo tabs rest
 }
@@ -465,7 +465,7 @@ func lsvGoNavigate(id C.uint64_t, url *C.char) C.int {
 	v.going = ""
 	p := eng.pol()
 	if !asked {
-		// a link, a form or a script: a heavy site opens in Chromium
+		// a link, a form or a script: a heavy site opens in Electron
 		if v.divert != nil && v.divert(u) {
 			return 0
 		}

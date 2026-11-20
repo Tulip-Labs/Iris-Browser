@@ -1,6 +1,6 @@
 // Command iris is Iris: a light browser whose interface is drawn with Gio
 // and whose pages are shown by the system web view: WebView2 on Windows,
-// Chromium (CEF) on Linux.
+// Electron on Linux.
 package main
 
 import (

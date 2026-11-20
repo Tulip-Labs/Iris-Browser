@@ -37,7 +37,7 @@
 
 Most browsers spend your memory on their web engine without asking what each page is worth.
 Iris puts a small Go program around the engine (WebView2 on Windows, which the system keeps
-up to date; Chromium on Linux) that decides what each page may cost.
+up to date; Electron's Chromium on Linux) that decides what each page may cost.
 
 <table>
 <tr>
@@ -152,7 +152,7 @@ and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 | **Adaptive** | A site is scanned on its first visits. Where three scans find nothing, the shield stands by and the site's requests go straight to the network; where something is found, it stays on. Clean sites are scanned again every 15 visits or three days. |
 | **What ads leave behind** | Empty boxes and cookie notices are hidden. Tracking parameters are cut from links, tracking redirects skipped, AMP pages opened at the source. |
 | **Fingerprinting** | Canvas, audio and hardware details vary slightly per site and session. Sign-in and human-check pages are left alone. |
-| **Videos** | Iris plays what its Chromium plays on its own: VP9, AV1 and VP8 video with Opus and Vorbis sound (YouTube and most sites). Videos sent only as H.264 or H.265 (some LinkedIn, X and news videos) do not play on Linux: the free Chromium builds leave those codecs out, and Iris no longer converts them. |
+| **Videos** | Iris plays what its Electron plays: VP9, AV1 and VP8 video with Opus and Vorbis sound (YouTube and most sites), and H.264 and H.265 video with AAC sound (some LinkedIn, X and news videos), which Electron's Chromium builds carry. |
 | **YouTube** | YouTube shows a warning when it sees an ad blocker, so on YouTube the shield blocks nothing and Iris does not touch the player's data. When an ad starts, Iris mutes it, plays it at 16× to its end and presses Skip; the video then goes on with its own sound and speed. The ad boxes around the videos are hidden, and if the warning still comes, it is closed and the video resumes. YouTube tabs never rest. |
 | **Never broken** | Sign-in, messaging, human checks and YouTube playback are never blocked. Pictures, video, style sheets and fonts always load: the shield checks scripts and data requests, where ads and trackers start, and never blocks a whole hosting network. |
 
@@ -187,18 +187,18 @@ They work while a page has the keyboard too.
 | System | Web engine | Status |
 |---|---|---|
 | Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Iris's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, the menu) are covered by tests with a stand-in engine and still need a pass on a real PC. |
-| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Chromium, through CEF (the Chromium Embedded Framework), which Iris carries | Built on every push; the Flatpak is installed and started on Wayland, and Iris is checked at a fractional scale (1.25). Packages: Flatpak, Snap and Nix. |
+| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Electron (Chromium with H.264 and AAC), which Iris carries; Servo draws the light pages | Built on every push; the Flatpak is installed and started on Wayland, and Iris is checked at a fractional scale (1.25). Packages: Flatpak, Snap and Nix. |
 | Android 8 and newer | Android System WebView | **Iris for Android**, a separate app in Kotlin (`android/`): shields, Iris results for Web searches, tabs, containers (WebView 123 or newer), eleven palettes, phone and tablet layouts, and sync with the computer. `Iris-android.apk` is in each release. |
 
-On Windows the engine comes with the system. On Linux, Iris carries its own Chromium
-(Chromium 156, from CEF) inside its Flatpak, Snap or Nix package, and each release brings the newer one.
+On Windows the engine comes with the system. On Linux, Iris carries its own Electron
+(Chromium, with H.264 and AAC) inside its Flatpak or Snap package, and each release brings the newer one. (The Nix package still carries the old Chromium (CEF) engine until its flake is reworked; see `flake.nix`.)
 
 On Linux the window is a GTK window, because Wayland does not let one program's surface sit
 inside another's. GTK owns the window, Gio's GPU renderer draws the interface into a GL area
-in it, and Chromium draws each page off screen: Iris paints the page into its own area of
+in it, and Electron draws each page off screen: Iris paints the page into its own area of
 the window and passes it the pointer, the wheel and the keys. One window, one connection to
-the display. Chrome extensions do not run in an embedded Chromium like this one; the shields
-do the work of an ad blocker.
+the display. Chrome extensions run in the Electron engine; the shields
+do the work of an ad blocker where no extension is installed.
 
 ## Install on Windows
 
@@ -243,19 +243,19 @@ tests and makes:
 No C compiler is needed, and builds stay well under 2 GB of memory.
 
 **Linux.** On Linux, `./build-iris.sh` builds Iris for Linux first and then the Windows
-files. It fetches Chromium (CEF, about 300 MB, checked against its SHA-1) into `third_party/cef`
-once, checks for the build tools and GTK development files and says what to install if
+files. It fetches Electron (through npm, once) and Servo's bridge when it is built,
+checks for the build tools and GTK development files and says what to install if
 something is missing:
 
 ```sh
 # Fedora
-sudo dnf install gcc pkgconf gtk4-devel libepoxy-devel curl bzip2
+sudo dnf install gcc pkgconf gtk4-devel libepoxy-devel nodejs npm
 # Fedora Atomic (Silverblue, Kinoite): build inside a toolbox
 toolbox create && toolbox enter   # then the Fedora line above
 # Debian, Ubuntu
-sudo apt install gcc pkg-config libgtk-4-dev libepoxy-dev curl bzip2
+sudo apt install gcc pkg-config libgtk-4-dev libepoxy-dev nodejs npm
 # Arch
-sudo pacman -S gcc pkgconf gtk4 libepoxy curl bzip2
+sudo pacman -S gcc pkgconf gtk4 libepoxy nodejs npm
 
 ./build-iris.sh             # Linux (dist/linux), then Windows
 ./build-iris.sh linux       # Linux only
@@ -307,10 +307,11 @@ cmd/iris          the program: window, resident process, system hooks
     +-- core        rules with no window: search, shields, adaptive scans, unsafe
     |               addresses, HTTPS, the memory plan, history, settings
     +-- shields     filter lists, hiding rules, link cleaning, fingerprinting
-    +-- webview     one small interface over two engines:
+    +-- webview     one small interface over the engines:
                       WebView2 from pure Go (COM vtables, profiles, sandbox, suspend,
                       request filtering, downloads)
-                      Chromium (CEF) through cgo, off screen in a GTK window (Linux)
+                      Electron through a helper process, off screen in a GTK window (Linux)
+                      Servo in process, for the light pages (Linux)
 ```
 
 | Folder | What it is |
