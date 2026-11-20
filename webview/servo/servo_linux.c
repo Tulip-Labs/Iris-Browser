@@ -1,6 +1,6 @@
 //go:build linux && webkit && servo
 
-// Servo's pages in Iris's GTK window (see cef_linux.c for Chromium's): each
+// Servo's pages in Iris's GTK window (see electron_linux.c for Electron's): each
 // page's frames become a texture the window's view draws over the interface,
 // one page pixel on one screen pixel, and the pointer, the wheel and the keys
 // of a Servo page go to it. Servo runs on GTK's thread.
