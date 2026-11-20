@@ -6,3 +6,4 @@ go.local.sum
 webview/litego_android.jar
 build/
 third_party/
+webview/electron/helper/node_modules/

@@ -13,7 +13,7 @@ import (
 	"iris/webview/servo"
 )
 
-// newEngine is Servo for light pages and Chromium for the rest, sharing one
+// newEngine is Servo for light pages and Electron for the rest, sharing one
 // cookie store (docs/engines.md).
 func newEngine(conf string) webview.Engine {
 	var p session.Persister

@@ -2,7 +2,7 @@
 
 // The Linux window: GTK 4 owns it (native on Wayland and on X11), Gio's GPU
 // renderer draws our interface into a texture at the screen's exact scale,
-// and the pages (Chromium, drawn off screen at that scale) go over it in the
+// and the pages (Electron, drawn off screen at that scale) go over it in the
 // same window. See gtk_linux.c.
 
 package main

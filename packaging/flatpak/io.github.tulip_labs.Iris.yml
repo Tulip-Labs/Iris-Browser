@@ -39,10 +39,9 @@ cleanup-commands:
   - mkdir -p /app/lib/ffmpeg
 
 modules:
-  # Chromium's sandbox inside Flatpak's (no setuid helper or user namespaces
+  # Electron's sandbox inside Flatpak's (no setuid helper or user namespaces
   # here): zypak runs the sandboxed processes through flatpak-spawn. The
-  # Electron engine starts through it; the current engine (CEF, with its
-  # own helper program) cannot yet, and runs its pages inside Flatpak's
+  # Electron engine starts through it; the pages still run inside Flatpak's
   # sandbox only (IRIS_NO_SANDBOX in the launcher below)
   - name: zypak
     sources:
