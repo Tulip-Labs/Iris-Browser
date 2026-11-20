@@ -1,4 +1,4 @@
-//go:build linux && webkit && electron
+//go:build linux && webkit
 
 // The Linux engine on Electron. Electron runs in a helper process
 // (webview/electron/helper/main.js) that Iris starts when the first page opens
@@ -11,7 +11,7 @@
 //
 // Pages are drawn off screen by Electron at the window's scale; their frames
 // come here and go to electron_linux.c, which draws them in Iris's window.
-// Electron has H.264, H.265 and AAC (CEF's builds do not), so every video
+// Electron has H.264, H.265 and AAC, so every video
 // plays.
 
 package webview

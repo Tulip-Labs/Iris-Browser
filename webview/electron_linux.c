@@ -1,4 +1,4 @@
-//go:build linux && webkit && electron
+//go:build linux && webkit
 
 // The Linux side of Iris's web engine on Electron: the pages' pictures and
 // the input that goes to them.
@@ -7,9 +7,9 @@
 // (engine_electron.go) when the first page opens, and draws each page off
 // screen. Go receives each page's frames from it and hands them here, where
 // they become textures that Iris's window draws over the interface
-// (lgxSnapshotPages), one page pixel on one screen pixel, as the CEF engine
-// did. The pointer, the wheel and the keys over a page go back to Go
-// (elxGo*), which sends them to Electron.
+// (lgxSnapshotPages), one page pixel on one screen pixel. The pointer, the
+// wheel and the keys over a page go back to Go (elxGo*), which sends them to
+// Electron.
 //
 // Everything here runs on GTK's thread; Go's calls from other threads are
 // moved there (g_main_context_invoke).
