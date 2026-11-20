@@ -12,7 +12,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    # in Fedora's container: its package mirrors, not Ubuntu's (which hung)
+    container:
+      image: fedora:latest
     steps:
+      - name: Tools
+        timeout-minutes: 15
+        run: dnf install -y -q --setopt=install_weak_deps=False git gcc pkgconf-pkg-config gtk4-devel libepoxy-devel wayland-devel tar gzip xz findutils
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
@@ -20,28 +26,39 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Tools
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev ffmpeg
       - name: Build Iris with Electron
-        run: sh webview/electron/build.sh dist/linux-electron
-      - name: Test videos (H.264 + AAC, and VP9)
         run: |
-          mkdir -p dist/page
-          ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=frequency=440 -t 20 \
-            -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -movflags +faststart dist/page/h.mp4
-          ffmpeg -loglevel error -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime dist/page/v.webm
-          ls -l dist/page
+          # the checkout belongs to another user in the container
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          sh webview/electron/build.sh dist/linux-electron
+      - name: CI's test mouse
+        run: sh .github/vpointer/build.sh "$PWD/dist/vpointer"
       - name: Pack
-        run: tar -C dist -czf iris-electron.tar.gz linux-electron page
+        run: tar -C dist -czf iris-electron.tar.gz linux-electron vpointer
       - uses: actions/upload-artifact@v4
         with:
           name: iris-electron
           path: iris-electron.tar.gz
 
+  # the test videos, made by a ready-made ffmpeg image (x264 and VP9 encoders)
+  videos:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Test videos (H.264 + AAC, and VP9)
+        run: |
+          mkdir -p page
+          f="docker run --rm -v $PWD/page:/out -w /out jrottenberg/ffmpeg:7.1-ubuntu -loglevel error"
+          $f -f lavfi -i testsrc2=size=640x360:rate=30 -f lavfi -i sine=frequency=440 -t 20 \
+            -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -movflags +faststart h.mp4
+          $f -f lavfi -i testsrc2=size=640x360:rate=30 -t 20 -c:v libvpx-vp9 -b:v 600k -deadline realtime v.webm
+          ls -l page
+      - uses: actions/upload-artifact@v4
+        with:
+          name: iris-electron-videos
+          path: page/
+
   run:
-    needs: build
+    needs: [build, videos]
     runs-on: ubuntu-24.04
     container:
       image: fedora:latest
@@ -50,11 +67,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: iris-electron
+      - uses: actions/download-artifact@v4
+        with:
+          name: iris-electron-videos
+          path: /opt/page
       - name: Install what Iris and Electron need, and sway
         run: |
           dnf install -y -q gtk4 libepoxy gtk3 nss atk at-spi2-atk cups-libs libdrm mesa-libgbm mesa-dri-drivers alsa-lib \
             libXcomposite libXdamage libXrandr libxkbcommon libxshmfence pango cairo sway grim python3 python3-pillow \
-            dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip strace
+            dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip
           cp /usr/bin/sway /usr/local/bin/sway-plain
           mkdir -p /opt && tar -C /opt -xzf iris-electron.tar.gz && ls -l /opt/linux-electron
       - name: Iris at 1.25 on Electron
@@ -97,27 +118,30 @@ jobs:
           export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           sleep 1
-          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CONSOLE=1 IRIS_MEM_LOG=1 ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1
-          E=/opt/linux-electron/electron/electron
-          ls -la /opt/linux-electron/electron/resources /opt/linux-electron/electron/resources/app > /tmp/fs/smoke.txt 2>&1
-          timeout 20 env IRIS_SOCK=/tmp/none.sock strace -f -qq -s 300 -e trace=openat,exit_group,write -o /tmp/fs/strace.txt $E --no-sandbox --enable-logging=stderr --v=1 >> /tmp/fs/smoke.txt 2>&1
-          echo "exit $?" >> /tmp/fs/smoke.txt
-          grep -E 'resources/app|main\.js|exit_group|write\(2,' /tmp/fs/strace.txt | grep -v ENOENT.*locale | head -80 >> /tmp/fs/smoke.txt
+          export IRIS_INPUT_DEBUG=1 LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CONSOLE=1 IRIS_MEM_LOG=1 ELECTRON_ENABLE_LOGGING=1 ELECTRON_ENABLE_STACK_DUMPING=1
+          rm -f /tmp/vp.fifo && mkfifo /tmp/vp.fifo
+          /opt/vpointer < /tmp/vp.fifo 2>> /tmp/fs/swayin.txt &
+          exec 3> /tmp/vp.fifo
           dbus-run-session -- /opt/linux-electron/iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 25
           grim /tmp/fs/1-full.png
-          # a click on the page's button (page units 20..320 × 80..160, the page
-          # starts about 83 screen units down and 8 across)
-          swaymsg 'seat seat0 cursor set 160 205'
-          swaymsg 'seat seat0 cursor press button1'
-          swaymsg 'seat seat0 cursor release button1'
+          # The headless screen has no mouse: CI's test mouse (a virtual pointer
+          # that stays plugged in) moves and clicks, in the screen's units
+          # (1920 x 1200 at 1.25 is 1536 x 960). The page's button is at page
+          # units 20..320 x 80..160; the page starts about 83 units down, 8 across.
+          click() {
+            echo "at $1 $2 1536 960" >&3; sleep 0.4
+            echo click >&3; sleep 0.2
+            echo "click $1 $2" >> /tmp/fs/swayin.txt
+          }
+          click 160 205
           sleep 2
           # into the text field, and typing
-          swaymsg 'seat seat0 cursor set 160 285'
-          swaymsg 'seat seat0 cursor press button1'
-          swaymsg 'seat seat0 cursor release button1'
+          click 160 285
           sleep 1
-          wtype hello
+          # wtype makes a new virtual keyboard: a pause first, or the first key
+          # comes before the keyboard is known and only its release arrives
+          wtype -s 500 hello >> /tmp/fs/swayin.txt 2>&1; echo "wtype $?" >> /tmp/fs/swayin.txt
           sleep 3
           grim /tmp/fs/2-after-input.png
           sleep 8
@@ -133,11 +157,12 @@ jobs:
           pkill -x iris
           SH
           su tester -c "sh /tmp/run.sh"
-          echo "== Electron alone"; grep -v "dbus/bus.cc\|scheduler_loop" /tmp/fs/smoke.txt | tail -150
           grep -v dbus /tmp/fs/log.txt | grep -v "Iris: engine \|portal\|fuse" | tail -80
           echo "== the engine's memory and tabs, as Iris sees them"
           grep "Iris: engine " /tmp/fs/log.txt | tail -6
           cat /tmp/fs/mem.txt
+          echo "== input"; cat /tmp/fs/swayin.txt 2>/dev/null | tr -d '\n' | cut -c1-400; echo
+          grep -E "Iris: event|Iris pages: input|IRIS-CLICK|IRIS-TYPED" /tmp/fs/log.txt | head -40
           echo "== budget test"
           grep -E "Iris: engine |restarting|IRIS-DPR|Iris pages:" /tmp/fs/log-budget.txt | tail -20
           for f in /tmp/fs/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done

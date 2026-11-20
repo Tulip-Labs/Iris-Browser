@@ -676,7 +676,11 @@ function handle(m) {
       try {
         if (m.e.type === 'mouseDown' && !wc.isFocused()) wc.focus();
         wc.sendInputEvent(m.e);
-      } catch (e) {}
+        if (process.env.IRIS_INPUT_DEBUG && m.e.type !== 'mouseMove')
+          console.error('Iris pages: input ' + m.id + ' ' + JSON.stringify(m.e));
+      } catch (e) {
+        console.error('Iris pages: input refused: ' + e.message + ' ' + JSON.stringify(m.e));
+      }
       return;
     case 'menuc':
       if (m.c > 0) menuChoose(v, m.c);
