@@ -2,6 +2,8 @@ Iris: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Andro
 
 ## New in 1.0.25
 
+- **Linux pages now run on Electron (Servo for the light ones).** Chromium (CEF) is gone: every page on Linux is drawn by Electron (Chromium with H.264, H.265 and AAC, so LinkedIn, X and news videos play now), and the light pages by Servo where it is built. The Flatpak and the Snap carry Electron; the Nix package still carries CEF until its flake is reworked.
+
 - **Google's own results, cleaned.** Searches open on Google's real page again (Iris's own results page is gone), with the AI Overview kept and the ads, sponsored results, "People also ask" and shopping blocks taken out. The best sources come first and carry a small label (Reference, Docs, Research, Official, Academic, Discussion, News), shops go last unless you are shopping, and content farms, coupon and download sites and listicles built for ads are left out.
 - **Filters over every Google search:** any time, past hour, day, week, month or year; exact words (no guesses or synonyms); all, forums, news, videos or PDFs; and "No SEO spam", on by default, to see everything Google found when you turn it off.
 - **Sharper interface on Linux.** Gio, which draws Iris's interface, now draws into an sRGB frame that Iris copies to the screen pixel for pixel; before, Gio drew into a frame of its own and copied it over itself, which left every edge and letter a pixel softer.
