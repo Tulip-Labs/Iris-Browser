@@ -23,7 +23,7 @@ func (a *App) memoryReport() (string, error) {
 	mb := func(b uint64) string { return fmt.Sprintf("%.1f MB", float64(b)/(1<<20)) }
 	txt := fmt.Sprintf(`Iris %s memory report, %s
 Process (Windows private bytes): %.1f MB
-Pages (WebView2 processes): %.1f MB
+Pages (engine processes): %.1f MB
 Go heap in use: %s  idle: %s  released: %s  total from Windows: %s
 Goroutines: %d  GC cycles: %d
 Tabs: %d awake, %d asleep, %d unloaded  Pictures cached: %d

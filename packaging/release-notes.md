@@ -4,7 +4,9 @@ Iris: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Andro
 
 - **A new look: Liquid Glass, light.** The whole interface is now one light theme in the spirit of Apple's Liquid Glass: frosted white panes with bright rims over an airy backdrop, near-black text, colorless glass controls and a soft blue ring around whatever has the keyboard. The other palettes and the palette chooser are gone; a dark palette saved by an earlier version opens in the new look.
 - **Every search asks Google AI Mode.** Words typed in the address bar or on the new tab page open Google AI Mode in the tab, asked to answer from high-quality, authoritative and up-to-date sources (official sites, documentation, research, reputable news), to cite them, and to stay clear, precise and concise. The address bar shows only your words. Iris's own results page and the filters it laid over Google's page are gone. `yt ` before your words still searches YouTube.
-- **Linux pages on Electron, light pages on Servo.** Chromium (CEF) is gone: pages on Linux are drawn by Electron (Chromium with H.264, H.265 and AAC, so LinkedIn, X and news videos play), and the light pages (articles, docs, Wikipedia) by Servo, in Iris's own process. Both engines share one cookie store, so a sign-in works in both. The Flatpak, the Snap and the Nix package all carry the new engines; Nix uses nixpkgs' Electron.
+- **Backgrounds.** The glass sits over a backdrop you choose: six built-in ones (Sky, Dawn, Meadow, Lilac, Sand, Mist), a plain one, or a picture of your own (Menu, Look, Background). The glass frosts it and grows milkier over busy pictures so text stays easy to read.
+- **Linux: WebKitGTK for most pages, Electron for the heavy ones.** Articles, docs, shops and most of the web are drawn by WebKitGTK 6, the engine of GNOME Web, in Iris's own window with its web processes in a sandbox. Video, social sites, web apps and sign-in pages go to Electron (Chromium with H.264, H.265 and AAC, so YouTube, LinkedIn and X play). One cookie store is shared both ways, so a sign-in in one engine carries to the other. Iris Shields block in WebKit as compiled content rules. Servo and Chromium (CEF) are gone. The Flatpak, the Snap and the Nix package all carry the new engines.
+- **Windows: Electron replaces WebView2.** Iris for Windows now carries its own Electron, inside the installer, the portable zip and the MSIX, so it no longer depends on the Edge runtime. Pages have rounded corners like on Linux. This is new: please report anything that looks wrong on your PC.
 - **A sharp interface on Linux, at every scale.** Gio, which draws Iris's interface, now draws into an sRGB frame that Iris copies to the screen pixel for pixel. Before, its colors went through sRGB twice, which washed out every edge and letter (a black background came out dark grey). Checked on GTK 4.14 and 4.22 at scales 1, 1.25, 1.5, 1.75 and 2: what reaches the screen is what Iris drew.
 
 ## New in 1.0.24
@@ -191,7 +193,7 @@ A release about safety and steadiness; nothing changes in how Iris looks.
 ## Before you install
 
 - The files are not signed, so Windows SmartScreen shows "Windows protected your PC". Choose **More info**, then **Run anyway**.
-- Pages are shown by Microsoft Edge WebView2, which Windows 11 already has; the installer gets it if it is missing.
+- Pages were shown by Microsoft Edge WebView2 (Electron since 1.0.25).
 - Downloads, split view, the sandbox and the phone link are new and have been tested with a stand-in engine, not yet on many real PCs. If something misbehaves, open an issue.
 
 ## What is in it

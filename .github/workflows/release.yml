@@ -28,6 +28,9 @@ jobs:
         with:
           go-version: "1.24"
           cache: false
+      - uses: actions/setup-node@v4 # fetches Electron for Windows
+        with:
+          node-version: "22"
       - name: Version details of the program file
         continue-on-error: true # the files in the repository are used if this fails
         run: GOFLAGS=-mod=mod go run tools/icongen.go

@@ -9,7 +9,7 @@
 <p align="center">
   <b>A light, fast browser written in Go.</b><br>
   One light Liquid Glass interface, drawn with Gio and sharp at every display scale.<br>
-  Pages: WebView2 on Windows; Servo and Electron on Linux. Every search asks Google AI Mode.
+  Pages: WebKitGTK and Electron on Linux; Electron on Windows. Every search asks Google AI Mode.
 </p>
 
 <p align="center">
@@ -39,14 +39,16 @@
 
 - **Liquid Glass, light.** One look for the whole browser: frosted white panes with bright rims over an airy backdrop, near-black text, colorless glass controls and a soft blue focus ring. The palettes and their chooser are gone.
 - **Every search asks Google AI Mode,** with an instruction to answer from high-quality, authoritative and current sources, cite them, and stay clear, precise and concise. The address bar shows only your words. Iris's own results page and its filters over Google are gone.
-- **Linux: Electron and Servo.** Chromium (CEF) is replaced by Electron (H.264, H.265 and AAC play) for heavy pages and Servo for light ones, sharing one cookie store. Flatpak, Snap and Nix all carry them.
+- **Backgrounds.** Six built-in backdrops behind the glass (Sky is the default), a plain one, or your own picture: Menu, Look, Background.
+- **Linux: WebKitGTK and Electron.** Most pages are drawn by WebKitGTK (the engine of GNOME Web); video, social sites, web apps and sign-ins go to Electron (Chromium with H.264, H.265 and AAC). One cookie store is shared both ways, so a sign-in in one engine works in the other. Shields run in WebKit as compiled content rules. Servo and Chromium (CEF) are gone. Flatpak, Snap and Nix all carry the new engines.
+- **Windows: Electron.** Electron replaces WebView2 and comes inside the installer, the portable zip and the MSIX, so Iris no longer depends on the system's Edge runtime.
 - **Sharp on Linux.** The interface reaches the screen pixel for pixel at scales 1 to 2 (it used to go through sRGB twice and look washed out and soft).
 
 ## Why Iris
 
 Most browsers spend your memory on their web engine without asking what each page is worth.
-Iris puts a small Go program around the engine (WebView2 on Windows, which the system keeps
-up to date; Electron's Chromium on Linux) that decides what each page may cost.
+Iris puts a small Go program around the engines (WebKitGTK and Electron on Linux, Electron
+on Windows) that decides what each page may cost and which engine draws it.
 
 <table>
 <tr>
@@ -196,20 +198,21 @@ They work while a page has the keyboard too.
 
 | System | Web engine | Status |
 |---|---|---|
-| Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Iris's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, the menu) are covered by tests with a stand-in engine and still need a pass on a real PC. |
-| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Servo for light pages (in process), Electron (Chromium with H.264 and AAC) for the rest; one shared cookie store | Built on every push; the Flatpak is installed and started on Wayland, and Iris is checked at a fractional scale (1.25), where the interface reaches the screen pixel for pixel. Packages: Flatpak, Snap and Nix. |
+| Windows 10 and 11 (x64, ARM64) | Electron (Chromium with H.264 and AAC), carried by Iris; the program itself stays pure Go (no cgo) | New in 1.0.25: built on every push and started on a Windows runner, where Electron must draw a test page. Still needs a pass on a real PC. |
+| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | WebKitGTK 6 for most pages, Electron (Chromium with H.264 and AAC) for video, social sites, web apps and sign-ins; one shared cookie store | Built on every push; the Flatpak is installed and started on Wayland, and Iris is checked at a fractional scale (1.25), where the interface reaches the screen pixel for pixel. Packages: Flatpak, Snap and Nix. |
 | Android 8 and newer | Android System WebView | **Iris for Android**, a separate app in Kotlin (`android/`): shields, Iris results for Web searches, tabs, containers (WebView 123 or newer), eleven palettes, phone and tablet layouts, and sync with the computer. `Iris-android.apk` is in each release. |
 
-On Windows the engine comes with the system. On Linux, Iris carries its own Electron
-(Chromium, with H.264 and AAC) and Servo inside its Flatpak or Snap package, and each release brings the newer ones.
-The Nix package builds Servo's bridge from source and uses nixpkgs' Electron.
+Iris carries its own Electron (Chromium, with H.264 and AAC) on both systems, and each release
+brings the newer one. On Linux, WebKitGTK comes from the GNOME runtime (Flatpak), the Snap
+itself or nixpkgs, and runs its web processes in a bubblewrap sandbox. The Nix package uses
+nixpkgs' WebKitGTK and Electron.
 
 On Linux the window is a GTK window, because Wayland does not let one program's surface sit
 inside another's. GTK owns the window, Gio's GPU renderer draws the interface into a GL area
-in it, and Electron draws each page off screen: Iris paints the page into its own area of
-the window and passes it the pointer, the wheel and the keys. One window, one connection to
-the display. Chrome extensions run in the Electron engine; the shields
-do the work of an ad blocker where no extension is installed.
+in it. WebKitGTK pages are GTK widgets placed in that window, with rounded corners; Electron
+draws its pages off screen, and Iris paints them into their area and passes them the
+pointer, the wheel and the keys. One window, one connection to the display. Chrome
+extensions run in the Electron engine; the shields do the work of an ad blocker in both.
 
 ## Install on Windows
 
@@ -219,7 +222,7 @@ winget install TulipLabs.Iris
 
 Or download `Iris-Setup.exe` from the [releases](https://github.com/Tulip-Labs/Iris-Browser/releases) (installs for the current user, no administrator rights; `Iris-Setup.exe --silent` installs without a window). Iris updates itself; `winget upgrade TulipLabs.Iris` works too.
 
-Extensions from the Chrome Web Store run in Iris on Windows: open an extension's page in the store and choose **Add to Iris**. Iris checks each package's signature before adding it.
+Extensions from the Chrome Web Store run in Iris on Windows (Electron draws every page there): open an extension's page in the store and choose **Add to Iris**. Iris checks each package's signature before adding it.
 
 ## Install on Linux
 
@@ -254,19 +257,19 @@ tests and makes:
 No C compiler is needed, and builds stay well under 2 GB of memory.
 
 **Linux.** On Linux, `./build-iris.sh` builds Iris for Linux first and then the Windows
-files. It fetches Electron (through npm, once) and Servo's bridge when it is built,
-checks for the build tools and GTK development files and says what to install if
+files. It fetches Electron (through npm, once), checks for the build tools and the GTK
+and WebKitGTK development files and says what to install if
 something is missing:
 
 ```sh
 # Fedora
-sudo dnf install gcc pkgconf gtk4-devel libepoxy-devel nodejs npm
+sudo dnf install gcc pkgconf gtk4-devel webkitgtk6.0-devel libepoxy-devel nodejs npm
 # Fedora Atomic (Silverblue, Kinoite): build inside a toolbox
 toolbox create && toolbox enter   # then the Fedora line above
 # Debian, Ubuntu
-sudo apt install gcc pkg-config libgtk-4-dev libepoxy-dev nodejs npm
+sudo apt install gcc pkg-config libgtk-4-dev libwebkitgtk-6.0-dev libepoxy-dev nodejs npm
 # Arch
-sudo pacman -S gcc pkgconf gtk4 libepoxy nodejs npm
+sudo pacman -S gcc pkgconf gtk4 webkitgtk-6.0 libepoxy nodejs npm
 
 ./build-iris.sh             # Linux (dist/linux), then Windows
 ./build-iris.sh linux       # Linux only
@@ -319,10 +322,10 @@ cmd/iris          the program: window, resident process, system hooks
     |               addresses, HTTPS, the memory plan, history, settings
     +-- shields     filter lists, hiding rules, link cleaning, fingerprinting
     +-- webview     one small interface over the engines:
-                      WebView2 from pure Go (COM vtables, profiles, sandbox, suspend,
-                      request filtering, downloads)
-                      Electron through a helper process, off screen in a GTK window (Linux)
-                      Servo in process, for the light pages (Linux)
+                      WebKitGTK in process, for most pages (Linux)
+                      Electron through a helper process, drawn off screen into Iris's
+                      window (Linux and Windows)
+                      route: which engine draws a page; one cookie bridge between them
 ```
 
 | Folder | What it is |

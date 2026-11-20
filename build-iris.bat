@@ -52,6 +52,6 @@ del dist\Iris-arm64.exe
 echo.
 echo Done:
 echo   dist\Iris Setup.exe      the installer
-echo   dist\Iris\Iris.exe    portable (needs the WebView2 runtime, which Windows 10 and 11 have)
+echo   dist\Iris\Iris.exe    portable (with Electron beside it in dist\\Iris\\electron)
 echo   dist\Iris.msixbundle      for the Microsoft Store (x64 and ARM64; the Store signs it)
 pause

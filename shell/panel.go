@@ -1,7 +1,6 @@
 package shell
 
 import (
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -358,11 +357,7 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 		section("About Iris")
 		ver := "Iris " + a.cfg.Version
 		if a.eng != nil && a.eng.Version() != "" {
-			engine := "WebView2 "
-			if runtime.GOOS == "linux" {
-				engine = ""
-			}
-			ver += " · " + engine + a.eng.Version()
+			ver += " · " + a.eng.Version()
 		}
 		note(ver)
 		switch a.integrity {

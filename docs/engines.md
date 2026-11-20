@@ -3,7 +3,7 @@
 | System | Most pages | Heavy pages | Interface |
 |---|---|---|---|
 | Linux | **WebKitGTK 6** (from the system, the Flatpak's GNOME runtime, the Snap or nixpkgs) | **Electron** (Chromium with H.264, H.265 and AAC), started on demand | Gio, in a GTK 4 window |
-| Windows | WebView2 (moving to Electron alone, see "Windows" below) | | Gio |
+| Windows | **Electron**, carried by Iris | (the same Electron) | Gio, in a Win32 window |
 | Android | Cefrium (Chromium) | | Kotlin |
 
 ## Linux
@@ -93,7 +93,23 @@ Electron's pages.
 
 ## Windows
 
-Next: Electron alone, with the same helper, in place of WebView2.
+Electron alone, with the same helper and the same `engine_electron.go` as on
+Linux. What differs (`electron_windows.go`, `winpresent`):
+
+- **The line to the helper** is TCP on 127.0.0.1 (Node on Windows has no Unix
+  sockets) with a random port. Iris passes a random token in `IRIS_TOKEN`; the
+  helper sends it first and Iris drops any connection that does not.
+- **Drawing**: each page is a child window of Iris's window, painted from the
+  helper's frames with StretchDIBits. Its region is rounded (12 px, square in
+  full screen) and has a hole where Iris's menus overlap the page.
+- **Shipping**: `build-iris.sh windows` stages Electron for x64 and ARM64 from
+  npm into `electron/` beside `Iris.exe`, with the helper as
+  `resources/app`. The setup embeds it as `payload/electron.zip` and unpacks it
+  next to the program (`.new`, then swapped in, so an update is never half
+  done); the portable zip and the MSIX (`tools/msix.go -extra`) carry it as a
+  folder.
+- **CI**: `windows.yml` builds the portable app and starts it on a Windows
+  runner, which must show Electron's console line from a test page.
 
 ## Packaging (Linux)
 

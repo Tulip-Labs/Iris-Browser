@@ -388,6 +388,7 @@ func (c *Canvas) Backdrop(img image.Image, win ui.Rect, r ui.Rect, radius float3
 		}
 	}
 }
+
 var _ = draw.Over
 
 // Image draws img covering r (bilinear scaling), with rounded corners.

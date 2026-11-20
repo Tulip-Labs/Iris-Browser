@@ -361,7 +361,7 @@ func TestNoEngine(t *testing.T) {
 	d.shot("no-engine")
 }
 
-// mockPage stands in for the native page in screenshots (the real one is drawn by WebView2).
+// mockPage stands in for the native page in screenshots (the real one is drawn by the engine).
 func mockPage(g ui.Gfx, v *fakeView) {
 	r := ui.Rect{X: float32(v.bounds[0]), Y: float32(v.bounds[1]), W: float32(v.bounds[2]), H: float32(v.bounds[3])}
 	g.FillRect(r, ui.White)
@@ -381,7 +381,7 @@ func mockPage(g ui.Gfx, v *fakeView) {
 		ui.FillRound(g, ui.Rect{X: x, Y: y + cw*0.56 + 12, W: cw * 0.8, H: 12}, 6, ink)
 		ui.FillRound(g, ui.Rect{X: x, Y: y + cw*0.56 + 32, W: cw * 0.5, H: 10}, 5, ink)
 	}
-	g.Text("Page area (drawn by WebView2 in the app)", r.X+24, r.B()-20, ui.FSmall, ui.Hex("#a0a0aa"))
+	g.Text("Page area (drawn by the engine in the app)", r.X+24, r.B()-20, ui.FSmall, ui.Hex("#a0a0aa"))
 }
 
 // ---- the AI panel ----

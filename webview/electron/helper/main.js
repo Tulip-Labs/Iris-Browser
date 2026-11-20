@@ -766,7 +766,17 @@ function handle(m) {
 
 app.whenReady().then(async () => {
   await extStart();
-  sock = net.createConnection(SOCK);
+  // Iris's line: a Unix socket, or on Windows a port on this computer
+  // ("tcp:127.0.0.1:port"); the token Iris gave first, to prove who we are
+  if (SOCK.startsWith('tcp:')) {
+    const hp = SOCK.slice(4);
+    const i = hp.lastIndexOf(':');
+    sock = net.createConnection({ host: hp.slice(0, i), port: Number(hp.slice(i + 1)) });
+  } else {
+    sock = net.createConnection(SOCK);
+  }
+  sock.setNoDelay && sock.setNoDelay(true);
+  sock.write(process.env.IRIS_TOKEN || '');
   sock.on('data', onData);
   sock.on('close', () => app.quit()); // Iris went away
   sock.on('error', () => app.quit());

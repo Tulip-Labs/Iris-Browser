@@ -13,12 +13,12 @@ import (
 
 // Settings are Iris's preferences, kept in a small JSON file that loads instantly.
 type Settings struct {
-	Theme        string      `json:"theme"`
+	Theme string `json:"theme"`
 	// Background is the window's picture behind the glass: one of Iris's
 	// own ("sky", "dawn"...), "picture" (the reader's own, a copy kept in
 	// Iris's folder as Picture) or "plain".
-	Background string `json:"background,omitempty"`
-	Picture    string `json:"picture,omitempty"`
+	Background   string      `json:"background,omitempty"`
+	Picture      string      `json:"picture,omitempty"`
 	VerticalTabs bool        `json:"verticalTabs"`
 	Mode         Mode        `json:"mode"`
 	Shield       bool        `json:"shield"`

@@ -3,14 +3,14 @@
 package setup
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,8 +22,6 @@ import (
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
-
-	"iris/webview"
 )
 
 const (
@@ -53,38 +51,67 @@ func installedVersion() string {
 	return v
 }
 
-func engineInstalled() bool { return webview.Installed() }
-
-// installEngine downloads Microsoft's WebView2 bootstrapper and runs it silently.
-func installEngine(progress func(float32)) error {
-	resp, err := http.Get("https://go.microsoft.com/fwlink/p/?LinkId=2124703")
+// installEngine puts Iris's page engine (Electron, with Iris's helper as its
+// app) beside the program: the setup carries it as payload/electron.zip.
+// The folder is replaced whole, so an update leaves no old files behind.
+func installEngine(dir string, progress func(float32)) error {
+	b, err := payload.ReadFile("payload/electron.zip")
 	if err != nil {
-		return fmt.Errorf("could not download the web engine: %w", err)
+		return errString("this setup was built without the page engine inside; build it with build-iris")
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("could not download the web engine (HTTP %d)", resp.StatusCode)
-	}
-	tmp := filepath.Join(os.TempDir(), "MicrosoftEdgeWebview2Setup.exe")
-	f, err := os.Create(tmp)
+	quitRunning() // a running Electron holds its files
+	zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(f, resp.Body)
-	f.Close()
-	if err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	defer os.Remove(tmp)
-	progress(0.5)
-	cmd := exec.Command(tmp, "/silent", "/install")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("the web engine installer failed: %w", err)
+	dst := filepath.Join(dir, "electron")
+	tmp := dst + ".new"
+	os.RemoveAll(tmp)
+	for i, f := range zr.File {
+		p := filepath.Join(tmp, filepath.FromSlash(f.Name))
+		if !strings.HasPrefix(p, tmp+string(os.PathSeparator)) {
+			return fmt.Errorf("a bad path in the page engine: %s", f.Name)
+		}
+		if f.FileInfo().IsDir() {
+			os.MkdirAll(p, 0o755)
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return err
+		}
+		out, err := os.Create(p)
+		if err != nil {
+			rc.Close()
+			return err
+		}
+		_, err = io.Copy(out, rc)
+		rc.Close()
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return err
+		}
+		progress(float32(i+1) / float32(len(zr.File)))
 	}
-	if !webview.Installed() {
-		return errors.New("the web engine is still missing after its installer ran")
+	old := dst + ".old"
+	os.RemoveAll(old)
+	if _, err := os.Stat(dst); err == nil {
+		if err := os.Rename(dst, old); err != nil {
+			return fmt.Errorf("close Iris and try again (%v)", err)
+		}
 	}
+	if err := os.Rename(tmp, dst); err != nil {
+		return err
+	}
+	os.RemoveAll(old)
 	return nil
 }
 
