@@ -169,7 +169,6 @@ type App struct {
 	thumbs       map[string]*thumb
 	thumbSem     chan struct{}
 	fetchImage   func(ctx context.Context, src string, maxW int) (image.Image, error)
-	ytSearch     func(ctx context.Context, q string) ([]core.VideoResult, error)
 	ai           aiPanel
 	side         sideView
 	sideRect     ui.Rect
@@ -205,7 +204,7 @@ func New(h Host, cfg Config) *App {
 	a := &App{h: h, cfg: cfg, eng: cfg.Engine, In: ui.NewInput(), Scale: 1,
 		addr: ui.NewTextEdit("", false), ntpQ: ui.NewTextEdit("", false), newCont: ui.NewTextEdit("", false), contName: ui.NewTextEdit("", false), editCont: -1,
 		insecureOK: map[string]bool{}, start: time.Now(), lastMem: -10,
-		thumbs: map[string]*thumb{}, thumbSem: make(chan struct{}, 6), fetchImage: core.FetchImage, ytSearch: core.YouTubeSearch}
+		thumbs: map[string]*thumb{}, thumbSem: make(chan struct{}, 6), fetchImage: core.FetchImage}
 	a.ai.input = ui.NewTextEdit("", false)
 	a.histQ, a.find.q = ui.NewTextEdit("", false), ui.NewTextEdit("", false)
 	a.split.ratio = 0.5
@@ -214,9 +213,9 @@ func New(h Host, cfg Config) *App {
 		c = LoadCore(cfg.DataDir)
 	}
 	a.set, a.hist, a.shield, a.scan, a.core = c.Settings, c.History, c.Shield, c.Scan, c
-	// one way to search: Google's own page, cleaned, with Iris's filters (no
-	// Iris results page, no modes, no background part)
-	a.set.Mode, a.set.LiteResults, a.set.Boost, a.set.VerticalTabs = core.ModeWeb, false, false, false
+	// one way to search: Google AI Mode in the tab, asked for the best and
+	// newest sources (core.AIInstruction); no results page, no modes
+	a.set.Mode, a.set.LiteResults, a.set.Boost, a.set.VerticalTabs = core.ModeAI, false, false, false
 	a.plan = core.Plan(cfg.TotalMB, a.set.Memory)
 	a.newTab(KNormal, "", "", true)
 	a.restoreSession()
@@ -261,7 +260,6 @@ func (a *App) Policy() webview.Policy {
 	if a.set.Farble {
 		scripts = append(scripts, shields.FarbleScript())
 	}
-	scripts = append(scripts, core.GoogleCleanScript())
 	adaptive, scan := a.set.Adaptive, a.scan
 	ytPass := a.set.YouTube
 	var rewrite func(string) string
@@ -471,7 +469,6 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 		a.sideURL = a.side.url
 	}
 	page, beside, other := a.panes(page)
-	page = a.googleBar(page)
 	a.content(page)
 	if other != nil {
 		a.otherPane(beside, other)

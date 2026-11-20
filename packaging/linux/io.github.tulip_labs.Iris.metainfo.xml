@@ -9,12 +9,13 @@
     <name>Tulip Labs</name>
   </developer>
   <description>
-    <p>Iris (formerly Iris) is a small browser written in Go. Pages are shown by Chromium, and Iris adds what keeps browsing light and private.</p>
+    <p>Iris is a small browser written in Go. Light pages are drawn by Servo and the rest by Electron (Chromium), and Iris adds what keeps browsing light and private.</p>
     <ul>
       <li>Iris Shields: ads, trackers, cookie notices and fingerprinting blocked</li>
       <li>Containers for separate sign-ins, private tabs and split view</li>
       <li>Background tabs that sleep and unload to save memory</li>
-      <li>Ten palettes of clear liquid glass, dark and light</li>
+      <li>One light Liquid Glass look, sharp at every display scale</li>
+      <li>Every search answered by Google AI Mode from high-quality, current sources</li>
       <li>Sync with Iris for Android over your own network, with no servers</li>
     </ul>
   </description>
@@ -27,6 +28,7 @@
     <category>WebBrowser</category>
   </categories>
   <releases>
+    <release version="1.0.25" date="2026-11-20"/>
     <release version="1.0.22" date="2026-11-18"/>
     <release version="1.0.7" date="2026-11-14"/>
     <release version="1.0.6" date="2026-11-14"/>

@@ -1,0 +1,53 @@
+# Draws every desktop screen with the test suite (Iris's software renderer and
+# a stand-in engine) and keeps the README's pictures in assets/screens up to
+# date with the interface: run on each change to the interface on main.
+name: Desktop screens
+
+on:
+  push:
+    branches: [main]
+    paths: ["shell/**", "ui/**", "giox/**", "raster/**", "assets/fonts/**", ".github/workflows/screens.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screens
+  cancel-in-progress: true
+
+jobs:
+  screens:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+      - name: Draw every screen
+        run: mkdir -p /tmp/shots && SHOTS=/tmp/shots go test ./shell
+      - name: The README's pictures
+        run: |
+          cd /tmp/shots
+          d=$GITHUB_WORKSPACE/assets/screens
+          cp theme-glass.png   $d/glass.png
+          cp ntp.png           $d/new-tab.png
+          cp ntp-suggest.png   $d/search.png
+          cp split.png         $d/split-view.png
+          cp downloads.png     $d/downloads.png
+          cp unsafe-warning.png $d/sandbox.png
+          cp ai-answer.png     $d/ai.png
+          cp newtab-kinds.png  $d/tabs.png
+          cp theme-glass-menu.png $d/menu.png
+          # Iris's own results page and the dark palettes are gone (1.0.25)
+          rm -f $d/results.png $d/lagoon.png $d/night.png
+      - name: Keep them on main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A assets/screens
+          git diff --cached --quiet && { echo "the pictures are up to date"; exit 0; }
+          git commit -qm "Desktop screenshots, drawn by the test suite"
+          for i in 1 2 3; do git pull -q --rebase origin main && git push -q origin HEAD:main && exit 0; sleep 5; done
+          exit 1

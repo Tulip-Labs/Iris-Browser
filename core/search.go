@@ -10,7 +10,8 @@ import (
 	"strings"
 )
 
-// Mode is a search mode; AI (Google AI Mode) is the default.
+// Mode is a search mode. Every search Iris makes goes to Google AI Mode
+// (ModeAI); the others remain for the AI panel's fallbacks and "yt ".
 type Mode uint8
 
 const (
@@ -25,6 +26,30 @@ var ModeNames = []string{"AI", "Web", "Images", "Videos", "YouTube"}
 
 const google = "https://www.google.com/search?gl=us&hl=en"
 
+// AIInstruction goes with every search sent to Google AI Mode, after the
+// reader's own words: the answer should rest on the best sources there are
+// and read clearly. It is kept short, so the question stays the point.
+const AIInstruction = "Use only high-quality, authoritative and up-to-date sources (official sites, documentation, peer-reviewed research, reputable news) and cite them. Answer clearly, precisely and concisely, with the most recent information."
+
+// aiSep separates the reader's words from AIInstruction in the query.
+const aiSep = "\n\n"
+
+// AIQuery reads a Google AI Mode address made by Iris: the reader's own
+// words, without AIInstruction (for the address bar and history).
+func AIQuery(u string) (string, bool) {
+	q, m, ok := GoogleQuery(u)
+	if !ok || m != ModeAI {
+		return "", false
+	}
+	if i := strings.Index(q, aiSep+AIInstruction); i >= 0 {
+		q = q[:i]
+	} else if q == AIInstruction {
+		q = ""
+	}
+	q = strings.TrimSpace(q)
+	return q, q != ""
+}
+
 func (m Mode) URL(q string) string {
 	e := url.QueryEscape(q)
 	switch m {
@@ -37,8 +62,12 @@ func (m Mode) URL(q string) string {
 	case ModeYouTube:
 		return "https://www.youtube.com/results?search_query=" + e
 	}
-	return google + "&udm=50&q=" + e
+	return google + "&udm=50&q=" + url.QueryEscape(AIPrompt(q))
 }
+
+// AIPrompt is what Iris asks Google AI Mode: the reader's words, then
+// AIInstruction.
+func AIPrompt(q string) string { return strings.TrimSpace(q) + aiSep + AIInstruction }
 
 var (
 	reScheme = regexp.MustCompile(`(?i)^([a-z][a-z0-9+.-]*):(.*)$`)
@@ -114,8 +143,9 @@ func URLFor(text string) string {
 	return "https://" + t
 }
 
-// Resolve turns address-bar text into the URL to open ("" for empty input).
-// "yt cats" searches YouTube whatever the mode.
+// Resolve turns address-bar text into the URL to open ("" for empty input):
+// an address, or a search in Google AI Mode. "yt cats" searches YouTube.
+// m is kept for callers; every search is an AI Mode one.
 func Resolve(input string, m Mode) string {
 	t := strings.TrimSpace(input)
 	if t == "" {
@@ -127,7 +157,7 @@ func Resolve(input string, m Mode) string {
 	if y := reYT.FindStringSubmatch(t); y != nil {
 		return ModeYouTube.URL(strings.TrimSpace(y[1]))
 	}
-	return m.URL(t)
+	return ModeAI.URL(t)
 }
 
 // HTTPSUpgrade returns the https:// form of a public http:// address, or "" when none applies.

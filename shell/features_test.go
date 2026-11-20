@@ -432,25 +432,28 @@ func TestKindPickerAndSession(t *testing.T) {
 	}
 }
 
-// The pastel palettes: every screen drawn in each, for the eye.
-func TestPastelThemes(t *testing.T) {
-	for _, id := range []string{"daylight", "mist", "rose", "sunrise", "mint"} {
+// One look: light Liquid Glass, whatever palette a saved setting names.
+func TestLightGlassOnly(t *testing.T) {
+	if len(ui.Themes) != 1 {
+		t.Fatalf("Iris has one theme, found %d", len(ui.Themes))
+	}
+	for _, id := range []string{"", "glass", "liquid", "daylight", "graphite"} {
 		th := ui.ThemeByID(id)
-		if th.ID != id || len(th.Grad) != 3 {
-			t.Fatalf("palette %s is missing its gradient", id)
+		if th.Dark || th.ID != "glass" || len(th.Grad) != 3 {
+			t.Fatalf("palette %q should open in light Liquid Glass, got %s (dark %v)", id, th.ID, th.Dark)
 		}
-		d := newResultsDriver(t, 1280, 800)
-		d.a.set.Theme = id
-		d.frames(2)
-		d.shot("theme-" + id)
-		d.a.togglePanel(panelSettings)
-		d.frames(2)
-		d.shot("theme-" + id + "-menu")
-		d.a.panel = false
-		d.typeText("red pandas")
-		d.key(ui.KEnter, false, false)
-		d.settle(14)
-		d.shot("theme-" + id + "-results")
+	}
+	d := newResultsDriver(t, 1280, 800)
+	d.a.set.Theme = "liquid" // a dark palette saved by an older Iris
+	d.frames(2)
+	d.shot("theme-glass")
+	d.a.togglePanel(panelSettings)
+	d.frames(2)
+	d.shot("theme-glass-menu")
+	for _, sec := range settingsSections {
+		if sec.id == "look" {
+			t.Fatal("the menu has no palettes to choose any more")
+		}
 	}
 }
 
@@ -474,7 +477,7 @@ func TestMenuAndTabStrip(t *testing.T) {
 	}
 	n := len(d.a.tabs)
 	// the menu holds the settings, in sections that open in place
-	d.a.openSettings("look")
+	d.a.openSettings("memory")
 	d.frames(2)
 	if !d.a.panel || d.a.panelMode != panelSettings || len(d.a.tabs) != n {
 		t.Fatal("settings open in the menu, not in a tab")

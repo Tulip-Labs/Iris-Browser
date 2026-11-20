@@ -2,11 +2,10 @@ Iris: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Andro
 
 ## New in 1.0.25
 
-- **Linux pages now run on Electron (Servo for the light ones).** Chromium (CEF) is gone: every page on Linux is drawn by Electron (Chromium with H.264, H.265 and AAC, so LinkedIn, X and news videos play now), and the light pages by Servo where it is built. The Flatpak and the Snap carry Electron; the Nix package still carries CEF until its flake is reworked.
-
-- **Google's own results, cleaned.** Searches open on Google's real page again (Iris's own results page is gone), with the AI Overview kept and the ads, sponsored results, "People also ask" and shopping blocks taken out. The best sources come first and carry a small label (Reference, Docs, Research, Official, Academic, Discussion, News), shops go last unless you are shopping, and content farms, coupon and download sites and listicles built for ads are left out.
-- **Filters over every Google search:** any time, past hour, day, week, month or year; exact words (no guesses or synonyms); all, forums, news, videos or PDFs; and "No SEO spam", on by default, to see everything Google found when you turn it off.
-- **Sharper interface on Linux.** Gio, which draws Iris's interface, now draws into an sRGB frame that Iris copies to the screen pixel for pixel; before, Gio drew into a frame of its own and copied it over itself, which left every edge and letter a pixel softer.
+- **A new look: Liquid Glass, light.** The whole interface is now one light theme in the spirit of Apple's Liquid Glass: frosted white panes with bright rims over an airy backdrop, near-black text, colorless glass controls and a soft blue ring around whatever has the keyboard. The other palettes and the palette chooser are gone; a dark palette saved by an earlier version opens in the new look.
+- **Every search asks Google AI Mode.** Words typed in the address bar or on the new tab page open Google AI Mode in the tab, asked to answer from high-quality, authoritative and up-to-date sources (official sites, documentation, research, reputable news), to cite them, and to stay clear, precise and concise. The address bar shows only your words. Iris's own results page and the filters it laid over Google's page are gone. `yt ` before your words still searches YouTube.
+- **Linux pages on Electron, light pages on Servo.** Chromium (CEF) is gone: pages on Linux are drawn by Electron (Chromium with H.264, H.265 and AAC, so LinkedIn, X and news videos play), and the light pages (articles, docs, Wikipedia) by Servo, in Iris's own process. Both engines share one cookie store, so a sign-in works in both. The Flatpak, the Snap and the Nix package all carry the new engines; Nix uses nixpkgs' Electron.
+- **A sharp interface on Linux, at every scale.** Gio, which draws Iris's interface, now draws into an sRGB frame that Iris copies to the screen pixel for pixel. Before, its colors went through sRGB twice, which washed out every edge and letter (a black background came out dark grey). Checked on GTK 4.14 and 4.22 at scales 1, 1.25, 1.5, 1.75 and 2: what reaches the screen is what Iris drew.
 
 ## New in 1.0.24
 

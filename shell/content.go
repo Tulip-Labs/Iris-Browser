@@ -19,8 +19,6 @@ func (a *App) content(r ui.Rect) {
 	switch {
 	case t.URL == "":
 		a.ntp(r, t)
-	case t.search != nil:
-		a.results(r, t)
 	case t.Crashed:
 		why := "Its process ended (it may have run out of memory). Reload to open it again."
 		a.message(r, ui.IWarning, "This page stopped working", why, "Reload", func() { a.reload(t) })
@@ -166,12 +164,13 @@ func (a *App) ntp(r ui.Rect, t *Tab) {
 	focused := a.st.Focus == id
 	ui.Glass(g, sr, 28, th, true, true)
 	if focused {
-		ui.FillRound(g, sr, 28, th.Primary.Alpha(0.04))
-		ui.StrokeRound(g, sr.Inset(1), 27, 2, th.Primary)
+		// Liquid Glass's focus: a soft ring of the system blue, no dark outline
+		ui.StrokeRound(g, sr.Inset(-2), 30, 3, th.Focus.Alpha(0.18))
+		ui.StrokeRound(g, sr.Inset(0.5), 27.5, 1.5, th.Focus.Alpha(0.6))
 	}
-	ui.DrawIcon(g, ui.ISearch, sr.X+20, sr.CY()-11, 22, th.Primary)
+	ui.DrawIcon(g, ui.ISparkle, sr.X+20, sr.CY()-11, 22, th.OnSurfaceVariant)
 	fr := ui.Rect{X: sr.X + 54, Y: sr.Y, W: sr.W - 72, H: sr.H}
-	if a.u.TextField(id, fr, a.ntpQ, ui.FieldOpt{Bare: true, Font: ui.Font{Size: 16.5}, Placeholder: "Search Google and YouTube, or type an address", OnEnter: func() { a.open(a.ntpQ.Text()) }}) {
+	if a.u.TextField(id, fr, a.ntpQ, ui.FieldOpt{Bare: true, Font: ui.Font{Size: 16.5}, Placeholder: "Ask Google AI Mode, or type an address", OnEnter: func() { a.open(a.ntpQ.Text()) }}) {
 		a.suggest(a.ntpQ.Text())
 	}
 	a.suggestKeys(id, func() { a.st.Focus = ui.ID{} })

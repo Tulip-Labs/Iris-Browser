@@ -4,11 +4,12 @@
 
 <h1 align="center">Iris</h1>
 
-<p align="center"><i>Formerly Iris. Iris is the Greek goddess of the rainbow, who carries light between worlds.</i></p>
+<p align="center"><i>Formerly Lite Go. Iris is the Greek goddess of the rainbow, who carries light between worlds.</i></p>
 
 <p align="center">
   <b>A light, fast browser written in Go.</b><br>
-  The interface is drawn with Gio. Pages are shown by the web view your system already has.
+  One light Liquid Glass interface, drawn with Gio and sharp at every display scale.<br>
+  Pages: WebView2 on Windows; Servo and Electron on Linux. Every search asks Google AI Mode.
 </p>
 
 <p align="center">
@@ -20,6 +21,7 @@
 </p>
 
 <p align="center">
+  <a href="#whats-new-in-1025">New</a> ·
   <a href="#what-it-does">Features</a> ·
   <a href="#shortcuts">Shortcuts</a> ·
   <a href="#platforms">Platforms</a> ·
@@ -28,10 +30,17 @@
 </p>
 
 <p align="center">
-  <img src="assets/screens/results.png" width="860" alt="Iris results: pictures, videos and ranked websites on one page">
+  <img src="assets/screens/glass.png" width="860" alt="Iris in light Liquid Glass: the new tab page">
 </p>
 
 ---
+
+## What's new in 1.0.25
+
+- **Liquid Glass, light.** One look for the whole browser: frosted white panes with bright rims over an airy backdrop, near-black text, colorless glass controls and a soft blue focus ring. The palettes and their chooser are gone.
+- **Every search asks Google AI Mode,** with an instruction to answer from high-quality, authoritative and current sources, cite them, and stay clear, precise and concise. The address bar shows only your words. Iris's own results page and its filters over Google are gone.
+- **Linux: Electron and Servo.** Chromium (CEF) is replaced by Electron (H.264, H.265 and AAC play) for heavy pages and Servo for light ones, sharing one cookie store. Flatpak, Snap and Nix all carry them.
+- **Sharp on Linux.** The interface reaches the screen pixel for pixel at scales 1 to 2 (it used to go through sRGB twice and look washed out and soft).
 
 ## Why Iris
 
@@ -60,8 +69,8 @@ the name and a search, nothing else.
 
 **Clean**
 
-Ads, trackers, cookie notices and tracking links are removed. Google searches are shown on
-a page of Iris's own, in your theme. No bookmarks, no tiles, no feeds.
+Ads, trackers, cookie notices and tracking links are removed. Every search is answered by
+Google AI Mode from the best current sources. No bookmarks, no tiles, no feeds.
 
 </td>
 </tr>
@@ -87,20 +96,20 @@ a page of Iris's own, in your theme. No bookmarks, no tiles, no feeds.
 <td align="center"><sub><b>Sandbox.</b> Unsafe addresses are stopped first.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="assets/screens/results.png" alt="Iris results: websites, pictures and videos"></td>
+<td width="50%"><img src="assets/screens/ai.png" alt="Ask AI: Google AI Mode's answer beside the page, with its sources"></td>
 <td width="50%"><img src="assets/screens/tabs.png" alt="The tabs on top"></td>
 </tr>
 <tr>
-<td align="center"><sub><b>Iris results.</b> Glass cards for the websites, stacks of pictures and videos.</sub></td>
+<td align="center"><sub><b>Ask AI.</b> Google AI Mode beside any page, with its sources.</sub></td>
 <td align="center"><sub><b>Tabs.</b> A compact strip on top, centered.</sub></td>
 </tr>
 <tr>
 <td width="50%"><img src="assets/screens/menu.png" alt="The menu"></td>
-<td width="50%"><img src="assets/screens/glass.png" alt="Iris results in the Mist palette"></td>
+<td width="50%"><img src="assets/screens/search.png" alt="Typing a search: Ask Google AI Mode"></td>
 </tr>
 <tr>
 <td align="center"><sub><b>The menu.</b> Tools, then the settings in sections that open in place.</sub></td>
-<td align="center"><sub><b>Glass themes.</b> Shared with Ember.</sub></td>
+<td align="center"><sub><b>Search.</b> Every search asks Google AI Mode.</sub></td>
 </tr>
 </table>
 
@@ -118,7 +127,8 @@ a page of Iris's own, in your theme. No bookmarks, no tiles, no feeds.
 </table>
 
 <sub>The desktop pictures are drawn by the test suite with Iris's software renderer (page areas
-and thumbnails are placeholders); the Android ones come from an emulator.</sub>
+and thumbnails are placeholders) and refreshed by CI (`.github/workflows/screens.yml`) whenever
+the interface changes; the Android ones come from an emulator.</sub>
 
 ## What it does
 
@@ -126,14 +136,14 @@ and thumbnails are placeholders); the Android ones come from an emulator.</sub>
 
 | | |
 |---|---|
-| **Iris results** | Google searches on a page of Iris's own, minimal like Kagi. The websites as clear glass cards that keep loading as long as Google has relevant ones, ranked by source quality (references, official sites and docs rise; shops, coupon farms and listicles sink), and stacks of picture cards (each in its own shape, sharp at the front) and video cards. "On Google" shows the original; "AI Mode" asks Google AI Mode in its own tab. Type `yt ` before words to search YouTube. |
-| **Your say over sites** | Raise, lower or hide any site in your results, and it stays that way. |
+| **Search** | Words typed in the address bar or on the new tab page open Google AI Mode in the tab, with a short instruction after them: answer from high-quality, authoritative and up-to-date sources (official sites, documentation, peer-reviewed research, reputable news), cite them, and be clear, precise and concise. The address bar and the tab show only your words. Type `yt ` before words to search YouTube. |
+| **The look** | Liquid Glass, light: frosted white panes with bright rims over an airy backdrop, near-black text, colorless glass controls, and Apple's system blue only for the ring around what has the keyboard. One look, no palettes to pick. |
 | **Websites in new tabs** | A result, an address typed while a site is open, or a link to another website opens in a new tab beside the one you are on. Back from its first page (or closing it) returns there. Sign-in steps stay in their tab. |
 | **Ask AI** (Ctrl+J) | On any page, a side panel sends your question and the page's text (or your selection) to Google AI Mode and writes the answer with its sources. No API key. |
 | **Split view** | Two pages side by side. The pane you click takes the keyboard and the address bar. |
 | **Downloads** | A toolbar icon with a progress ring; a list with speed, time left, pause, resume, cancel, open and show in folder. |
 | **One slim bar** | Back, forward and reload at the left, the address in the middle, then the shield and the menu. It narrows to what is needed on a small window. A Sign in button shows only while Iris is not signed in to Google. |
-| **The menu** | Tools (private tab, history, downloads, reopen, split view, find, print, free memory), zoom, your name for the AI answers, and the settings in sections that open in place: appearance (the palettes, shared with Ember), shields and privacy, containers, memory, history and data, about and updates. |
+| **The menu** | Tools (private tab, history, downloads, reopen, split view, find, print, free memory), zoom, your name for the AI answers, and the settings in sections that open in place: containers, extensions, memory, history and data, about and updates. |
 | **The usual** | Find in page, zoom, print, a searchable history by day, reopen a closed tab, and the last tabs brought back at start (unloaded until you open them). |
 | **Tabs** | A compact strip on top, centered, above the bar; tabs shrink to their icons as more open, and the strip scrolls with the wheel when they do not fit. The arrow beside + opens private, temporary, sandbox and container tabs. Containers keep their own sign-ins, each with an icon and a color. |
 
@@ -187,11 +197,12 @@ They work while a page has the keyboard too.
 | System | Web engine | Status |
 |---|---|---|
 | Windows 10 and 11 (x64, ARM64) | Microsoft Edge WebView2, through Iris's own bindings in pure Go (no cgo) | Runs. The newest features (downloads, split view, sandbox, the menu) are covered by tests with a stand-in engine and still need a pass on a real PC. |
-| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Electron (Chromium with H.264 and AAC), which Iris carries; Servo draws the light pages | Built on every push; the Flatpak is installed and started on Wayland, and Iris is checked at a fractional scale (1.25). Packages: Flatpak, Snap and Nix. |
+| Linux on Wayland (niri, KDE, Sway, Hyprland and others) | Servo for light pages (in process), Electron (Chromium with H.264 and AAC) for the rest; one shared cookie store | Built on every push; the Flatpak is installed and started on Wayland, and Iris is checked at a fractional scale (1.25), where the interface reaches the screen pixel for pixel. Packages: Flatpak, Snap and Nix. |
 | Android 8 and newer | Android System WebView | **Iris for Android**, a separate app in Kotlin (`android/`): shields, Iris results for Web searches, tabs, containers (WebView 123 or newer), eleven palettes, phone and tablet layouts, and sync with the computer. `Iris-android.apk` is in each release. |
 
 On Windows the engine comes with the system. On Linux, Iris carries its own Electron
-(Chromium, with H.264 and AAC) inside its Flatpak or Snap package, and each release brings the newer one. (The Nix package still carries the old Chromium (CEF) engine until its flake is reworked; see `flake.nix`.)
+(Chromium, with H.264 and AAC) and Servo inside its Flatpak or Snap package, and each release brings the newer ones.
+The Nix package builds Servo's bridge from source and uses nixpkgs' Electron.
 
 On Linux the window is a GTK window, because Wayland does not let one program's surface sit
 inside another's. GTK owns the window, Gio's GPU renderer draws the interface into a GL area
@@ -301,9 +312,9 @@ used, which is a paid service.
 cmd/iris          the program: window, resident process, system hooks
     |
   shell             the interface: tabs, split view, address bar, new tab page,
-    |               results, downloads, history, the balancer, the side panel
+    |               downloads, history, the balancer, the Ask AI panel
     |
-    +-- ui, giox    the interface toolkit (Material 3, liquid glass) and its Gio backend
+    +-- ui, giox    the interface toolkit (light Liquid Glass) and its Gio backend
     +-- core        rules with no window: search, shields, adaptive scans, unsafe
     |               addresses, HTTPS, the memory plan, history, settings
     +-- shields     filter lists, hiding rules, link cleaning, fingerprinting

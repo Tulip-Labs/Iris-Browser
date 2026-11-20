@@ -8,21 +8,34 @@ import (
 
 func TestResolve(t *testing.T) {
 	cases := map[string]string{
-		"example.com":          "https://example.com",
-		"localhost:8080/x":     "http://localhost:8080/x",
-		"192.168.1.1":          "http://192.168.1.1",
-		"https://go.dev/doc":   "https://go.dev/doc",
-		"yt lofi beats":        "https://www.youtube.com/results?search_query=lofi+beats",
-		"how do rainbows form": "https://www.google.com/search?gl=us&hl=en&udm=50&q=how+do+rainbows+form",
-		"   ":                  "",
+		"example.com":        "https://example.com",
+		"localhost:8080/x":   "http://localhost:8080/x",
+		"192.168.1.1":        "http://192.168.1.1",
+		"https://go.dev/doc": "https://go.dev/doc",
+		"yt lofi beats":      "https://www.youtube.com/results?search_query=lofi+beats",
+		"   ":                "",
 	}
 	for in, want := range cases {
 		if got := Resolve(in, ModeAI); got != want {
 			t.Errorf("Resolve(%q) = %q, want %q", in, got, want)
 		}
 	}
-	if got := Resolve("cats", ModeImages); !strings.Contains(got, "udm=2") {
-		t.Errorf("images mode: %s", got)
+	// every search is a Google AI Mode one, asked for the best current sources,
+	// whatever mode an older setting names
+	for _, m := range []Mode{ModeAI, ModeWeb, ModeImages} {
+		got := Resolve("how do rainbows form", m)
+		if !strings.HasPrefix(got, "https://www.google.com/search?gl=us&hl=en&udm=50&q=how+do+rainbows+form%0A%0A") {
+			t.Errorf("search in mode %d: %s", m, got)
+		}
+		if q, ok := AIQuery(got); !ok || q != "how do rainbows form" {
+			t.Errorf("AIQuery(%s) = %q %v", got, q, ok)
+		}
+		if !strings.Contains(AIPrompt("x"), "high-quality") || !strings.Contains(AIPrompt("x"), "concise") {
+			t.Error("the instruction asks for good sources and a clear answer")
+		}
+	}
+	if _, ok := AIQuery("https://www.google.com/search?q=cats&udm=14"); ok {
+		t.Error("a plain web search is not an AI Mode one")
 	}
 }
 

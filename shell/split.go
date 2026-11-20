@@ -103,7 +103,7 @@ func (a *App) panes(page ui.Rect) (ui.Rect, ui.Rect, *Tab) {
 	// a line under the pane that has the keyboard
 	ui.FillRound(g, ui.Rect{X: mine.X + 12, Y: mine.B() + 2.5, W: mine.W - 24, H: 3}, 1.5, th.Primary)
 	// the other page stays loaded and awake while it shows
-	if other.view == nil && other.URL != "" && other.search == nil && !other.making && !other.Crashed {
+	if other.view == nil && other.URL != "" && !other.making && !other.Crashed {
 		other.pending = other.URL
 		a.ensureView(other)
 	}
@@ -117,12 +117,12 @@ func (a *App) panes(page ui.Rect) (ui.Rect, ui.Rect, *Tab) {
 
 // otherPane draws the pane of the tab beside the current one. Its page, when
 // it has one, is a live view placed there by sync; anything else (a new tab,
-// Iris results, a stopped page) shows as a card that takes the keyboard when
+// a stopped page) shows as a card that takes the keyboard when
 // clicked, and then draws in full as the current tab.
 func (a *App) otherPane(r ui.Rect, t *Tab) {
 	u, g, th := &a.u, a.u.G, a.u.Th
 	fillPage(g, r, 14, th)
-	if t.URL != "" && t.search == nil && !t.Crashed {
+	if t.URL != "" && !t.Crashed {
 		if t.view == nil || !t.shown {
 			spinner(u, r.CX(), r.CY(), 13)
 		}
@@ -137,8 +137,6 @@ func (a *App) otherPane(r ui.Rect, t *Tab) {
 	switch {
 	case t.Crashed:
 		ic, title = ui.IWarning, "This page stopped"
-	case t.search != nil:
-		ic, title = ui.ISearch, t.search.Q
 	case t.Kind == KNormal:
 		ic = ui.IPlus
 	}
@@ -184,7 +182,7 @@ type findBar struct {
 }
 
 func (a *App) livePage(t *Tab) bool {
-	return t != nil && t.view != nil && t.URL != "" && t.search == nil && !t.Crashed
+	return t != nil && t.view != nil && t.URL != "" && !t.Crashed
 }
 
 func (a *App) openFind() {

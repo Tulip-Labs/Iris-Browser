@@ -201,7 +201,6 @@ func TestStartsOnNewTabPage(t *testing.T) {
 func TestSearchOpensPage(t *testing.T) {
 	d := newDriver(t, 1280, 800, true)
 	d.frames(2)
-	d.a.set.LiteResults = false // this test is about the page itself
 	d.typeText("lofi beats")
 	if len(d.a.sugg) == 0 {
 		t.Fatal("no suggestions while typing")
@@ -211,7 +210,7 @@ func TestSearchOpensPage(t *testing.T) {
 	d.frames(2)
 	tab := d.a.tab()
 	spare := lastView(t, tab)
-	if want := core.ModeWeb.URL("lofi beats"); spare.url != want {
+	if want := core.ModeAI.URL("lofi beats"); spare.url != want {
 		t.Fatalf("url %q, want %q", spare.url, want)
 	}
 	if !spare.visible || spare.bounds[2] == 0 {
@@ -343,13 +342,11 @@ func TestLayouts(t *testing.T) {
 	d.a.editCont = -1
 	d.a.panel = false
 	d.a.set.VerticalTabs = true
-	d.a.set.Theme = "liquid"
 	d.frames(2)
 	d.shot("vertical-night")
 	// narrow windows still work
 	d.w, d.h = 600, 820
 	d.a.set.VerticalTabs = false
-	d.a.set.Theme = "daylight"
 	d.a.selectTab(0)
 	d.frames(2)
 	d.shot("narrow")
@@ -387,7 +384,7 @@ func mockPage(g ui.Gfx, v *fakeView) {
 	g.Text("Page area (drawn by WebView2 in the app)", r.X+24, r.B()-20, ui.FSmall, ui.Hex("#a0a0aa"))
 }
 
-// ---- Iris results and the AI panel ----
+// ---- the AI panel ----
 
 func fixtures(js string) string {
 	switch {
@@ -446,16 +443,6 @@ func newResultsDriver(t *testing.T, w, h float32) *driver {
 	d.a.fetchImage = func(ctx context.Context, src string, maxW int) (image.Image, error) {
 		n++
 		return synthImage(n), nil
-	}
-	d.a.ytSearch = func(ctx context.Context, q string) ([]core.VideoResult, error) {
-		return []core.VideoResult{
-			{ID: "a", Title: "Red Pandas: the Firefoxes of the Himalayas", Channel: "Nature Now", Length: "12:04", Views: "1.2M views", Age: "1 year ago"},
-			{ID: "b", Title: "Baby red panda's first snow day", Channel: "Zoo Diaries", Length: "3:41", Views: "860K views", Age: "2 months ago"},
-			{ID: "c", Title: "How red pandas survive the cold", Channel: "Wild Science", Length: "8:15", Views: "430K views", Age: "3 weeks ago"},
-			{ID: "d", Title: "Red panda documentary (full)", Channel: "Earth Films", Length: "52:10", Views: "2.9M views", Age: "4 years ago"},
-			{ID: "e", Title: "Feeding time at the red panda house", Channel: "City Zoo", Length: "5:02", Views: "120K views", Age: "6 days ago"},
-			{ID: "f", Title: "Red panda vs giant panda: what is different?", Channel: "Explainers", Length: "9:48", Views: "2M views", Age: "1 year ago"},
-		}, nil
 	}
 	d.frames(2)
 	return d
@@ -565,36 +552,32 @@ func TestTimeLeft(t *testing.T) {
 	}
 }
 
-// A Google search opens on Google's own page (cleaned by the policy's
-// script) with Iris's filters over it; a filter opens the same search with it.
-func TestGoogleFilterBar(t *testing.T) {
+// Every search opens Google AI Mode in the tab, asked for high-quality,
+// current sources; the address bar shows only the reader's words, and no
+// script of Iris's is laid over Google's page.
+func TestSearchGoesToAIMode(t *testing.T) {
 	d := newDriver(t, 1440, 900, true)
 	d.typeText("red pandas")
 	d.key(ui.KEnter, false, false)
 	d.frames(4)
 	tab := d.a.tab()
-	if tab.search != nil || tab.view == nil {
-		t.Fatal("a Google search should open on Google's page")
+	if tab.view == nil {
+		t.Fatal("a search should open a page")
 	}
 	v := tab.view.(*fakeView)
-	if _, ok := core.ReadGoogleFilters(v.url); !ok {
-		t.Fatalf("not a Google search: %s", v.url)
+	if v.url != core.ModeAI.URL("red pandas") || !strings.Contains(v.url, "udm=50") {
+		t.Fatalf("not an AI Mode search: %s", v.url)
 	}
-	found := false
+	if q, ok := core.AIQuery(v.url); !ok || q != "red pandas" {
+		t.Fatalf("the words of the search: %q %v", q, ok)
+	}
+	if got := tab.addrText(); got != "red pandas" {
+		t.Fatalf("the address bar should edit the words, got %q", got)
+	}
 	for _, s := range d.eng.policy.Scripts {
-		found = found || strings.Contains(s, "__irisG")
+		if strings.Contains(s, "__irisG") {
+			t.Fatal("Google's page is no longer masked")
+		}
 	}
-	if !found {
-		t.Fatal("the cleaning script is not in the policy")
-	}
-	top := float32(v.bounds[1])
-	d.shot("google-filters")
-	// the time filter is the first control of the bar over the page: Week is
-	// its fourth of six segments (380 wide on a wide window)
-	x := float32(v.bounds[0]) + 4 + 380*3.5/6
-	d.click(x, top-44+(44-6-30)/2+15)
-	d.frames(3)
-	if f, _ := core.ReadGoogleFilters(v.url); f.Time != "w" {
-		t.Fatalf("the Week filter did not apply: %s", v.url)
-	}
+	d.shot("ai-mode-search")
 }

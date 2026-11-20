@@ -198,48 +198,6 @@ func (a *App) settingsBody(x, y, w float32, sec string) float32 {
 		return nv
 	}
 	_, _ = divider, check
-	if sec == "look" {
-		// look
-		section("Appearance")
-		// each palette as a tile with its name
-		const thh, gap = 76, 8
-		tw := (w - 2*gap) / 3
-		per := max(1, int((w+gap)/(tw+gap)))
-		for i, tm := range ui.Themes {
-			cr := ui.Rect{X: x + float32(i%per)*(tw+gap), Y: y + float32(i/per)*(thh+gap), W: tw, H: thh}
-			sw := ui.Rect{X: cr.X + 6, Y: cr.Y + 6, W: cr.W - 12, H: 44}
-			if tm.Grad != nil {
-				ui.FillGradient3(g, sw, 10, tm.Grad)
-			} else {
-				// the backdrop: the base with its fields of colored light
-				ui.FillRound(g, sw, 10, tm.G5)
-				g.FillPathGradient(ui.NewPath().RoundRect(sw, 10), tm.G1.Alpha(0.95), tm.G3.Alpha(0.6), sw.Y, sw.B())
-			}
-			// a drop of the theme's clear glass
-			ui.Liquid(g, ui.RectAround(sw.R()-16, sw.Y+16, 18, 18), 6, tm.Ink)
-			on := tm.ID == a.set.Theme
-			switch {
-			case on:
-				ui.StrokeRound(g, cr, 14, 2, th.Primary)
-			case u.Hover(cr):
-				ui.FillRound(g, cr, 14, th.Ink.Alpha(0.05))
-			default:
-				ui.StrokeRound(g, cr, 14, 1, th.OutlineVariant)
-			}
-			f := ui.FSmall
-			if on {
-				f = ui.FSmallBold
-			}
-			ui.TextCenter(g, ui.Fit(g, tm.Label, f, tw-12), ui.Rect{X: cr.X, Y: sw.B() + 4, W: cr.W, H: 24}, f, th.OnSurface)
-			if u.Clickable(ui.IdN("theme", i), cr) {
-				a.set.Theme, a.set.ThemeAt = tm.ID, time.Now().Unix()
-				a.set.Save()
-			}
-		}
-		y += float32((len(ui.Themes)+per-1)/per)*(thh+gap) + 4
-		divider()
-
-	}
 	if sec == "memory" {
 		// memory
 		section("Performance")
