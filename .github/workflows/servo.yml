@@ -129,6 +129,11 @@ jobs:
           print('green pixels sampled:', hits)
           if hits < 20:
               raise SystemExit('Servo drew nothing where the article is')
+          # the band spans the page: laid out at the window's width, not the size it opened with
+          right = sum(1 for x in range(w - 400, w - 100, 50) for y in range(140, 300, 20) if all(abs(a - b) < 24 for a, b in zip(im.getpixel((x, y)), (0x22, 0xaa, 0x77))))
+          print('green pixels on the right:', right)
+          if right < 10:
+              raise SystemExit("Servo laid the page out narrower than the window")
           im2 = Image.open('/tmp/fs/2-heavy.png').convert('RGB')
           hits2 = sum(1 for x in range(200, w - 200, 50) for y in range(200, 1000, 50) if all(abs(a - b) < 24 for a, b in zip(im2.getpixel((x, y)), (0xaa, 0x22, 0x66))))
           print('heavy page pixels sampled:', hits2)

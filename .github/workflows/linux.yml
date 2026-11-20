@@ -34,8 +34,12 @@ jobs:
           cache: false
       - name: Build tools and GTK development files
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev libfreetype-dev curl bzip2
+          # no man-page index after installs (it can hang the runner); apt gets
+          # 10 minutes, then one more try
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@" || { sleep 10; timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@"; }; }
+          apt_get update -qq
+          apt_get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev libfreetype-dev curl bzip2
       - name: Chromium (CEF), from the cache when it is there
         uses: actions/cache@v4
         with:
@@ -63,7 +67,11 @@ jobs:
           cache: false
       - name: Build Iris for Windows
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq zip
+          # no man-page index after installs (it can hang the runner); apt gets
+          # 10 minutes, then one more try
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@" || { sleep 10; timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@"; }; }
+          apt_get update -qq && apt_get install -y -qq zip
           ./build-iris.sh windows
           ls -l dist
 
@@ -119,7 +127,8 @@ jobs:
           export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           sleep 1
-          export GDK_DEBUG=gl-no-fractional GDK_DISABLE=gl-fractional LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CEF_VERBOSE=1 IRIS_CEF_ARGS="--enable-logging=stderr --v=0"
+          # the test page goes to Chromium: this job checks its scale (servo.yml checks Servo)
+          export IRIS_HEAVY_HOSTS=127.0.0.2 LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_CEF_VERBOSE=1 IRIS_CEF_ARGS="--enable-logging=stderr --v=0"
           dbus-run-session -- iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 18
           grim /tmp/fs/1-full.png
@@ -178,8 +187,12 @@ jobs:
         run: mkdir -p dist && tar -xzf pkg/iris-linux.tar.gz -C dist && ls dist/linux | head
       - name: Flatpak, flatpak-builder and Weston
         run: |
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq flatpak flatpak-builder weston dbus-user-session procps
+          # no man-page index after installs (it can hang the runner); apt gets
+          # 10 minutes, then one more try
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@" || { sleep 10; timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@"; }; }
+          apt_get update -qq
+          apt_get install -y -qq flatpak flatpak-builder weston dbus-user-session procps
           # bubblewrap needs user namespaces, which Ubuntu limits by default
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo

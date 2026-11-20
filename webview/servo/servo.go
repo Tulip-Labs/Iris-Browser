@@ -103,11 +103,12 @@ func (e *Engine) NewView(o webview.Options, ev webview.Events, done func(webview
 		done(nil, errors.New("Servo is not running"))
 		return
 	}
-	v := &view{ev: ev, o: o, seen: time.Now()}
-	if !v.open("") {
-		done(nil, errors.New("Servo could not open a page"))
-		return
-	}
+	// The page is made in Servo with its first address, not before: a load
+	// sent to a page Servo has just made without one was lost (Servo's
+	// constellation did not know the page yet: "LoadUrl for unknown browsing
+	// context") and the tab stayed on about:blank. Until then it waits like a
+	// rested page.
+	v := &view{ev: ev, o: o, seen: time.Now(), rested: true}
 	all[v] = true
 	done(v, nil)
 }
@@ -157,8 +158,8 @@ func (v *view) rest() {
 
 // revive opens a rested page again where it was.
 func (v *view) revive() {
-	if !v.rested || v.closed {
-		return
+	if !v.rested || v.closed || v.url == "" {
+		return // (no address yet: it opens with its first one)
 	}
 	v.rested = false
 	if v.url != "" {
@@ -170,6 +171,9 @@ func (v *view) revive() {
 	v.going = v.url
 	if b := v.bounds; b[2] > 0 {
 		C.lsvBounds(C.uint64_t(v.id), C.int(b[0]), C.int(b[1]), C.int(b[2]), C.int(b[3]))
+	}
+	if v.shown {
+		C.lsvShow(C.uint64_t(v.id), 1) // its tab is on screen already
 	}
 }
 
@@ -242,8 +246,9 @@ func (v *view) SetVisible(on bool) {
 	v.seen = time.Now()
 	if on {
 		v.revive()
-	} else if v.rested {
-		return
+	}
+	if v.rested {
+		return // not in Servo (yet, or any more)
 	}
 	b := 0
 	if on {

@@ -29,10 +29,22 @@
           nativeBuildInputs = with pkgs; [
             pkg-config cmake python3 perl m4 gperf yasm which rustPlatform.bindgenHook llvmPackages.bintools
           ];
+          # Servo allocates with jemalloc: nixpkgs' build of it with Rust's
+          # symbol prefix (its setup hook points tikv-jemalloc-sys at it)
           buildInputs = with pkgs; [
+            rust-jemalloc-sys zstd xz glib sqlite
             fontconfig freetype harfbuzz libunwind libGL libxkbcommon dbus udev openssl zlib
             xorg.libX11 xorg.libxcb xorg.libXcursor xorg.libXrandr xorg.libXi
           ];
+          # SpiderMonkey assembles through the C compiler (it passes -D flags);
+          # Nix's environment points AS at the bare assembler
+          preBuild = ''
+            export AS="$CC"
+          '';
+          # Nix's format hardening adds -Wformat-security without -Wformat,
+          # which SpiderMonkey's -Werror turns into an error (nixpkgs'
+          # spidermonkey turns it off the same way)
+          hardeningDisable = [ "format" ];
           doCheck = false;
           installPhase = ''
             runHook preInstall
