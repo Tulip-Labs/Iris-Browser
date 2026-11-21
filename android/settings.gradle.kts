@@ -3,8 +3,6 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
-        // Cefrium: Chromium (CEF) for Android, the page engine
-        maven("https://maven.cefrium.com") { content { includeGroupByRegex("com\\.cefrium.*") } }
     }
 }
 dependencyResolutionManagement {
@@ -12,7 +10,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://maven.cefrium.com") { content { includeGroupByRegex("com\\.cefrium.*") } }
+        // GeckoView, Firefox's engine for Android
+        maven("https://maven.mozilla.org/maven2/") { content { includeGroupByRegex("org\\.mozilla.*") } }
     }
 }
 rootProject.name = "Iris"
