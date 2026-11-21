@@ -25,8 +25,9 @@ android {
             if (ks != null && file(ks).exists()) {
                 storeFile = file(ks)
                 storePassword = System.getenv("IRIS_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("IRIS_KEY_ALIAS") ?: "iris"
-                keyPassword = System.getenv("IRIS_KEY_PASSWORD") ?: System.getenv("IRIS_KEYSTORE_PASSWORD")
+                // CI passes unset secrets as empty strings
+                keyAlias = System.getenv("IRIS_KEY_ALIAS")?.takeIf { it.isNotEmpty() } ?: "iris"
+                keyPassword = System.getenv("IRIS_KEY_PASSWORD")?.takeIf { it.isNotEmpty() } ?: System.getenv("IRIS_KEYSTORE_PASSWORD")
             }
         }
     }

@@ -1,6 +1,20 @@
 package org.tulipanlabs.iris.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Flight
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.SportsEsports
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Work
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -60,17 +74,17 @@ fun Modifier.glass(shape: Shape = RoundedCornerShape(50), tint: Color = Color.Wh
 
 /** a container's icon */
 fun containerIcon(name: String): androidx.compose.ui.graphics.vector.ImageVector = when (name) {
-    "person" -> androidx.compose.material.icons.Icons.Filled.Person
-    "briefcase" -> androidx.compose.material.icons.Icons.Filled.Work
-    "cart" -> androidx.compose.material.icons.Icons.Filled.ShoppingCart
-    "bank" -> androidx.compose.material.icons.Icons.Filled.AccountBalance
-    "home" -> androidx.compose.material.icons.Icons.Filled.Home
-    "heart" -> androidx.compose.material.icons.Icons.Filled.Favorite
-    "game" -> androidx.compose.material.icons.Icons.Filled.SportsEsports
-    "book" -> androidx.compose.material.icons.Icons.AutoMirrored.Filled.MenuBook
-    "plane" -> androidx.compose.material.icons.Icons.Filled.Flight
-    "code" -> androidx.compose.material.icons.Icons.Filled.Code
-    "music" -> androidx.compose.material.icons.Icons.Filled.MusicNote
-    "private" -> androidx.compose.material.icons.Icons.Filled.VisibilityOff
-    else -> androidx.compose.material.icons.Icons.Filled.Star
+    "person" -> Icons.Filled.Person
+    "briefcase" -> Icons.Filled.Work
+    "cart" -> Icons.Filled.ShoppingCart
+    "bank" -> Icons.Filled.AccountBalance
+    "home" -> Icons.Filled.Home
+    "heart" -> Icons.Filled.Favorite
+    "game" -> Icons.Filled.SportsEsports
+    "book" -> Icons.AutoMirrored.Filled.MenuBook
+    "plane" -> Icons.Filled.Flight
+    "code" -> Icons.Filled.Code
+    "music" -> Icons.Filled.MusicNote
+    "private" -> Icons.Filled.VisibilityOff
+    else -> Icons.Filled.Star
 }
