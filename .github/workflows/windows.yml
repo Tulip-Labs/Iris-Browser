@@ -55,7 +55,13 @@ jobs:
           <script>const f=()=>{document.getElementById('s').textContent=innerWidth+' x '+innerHeight+' @ '+devicePixelRatio;console.log('IRIS-DPR '+devicePixelRatio)};f();addEventListener('resize',f)</script>
           '@ | Set-Content page\index.html
           Start-Process python -ArgumentList '-m','http.server','8766','--bind','127.0.0.1','--directory','page' -WindowStyle Hidden
-          Start-Sleep 2
+          # the test page's server must answer before Iris opens it (a fixed
+          # wait was too short on a cold runner: ERR_CONNECTION_REFUSED)
+          $up = $false
+          for ($i = 0; $i -lt 60 -and -not $up; $i++) {
+            try { Invoke-WebRequest http://127.0.0.1:8766/ -UseBasicParsing -TimeoutSec 2 | Out-Null; $up = $true } catch { Start-Sleep -Milliseconds 500 }
+          }
+          if (-not $up) { Write-Error "The test page's server did not start"; exit 1 }
           $env:ELECTRON_ENABLE_LOGGING = "1"
           $p = Start-Process Iris\Iris.exe -ArgumentList 'http://127.0.0.1:8766/' -PassThru `
             -RedirectStandardOutput out\stdout.txt -RedirectStandardError out\log.txt
