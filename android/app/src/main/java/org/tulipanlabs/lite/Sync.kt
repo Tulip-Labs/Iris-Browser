@@ -18,9 +18,9 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 // Sync with Iris on a computer, with no server in between: when both are
-// on the same network, the phone and the computer trade history, open tabs
-// and the palette. Everything is sealed with the key from the pairing
-// (AES-256-GCM), so nobody else on the network can read or change it.
+// on the same network, the phone and the computer trade history and open
+// tabs. Everything is sealed with the key from the pairing (AES-256-GCM), so
+// nobody else on the network can read or change it.
 
 /** an open tab on the computer */
 class PcTab(val url: String, val title: String)
@@ -139,7 +139,7 @@ object Sync {
 
     /**
      * Trades state with the computer. Call off the UI thread. Returns null
-     * when the computer is not on this network, else whether the palette changed.
+     * when the computer is not on this network, else true.
      */
     fun run(set: Settings, hist: History, tabs: List<PcTab>): Boolean? {
         if (!paired(set)) return null
@@ -152,8 +152,6 @@ object Sync {
             val me = JSONObject()
             me.put("device", set.device)
             me.put("name", (Build.MANUFACTURER.replaceFirstChar { it.uppercase() } + " " + Build.MODEL).trim())
-            me.put("theme", set.theme)
-            me.put("themeAt", set.themeAt)
             val jt = JSONArray()
             for (t in tabs) jt.put(JSONObject().put("url", t.url).put("title", t.title))
             me.put("tabs", jt)
@@ -190,16 +188,7 @@ object Sync {
             if (t != null) for (i in 0 until minOf(t.length(), 100)) keep.put(t.getJSONObject(i))
             set.pcTabs = keep.toString()
             set.syncAt = System.currentTimeMillis()
-
-            var changed = false
-            val theme = pc.optString("theme")
-            val at = pc.optLong("themeAt")
-            if (at > set.themeAt && theme != set.theme && Palette.all.any { it.id == theme }) {
-                set.theme = theme
-                changed = true
-            }
-            if (at > set.themeAt) set.themeAt = at
-            changed
+            true
         } catch (e: Exception) {
             null
         }

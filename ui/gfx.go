@@ -108,10 +108,6 @@ type Gfx interface {
 
 	// Image draws img to cover r (cropped to keep its shape), with rounded corners.
 	Image(img image.Image, r Rect, radius float32)
-	// Backdrop draws img covering win, a rectangle in the window's own units
-	// (whatever the current transform), seen only through the rounded
-	// rectangle r (in current units): the window's background behind a pane.
-	Backdrop(img image.Image, win Rect, r Rect, radius float32)
 
 	Text(s string, x, baseline float32, f Font, c Color)
 	Measure(s string, f Font) float32
@@ -407,16 +403,6 @@ func Glass(g Gfx, r Rect, rad float32, th *Theme, strong, shadow bool) {
 	base := th.Card
 	if strong {
 		base = th.CardStrong
-	}
-	if w := th.Wall; w != nil && w.Frost != nil && !th.Dark {
-		// real frosted glass: the background behind the pane, blurred, under
-		// a veil of white (thicker over a busy picture, so text stays clear)
-		g.Backdrop(w.Frost, w.Win, r, rad)
-		milk := 0.42 + 0.30*w.Busy
-		if strong {
-			milk += 0.18
-		}
-		base = White.Alpha(min(0.92, milk))
 	}
 	g.FillPath(body, base)
 	// sheen: light pooled at the top, fading down (liquid highlight)

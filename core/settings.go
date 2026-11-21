@@ -13,12 +13,7 @@ import (
 
 // Settings are Iris's preferences, kept in a small JSON file that loads instantly.
 type Settings struct {
-	Theme string `json:"theme"`
-	// Background is the window's picture behind the glass: one of Iris's
-	// own ("sky", "dawn"...), "picture" (the reader's own, a copy kept in
-	// Iris's folder as Picture) or "plain".
-	Background   string      `json:"background,omitempty"`
-	Picture      string      `json:"picture,omitempty"`
+	Theme        string      `json:"theme"`
 	VerticalTabs bool        `json:"verticalTabs"`
 	Mode         Mode        `json:"mode"`
 	Shield       bool        `json:"shield"`
@@ -58,9 +53,8 @@ type Settings struct {
 	// Sync keeps history, open tabs and the background the same as on a paired phone.
 	Sync    SyncSettings `json:"sync"`
 	Restore bool         `json:"restore"`
-	// AutoUpdate installs new versions from the GitHub releases by itself;
-	// UpdateChecked is when it last looked (Unix seconds).
-	AutoUpdate    bool         `json:"autoUpdate"`
+	// UpdateChecked is when Iris last asked whether a newer version is out
+	// (Unix seconds).
 	UpdateChecked int64        `json:"updateChecked,omitempty"`
 	Session       []SessionTab `json:"session,omitempty"`
 
@@ -71,10 +65,10 @@ type Settings struct {
 
 // LoadSettings reads settings.json from dir ("" = defaults in memory only).
 func LoadSettings(dir string) *Settings {
-	s := &Settings{Theme: "glass", Background: "sky", Shield: true, HTTPSOnly: true, YouTube: true, Strict: false, Memory: "balanced",
+	s := &Settings{Theme: "glass", Shield: true, HTTPSOnly: true, YouTube: true, Strict: false, Memory: "balanced",
 		LiteResults: true, Boost: true, YouTubeLight: true,
 		Lists: true, Cookies: true, CleanLinks: true, Farble: true,
-		Adaptive: true, Restore: true, AutoUpdate: true,
+		Adaptive: true, Restore: true,
 		Containers: []Container{{"Work", "briefcase", "blue"}, {"Personal", "person", "orange"}}}
 	if dir == "" {
 		return s

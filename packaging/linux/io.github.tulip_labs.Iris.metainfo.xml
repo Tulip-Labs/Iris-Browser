@@ -9,7 +9,7 @@
     <name>Tulip Labs</name>
   </developer>
   <description>
-    <p>Iris is a small browser written in Go. Most pages are drawn by WebKitGTK and video, social sites and web apps by Electron (Chromium), and Iris adds what keeps browsing light and private.</p>
+    <p>Iris is a small browser written in Go. Its pages are drawn by WebKitGTK, and Iris adds what keeps browsing light and private.</p>
     <ul>
       <li>Iris Shields: ads, trackers, cookie notices and fingerprinting blocked</li>
       <li>Containers for separate sign-ins, private tabs and split view</li>
@@ -28,6 +28,7 @@
     <category>WebBrowser</category>
   </categories>
   <releases>
+    <release version="1.0.26" date="2026-11-21"/>
     <release version="1.0.25" date="2026-11-20"/>
     <release version="1.0.22" date="2026-11-18"/>
     <release version="1.0.7" date="2026-11-14"/>

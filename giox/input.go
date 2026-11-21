@@ -132,9 +132,6 @@ func (rd *Reader) Read(gtx layout.Context, in *ui.Input, scale float32) {
 				}
 			case pointer.Scroll:
 				div := float32(40)
-				if runtime.GOOS == "windows" {
-					div = 120
-				}
 				if e.Source == pointer.Touch || runtime.GOOS == "darwin" {
 					div = 30
 				}

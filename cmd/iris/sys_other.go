@@ -1,5 +1,3 @@
-//go:build !windows
-
 package main
 
 import (
@@ -11,13 +9,8 @@ import (
 	"strings"
 )
 
-func focusWindow(uintptr) {}
-func allowForeground(int) {}
-func setStartup(bool)     {}
-
-func openPath(p string)    { _ = exec.Command("xdg-open", p).Start() }
-func revealPath(p string)  { _ = exec.Command("xdg-open", filepath.Dir(p)).Start() }
-func packaged(string) bool { return false }
+func openPath(p string)   { _ = exec.Command("xdg-open", p).Start() }
+func revealPath(p string) { _ = exec.Command("xdg-open", filepath.Dir(p)).Start() }
 
 // pickFiles asks for files with the desktop's own file box (zenity on GNOME
 // and most others, kdialog on KDE). It waits for the reader.

@@ -3,7 +3,7 @@
 // sum writes the SHA-256 of a file beside it, as file.sha256. Iris checks
 // its own program file against this record at every start.
 //
-//	go run tools/sum.go "dist/Iris/Iris.exe"
+//	go run tools/sum.go dist/linux/iris
 package main
 
 import (

@@ -13,13 +13,10 @@ visit() { adb shell am start -a android.intent.action.VIEW -d "$1" -n $P/.MainAc
 back() { adb shell input keyevent KEYCODE_BACK; sleep 1; }
 
 start; sleep 12; adb shell am force-stop $P; start; shot start 10
-# the desktop's backgrounds under the same glass
-for th in sky dawn meadow lilac; do
-  start --es lite.theme $th --es lite.open menu; shot menu-$th
-  adb shell input swipe 540 1800 540 600 300; shot menu-$th-2 2
-  back
-done
-start --es lite.theme sky --es lite.open tabs; shot tabs; back
+start --es lite.open menu; shot menu
+adb shell input swipe 540 1800 540 600 300; shot menu-2 2
+back
+start --es lite.open tabs; shot tabs; back
 # several tabs in the strip on top, as on the desktop
 visit https://en.wikipedia.org/wiki/Iris_(mythology); sleep 6
 visit https://www.gnu.org/; sleep 6

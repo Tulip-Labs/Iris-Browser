@@ -39,7 +39,8 @@ const (
 
 const actTab9 = actTab1 + 8
 
-// vkAction maps a key pressed inside the page (a Windows virtual key) to a browser action.
+// vkAction maps a key pressed inside the page (its virtual-key number, see
+// webview.Key) to a browser action.
 func vkAction(k webview.Key) action {
 	vk := k.VK
 	switch {

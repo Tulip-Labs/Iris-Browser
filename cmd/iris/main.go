@@ -1,6 +1,5 @@
-// Command iris is Iris: a light browser whose interface is drawn with Gio
-// and whose pages are shown by the system web view: Electron on Windows,
-// Electron on Linux.
+// Command iris is Iris: a light browser for Linux whose interface is drawn
+// with Gio and whose pages are shown by WebKitGTK.
 package main
 
 import (
@@ -15,7 +14,7 @@ import (
 	"iris/shell"
 )
 
-const version = "1.0.25"
+const version = "1.0.26"
 
 func main() {
 	// a small, steady footprint: collect garbage sooner and keep the Go heap
@@ -43,12 +42,6 @@ func main() {
 	}
 	reqs := listen(conf)
 	r := &resident{conf: conf, webDir: webDir, core: shell.LoadCore(conf), gfx: giox.NewGfx()}
-	if r.core.Settings.Boost {
-		// nothing runs in the background any more: undo "Open instantly"
-		r.core.Settings.Boost = false
-		r.core.Settings.Save()
-		setStartup(false)
-	}
 	if background {
 		return
 	}
@@ -57,10 +50,6 @@ func main() {
 			r.open(urls)
 		}
 		for req := range reqs {
-			if len(req) == 1 && req[0] == "--quit" { // the setup is updating Iris
-				r.core.Settings.Flush()
-				os.Exit(0)
-			}
 			r.open(req)
 		}
 	}()

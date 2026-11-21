@@ -12,7 +12,7 @@ on:
     paths: ["packaging/container/**", ".github/workflows/container.yml"]
 
 permissions:
-  contents: write # the launcher goes on the release
+  contents: read
   packages: write
 
 concurrency:
@@ -50,8 +50,8 @@ jobs:
         run: |
           img=${{ steps.names.outputs.local }}
           docker run --rm --entrypoint sh "$img" -c \
-            '! ldd /opt/iris/iris /opt/iris/electron/electron | grep "not found"'
-          docker run --rm --entrypoint sh "$img" -c 'ls /opt/iris/electron/resources/app/main.js /opt/iris/start && fc-list | grep -q Noto'
+            '! ldd /opt/iris/iris | grep "not found"'
+          docker run --rm --entrypoint sh "$img" -c 'ls /opt/iris/start /usr/libexec/webkitgtk-6.0/WebKitWebProcess && fc-list | grep -q Noto'
       - name: Sign in to the registries
         if: github.event_name != 'pull_request'
         env:
@@ -68,11 +68,3 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           for t in $(echo "${{ steps.names.outputs.tags }}" | tr , ' '); do docker push "$t"; done
-      - name: The launcher on the release
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # the release may still be in the making (release.yml): wait for it
-          for i in $(seq 1 60); do gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break; sleep 30; done
-          gh release upload "$GITHUB_REF_NAME" packaging/container/iris-container --clobber

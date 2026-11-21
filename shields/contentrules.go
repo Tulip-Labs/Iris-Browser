@@ -8,8 +8,8 @@ import (
 
 // Content rules: the shield as WebKit's content blockers (the JSON format
 // Safari and WebKitGTK compile into a matcher of their own). WebKit pages
-// do not ask Iris about each request the way Electron's do; WebKit matches
-// these rules itself, inside the engine, before a request leaves.
+// do not ask Iris about each request; WebKit matches these rules itself,
+// inside the engine, before a request leaves.
 //
 // Only the rules WebKit's regular expressions can say are converted: rules
 // anchored to a host (||ads.example.com^), to the start of the address, or

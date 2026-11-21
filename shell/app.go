@@ -47,9 +47,6 @@ type Config struct {
 	TotalMB int            // system memory, for the tab sleep plan
 	Version string
 	SelfMB  func() float64 // this process's memory (nil = unknown)
-	// SetBoost turns starting with Windows on or off (nil where it does not apply);
-	// Iris keeps nothing running in the background, so it is only turned off.
-	SetBoost func(on bool)
 	// Core reuses preloaded settings, history and shield (the background mode).
 	Core *Core
 	// Sys is what the operating system does for the interface.
@@ -66,9 +63,6 @@ type Sys struct {
 	// PickFiles shows the system's file box and returns what was chosen
 	// (it waits for the reader; called off the loop).
 	PickFiles func() []string
-	// PickPicture asks for one picture (the background); "" when none was
-	// chosen. It waits for the reader; called off the loop.
-	PickPicture func() string
 	// FreeMB is the system memory still free (0 = unknown).
 	FreeMB func() int
 	// Integrity checks Iris's own program file against the record made
@@ -80,18 +74,16 @@ type Sys struct {
 type Integrity uint8
 
 const (
-	IntegrityUnknown   Integrity = iota // no record to check against
-	IntegrityVerified                   // the file is the one that was installed
-	IntegrityProtected                  // installed as a Windows package: Windows keeps it read-only and verified
-	IntegrityChanged                    // the file is not the one that was installed
+	IntegrityUnknown  Integrity = iota // no record to check against
+	IntegrityVerified                  // the file is the one that was installed
+	IntegrityChanged                   // the file is not the one that was installed
 )
 
 // App is the browser window's interface.
 type App struct {
-	scheme int // the pages' color mode last given to the engine (1 light, 2 dark)
-	h      Host
-	cfg    Config
-	eng    webview.Engine
+	h   Host
+	cfg Config
+	eng webview.Engine
 
 	In        *ui.Input
 	st        ui.State
@@ -165,20 +157,14 @@ type App struct {
 
 	blockedTotal int
 
-	workers    [4]*worker
-	wakeAt     float64
-	np         nowPlaying // the now-playing pill (nowplaying.go)
-	ext        extState   // browser extensions (extensions.go)
-	thumbs     map[string]*thumb
-	thumbSem   chan struct{}
-	fetchImage func(ctx context.Context, src string, maxW int) (image.Image, error)
-	ai         aiPanel
-	side       sideView
-	// the window's background picture (ui.Wall) and what it was made for
-	wall         *ui.Wall
-	wallKey      string
-	wallBusy     bool
-	wallThumbs   map[string]*ui.Wall
+	workers      [4]*worker
+	wakeAt       float64
+	np           nowPlaying // the now-playing pill (nowplaying.go)
+	thumbs       map[string]*thumb
+	thumbSem     chan struct{}
+	fetchImage   func(ctx context.Context, src string, maxW int) (image.Image, error)
+	ai           aiPanel
+	side         sideView
 	sideRect     ui.Rect
 	sideURL      string
 	sideFull     bool
@@ -459,10 +445,6 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 		a.In.Now = time.Since(a.start).Seconds()
 	}
 	th := a.theme()
-	if want := map[bool]int{false: 1, true: 2}[th.Dark]; a.scheme != want {
-		a.scheme = want
-		webview.SetColorScheme(th.Dark) // pages are told the look: always light
-	}
 	u := &a.u
 	u.G, u.In, u.Th, u.St, u.Clip = g, a.In, th, &a.st, a.h.Clipboard()
 	u.W, u.H, u.Layer, u.InputLayer, u.Redraw = w, h, 0, 0, false
@@ -483,11 +465,6 @@ func (a *App) Frame(g ui.Gfx, w, h float32) {
 	a.runWorkers()
 
 	full := ui.Rect{W: w, H: h}
-	a.ensureWall()
-	th.Wall = a.wall
-	if a.wall != nil {
-		a.wall.Win = full
-	}
 	var page ui.Rect
 	if a.Fullscreen() {
 		g.FillRect(full, ui.Black)

@@ -5,21 +5,19 @@
 
   outputs = { self, nixpkgs }:
     let
-      # Electron (the engine for heavy pages) is built for x86_64 here
-      systems = [ "x86_64-linux" ];
+      systems = [ "x86_64-linux" "aarch64-linux" ];
       forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
     {
       packages = forAll (pkgs: rec {
         iris-browser = pkgs.buildGoModule {
           pname = "iris-browser";
-          version = "1.0.25";
+          version = "1.0.26";
           src = self;
           vendorHash = "sha256-DUuIMLR+RLt5e6kRZcxRdGo4Q4i9ZGR7ia629F8Vp2o=";
           subPackages = [ "cmd/iris" ];
-          # the pages: WebKitGTK for most, Electron (from nixpkgs, H.264 and
-          # AAC included) for video, social sites and web apps
-          tags = [ "webkit" "electron" "novulkan" ];
+          # the pages: WebKitGTK
+          tags = [ "webkit" "novulkan" ];
           ldflags = [ "-s" "-w" ];
           doCheck = false;
           overrideModAttrs = _: { preBuild = ""; };
@@ -32,12 +30,8 @@
           ];
           postInstall = ''
             lib=$out/lib/iris-browser
-            mkdir -p $lib/electron-helper
+            mkdir -p $lib
             mv $out/bin/iris $lib/iris
-            # Iris's helper app for Electron: one script, no web interface
-            # (Chrome extensions need electron-chrome-extensions from npm, which
-            # this build leaves out; the shields block ads without them)
-            cp webview/electron/helper/main.js webview/electron/helper/preload.js webview/electron/helper/package.json $lib/electron-helper/
             echo $version > $lib/VERSION
             install -Dm644 assets/icon.png $out/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
             install -Dm644 packaging/linux/io.github.tulip_labs.Iris.desktop $out/share/applications/io.github.tulip_labs.Iris.desktop
@@ -46,15 +40,13 @@
           # Gio and WebKit load OpenGL ES and the graphics drivers at run time:
           # NixOS keeps those in /run/opengl-driver. Fonts: the system's where
           # there is a fontconfig (NixOS, most distributions), else DejaVu and
-          # Noto from the store. Electron is nixpkgs' own.
+          # Noto from the store.
           preFixup = let
             fonts = pkgs.makeFontsConf { fontDirectories = with pkgs; [ dejavu_fonts noto-fonts noto-fonts-color-emoji ]; };
           in ''
             gappsWrapperArgs+=(
               --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath [ pkgs.libGL pkgs.libdrm (pkgs.libgbm or pkgs.mesa) pkgs.systemd ]}
               --suffix LD_LIBRARY_PATH : /run/opengl-driver/lib
-              --set-default IRIS_ELECTRON ${pkgs.electron}/bin/electron
-              --set-default IRIS_ELECTRON_APP $out/lib/iris-browser/electron-helper
             )
             wrapGApp $out/lib/iris-browser/iris
             # the launcher: the store's fonts only where the system has no fontconfig
@@ -71,7 +63,7 @@
             description = "A light, fast browser with shields built in";
             homepage = "https://github.com/Tulip-Labs/Iris-Browser";
             license = licenses.gpl3Only;
-            platforms = [ "x86_64-linux" ];
+            platforms = [ "x86_64-linux" "aarch64-linux" ];
             mainProgram = "iris";
           };
         };

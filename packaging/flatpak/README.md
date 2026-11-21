@@ -14,17 +14,14 @@ flathub https://dl.flathub.org/repo/flathub.flatpakrepo`).
 
 The release bundle holds exactly the files CI built and tested, and builds in
 minutes. Flathub builds every app from source without network access, so a
-Flathub manifest lists every download: the engine (Electron, from npm) and
-each Go module. `go run tools/flatpaksrc.go >
+Flathub manifest lists every download: each Go module (WebKitGTK comes with
+the GNOME runtime). `go run tools/flatpaksrc.go >
 packaging/flatpak/go-sources.json` writes the Go part: each module's .info,
 .mod and .zip from the Go module proxy with its SHA-256, laid out as a module
 proxy (`GOPROXY=file://$PWD/goproxy`), so `go build` runs offline and still
 checks go.sum.
 
-## Electron's sandbox
+## The page sandbox
 
-The pages run inside Flatpak's sandbox. Electron's own sandbox inside it
-needs zypak, which the bundle carries: the Electron engine starts through it,
-and the launcher sets `IRIS_ELECTRON_NO_SANDBOX=1`, so Electron's pages run
-inside Flatpak's sandbox only. WebKit keeps its own sandbox: inside Flatpak
-it runs through flatpak-spawn.
+The pages run inside Flatpak's sandbox, and WebKit keeps its own sandbox
+for its web processes inside it (through flatpak-spawn).

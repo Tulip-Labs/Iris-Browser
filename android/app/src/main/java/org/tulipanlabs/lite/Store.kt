@@ -17,10 +17,6 @@ class Container(val name: String, val color: String)
 class Settings(ctx: Context) {
     private val p: SharedPreferences = ctx.getSharedPreferences("lite", Context.MODE_PRIVATE)
 
-    var theme: String
-        get() = p.getString("theme", "sky") ?: "sky"
-        set(v) = p.edit().putString("theme", v).apply()
-
     private fun flag(key: String, def: Boolean) = p.getBoolean(key, def)
     private fun setFlag(key: String, v: Boolean) = p.edit().putBoolean(key, v).apply()
 
@@ -92,10 +88,6 @@ class Settings(ctx: Context) {
     var syncAt: Long
         get() = p.getLong("syncAt", 0)
         set(v) = p.edit().putLong("syncAt", v).apply()
-    /** when the palette was last chosen, in seconds (the newest choice wins) */
-    var themeAt: Long
-        get() = p.getLong("themeAt", 0)
-        set(v) = p.edit().putLong("themeAt", v).apply()
     /** this phone's id for the computer */
     val device: String
         get() {

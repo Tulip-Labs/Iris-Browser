@@ -1,10 +1,9 @@
 //go:build linux && webkit
 
-// The WebKitGTK engine: Iris's main page engine on Linux (docs/engines.md).
+// The WebKitGTK engine: Iris's page engine on Linux (docs/engines.md).
 // Pages are WebKitWebViews, real GTK widgets placed over Iris's interface
-// (webkit_linux.c). The router (webview/route) gives the heavy sites to
-// Electron; the cookies of both go through Iris's shared store
-// (core/session), so a sign-in in one is a sign-in in the other.
+// (webkit_linux.c). Each cookie jar (the default one, a container, private
+// and sandbox tabs) is a WebKit network session that keeps its own cookies.
 
 package webview
 
@@ -16,10 +15,7 @@ package webview
 
 void lwkStart(uintptr_t view, const char *dir);
 int lwkSandboxWorks(void);
-int lwkJar(const char *name, int memory, int bridged);
-void lwkReadJar(int idx);
-void lwkSetCookie(int idx, const char *name, const char *value, const char *domain, int hostOnly, const char *path,
-                  long long expires, int secure, int httpOnly, const char *sameSite, int removed);
+int lwkJar(const char *name, int memory);
 void lwkSetRules(const char *json, int n, const char *id);
 void lwkSetScripts(char **list, int n);
 void lwkStrict(int on);
@@ -53,19 +49,17 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
-
-	"iris/core/session"
 )
+
+// SandboxMissing is the engine's error where WebKit's page sandbox cannot run.
+const SandboxMissing = "WebKit's page sandbox (bubblewrap) cannot run on this system. Install bubblewrap (and allow user namespaces), then start Iris again."
 
 // KitEngine is the WebKitGTK engine; one per program.
 type KitEngine struct {
 	mu      sync.Mutex
 	policy  Policy
 	started bool
-	cookies *session.Store
 	jars    map[string]int
-	names   map[int]string
-	seen    map[int]map[string]session.Cookie
 	rules   string // the shield's rules last compiled
 	scripts string
 	version string
@@ -79,7 +73,6 @@ type kitView struct {
 	jar    int
 	url    string
 	closed bool
-	divert func(string) bool
 }
 
 var (
@@ -90,18 +83,15 @@ var (
 	kitRunN  uintptr
 )
 
-// NewWebKit returns the WebKitGTK engine. cookies is the store shared with
-// Electron (nil: WebKit keeps its own cookies only).
-func NewWebKit(cookies *session.Store) *KitEngine {
+func init() { SleepFreesMemory = false }
+
+// popupImpl is a pending pop-up: the WebKit page its opener made for it.
+type popupImpl struct{ kit uintptr }
+
+// NewWebKit returns the WebKitGTK engine.
+func NewWebKit() *KitEngine {
 	if kit == nil {
-		kit = &KitEngine{cookies: cookies, jars: map[string]int{}, names: map[int]string{}, seen: map[int]map[string]session.Cookie{}}
-		if cookies != nil {
-			// cookies from the other engine come here on any thread: WebKit
-			// takes them on GTK's
-			cookies.Watch("webkit", func(c session.Cookie, removed bool) {
-				kitOnMain(func() { kit.give(c, removed) })
-			})
-		}
+		kit = &KitEngine{jars: map[string]int{}}
 	}
 	return kit
 }
@@ -128,12 +118,12 @@ func (e *KitEngine) Start(window uintptr, dataDir string, low bool, ready func(e
 		return
 	}
 	// IRIS_NO_SANDBOX=1 is the reader's own choice to run pages without
-	// their sandbox (as for Electron); otherwise a system where WebKit's
-	// sandbox cannot run gets no WebKit: Electron draws every page there
+	// their sandbox; otherwise, where WebKit's sandbox cannot run, Iris does
+	// not show pages at all and says why
 	if os.Getenv("IRIS_NO_SANDBOX") != "" {
 		os.Setenv("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1")
 	} else if C.lwkSandboxWorks() == 0 {
-		ready(errors.New("WebKit's page sandbox (bubblewrap) cannot run on this system"))
+		ready(errors.New(SandboxMissing))
 		return
 	}
 	cstr(dataDir, func(d *C.char) { C.lwkStart(C.uintptr_t(window), d) })
@@ -217,69 +207,36 @@ func b2i(b bool) C.int {
 	return 0
 }
 
-// jar is the index of WebKit's session for options o, made (and filled
-// from the shared store) the first time.
+// Jar names: "" is the default; containers are "c-" and their name;
+// private tabs share "private"; sandbox tabs "sandbox".
+func jarFor(profile string, private, sandbox bool) string {
+	switch {
+	case sandbox:
+		return "sandbox"
+	case private:
+		return "private"
+	case profile != "":
+		return "c-" + profile
+	}
+	return ""
+}
+
+// memoryJar reports whether jar keeps nothing on disk (private, temporary
+// and sandbox tabs).
+func memoryJar(jar string) bool {
+	return strings.HasPrefix(jar, "private") || strings.HasPrefix(jar, "temp") || strings.HasPrefix(jar, "sandbox")
+}
+
+// jar is the index of WebKit's session for options o, made the first time.
 func (e *KitEngine) jar(o Options) int {
-	name := session.JarFor(o.Profile, o.Private, o.Sandbox)
+	name := jarFor(o.Profile, o.Private, o.Sandbox)
 	if i, ok := e.jars[name]; ok {
 		return i
 	}
-	bridged := e.cookies != nil && !o.Sandbox
 	var i C.int
-	cstr(name, func(c *C.char) { i = C.lwkJar(c, b2i(session.Memory(name)), b2i(bridged)) })
-	e.jars[name], e.names[int(i)] = int(i), name
-	if bridged {
-		for _, c := range e.cookies.Jar(name) {
-			e.give(c, false)
-		}
-		C.lwkReadJar(i)
-	}
+	cstr(name, func(c *C.char) { i = C.lwkJar(c, b2i(memoryJar(name))) })
+	e.jars[name] = int(i)
 	return int(i)
-}
-
-// give hands a cookie from the shared store to WebKit's session of its jar.
-func (e *KitEngine) give(c session.Cookie, removed bool) {
-	i, ok := e.jars[c.Jar]
-	if !ok {
-		return // no WebKit page uses that jar yet; it is filled when one does
-	}
-	if s := e.seen[i]; s != nil {
-		// what WebKit will report back is already known: no echo
-		if removed {
-			delete(s, c.Key())
-		} else {
-			s[c.Key()] = c
-		}
-	}
-	n, v, d, p, ss := C.CString(c.Name), C.CString(c.Value), C.CString(c.Domain), C.CString(c.Path), C.CString(c.SameSite)
-	C.lwkSetCookie(C.int(i), n, v, d, b2i(c.HostOnly), p, C.longlong(c.Expires), b2i(c.Secure), b2i(c.HTTPOnly), ss, b2i(removed))
-	for _, s := range []*C.char{n, v, d, p, ss} {
-		C.free(unsafe.Pointer(s))
-	}
-}
-
-//export lwkGoCookies
-func lwkGoCookies(idx C.int, lines *C.char) {
-	e := kit
-	if e == nil || e.cookies == nil {
-		return
-	}
-	jar := e.names[int(idx)]
-	var cur []session.Cookie
-	for _, ln := range strings.Split(C.GoString(lines), "\n") {
-		f := strings.Split(ln, "\t")
-		if len(f) != 9 {
-			continue
-		}
-		exp, _ := strconv.ParseInt(f[5], 10, 64)
-		ss := f[8]
-		if ss == "None" {
-			ss = ""
-		}
-		cur = append(cur, session.Cookie{Jar: jar, Name: f[0], Value: f[1], Domain: strings.ToLower(f[2]), HostOnly: f[3] == "1",
-			Path: f[4], Expires: exp, Secure: f[6] == "1", HTTPOnly: f[7] == "1", SameSite: ss})
-	}
-	e.seen[int(idx)] = e.cookies.Diff("webkit", e.seen[int(idx)], cur)
 }
 
 func (e *KitEngine) NewView(o Options, ev Events, done func(View, error)) {
@@ -304,10 +261,6 @@ func (e *KitEngine) NewView(o Options, ev Events, done func(View, error)) {
 	kitViews[v.id] = v
 	done(v, nil)
 }
-
-// SetDivert is the router's question before each navigation of the page's
-// own: true moves the tab to Electron (webview/route).
-func (v *kitView) SetDivert(f func(string) bool) { v.divert = f }
 
 func (v *kitView) Navigate(u string) {
 	if v.closed {
@@ -430,9 +383,6 @@ func lwkGoDecide(id C.uintptr_t, cu *C.char, newWindow, userLink, middle C.int) 
 			return 1
 		}
 	}
-	if v.divert != nil && v.divert(u) {
-		return 1 // the router moves the tab to Electron, which opens u
-	}
 	return 0
 }
 
@@ -516,4 +466,24 @@ func lwkGoDownload(n, id C.uintptr_t, state C.int, u, path *C.char, total, got C
 	nn := n
 	d.Cancel = func() { C.lwkCancelDownload(nn) }
 	p.Download(d)
+}
+
+// vkFromChar maps a typed character to the key code Iris's shortcut table
+// uses (the classic virtual-key numbers: letters and digits as themselves).
+func vkFromChar(c rune) uint32 {
+	switch {
+	case c >= 'a' && c <= 'z':
+		return uint32(c - 'a' + 'A')
+	case c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return uint32(c)
+	case c == ',':
+		return 0xBC
+	case c == '+', c == '=':
+		return 0xBB
+	case c == '-':
+		return 0xBD
+	case c == '\t':
+		return 0x09
+	}
+	return 0
 }

@@ -1,5 +1,5 @@
-# Iris for Linux: builds the program and its engine (dist/linux) on every
-# push, then the Flatpak and the Snap from it, starts Iris at a fractional
+# Iris for Linux: builds the program (dist/linux, WebKitGTK from the system)
+# on every push, then the Flatpak and the Snap from it, starts Iris at a fractional
 # scale and from the Flatpak (in a virtual display) to check it opens, and
 # builds the Nix flake. The release workflow calls this too and publishes
 # the Flatpak bundle and the Snap.
@@ -29,9 +29,6 @@ jobs:
         with:
           go-version: "1.24"
           cache: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
       - name: Build tools and GTK development files
         run: |
           # no man-page index after installs (it can hang the runner); apt gets
@@ -40,7 +37,7 @@ jobs:
           apt_get() { timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@" || { sleep 10; timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@"; }; }
           apt_get update -qq
           apt_get install -y -qq gcc pkg-config libgtk-4-dev libepoxy-dev libfreetype-dev libwebkitgtk-6.0-dev curl
-      - name: Build the program and its engine (tests run first)
+      - name: Build the program (tests run first)
         run: ./build-iris.sh linux
       - name: Collect (a tarball keeps the files' modes)
         run: tar -C dist -czf iris-linux.tar.gz linux && ls -l iris-linux.tar.gz
@@ -49,26 +46,6 @@ jobs:
         with:
           name: linux
           path: iris-linux.tar.gz
-
-  # Windows: the program, the setup and the Store package build, and the
-  # shared tests pass (the release builds the same way)
-  windows:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-          cache: false
-      - name: Build Iris for Windows
-        run: |
-          # no man-page index after installs (it can hang the runner); apt gets
-          # 10 minutes, then one more try
-          sudo rm -f /var/lib/man-db/auto-update
-          apt_get() { timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@" || { sleep 10; timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@"; }; }
-          apt_get update -qq && apt_get install -y -qq zip
-          ./build-iris.sh windows
-          ls -l dist
 
   # Fractional scale, as on niri at 1.25: sway (which scales fractionally the
   # same way) on a 1920x1200 screen, Iris filling it, then resized. The
@@ -87,16 +64,13 @@ jobs:
           path: pkg
       - name: Install Iris and sway
         run: |
-          # the libraries the program, WebKit and Electron need, by the names they load
-          dnf install -y -q sway grim mesa-dri-drivers python3 dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip \
+          # the program's libraries and WebKit's, by the names they load
+          dnf install -y -q sway grim mesa-dri-drivers python3 python3-pillow dejavu-sans-fonts procps-ng dbus-daemon util-linux wtype tar gzip \
             webkitgtk6.0 gstreamer1-plugins-good glib-networking bubblewrap \
-            'libgtk-4.so.1()(64bit)' 'libgtk-3.so.0()(64bit)' 'libepoxy.so.0()(64bit)' 'libGLESv2.so.2()(64bit)' 'libnss3.so()(64bit)' 'libnspr4.so()(64bit)' \
-            'libasound.so.2()(64bit)' 'libgbm.so.1()(64bit)' 'libdrm.so.2()(64bit)' 'libxkbcommon.so.0()(64bit)' 'libxshmfence.so.1()(64bit)' \
-            'libatk-bridge-2.0.so.0()(64bit)' 'libcups.so.2()(64bit)' 'libXcomposite.so.1()(64bit)' 'libXdamage.so.1()(64bit)' \
-            'libXrandr.so.2()(64bit)' 'libpango-1.0.so.0()(64bit)' 'libcairo.so.2()(64bit)'
+            'libgtk-4.so.1()(64bit)' 'libepoxy.so.0()(64bit)' 'libGLESv2.so.2()(64bit)'
           mkdir -p /opt && tar -xzf pkg/iris-linux.tar.gz -C /opt && mv /opt/linux /opt/iris
           ln -s /opt/iris/iris /usr/local/bin/iris
-          ! ldd /opt/iris/iris /opt/iris/electron/electron | grep "not found"
+          ! ldd /opt/iris/iris | grep "not found"
           # a copy without the file capabilities a container cannot grant
           cp /usr/bin/sway /usr/local/bin/sway-plain
       - name: Iris at 1.25, resized
@@ -123,16 +97,11 @@ jobs:
           export SWAYSOCK=$(ls $XDG_RUNTIME_DIR/sway-ipc.* | head -1)
           (cd /tmp/page && python3 -m http.server 8766 --bind 127.0.0.2 >/dev/null 2>&1 &)
           sleep 1
-          # WebKit first (most pages), then the same page in Electron
-          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland
-          dbus-run-session -- iris http://127.0.0.2:8766/ > /tmp/fs/log-webkit.txt 2>&1 &
-          sleep 15
-          grim /tmp/fs/0-webkit.png
-          pkill -x iris; sleep 2; pkill -9 -x iris; sleep 1
-          export IRIS_HEAVY_HOSTS=127.0.0.2 LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland ELECTRON_ENABLE_LOGGING=1
+          export LIBGL_ALWAYS_SOFTWARE=1 IRIS_GL_DEBUG=1 IRIS_NO_SANDBOX=1 GDK_BACKEND=wayland IRIS_UI_DUMP=/tmp/fs/ui.ppm
           dbus-run-session -- iris http://127.0.0.2:8766/ > /tmp/fs/log.txt 2>&1 &
           sleep 18
           grim /tmp/fs/1-full.png
+          cp /tmp/fs/ui.ppm /tmp/fs/ui-first.ppm
           swaymsg -t get_tree | grep -o '"rect": {[^}]*}' | head -3
           swaymsg '[app_id="io.github.tulip_labs.Iris"] floating enable, resize set 1000 700, move position 40 40'
           sleep 6
@@ -147,25 +116,27 @@ jobs:
           sleep 3
           grim /tmp/fs/4-panel.png
           pgrep -x iris >/dev/null || touch /tmp/fs/exited
-          # what Electron does with each scale it is given
-          pkill -x iris; sleep 2; pkill -9 -x iris; pkill -9 -f electron; sleep 1
-          for f in 1.25 1.5 2; do
-            IRIS_SCALE=$f dbus-run-session -- iris http://127.0.0.2:8766/ > /tmp/fs/log-$f.txt 2>&1 &
-            sleep 14
-            grim /tmp/fs/5-forced-$f.png
-            pkill -x iris; sleep 2; pkill -9 -x iris; pkill -9 -f electron; sleep 1
-          done
+          pkill -x iris; sleep 2; pkill -9 -x iris; sleep 1
           SH
           su tester -c "sh /tmp/run.sh"
           grep -v dbus /tmp/fs/log.txt | tail -60
           tail -20 /tmp/sway.txt
           for f in /tmp/fs/*.png; do [ -s "$f" ] && { echo "SHOT-BEGIN $(basename $f)"; base64 -w0 "$f"; echo; echo "SHOT-END"; }; done
           [ ! -e /tmp/fs/exited ] || { echo "Iris exited"; exit 1; }
-          for f in 1.25 1.5 2; do echo "== forced $f"; grep -i "scale\|dsf\|device" /tmp/fs/log-$f.txt | grep -v dbus | head -12; done
-          grep -a -o "IRIS-DPR [0-9.]*" /tmp/fs/log*.txt | sort | uniq -c
-          grep -q "IRIS-DPR 1.25" /tmp/fs/log.txt || { echo "the Electron page is not drawn at the screen's scale (1.25)"; exit 1; }
-          grep -a "drawn by\|CONSOLE" /tmp/fs/log-webkit.txt | head
-          grep -q "drawn by WebKit" /tmp/fs/log-webkit.txt && grep -q "CONSOLE LOG IRIS-DPR" /tmp/fs/log-webkit.txt || { echo "WebKit did not draw the page"; exit 1; }
+          grep -a "drawn by\|CONSOLE\|scale" /tmp/fs/log.txt | head -20
+          grep -q "CONSOLE LOG IRIS-DPR" /tmp/fs/log.txt || { echo "WebKit did not draw the page"; exit 1; }
+          # the interface on the screen must be Gio's frame pixel for pixel (no
+          # scaled copy on the way: that blurs letters at 1.25)
+          python3 - /tmp/fs/ui-first.ppm /tmp/fs/1-full.png <<'PY'
+          import sys
+          from PIL import Image
+          u = Image.open(sys.argv[1]).convert("RGB"); g = Image.open(sys.argv[2]).convert("RGB")
+          w, band = u.size[0], int(1.25 * 90)  # the tabs and the bar
+          bad = sum(1 for y in range(band) for x in range(w)
+                    if max(abs(a - b) for a, b in zip(u.getpixel((x, y)), g.getpixel((x, y)))) > 8)
+          print(f"interface band {w}x{band}: {bad} pixels differ from Gio's frame")
+          sys.exit(1 if bad > w * band // 100 else 0)
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -186,7 +157,7 @@ jobs:
         with:
           name: linux
           path: pkg
-      - name: The program and its engine in dist/linux
+      - name: The program in dist/linux
         run: mkdir -p dist && tar -xzf pkg/iris-linux.tar.gz -C dist && ls dist/linux | head
       - name: Flatpak, flatpak-builder and Weston
         run: |

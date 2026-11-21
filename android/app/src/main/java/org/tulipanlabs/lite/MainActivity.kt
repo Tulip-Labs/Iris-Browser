@@ -47,7 +47,7 @@ class MainActivity : Activity(), PageEvents {
     private lateinit var set: Settings
     private lateinit var hist: History
     private lateinit var pages: Pages
-    private var pal = Palette.all[0]
+    private val pal = Palette.glass
 
     private val tabs = ArrayList<Tab>()
     private var cur = -1
@@ -95,7 +95,6 @@ class MainActivity : Activity(), PageEvents {
         super.onCreate(state)
         set = Settings(this)
         hist = History(this)
-        pal = Palette.byId(set.theme)
         pages = Pages(this, set, this)
         edgeToEdge()
         buildUi()
@@ -132,7 +131,7 @@ class MainActivity : Activity(), PageEvents {
     private var lastSyncTry = 0L
     private var syncing = false
 
-    /** trades history, tabs and the background with the paired computer, if it is on this network */
+    /** trades history and tabs with the paired computer, if it is on this network */
     private fun sync(quiet: Boolean) {
         if (!Sync.paired(set) || syncing) return
         syncing = true
@@ -145,13 +144,7 @@ class MainActivity : Activity(), PageEvents {
                 if (isFinishing || isDestroyed) return@post
                 when {
                     changed == null -> if (!quiet) Toast.makeText(this, set.syncName + " is not on this network", Toast.LENGTH_SHORT).show()
-                    else -> {
-                        if (!quiet) Toast.makeText(this, "In sync with " + set.syncName, Toast.LENGTH_SHORT).show()
-                        if (changed && sheet == null && grid == null) {
-                            pal = Palette.byId(set.theme)
-                            buildUi()
-                        }
-                    }
+                    else -> if (!quiet) Toast.makeText(this, "In sync with " + set.syncName, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -1132,46 +1125,6 @@ class MainActivity : Activity(), PageEvents {
         }
         col.addView(acts, lp(MATCH, WRAP).also { it.bottomMargin = dp(8) })
 
-        // look
-        col.addView(section("Background"))
-        // each background as a tile with its name, under the same glass
-        val tiles = Flow(this, dp(8))
-        val sheetW = if (wide) minOf(dp(560), resources.displayMetrics.widthPixels) else resources.displayMetrics.widthPixels
-        val tileW = ((sheetW - dp(40) - dp(8) * 3) / 3 - dp(2)).coerceAtMost(dp(160))
-        for (p in Palette.all) {
-            val tile = LinearLayout(this)
-            tile.orientation = LinearLayout.VERTICAL
-            tile.gravity = Gravity.CENTER_HORIZONTAL
-            tile.setPadding(dp(6), dp(6), dp(6), dp(4))
-            val on = p.id == pal.id
-            tile.background = ripple(pal, rounded(pal.surfaceHigh, dp(16).toFloat(), dp(if (on) 2 else 1), if (on) pal.focus else pal.outlineVariant),
-                rounded(Palette.WHITE, dp(16).toFloat()))
-            val preview = FrameLayout(this)
-            preview.background = p.frameDrawable()
-            preview.roundCorners(dp(11).toFloat())
-            // a pane of the glass on it
-            val pane = View(this)
-            pane.background = glass(p, p.tabGlass, dp(6).toFloat(), dp(1))
-            preview.addView(pane, flp(dp(34), dp(12), Gravity.TOP or Gravity.START).also { it.setMargins(dp(7), dp(7), 0, 0) })
-            tile.addView(preview, lp(MATCH, dp(46)))
-            val l = text(p.label, 12.5f, pal.onSurface, bold = on)
-            l.setSingleLine(true)
-            l.ellipsize = TextUtils.TruncateAt.END
-            l.gravity = Gravity.CENTER
-            tile.addView(l, lp(MATCH, WRAP).also { it.topMargin = dp(5) })
-            tile.contentDescription = p.label
-            tile.setOnClickListener {
-                set.theme = p.id
-                set.themeAt = System.currentTimeMillis() / 1000
-                pal = p
-                closeSheet()
-                buildUi()
-                openSheet()
-            }
-            tiles.addView(tile, ViewGroup.LayoutParams(tileW, dp(84)))
-        }
-        col.addView(tiles, lp(MATCH, WRAP).also { it.bottomMargin = dp(6) })
-
         // containers
         val ch = section("Containers")
         ch.tag = "containers"
@@ -1201,7 +1154,7 @@ class MainActivity : Activity(), PageEvents {
         col.addView(section("Sync with your computer"))
         if (Sync.paired(set)) {
             col.addView(note("Paired with " + set.syncName + (if (set.syncAt > 0) ", in sync " + ago(set.syncAt) else ", not synced yet") +
-                ". History, open tabs and the background are traded directly whenever both are on the same Wi-Fi."))
+                ". History and open tabs are traded directly whenever both are on the same Wi-Fi."))
             col.addView(button(pal, "Sync now", false) { sync(quiet = false) }, lp(WRAP, dp(40)).also { it.topMargin = dp(8) })
             val theirs = Sync.pcTabs(set)
             if (theirs.isNotEmpty()) {
@@ -1221,7 +1174,7 @@ class MainActivity : Activity(), PageEvents {
                 Toast.makeText(this, "This phone no longer syncs", Toast.LENGTH_SHORT).show()
             }, lp(WRAP, dp(40)).also { it.topMargin = dp(8) })
         } else {
-            col.addView(note("Iris on your computer can keep history, open tabs and the background the same as here, with no account and no server. " +
+            col.addView(note("Iris on your computer can keep history and open tabs the same as here, with no account and no server. " +
                 "On the computer open Menu, Phone, turn sync on and scan its code with this phone's camera; then tap \"Pair with Iris\" on the page that opens."))
         }
 
@@ -1430,7 +1383,6 @@ class MainActivity : Activity(), PageEvents {
         if (i == null) return false
         // screens for the screenshot run (debug builds only)
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            i.getStringExtra("lite.theme")?.let { th -> set.theme = th; pal = Palette.byId(th); buildUi() }
             i.getStringExtra("lite.url")?.let { u -> ui.postDelayed({ go(u) }, 300) }
             i.getStringExtra("lite.open")?.let { what ->
                 ui.postDelayed({

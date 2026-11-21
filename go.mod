@@ -8,7 +8,6 @@ require (
 	github.com/tetratelabs/wazero v1.9.0
 	golang.org/x/image v0.26.0
 	golang.org/x/net v0.48.0
-	golang.org/x/sys v0.39.0
 )
 
 require (
@@ -17,5 +16,6 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/ncruces/julianday v1.0.0 // indirect
 	golang.org/x/exp/shiny v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
 )

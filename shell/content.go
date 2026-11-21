@@ -2,7 +2,6 @@ package shell
 
 import (
 	"math"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -23,12 +22,9 @@ func (a *App) content(r ui.Rect) {
 		why := "Its process ended (it may have run out of memory). Reload to open it again."
 		a.message(r, ui.IWarning, "This page stopped working", why, "Reload", func() { a.reload(t) })
 	case a.engErr != nil || a.eng == nil:
-		msg := "Electron, which shows the pages, is missing from Iris's folder. Run the Iris installer again."
+		msg := "WebKitGTK, which shows the pages, did not start. Install Iris again, or run iris from a terminal to see why."
 		if a.engErr != nil && !strings.Contains(a.engErr.Error(), "not available") {
 			msg = "The web engine did not start: " + a.engErr.Error()
-		}
-		if runtime.GOOS == "linux" {
-			msg = "The page engines (WebKitGTK and Electron) did not start. Install Iris again, or run iris from a terminal to see why."
 		}
 		a.message(r, ui.IGlobe, "The web engine is not available", msg, "", nil)
 	case t.view == nil:
@@ -46,15 +42,9 @@ func (a *App) content(r ui.Rect) {
 	}
 }
 
-// fillPage paints the surface of Iris's own pages (the new tab page): the
-// background behind the glass, or the page color when there is none.
+// fillPage paints the surface of Iris's own pages (the new tab page): a pale
+// version of the theme's wash.
 func fillPage(g ui.Gfx, r ui.Rect, rad float32, th *ui.Theme) {
-	if w := th.Wall; w != nil && w.Sharp != nil {
-		// Iris's own pages show the background itself, with a soft rim
-		g.Backdrop(w.Sharp, w.Win, r, rad)
-		ui.StrokeRound(g, r, rad, 1, ui.White.Alpha(0.5))
-		return
-	}
 	if th.Grad == nil {
 		ui.FillRound(g, r, rad, pageColor(th))
 		return

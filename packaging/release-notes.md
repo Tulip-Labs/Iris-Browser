@@ -1,4 +1,13 @@
-Iris: a light, fast browser in Go and Gio for Windows 10 and 11, Linux and Android.
+Iris: a light, fast browser in Go and Gio for Linux and Android.
+
+## New in 1.0.26
+
+- **Linux: WebKitGTK for every page.** YouTube, social sites and web apps now open in WebKitGTK too, the engine of GNOME Web, so Iris for Linux has one engine. Electron, the engine router and the cookie bridge between the two are gone. Iris for Linux drops from about 300 MB to about 17 MB; the Flatpak, the Snap, the Nix package and the container image are much smaller. Sign-ins made in WebKit stay; a sign-in made only in Electron (for example YouTube or Google in 1.0.25) has to be done once more.
+- **Iris is for Linux and Android.** There is no Iris for Windows from this version on: 1.0.25 is the last one, and its files stay on its release page.
+- **One look, no backgrounds.** The background pictures behind the glass and their menu are gone. The glass sits over the theme's own pale wash, on Linux and on Android.
+- **No browser extensions.** WebKitGTK does not run Chrome extensions, so the Extensions section is gone; Iris Shields still block ads, trackers and cookie notices.
+- **Where WebKit's sandbox cannot run**, Iris now says so plainly instead of switching engines; installing bubblewrap fixes it.
+- **Android** loses its background choices too: one look, as on Linux.
 
 ## New in 1.0.25
 
@@ -186,20 +195,18 @@ A release about safety and steadiness; nothing changes in how Iris looks.
 
 | File | What it is |
 |---|---|
-| `LiteGo-Setup.exe` | The installer. Installs for the current user, no administrator rights. |
-| `LiteGo-portable.zip` | The app in a folder: unzip and run `Lite Go.exe`. |
-| `LiteGo.msixbundle` | The Windows package (x64 and ARM64), for the Microsoft Store or sideloading with your own certificate. |
-| `SHA256SUMS.txt` | Checksums of the three Windows files. |
-| `Lite-android.apk` | Lite for Android 8 and newer. Allow installing from your browser or file manager when Android asks. |
+| `Iris-x86_64.flatpak` | Linux, any distribution: `flatpak install --user Iris-x86_64.flatpak` (needs the Flathub remote for the GNOME runtime). |
+| `Iris-x86_64.snap` | Linux with Snap: `sudo snap install --dangerous Iris-x86_64.snap`. |
+| `Iris-android.apk` | Iris for Android 10 and newer, 64-bit. Allow installing from your browser or file manager when Android asks. |
+| `iris-container` | Starts the container image (`ghcr.io/tulip-labs/iris-browser`) with Podman or Docker. |
+| `SHA256SUMS` | Checksums of every file above. |
 
-## Before you install
+Nix: `nix profile install github:Tulip-Labs/Iris-Browser`.
 
-- The files are not signed, so Windows SmartScreen shows "Windows protected your PC". Choose **More info**, then **Run anyway**.
-- Pages were shown by Microsoft Edge WebView2 (Electron since 1.0.25).
-- Downloads, split view, the sandbox and the phone link are new and have been tested with a stand-in engine, not yet on many real PCs. If something misbehaves, open an issue.
+A Flatpak installed from the file is not updated by `flatpak update`: install the new file the same way.
 
 ## What is in it
 
-Lite results for Google searches, Ask AI, Lite Shields with adaptive scanning, HTTPS-only with a sandbox for unsafe addresses, split view, a download manager, the phone link, find, zoom, print, history, private, temporary and container tabs, and a memory plan with a balancer. See the README for the full list.
+Every search in Google AI Mode, Ask AI beside any page, Iris Shields (ads, trackers, cookie notices, fingerprinting), HTTPS-only with a sandbox for unsafe addresses, split view, a download manager, the phone link and sync, find, zoom, print, history, private, temporary and container tabs, and a memory plan that rests and unloads background tabs. See the README for the full list.
 
 Licensed under GPL 3.0.

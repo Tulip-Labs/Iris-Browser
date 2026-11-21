@@ -1,13 +1,13 @@
-// Package webview embeds the web engines under Iris's own Gio interface:
-// Electron on Windows; WebKitGTK and Electron on Linux. Every method must be
-// called on the window's UI thread; events arrive on that thread too.
+// Package webview embeds the web engine under Iris's own Gio interface:
+// WebKitGTK (engine_webkit.go). Every method must be called on the window's
+// UI thread; events arrive on that thread too.
 package webview
 
 import "errors"
 
 // SleepFreesMemory says whether putting a page to sleep gives its memory
-// back (Electron does; on Linux a hidden page keeps its memory, so under
-// memory pressure Iris unloads pages there instead).
+// back. A hidden WebKit page keeps its memory, so under memory pressure Iris
+// unloads pages instead (engine_webkit.go sets it false).
 var SleepFreesMemory = true
 
 // Options choose a tab's storage: a named container (its own cookies,
@@ -128,8 +128,7 @@ type Policy struct {
 	ContentRules func() []byte
 	// MemoryBudgetMB is how much memory the engine's processes may hold
 	// together (the memory setting's budget; 0 = a quarter of the computer's).
-	// Iris's balancer rests background tabs first; an engine that can (Linux,
-	// Electron) restarts itself when it stays over with nothing left to rest.
+	// Iris's balancer rests background tabs first, then unloads them.
 	MemoryBudgetMB int
 }
 
@@ -138,10 +137,6 @@ type Popup struct {
 	URL  string
 	impl popupImpl
 }
-
-// FromWebKit says whether the pop-up is a WebKit page (Linux): it opens in
-// WebKit, beside its opener.
-func (p *Popup) FromWebKit() bool { return p != nil && p.impl.kitPage() }
 
 // View is one tab's page.
 type View interface {
@@ -181,21 +176,3 @@ type Engine interface {
 
 // ErrUnavailable is returned where the platform's web engine is not supported yet.
 var ErrUnavailable = errors.New("the web engine is not available on this system")
-
-// Extension is a browser extension installed in the engine.
-type Extension struct {
-	ID, Name string
-	Enabled  bool
-}
-
-// ExtensionHost is an engine that runs browser extensions (Electron, on
-// Windows and Linux). Extensions
-// live in the default container; private, sandbox and container tabs run
-// without them. Every callback arrives on the window's thread.
-type ExtensionHost interface {
-	// AddExtension loads the unpacked extension in dir (it must stay there).
-	AddExtension(dir string, done func(Extension, error))
-	Extensions(done func([]Extension, error))
-	RemoveExtension(id string, done func(error))
-	EnableExtension(id string, on bool, done func(error))
-}
