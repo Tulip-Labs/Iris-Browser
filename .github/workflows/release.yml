@@ -38,8 +38,11 @@ jobs:
     uses: ./.github/workflows/android.yml
     secrets: inherit
 
+  # publishes what was built: Linux always (the release waits for it);
+  # Android when its build passed, otherwise the notes say it follows
   publish:
     needs: [create, linux, android]
+    if: always() && needs.create.result == 'success' && needs.linux.result == 'success'
     runs-on: ubuntu-24.04
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -50,10 +53,18 @@ jobs:
         with:
           path: art
           merge-multiple: true
-      - name: The files (the Flatpak bundle and the APK; Iris for Android finds its updates here)
+      - name: The files (the Flatpak bundle, and the APK when it was built; Iris for Android finds its updates here)
         run: |
           ls -l art
-          gh release upload "$TAG" art/Iris-x86_64.flatpak art/Iris-android.apk --clobber
+          files="art/Iris-x86_64.flatpak"
+          if [ -f art/Iris-android.apk ]; then
+            files="$files art/Iris-android.apk"
+          else
+            gh release view "$TAG" --json body --jq .body > notes.md
+            printf '\n\n**Android:** the APK of this version follows in the next release.\n' >> notes.md
+            gh release edit "$TAG" --notes-file notes.md
+          fi
+          gh release upload "$TAG" $files --clobber
       - name: Checksums of every file
         run: |
           mkdir all && cd all
