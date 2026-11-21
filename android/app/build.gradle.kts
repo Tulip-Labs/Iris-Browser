@@ -35,7 +35,13 @@ val fetchUblock by tasks.registering {
 
 android {
     namespace = "org.tulipanlabs.iris"
-    compileSdk = 37 // GeckoView 160 brings AndroidX libraries built against Android 17
+    // GeckoView 160 brings AndroidX libraries that need Android 17's
+    // platform at its minor level 2 (API 37.2)
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 2
+        }
+    }
 
     defaultConfig {
         // the id stays, so Iris installs over earlier versions
