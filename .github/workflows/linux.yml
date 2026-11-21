@@ -66,21 +66,47 @@ jobs:
           name: linux-screen
           path: /tmp/iris-1.25.png
 
+  # The bundle, built on the runner itself with Flathub's GNOME 50 SDK and
+  # Swift 6 extension (the flatpak-builder container could not update its own
+  # SDK on the runner's overlay filesystem), then installed and started.
   flatpak:
     runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
-      options: --privileged
     steps:
       - uses: actions/checkout@v4
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-        with:
-          bundle: Iris-x86_64.flatpak
-          manifest-path: packaging/flatpak/io.github.tulip_labs.Iris.yml
-          cache-key: flatpak-builder-${{ github.sha }}
-      - name: The bundle, for the release
-        run: mkdir -p art && cp Iris-x86_64.flatpak art/ && ls -l art
+      - name: Flatpak, flatpak-builder and Weston
+        run: |
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@" || { sleep 10; timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get "$@"; }; }
+          apt_get update -qq
+          apt_get install -y -qq flatpak flatpak-builder weston dbus-user-session procps
+          # bubblewrap needs user namespaces, which Ubuntu limits by default
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - name: Build the bundle
+        run: |
+          flatpak-builder --user --install-deps-from=flathub --force-clean --repo=repo --default-branch=stable \
+            build packaging/flatpak/io.github.tulip_labs.Iris.yml
+          flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            repo Iris-x86_64.flatpak io.github.tulip_labs.Iris stable
+          mkdir -p art && cp Iris-x86_64.flatpak art/ && ls -l art
       - uses: actions/upload-artifact@v4
         with:
           name: linux
           path: art/Iris-x86_64.flatpak
+      - name: Install the bundle and start Iris on Wayland
+        run: |
+          flatpak install --user -y --noninteractive ./Iris-x86_64.flatpak
+          flatpak info --user io.github.tulip_labs.Iris
+          export XDG_RUNTIME_DIR=$(mktemp -d)
+          chmod 700 $XDG_RUNTIME_DIR
+          weston --backend=headless --socket=wayland-1 --width=1280 --height=800 > /tmp/weston.txt 2>&1 &
+          for i in $(seq 1 50); do [ -S $XDG_RUNTIME_DIR/wayland-1 ] && break; sleep 0.2; done
+          [ -S $XDG_RUNTIME_DIR/wayland-1 ] || { cat /tmp/weston.txt; exit 1; }
+          export WAYLAND_DISPLAY=wayland-1
+          dbus-run-session -- flatpak run --user --env=LIBGL_ALWAYS_SOFTWARE=1 io.github.tulip_labs.Iris about:blank > /tmp/log.txt 2>&1 &
+          sleep 40
+          alive=0; pgrep -f /app/lib/iris/iris >/dev/null && alive=1
+          grep -v dbus /tmp/log.txt | tail -60
+          flatpak kill io.github.tulip_labs.Iris 2>/dev/null || true
+          [ $alive = 1 ] || { echo "Iris from the Flatpak exited before 40 seconds"; exit 1; }
+          echo "Iris from the Flatpak ran for 40 seconds on Wayland."
