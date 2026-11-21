@@ -1,6 +1,0 @@
-# winget manifest (version), made by the release workflow from this file.
-PackageIdentifier: TulipLabs.Iris
-PackageVersion: "@VERSION@"
-DefaultLocale: en-US
-ManifestType: version
-ManifestVersion: 1.6.0

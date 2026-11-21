@@ -5,10 +5,10 @@
 #
 #   podman build -f packaging/container/Containerfile -t iris-browser .
 
-# --- build: the program, Electron and Iris's helper (build-iris.sh linux)
+# --- build: the program (build-iris.sh linux)
 FROM registry.fedoraproject.org/fedora:44 AS build
 RUN dnf -y install --setopt=install_weak_deps=False \
-      golang gcc pkgconf git zip nodejs npm \
+      golang gcc pkgconf git \
       gtk4-devel libepoxy-devel freetype-devel webkitgtk6.0-devel \
       libxkbcommon-devel libxkbcommon-x11-devel libX11-devel libXcursor-devel libxcb-devel \
       wayland-devel mesa-libEGL-devel vulkan-headers \
@@ -20,16 +20,14 @@ RUN ./build-iris.sh linux
 # --- run
 FROM registry.fedoraproject.org/fedora:44
 # GTK 4 and WebKitGTK 6 with its sandbox; the GPU (Mesa: OpenGL, Vulkan and
-# VA-API video decoding); GStreamer for WebKit's video (OpenH264 and the
-# libav plugin for H.264 and AAC; Electron carries its own codecs); what
-# Electron loads; fonts and sound
+# VA-API video decoding, which GStreamer's va plugin uses); GStreamer for
+# WebKit's video; fonts and sound
 RUN dnf -y install --setopt=install_weak_deps=False \
-      gtk4 gtk3 webkitgtk6.0 glib-networking bubblewrap xdg-dbus-proxy \
+      gtk4 webkitgtk6.0 glib-networking bubblewrap xdg-dbus-proxy \
       mesa-dri-drivers mesa-libEGL mesa-libgbm mesa-vulkan-drivers mesa-va-drivers \
       libdrm vulkan-loader libva \
       gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free \
-      nss nspr alsa-lib cups-libs at-spi2-atk libxkbcommon libXcomposite \
-      libXdamage libXrandr libXScrnSaver dbus-daemon dbus-tools \
+      dbus-daemon dbus-tools \
       pipewire-libs pulseaudio-libs \
       google-noto-sans-fonts google-noto-serif-fonts google-noto-sans-mono-fonts google-noto-color-emoji-fonts \
       adwaita-icon-theme ca-certificates xdg-user-dirs glibc-langpack-en glibc-langpack-es \
@@ -49,7 +47,7 @@ RUN chmod 755 /opt/iris/start \
     && install -Dm644 /opt/iris/io.github.tulip_labs.Iris.png /usr/share/icons/hicolor/512x512/apps/io.github.tulip_labs.Iris.png \
     && useradd -m -u 1000 iris
 LABEL org.opencontainers.image.title="Iris" \
-      org.opencontainers.image.description="A light, fast browser in Go: WebKitGTK for most pages, Electron for the heavy ones" \
+      org.opencontainers.image.description="A light, fast browser in Go, with WebKitGTK" \
       org.opencontainers.image.source="https://github.com/Tulip-Labs/Iris-Browser" \
       org.opencontainers.image.licenses="GPL-3.0-only"
 USER iris

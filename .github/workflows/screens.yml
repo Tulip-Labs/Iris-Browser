@@ -40,7 +40,6 @@ jobs:
           cp ai-answer.png     $d/ai.png
           cp newtab-kinds.png  $d/tabs.png
           cp theme-glass-menu.png $d/menu.png
-          cp theme-glass-backgrounds.png $d/backgrounds.png
           # Iris's own results page and the dark palettes are gone (1.0.25)
           rm -f $d/results.png $d/lagoon.png $d/night.png
       - name: Keep them on main

@@ -12,8 +12,8 @@ android {
         applicationId = "org.tulipanlabs.lite"
         minSdk = 29 // Cefrium's Chromium needs Android 10
         targetSdk = 35
-        versionCode = 22
-        versionName = "1.0.25"
+        versionCode = 23
+        versionName = "1.0.26"
     }
 
     buildFeatures {

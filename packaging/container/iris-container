@@ -6,8 +6,8 @@
 #
 # For speed it gives the container what a browser needs to run at full pace:
 # the GPU (drawing and video decoding; NVIDIA through CDI when it is set up),
-# a large shared memory (Chromium passes frames through it), an init that
-# reaps the engines' processes, and a home volume that keeps the page cache
+# a large shared memory (WebKit passes video frames through it), an init that
+# reaps WebKit's processes, and a home volume that keeps the page cache
 # and the GPU's shader cache between runs. Downloads land in your own
 # Downloads folder, sound goes to PipeWire or PulseAudio.
 set -e

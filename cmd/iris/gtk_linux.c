@@ -7,11 +7,9 @@
 // screen's exact scale, fractional ones (1.25, 1.5, 1.75) included:
 //   - Iris's interface, drawn by Gio's GPU renderer into a texture of the
 //     view's size in real pixels;
-//   - over it each page, drawn by Electron off screen at that same scale and
-//     placed on whole pixels (webview/electron_linux.c, lgxSnapshotPages), so one
-//     page pixel is one screen pixel: sharp, and no larger than it must be.
-// The pointer, the wheel and the keys go to the page under them (or the
-// focused one), else to the interface.
+//   - over it each page, a WebKitGTK web view: a child widget of the view,
+//     placed on whole pixels (webview/webkit_linux.c), which GTK draws at
+//     the same scale and gives the pointer and the keys itself.
 //
 // The window draws its own title bar (ours). Client-side decorations with an
 // empty GTK title bar keep the system's shadow, rounded corners and resize
@@ -43,12 +41,6 @@ extern void lgwGoClose(void);
 extern void lgwGoDo(uintptr_t h);
 extern void lgwGoScale(double sf, double text, int motion);
 
-// the pages (webview/electron_linux.c)
-extern void lgxSnapshotPages(GtkSnapshot *s, double scale) __attribute__((weak));
-extern int lgxPagePointer(GdkEvent *e, double x, double y) __attribute__((weak));
-extern int lgxPageKey(GdkEvent *e) __attribute__((weak));
-extern void lgxPagesLeave(void) __attribute__((weak));
-extern void lgxUIFocus(void) __attribute__((weak));
 // WebKit's pages (webview/webkit_linux.c): real GTK widgets, children of
 // the view, which GTK gives the pointer and the keys itself
 extern void lwkSnapshotPages(GtkSnapshot *s, double scale) __attribute__((weak));
@@ -57,34 +49,17 @@ extern void lwkUIFocus(void) __attribute__((weak));
 extern void lwkAllocate(void) __attribute__((weak));
 extern void lwkOverlay(int on) __attribute__((weak));
 
-// The pages of both engines: a press on one engine's page takes the keys
-// from the other's.
-static int pagePointer(GdkEvent *e, double x, double y) {
-	int press = gdk_event_get_event_type(e) == GDK_BUTTON_PRESS;
-	if (lwkPagePointer && lwkPagePointer(e, x, y)) {
-		if (press && lgxUIFocus) lgxUIFocus();
-		return 1;
-	}
-	if (lgxPagePointer && lgxPagePointer(e, x, y)) {
-		if (press && lwkUIFocus) lwkUIFocus();
-		return 1;
-	}
-	return 0;
-}
-static int pageKey(GdkEvent *e) { return lgxPageKey && lgxPageKey(e); }
-static void leavePages(void) {
-	if (lgxPagesLeave) lgxPagesLeave();
-}
+// whether the pointer is over a page (which then has it, not the interface)
+static int pagePointer(GdkEvent *e, double x, double y) { return lwkPagePointer && lwkPagePointer(e, x, y); }
 static void uiFocus(void) {
 	if (lwkUIFocus) lwkUIFocus();
-	if (lgxUIFocus) lgxUIFocus();
 }
 
 // ---- newer GTK, when the system has it ----
 //
 // Iris is built against the oldest GTK 4 it supports (4.6, Ubuntu 22.04), and
 // uses what newer ones add when they are there: the screen's fractional scale
-// (4.12), GL textures with a fence (4.12), smooth scaling choices (4.10).
+// (4.12), GL textures with a fence (4.12).
 
 static void *sym(const char *n) { return dlsym(RTLD_DEFAULT, n); }
 
@@ -101,7 +76,6 @@ static void (*p_gltb_set_width)(GdkGLTextureBuilder_ *, int);
 static void (*p_gltb_set_height)(GdkGLTextureBuilder_ *, int);
 static void (*p_gltb_set_sync)(GdkGLTextureBuilder_ *, gpointer);
 static GdkTexture *(*p_gltb_build)(GdkGLTextureBuilder_ *, GDestroyNotify, gpointer);
-static void (*p_append_scaled)(GtkSnapshot *, GdkTexture *, GskScalingFilter, const graphene_rect_t *);
 static GdkScrollUnit (*p_scroll_unit)(GdkEvent *);
 
 static void loadSyms(void) {
@@ -116,7 +90,6 @@ static void loadSyms(void) {
 	p_gltb_set_height = sym("gdk_gl_texture_builder_set_height");
 	p_gltb_set_sync = sym("gdk_gl_texture_builder_set_sync");
 	p_gltb_build = sym("gdk_gl_texture_builder_build");
-	p_append_scaled = sym("gtk_snapshot_append_scaled_texture");
 	p_scroll_unit = sym("gdk_scroll_event_get_unit");
 	if (!p_gltb_new || !p_gltb_set_context || !p_gltb_set_id || !p_gltb_set_width || !p_gltb_set_height || !p_gltb_set_sync || !p_gltb_build)
 		p_gltb_new = NULL;
@@ -195,6 +168,7 @@ static UITex pool[3];
 static GdkTexture *uiTex; // the last frame
 static int uiW, uiH;
 static double uiS;
+static int uiUpright; // the last frame is the right way up (see renderUI)
 static int glFailed;
 
 // GTK let go of a frame (its fence is deleted when the texture is drawn
@@ -268,8 +242,8 @@ static int srgbReady(int pw, int ph) {
 		if (srgbOK) {
 			const char *vs = es ? "#version 300 es\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0.0,1.0);}"
 			                    : "#version 330 core\nvoid main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);gl_Position=vec4(p*2.0-1.0,0.0,1.0);}";
-			const char *fs = es ? "#version 300 es\nprecision highp float;uniform highp sampler2D t;out vec4 o;void main(){o=texelFetch(t,ivec2(gl_FragCoord.xy),0);}"
-			                    : "#version 330 core\nuniform sampler2D t;out vec4 o;void main(){o=texelFetch(t,ivec2(gl_FragCoord.xy),0);}";
+			const char *fs = es ? "#version 300 es\nprecision highp float;uniform highp sampler2D t;out vec4 o;void main(){ivec2 p=ivec2(gl_FragCoord.xy);o=texelFetch(t,ivec2(p.x,textureSize(t,0).y-1-p.y),0);}"
+			                    : "#version 330 core\nuniform sampler2D t;out vec4 o;void main(){ivec2 p=ivec2(gl_FragCoord.xy);o=texelFetch(t,ivec2(p.x,textureSize(t,0).y-1-p.y),0);}";
 			GLuint v = shader(GL_VERTEX_SHADER, vs), f = shader(GL_FRAGMENT_SHADER, fs);
 			if (v && f) {
 				copyProg = glCreateProgram();
@@ -309,7 +283,7 @@ static int srgbReady(int pw, int ph) {
 }
 
 // srgbCopy copies the sRGB frame's pixels, as stored, into the frame bound
-// to dst.
+// to dst, upside down (row 0 becomes the top, as GTK wants it).
 static void srgbCopy(GLuint dst, int pw, int ph) {
 	glBindFramebuffer(GL_FRAMEBUFFER, dst);
 	glViewport(0, 0, pw, ph);
@@ -329,6 +303,25 @@ static void srgbCopy(GLuint dst, int pw, int ph) {
 	glBindVertexArray(0);
 	glUseProgram(0);
 	glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+// dumpUI writes the interface's last frame, as Gio drew it, to the file in
+// IRIS_UI_DUMP (a PPM picture): CI compares it with the screen to check that
+// the interface reaches it pixel for pixel (linux.yml, job fractional).
+static void dumpUI(int pw, int ph) {
+	FILE *f = fopen(g_getenv("IRIS_UI_DUMP"), "wb");
+	if (!f) return;
+	unsigned char *px = g_malloc((size_t)pw * ph * 4);
+	glBindFramebuffer(GL_FRAMEBUFFER, uiFbo);
+	glReadPixels(0, 0, pw, ph, GL_RGBA, GL_UNSIGNED_BYTE, px);
+	fprintf(f, "P6\n%d %d\n255\n", pw, ph);
+	for (int y = 0; y < ph; y++) {
+		// an upright frame's first row is the top; else it is the bottom
+		int row = uiUpright ? y : ph - 1 - y;
+		for (int x = 0; x < pw; x++) fwrite(px + ((size_t)row * pw + x) * 4, 1, 3, f);
+	}
+	fclose(f);
+	g_free(px);
 }
 
 static void renderUI(GtkWidget *w, int pw, int ph, double s) {
@@ -373,7 +366,13 @@ static void renderUI(GtkWidget *w, int pw, int ph, double s) {
 	glClear(GL_COLOR_BUFFER_BIT); // what shows if the interface is not ready yet
 	lgwGoRender(pw, ph, s, target);
 	gdk_gl_context_make_current(glc);
+	// the copy also turns the frame the right way up for GTK (a GL texture's
+	// first row is its bottom): GTK then draws it as it is, with no flip, which
+	// at a fractional scale would make it draw the frame through a scaled
+	// copy of its own (letters lose pixels, edges go soft)
 	if (viaSRGB) srgbCopy(uiFbo, pw, ph);
+	uiUpright = viaSRGB;
+	if (g_getenv("IRIS_UI_DUMP")) dumpUI(pw, ph);
 	// an opaque window: whatever Gio left see-through is not
 	glBindFramebuffer(GL_FRAMEBUFFER, uiFbo);
 	glDisable(GL_SCISSOR_TEST);
@@ -415,11 +414,6 @@ static int ovOn;
 static graphene_rect_t ovRect;
 static float ovRadius;
 
-static gboolean pagesLeave(gpointer d) {
-	if (ovOn) leavePages(); // the page under the pointer loses its hover
-	return G_SOURCE_REMOVE;
-}
-
 // lgwSetOverlay is called while the interface draws (lgwGoRender), so the
 // same frame shows it.
 void lgwSetOverlay(int on, double x, double y, double w, double h, double radius) {
@@ -427,13 +421,27 @@ void lgwSetOverlay(int on, double x, double y, double w, double h, double radius
 	ovOn = on && w > 0 && h > 0;
 	ovRect = GRAPHENE_RECT_INIT(x, y, w, h);
 	ovRadius = radius;
-	if (ovOn && !was) g_idle_add(pagesLeave, NULL);
 	if (ovOn != was && lwkOverlay) lwkOverlay(ovOn);
 }
 
-static void appendTexture(GtkSnapshot *s, GdkTexture *t, const graphene_rect_t *r, int sharp) {
-	if (p_append_scaled) p_append_scaled(s, t, sharp ? GSK_SCALING_FILTER_NEAREST : GSK_SCALING_FILTER_LINEAR, r);
-	else gtk_snapshot_append_texture(s, t, r);
+// appendTexture draws the interface's frame over r. GTK's plain texture
+// draw maps it texel for texel at every scale; its "nearest" filter
+// (gtk_snapshot_append_scaled_texture) does not at a fractional one: there
+// it went through a copy at another size, and letters lost pixels.
+static void appendTexture(GtkSnapshot *s, GdkTexture *t, const graphene_rect_t *r) { gtk_snapshot_append_texture(s, t, r); }
+
+// drawUI appends the interface's last frame over the view (h: its height in
+// real pixels); a frame still upside down is flipped back by GTK.
+static void drawUI(GtkSnapshot *sn, int pw, int ph, double s) {
+	if (uiUpright) {
+		appendTexture(sn, uiTex, &GRAPHENE_RECT_INIT(0, 0, pw / s, ph / s));
+		return;
+	}
+	gtk_snapshot_save(sn);
+	gtk_snapshot_translate(sn, &GRAPHENE_POINT_INIT(0, ph / s));
+	gtk_snapshot_scale(sn, 1, -1);
+	appendTexture(sn, uiTex, &GRAPHENE_RECT_INIT(0, 0, pw / s, ph / s));
+	gtk_snapshot_restore(sn);
 }
 
 static void iris_view_snapshot(GtkWidget *w, GtkSnapshot *sn) {
@@ -455,28 +463,18 @@ static void iris_view_snapshot(GtkWidget *w, GtkSnapshot *sn) {
 	gtk_snapshot_save(sn);
 	gtk_snapshot_translate(sn, &GRAPHENE_POINT_INIT(dx, dy));
 	if (uiTex && uiW == pw && uiH == ph) {
-		// a GL texture is upside down to GTK: flipped back
-		gtk_snapshot_save(sn);
-		gtk_snapshot_translate(sn, &GRAPHENE_POINT_INIT(0, ph / s));
-		gtk_snapshot_scale(sn, 1, -1);
-		appendTexture(sn, uiTex, &GRAPHENE_RECT_INIT(0, 0, pw / s, ph / s), 1);
-		gtk_snapshot_restore(sn);
+		drawUI(sn, pw, ph, s);
 	} else {
 		GdkRGBA bg = {0.07, 0.07, 0.08, 1};
 		gtk_snapshot_append_color(sn, &bg, &all);
 	}
-	if (lgxSnapshotPages) lgxSnapshotPages(sn, s);
 	if (lwkSnapshotPages) lwkSnapshotPages(sn, s);
 	if (ovOn && uiTex && uiW == pw && uiH == ph) {
 		// the overlay's part of the interface again, over the pages
 		GskRoundedRect rr;
 		gsk_rounded_rect_init_from_rect(&rr, &ovRect, ovRadius);
 		gtk_snapshot_push_rounded_clip(sn, &rr);
-		gtk_snapshot_save(sn);
-		gtk_snapshot_translate(sn, &GRAPHENE_POINT_INIT(0, ph / s));
-		gtk_snapshot_scale(sn, 1, -1);
-		appendTexture(sn, uiTex, &GRAPHENE_RECT_INIT(0, 0, pw / s, ph / s), 1);
-		gtk_snapshot_restore(sn);
+		drawUI(sn, pw, ph, s);
 		gtk_snapshot_pop(sn);
 	}
 	gtk_snapshot_restore(sn);
@@ -621,13 +619,9 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 	case GDK_BUTTON_RELEASE: {
 		local(e, &x, &y);
 		int press = t == GDK_BUTTON_PRESS;
-		// with the overlay up only a page's own release goes to it; a WebKit
-		// page is a widget of its own and takes the keyboard itself, an
-		// Electron page gets its keys through the view
-		if (!(pressedOnUI && !press) && !(ovOn && press) && pagePointer(e, x, y)) {
-			if (press && !(lwkPagePointer && lwkPagePointer(e, x, y))) gtk_widget_grab_focus(view);
-			return TRUE;
-		}
+		// with the overlay up only a page's own release goes to it; a page
+		// is a widget of its own and takes the keyboard itself
+		if (!(pressedOnUI && !press) && !(ovOn && press) && pagePointer(e, x, y)) return TRUE;
 		if (press) gtk_widget_grab_focus(view);
 		if (press) {
 			pressedOnUI = 1;
@@ -690,12 +684,10 @@ static gboolean onEvent(GtkEventControllerLegacy *c, GdkEvent *e, gpointer d) {
 		if (gdk_crossing_event_get_mode(e) == GDK_CROSSING_NORMAL) {
 			lgwGoLeave();
 			onUI = 0;
-			leavePages();
 		}
 		return FALSE;
 	case GDK_KEY_PRESS:
 	case GDK_KEY_RELEASE: {
-		if (!ovOn && pageKey(e)) return TRUE;
 		if (t == GDK_KEY_PRESS && lgwGoKey(gdk_key_event_get_keyval(e), state)) return TRUE; // shortcuts and editing keys
 		return gtk_im_context_filter_keypress(im, e);
 	}
@@ -778,46 +770,6 @@ void lgwPresent(void) {
 void lgwFocus(void) {
 	if (view) gtk_widget_grab_focus(view);
 	uiFocus();
-}
-
-// ---- choosing a picture (the background) ----
-
-extern void lgwGoPicked(uintptr_t h, char *path);
-
-static void picked(GtkNativeDialog *d, int resp, gpointer h) {
-	char *path = NULL;
-	if (resp == GTK_RESPONSE_ACCEPT) {
-		G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-		GFile *f = gtk_file_chooser_get_file(GTK_FILE_CHOOSER(d));
-		G_GNUC_END_IGNORE_DEPRECATIONS
-		if (f) {
-			path = g_file_get_path(f);
-			g_object_unref(f);
-		}
-	}
-	lgwGoPicked((uintptr_t)h, path ? path : "");
-	g_free(path);
-	g_object_unref(d);
-}
-
-// lgwPickPicture shows the desktop's own file box for one picture; the
-// answer goes to Go (lgwGoPicked) with h.
-void lgwPickPicture(uintptr_t h) {
-	G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-	GtkFileChooserNative *d = gtk_file_chooser_native_new("Choose a background picture", win ? GTK_WINDOW(win) : NULL,
-	                                                      GTK_FILE_CHOOSER_ACTION_OPEN, "Choose", "Cancel");
-	GtkFileFilter *f = gtk_file_filter_new();
-	gtk_file_filter_set_name(f, "Pictures");
-	gtk_file_filter_add_mime_type(f, "image/jpeg");
-	gtk_file_filter_add_mime_type(f, "image/png");
-	gtk_file_filter_add_mime_type(f, "image/webp");
-	gtk_file_filter_add_mime_type(f, "image/gif");
-	gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(d), f);
-	g_object_unref(f);
-	G_GNUC_END_IGNORE_DEPRECATIONS
-	gtk_native_dialog_set_modal(GTK_NATIVE_DIALOG(d), TRUE);
-	g_signal_connect(d, "response", G_CALLBACK(picked), (gpointer)h);
-	gtk_native_dialog_show(GTK_NATIVE_DIALOG(d));
 }
 
 // ---- the tests' picture of the whole window (IRIS_SHOT) ----

@@ -35,7 +35,6 @@ extern int lwkGoKey(uintptr_t id, int ch, int vk, int ctrl, int shift, int alt);
 extern void lwkGoResult(uintptr_t token, char *json);
 extern void lwkGoFocus(uintptr_t id);
 extern void lwkGoDownload(uintptr_t n, uintptr_t view, int state, char *url, char *path, long long total, long long got);
-extern void lwkGoCookies(int jar, char *lines);
 extern void lwkGoRun(uintptr_t h);
 extern void lwkGoFilterReady(int ok);
 
@@ -55,7 +54,6 @@ typedef struct {
 	int shown;
 	int x, y, w, h; // in the screen's pixels
 	char *going;  // the address Iris itself asked for (not asked about again)
-	char *deferred; // an address waiting for the jar's cookies from Iris
 } WV;
 
 static GHashTable *views; // id -> WV*
@@ -68,10 +66,6 @@ static GHashTable *views; // id -> WV*
 typedef struct {
 	char *name;
 	WebKitNetworkSession *s;
-	WebKitCookieManager *cm;
-	guint sync; // a cookie report is waiting
-	int bridged;
-	int adding; // cookies from Iris still being added: pages wait to load
 } Jar;
 
 static GPtrArray *jars;
@@ -87,11 +81,11 @@ static char *jarDir(const char *kind, const char *name) {
 }
 
 static void onDownloadStarted(WebKitNetworkSession *s, WebKitDownload *d, gpointer data);
-static void onCookiesChanged(WebKitCookieManager *cm, gpointer data);
 
 // lwkJar returns the index of the jar named name, making its session the
-// first time. Memory-only jars (private, sandbox) keep nothing on disk.
-int lwkJar(const char *name, int memory, int bridged) {
+// first time. Its cookies stay in WebKit's own store (cookies.sqlite in the
+// jar's folder); memory-only jars (private, sandbox) keep nothing on disk.
+int lwkJar(const char *name, int memory) {
 	if (!jars) jars = g_ptr_array_new();
 	for (guint i = 0; i < jars->len; i++) {
 		Jar *j = g_ptr_array_index(jars, i);
@@ -99,7 +93,6 @@ int lwkJar(const char *name, int memory, int bridged) {
 	}
 	Jar *j = g_new0(Jar, 1);
 	j->name = g_strdup(name);
-	j->bridged = bridged;
 	if (memory) {
 		j->s = webkit_network_session_new_ephemeral();
 	} else {
@@ -112,116 +105,15 @@ int lwkJar(const char *name, int memory, int bridged) {
 		g_free(data);
 		g_free(cache);
 	}
-	j->cm = webkit_network_session_get_cookie_manager(j->s);
 	webkit_network_session_set_itp_enabled(j->s, strictTracking);
 	g_signal_connect(j->s, "download-started", G_CALLBACK(onDownloadStarted), GINT_TO_POINTER(memory && strcmp(name, "sandbox") == 0));
 	g_ptr_array_add(jars, j);
-	int idx = (int)jars->len - 1;
-	if (bridged) g_signal_connect(j->cm, "changed", G_CALLBACK(onCookiesChanged), GINT_TO_POINTER(idx));
-	return idx;
+	return (int)jars->len - 1;
 }
 
 void lwkStrict(int on) {
 	strictTracking = on;
 	for (guint i = 0; jars && i < jars->len; i++) webkit_network_session_set_itp_enabled(((Jar *)g_ptr_array_index(jars, i))->s, on);
-}
-
-// ---- the cookie bridge ----
-//
-// WebKit tells that a jar changed, not what: a moment later Iris reads the
-// whole jar and Go reports the differences to the shared store
-// (core/session). Cookies from Electron come back through lwkSetCookie.
-
-static void gotCookies(GObject *o, GAsyncResult *r, gpointer data) {
-	int idx = GPOINTER_TO_INT(data);
-	GList *list = webkit_cookie_manager_get_all_cookies_finish(WEBKIT_COOKIE_MANAGER(o), r, NULL);
-	GString *b = g_string_new(NULL);
-	for (GList *l = list; l; l = l->next) {
-		SoupCookie *c = l->data;
-		GDateTime *exp = soup_cookie_get_expires(c);
-		const char *dom = soup_cookie_get_domain(c);
-		const char *ss = "";
-		switch (soup_cookie_get_same_site_policy(c)) {
-		case SOUP_SAME_SITE_POLICY_LAX: ss = "Lax"; break;
-		case SOUP_SAME_SITE_POLICY_STRICT: ss = "Strict"; break;
-		default: ss = "None"; break;
-		}
-		// name, value, domain, host only, path, expires, secure, http only, same site
-		g_string_append_printf(b, "%s\t%s\t%s\t%d\t%s\t%lld\t%d\t%d\t%s\n", soup_cookie_get_name(c), soup_cookie_get_value(c),
-		                       dom && dom[0] == '.' ? dom + 1 : (dom ? dom : ""), !(dom && dom[0] == '.'), soup_cookie_get_path(c),
-		                       exp ? (long long)g_date_time_to_unix(exp) : 0LL, soup_cookie_get_secure(c), soup_cookie_get_http_only(c), ss);
-	}
-	g_list_free_full(list, (GDestroyNotify)soup_cookie_free);
-	lwkGoCookies(idx, b->str);
-	g_string_free(b, TRUE);
-}
-
-static gboolean readJar(gpointer data) {
-	int idx = GPOINTER_TO_INT(data);
-	Jar *j = g_ptr_array_index(jars, idx);
-	j->sync = 0;
-	webkit_cookie_manager_get_all_cookies(j->cm, NULL, gotCookies, data);
-	return G_SOURCE_REMOVE;
-}
-
-static void onCookiesChanged(WebKitCookieManager *cm, gpointer data) {
-	Jar *j = g_ptr_array_index(jars, GPOINTER_TO_INT(data));
-	if (!j->sync) j->sync = g_timeout_add(300, readJar, data);
-}
-
-// lwkReadJar reports jar idx to Go now (a session's first look).
-void lwkReadJar(int idx) { readJar(GINT_TO_POINTER(idx)); }
-
-static void loadNow(WV *v, const char *u);
-
-// added: one cookie from Iris is in; when the last is, the pages that waited
-// for them load
-static void added(GObject *o, GAsyncResult *r, gpointer data) {
-	webkit_cookie_manager_add_cookie_finish(WEBKIT_COOKIE_MANAGER(o), r, NULL);
-	int idx = GPOINTER_TO_INT(data);
-	Jar *j = g_ptr_array_index(jars, idx);
-	if (--j->adding > 0 || !views) return;
-	GHashTableIter it;
-	gpointer k, val;
-	g_hash_table_iter_init(&it, views);
-	while (g_hash_table_iter_next(&it, &k, &val)) {
-		WV *v = val;
-		if (v->jar == idx && v->deferred) {
-			char *u = v->deferred;
-			v->deferred = NULL;
-			loadNow(v, u);
-			g_free(u);
-		}
-	}
-}
-
-// lwkSetCookie gives a cookie from the shared store to jar idx (or takes it
-// away). expires is Unix seconds, 0 for a session cookie.
-void lwkSetCookie(int idx, const char *name, const char *value, const char *domain, int hostOnly, const char *path,
-                  long long expires, int secure, int httpOnly, const char *sameSite, int removed) {
-	if (!jars || idx < 0 || idx >= (int)jars->len) return;
-	Jar *j = g_ptr_array_index(jars, idx);
-	char *dom = hostOnly ? g_strdup(domain) : g_strconcat(".", domain, NULL);
-	SoupCookie *c = soup_cookie_new(name, value, dom, path && *path ? path : "/", -1);
-	g_free(dom);
-	if (expires > 0) {
-		GDateTime *t = g_date_time_new_from_unix_utc(expires);
-		soup_cookie_set_expires(c, t);
-		g_date_time_unref(t);
-	}
-	soup_cookie_set_secure(c, secure);
-	soup_cookie_set_http_only(c, httpOnly);
-	// SameSite=None needs Secure; an unset one is Lax, as in browsers
-	if (sameSite && strcmp(sameSite, "Strict") == 0) soup_cookie_set_same_site_policy(c, SOUP_SAME_SITE_POLICY_STRICT);
-	else if (sameSite && strcmp(sameSite, "None") == 0 && secure) soup_cookie_set_same_site_policy(c, SOUP_SAME_SITE_POLICY_NONE);
-	else soup_cookie_set_same_site_policy(c, SOUP_SAME_SITE_POLICY_LAX);
-	if (removed) {
-		webkit_cookie_manager_delete_cookie(j->cm, c, NULL, NULL, NULL);
-	} else {
-		j->adding++;
-		webkit_cookie_manager_add_cookie(j->cm, c, NULL, added, GINT_TO_POINTER(idx));
-	}
-	soup_cookie_free(c);
 }
 
 // ---- the shield: WebKit's content blockers ----
@@ -451,7 +343,7 @@ static gboolean onLeaveFull(WebKitWebView *web, WV *v) {
 
 static gboolean onPermission(WebKitWebView *web, WebKitPermissionRequest *r, WV *v) {
 	// what a page needs to work, and nothing that reaches the camera, the
-	// microphone, the location or notifications (as in the Electron engine)
+	// microphone, the location or notifications
 	if (!v->sandbox && (WEBKIT_IS_POINTER_LOCK_PERMISSION_REQUEST(r) || WEBKIT_IS_WEBSITE_DATA_ACCESS_PERMISSION_REQUEST(r) ||
 	                    WEBKIT_IS_CLIPBOARD_PERMISSION_REQUEST(r)))
 		webkit_permission_request_allow(r);
@@ -688,13 +580,7 @@ static void loadNow(WV *v, const char *u) {
 
 void lwkNavigate(uintptr_t id, const char *u) {
 	WV *v = get(id);
-	if (!v) return;
-	if (((Jar *)g_ptr_array_index(jars, v->jar))->adding > 0) { // a sign-in from Electron first
-		g_free(v->deferred);
-		v->deferred = g_strdup(u);
-		return;
-	}
-	loadNow(v, u);
+	if (v) loadNow(v, u);
 }
 
 void lwkBack(uintptr_t id) { WV *v = get(id); if (v) webkit_web_view_go_back(v->web); }
@@ -756,7 +642,6 @@ void lwkClose(uintptr_t id) {
 	gtk_widget_unparent(GTK_WIDGET(v->web));
 	g_object_unref(v->web);
 	g_free(v->going);
-	g_free(v->deferred);
 	g_free(v);
 	gtk_widget_queue_draw(host);
 }
@@ -777,8 +662,8 @@ void lwkOnMain(uintptr_t h) { g_main_context_invoke(NULL, runGo, (gpointer)h); }
 // lwkSandboxWorks says whether WebKit's page processes can be put in their
 // sandbox (bubblewrap) here. Where user namespaces are not allowed (some
 // distributions and containers) WebKit cannot start a page at all, and its
-// failure would take Iris down with it: Iris then leaves WebKit out and
-// Electron draws every page. Inside Flatpak, WebKit uses Flatpak's sandbox.
+// failure would take Iris down with it: Iris then shows no pages and says
+// why. Inside Flatpak, WebKit uses Flatpak's sandbox.
 int lwkSandboxWorks(void) {
 	if (g_getenv("FLATPAK_ID")) return 1;
 	char *bw = g_find_program_in_path("bwrap");

@@ -2,8 +2,8 @@
 
 // The Linux window: GTK 4 owns it (native on Wayland and on X11), Gio's GPU
 // renderer draws our interface into a texture at the screen's exact scale,
-// and the pages (Electron, drawn off screen at that scale) go over it in the
-// same window. See gtk_linux.c.
+// and the pages (WebKitGTK web views, GTK widgets) go over it in the same
+// window. See gtk_linux.c.
 
 package main
 
@@ -30,7 +30,6 @@ void lgwSendState(void);
 void lgwDo(uintptr_t h);
 int lgwWayland(void);
 void lgwSetOverlay(int on, double x, double y, double w, double h, double radius);
-void lgwPickPicture(uintptr_t h);
 */
 import "C"
 
@@ -41,6 +40,8 @@ import (
 	"os"
 	"runtime"
 	"runtime/cgo"
+	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -67,28 +68,11 @@ const (
 
 func runMain() {
 	C.lgwInit()
-	webview.HostGTK()
 	C.lgwMain()
 }
 
 // onMain runs f on the GTK thread.
 func onMain(f func()) { C.lgwDo(C.uintptr_t(cgo.NewHandle(f))) }
-
-// pickPicture asks for a picture with the desktop's own file box (through
-// the file chooser portal inside Flatpak and Snap); it waits for the reader.
-func pickPicture() string {
-	ch := make(chan string, 1)
-	onMain(func() { C.lgwPickPicture(C.uintptr_t(cgo.NewHandle(ch))) })
-	return <-ch
-}
-
-//export lgwGoPicked
-func lgwGoPicked(h C.uintptr_t, path *C.char) {
-	hh := cgo.Handle(h)
-	ch := hh.Value().(chan string)
-	hh.Delete()
-	ch <- C.GoString(path)
-}
 
 //export lgwGoDo
 func lgwGoDo(h C.uintptr_t) {
@@ -178,8 +162,8 @@ func (r *resident) makeWindow(urls []string) {
 	}
 	layout := C.lgwOpen(C.int(ws.W), C.int(ws.H), max)
 	h.eng = newEngine(r.conf)
-	h.a = shell.New(h, shell.Config{Engine: h.eng, DataDir: r.conf, TotalMB: totalMB(), Version: version, SelfMB: webview.SelfMB,
-		Core: r.core, SetBoost: setStartup, Sys: sysHooks(), UpdateKind: installKind()})
+	h.a = shell.New(h, shell.Config{Engine: h.eng, DataDir: r.conf, TotalMB: totalMB(), Version: version, SelfMB: selfMB,
+		Core: r.core, Sys: sysHooks(), UpdateKind: installKind()})
 	h.in = h.a.In
 	h.a.SetMotion(h.motion)
 	C.lgwSendState()
@@ -535,4 +519,19 @@ func newGPU() (g gpu.GPU, err error) {
 		}
 	}()
 	return gpu.New(gpu.OpenGL{Shared: true})
+}
+
+// selfMB is the memory Iris's own process holds (its resident set).
+func selfMB() float64 {
+	b, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return 0
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if fs := strings.Fields(l); len(fs) >= 2 && fs[0] == "VmRSS:" {
+			kb, _ := strconv.Atoi(fs[1])
+			return float64(kb) / 1024
+		}
+	}
+	return 0
 }

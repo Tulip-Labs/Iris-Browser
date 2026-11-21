@@ -26,8 +26,8 @@ behalf. Tulipan Labs runs no servers for Iris.
 - **The phone link** serves one page on your own network while it is on, reachable only
   with the key in its QR code. Files move between your phone and this computer inside that
   network and never pass through the internet. The connection is not encrypted.
-- **The web engine** (Electron on Windows; WebKitGTK and Electron on Linux) is part of
-  your system and follows its maker's own privacy terms.
+- **The web engine** (WebKitGTK on Linux; Chromium through Cefrium on Android) is part of
+  your system or of Iris, and follows its maker's own privacy terms.
 
 ## Contact
 

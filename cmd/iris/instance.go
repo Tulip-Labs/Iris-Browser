@@ -57,7 +57,6 @@ func handOff(conf string, urls []string) bool {
 		return false
 	}
 	defer c.Close()
-	allowForeground(f.PID) // this launch came from a click: let the window come to the front
 	_ = c.SetDeadline(time.Now().Add(2 * time.Second))
 	msg, _ := json.Marshal(urls)
 	if _, err := c.Write([]byte(f.Token + "\n" + string(msg) + "\n")); err != nil {

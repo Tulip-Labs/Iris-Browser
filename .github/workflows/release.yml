@@ -1,6 +1,6 @@
-# Builds Iris for Windows, Linux (the Flatpak bundle and the Snap) and
-# Android, and publishes them as a GitHub release with one SHA256SUMS file
-# (Iris's updater checks every download against it).
+# Builds Iris for Linux (the Flatpak bundle and the Snap) and Android, and
+# publishes them as a GitHub release with one SHA256SUMS file. The container
+# image goes out from container.yml, Nix builds from the repository itself.
 # Runs when a tag like v1.0.0 is pushed, or by hand from the Actions tab
 # (give the tag to publish).
 name: Release
@@ -18,41 +18,18 @@ permissions:
   contents: write
 
 jobs:
-  windows:
+  # the release page, with its notes, before any file
+  create:
     runs-on: ubuntu-latest
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-          cache: false
-      - uses: actions/setup-node@v4 # fetches Electron for Windows
-        with:
-          node-version: "22"
-      - name: Version details of the program file
-        continue-on-error: true # the files in the repository are used if this fails
-        run: GOFLAGS=-mod=mod go run tools/icongen.go
-      - name: Build (the script runs the tests first)
+      - name: The release
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq zip
-          ./build-iris.sh windows
-      - name: Collect the files
-        run: |
-          mkdir out
-          cp "dist/Iris Setup.exe" out/Iris-Setup.exe
-          cp dist/Iris-portable.zip dist/Iris.msixbundle out/
-          # Iris 1.0.19 and older (Lite Go) update themselves from this name
-          cp "dist/Iris Setup.exe" out/LiteGo-Setup.exe
-      - name: Publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" out/* --clobber
-          else
-            gh release create "$TAG" out/* --target "$GITHUB_SHA" \
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" \
               --title "Iris ${TAG#v}" --notes-file packaging/release-notes.md
           fi
 
@@ -60,7 +37,7 @@ jobs:
     uses: ./.github/workflows/linux.yml
 
   android:
-    needs: windows
+    needs: create
     runs-on: ubuntu-latest
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -83,9 +60,9 @@ jobs:
           sha256sum Iris-android.apk
           gh release upload "$TAG" Iris-android.apk --clobber
 
-  # the Linux files and the checksums of every file
+  # the Linux files, the container launcher and the checksums of every file
   publish:
-    needs: [windows, linux, android]
+    needs: [create, linux, android]
     runs-on: ubuntu-24.04
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -96,10 +73,10 @@ jobs:
         with:
           path: art
           merge-multiple: true
-      - name: Linux files to the release (the Flatpak bundle and the Snap)
+      - name: Linux files to the release (the Flatpak bundle, the Snap, the container launcher)
         run: |
           ls -l art
-          gh release upload "$TAG" art/*.flatpak art/*.snap --clobber
+          gh release upload "$TAG" art/*.flatpak art/*.snap packaging/container/iris-container --clobber
       - name: Checksums of every file
         run: |
           mkdir all && cd all
@@ -109,41 +86,3 @@ jobs:
           cd ..
           cat SHA256SUMS
           gh release upload "$TAG" SHA256SUMS --clobber
-      - name: winget manifests
-        run: |
-          ver=${TAG#v}
-          sum=$(sha256sum all/Iris-Setup.exe | cut -d' ' -f1 | tr a-f A-F)
-          mkdir -p winget
-          for f in packaging/winget/*.yaml; do
-            sed -e "s/@VERSION@/$ver/g" -e "s/@SHA256@/$sum/" -e "s/@DATE@/$(date -u +%Y-%m-%d)/" "$f" | grep -v '^# ' > "winget/$(basename "$f")"
-          done
-          cat winget/*.yaml
-          (cd winget && zip -q ../Iris-winget-manifests.zip *.yaml)
-          gh release upload "$TAG" Iris-winget-manifests.zip --clobber
-
-  # winget: sends this version to microsoft/winget-pkgs (needs the
-  # WINGET_TOKEN secret, a GitHub token that may open pull requests there;
-  # without it the manifests stay on the release for submitting by hand)
-  winget:
-    needs: publish
-    runs-on: windows-latest
-    env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
-      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - name: Submit to winget
-        shell: pwsh
-        run: |
-          if (-not $env:WINGET_TOKEN) { Write-Host "No WINGET_TOKEN secret: the manifests are on the release (Iris-winget-manifests.zip)."; exit 0 }
-          $ver = $env:TAG.TrimStart('v')
-          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:TAG/Iris-Setup.exe"
-          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-          .\wingetcreate.exe show TulipLabs.Iris 2>&1 | Out-Null
-          if ($LASTEXITCODE -eq 0) {
-            .\wingetcreate.exe update TulipLabs.Iris --version $ver --urls $url --submit --token $env:WINGET_TOKEN
-          } else {
-            gh release download $env:TAG --repo $env:GITHUB_REPOSITORY --pattern Iris-winget-manifests.zip
-            Expand-Archive Iris-winget-manifests.zip -DestinationPath manifests
-            .\wingetcreate.exe submit --token $env:WINGET_TOKEN manifests
-          }

@@ -1,25 +1,15 @@
-// Package update keeps Iris up to date from its GitHub releases.
-//
-// It asks GitHub for the latest release, picks the file that matches how this
-// copy was installed (a .tar.gz in the home folder, a .deb, an .rpm, a
-// Flatpak bundle, the Windows installer), checks it against the release's
-// SHA256SUMS and installs it. Copies managed by something else (Nix, the
-// Microsoft Store, Flathub, the AUR) are left to that.
+// Package update tells whether a newer Iris is out: it asks GitHub for the
+// latest release. Iris never replaces itself; Flatpak, Snap or Nix, which
+// installed it, bring the new version.
 package update
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -31,36 +21,19 @@ const Repo = "Tulip-Labs/Iris-Browser"
 // API is GitHub's address (tests point it at a local server).
 var API = "https://api.github.com"
 
-// Client is used for every request; downloads get their own longer timeout.
-var Client = &http.Client{Timeout: 30 * time.Minute}
+// Client asks GitHub.
+var Client = &http.Client{Timeout: 30 * time.Second}
 
 // Release is the latest published version.
 type Release struct {
-	Tag    string  `json:"tag_name"`
-	Draft  bool    `json:"draft"`
-	Pre    bool    `json:"prerelease"`
-	Assets []Asset `json:"assets"`
-	URL    string  `json:"html_url"`
-}
-
-// Asset is one file of a release.
-type Asset struct {
-	Name string `json:"name"`
-	URL  string `json:"browser_download_url"`
-	Size int64  `json:"size"`
+	Tag   string `json:"tag_name"`
+	Draft bool   `json:"draft"`
+	Pre   bool   `json:"prerelease"`
+	URL   string `json:"html_url"`
 }
 
 // Version is the release's version without the leading v.
 func (r Release) Version() string { return strings.TrimPrefix(r.Tag, "v") }
-
-func (r Release) asset(name string) (Asset, bool) {
-	for _, a := range r.Assets {
-		if a.Name == name {
-			return a, true
-		}
-	}
-	return Asset{}, false
-}
 
 // Latest asks GitHub for the newest release.
 func Latest(ctx context.Context) (Release, error) {
@@ -125,17 +98,13 @@ func parts(v string) []int {
 type Kind string
 
 const (
-	KindFlatpak  Kind = "flatpak"  // Linux: a Flatpak (Flathub or a bundle from the releases)
-	KindSnap     Kind = "snap"     // Linux: the Snap
-	KindNix      Kind = "nix"      // Linux: Nix
-	KindSetup    Kind = "setup"    // Windows: installed by Iris Setup
-	KindStore    Kind = "store"    // Windows: the Microsoft Store package
-	KindPortable Kind = "portable" // a copy run from wherever it was unpacked
-	KindDev      Kind = "dev"      // a build from source
+	KindFlatpak Kind = "flatpak" // Linux: a Flatpak (Flathub or a bundle from the releases)
+	KindSnap    Kind = "snap"    // Linux: the Snap
+	KindNix     Kind = "nix"     // Linux: Nix
+	KindDev     Kind = "dev"     // a build from source
 )
 
-// Managed says who updates copies Iris does not update itself. On Linux
-// that is every copy: Flatpak, Snap and Nix update Iris.
+// Managed says what brings this copy its updates.
 func (k Kind) Managed() string {
 	switch k {
 	case KindFlatpak:
@@ -144,176 +113,8 @@ func (k Kind) Managed() string {
 		return "Snap (snap refresh)"
 	case KindNix:
 		return "Nix (nix profile upgrade)"
-	case KindStore:
-		return "the Microsoft Store"
-	case KindPortable:
-		return "a new download from the releases page"
 	case KindDev:
 		return "building again from the source"
 	}
 	return ""
-}
-
-// CanSelf reports whether Iris can install updates for this kind itself.
-func (k Kind) CanSelf() bool { return k.Managed() == "" }
-
-// AssetName is the release file for a kind and version.
-func AssetName(k Kind, version string) string {
-	if k == KindSetup {
-		return "Iris-Setup.exe"
-	}
-	return ""
-}
-
-// Fetch downloads the file for kind into dir, checks it against the
-// release's SHA256SUMS and returns its path. progress gets 0..1 (may be nil).
-func Fetch(ctx context.Context, r Release, k Kind, dir string, progress func(float32)) (string, error) {
-	name := AssetName(k, r.Version())
-	a, ok := r.asset(name)
-	if !ok {
-		return "", fmt.Errorf("release %s has no %s", r.Tag, name)
-	}
-	sums, ok := r.asset("SHA256SUMS")
-	if !ok {
-		return "", fmt.Errorf("release %s has no SHA256SUMS: not installing an unchecked file", r.Tag)
-	}
-	want, err := sumFor(ctx, sums.URL, name)
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	path := filepath.Join(dir, name)
-	part := path + ".part"
-	h := sha256.New()
-	if err := get(ctx, a.URL, part, a.Size, h, progress); err != nil {
-		os.Remove(part)
-		return "", err
-	}
-	if got := hex.EncodeToString(h.Sum(nil)); got != want {
-		os.Remove(part)
-		return "", fmt.Errorf("%s does not match its checksum: not installing it", name)
-	}
-	return path, os.Rename(part, path)
-}
-
-// maxDownload bounds an update download (the installer is far smaller), so
-// a broken or hostile answer cannot fill the disk.
-const maxDownload = 1 << 30
-
-// secureURL says whether an update file may be fetched from u: only over
-// HTTPS (or from the API's own address, which tests point at a local server).
-func secureURL(u string) bool {
-	p, err := url.Parse(u)
-	if err != nil || p.Host == "" {
-		return false
-	}
-	if p.Scheme == "https" {
-		return true
-	}
-	api, err := url.Parse(API)
-	return err == nil && p.Scheme == api.Scheme && p.Host == api.Host
-}
-
-func sumFor(ctx context.Context, url, name string) (string, error) {
-	if !secureURL(url) {
-		return "", errors.New("SHA256SUMS is not served over HTTPS: not trusting it")
-	}
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("User-Agent", "Iris-updater")
-	res, err := Client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		return "", fmt.Errorf("SHA256SUMS: %s", res.Status)
-	}
-	b, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-	if err != nil {
-		return "", err
-	}
-	for _, l := range strings.Split(string(b), "\n") {
-		f := strings.Fields(l)
-		if len(f) >= 2 && strings.TrimPrefix(strings.Join(f[1:], " "), "*") == name && len(f[0]) == 64 {
-			return strings.ToLower(f[0]), nil
-		}
-	}
-	return "", fmt.Errorf("SHA256SUMS has no line for %s", name)
-}
-
-// get downloads url into path, feeding every byte to sum; it refuses more
-// than the release said the file holds (or maxDownload).
-func get(ctx context.Context, url, path string, size int64, sum hash.Hash, progress func(float32)) error {
-	if !secureURL(url) {
-		return errors.New("the update is not served over HTTPS: not downloading it")
-	}
-	if size > maxDownload {
-		return errors.New("the update is larger than any Iris release")
-	}
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", "Iris-updater")
-	res, err := Client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		return fmt.Errorf("download: %s", res.Status)
-	}
-	if size <= 0 {
-		size = res.ContentLength
-	}
-	limit := int64(maxDownload)
-	if size > 0 {
-		limit = min(limit, size)
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	var n int64
-	buf := make([]byte, 256<<10)
-	for {
-		k, rerr := res.Body.Read(buf)
-		if k > 0 {
-			if n += int64(k); n > limit {
-				f.Close()
-				return errors.New("the download is larger than the release says")
-			}
-			if _, err := f.Write(buf[:k]); err != nil {
-				f.Close()
-				return err
-			}
-			sum.Write(buf[:k])
-			if progress != nil && size > 0 {
-				progress(min(1, float32(n)/float32(size)))
-			}
-		}
-		if rerr == io.EOF {
-			break
-		}
-		if rerr != nil {
-			f.Close()
-			return rerr
-		}
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
-}
-
-// Result is what an install did.
-type Result struct {
-	Version string
-	Restart bool // the new version starts with the next launch
 }

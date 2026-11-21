@@ -1,8 +1,6 @@
 package update
 
 import (
-	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,11 +35,3 @@ func self() string {
 	}
 	return exe
 }
-
-// Install is not done by Iris on Linux.
-func Install(_ context.Context, k Kind, _ string) (Result, error) {
-	return Result{}, fmt.Errorf("updates for this copy come from %s", k.Managed())
-}
-
-// Restart is not needed on Linux (Iris never installs an update itself).
-func Restart() error { return nil }

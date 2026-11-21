@@ -12,21 +12,17 @@ import (
 
 // sysHooks is what the operating system does for the interface.
 func sysHooks() shell.Sys {
-	return shell.Sys{Open: openPath, Reveal: revealPath, PickFiles: pickFiles, PickPicture: pickPicture, FreeMB: freeMB, Integrity: integrity}
+	return shell.Sys{Open: openPath, Reveal: revealPath, PickFiles: pickFiles, FreeMB: freeMB, Integrity: integrity}
 }
 
 // integrity compares the program file with the SHA-256 recorded beside it
 // when Iris was installed or packed ("<program>.sha256"). It tells an
 // accident, a bad disk or a careless change; someone able to replace both
-// files is not stopped by it. The Windows package needs no record: Windows
-// keeps its files read-only and checks them itself.
+// files is not stopped by it.
 func integrity() shell.Integrity {
 	exe, err := os.Executable()
 	if err != nil {
 		return shell.IntegrityUnknown
-	}
-	if packaged(exe) {
-		return shell.IntegrityProtected
 	}
 	rec, err := os.ReadFile(exe + ".sha256")
 	if err != nil {

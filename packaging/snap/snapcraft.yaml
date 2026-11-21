@@ -9,8 +9,8 @@ name: iris-browser
 title: Iris
 summary: A light, fast browser with shields built in
 description: |
-  Iris is a small browser written in Go, with WebKitGTK for most pages and
-  Electron for video, social sites and web apps. Iris Shields blocks ads, trackers,
+  Iris is a small browser written in Go, with WebKitGTK for its pages.
+  Iris Shields blocks ads, trackers,
   cookie notices and fingerprinting; containers keep separate sign-ins; tabs
   in the background sleep and give their memory back.
 license: GPL-3.0-only
@@ -52,7 +52,6 @@ parts:
       mkdir -p "$CRAFT_PART_INSTALL/lib/iris-browser"
       cp -a "$CRAFT_PART_SRC"/. "$CRAFT_PART_INSTALL/lib/iris-browser/"
       cd "$CRAFT_PART_INSTALL"
-      rm -f lib/iris-browser/chrome-sandbox # setuid files are not allowed in snaps
       install -Dm644 lib/iris-browser/io.github.tulip_labs.Iris.metainfo.xml share/metainfo/io.github.tulip_labs.Iris.metainfo.xml
       install -Dm644 lib/iris-browser/io.github.tulip_labs.Iris.png share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
       # the desktop entry starts the snap's command
@@ -61,26 +60,14 @@ parts:
       install -Dm644 io.desktop share/applications/io.github.tulip_labs.Iris.desktop
       rm io.desktop
       craftctl set version="$(cat lib/iris-browser/VERSION)"
-    # WebKitGTK 6 (most pages), its media plugins and its sandbox, and the
-    # libraries Electron's Chromium needs that the GNOME content snap does
-    # not carry
+    # WebKitGTK 6, its media plugins (H.264 and AAC through libav) and its
+    # page sandbox
     stage-packages:
       - libwebkitgtk-6.0-4
       - gstreamer1.0-plugins-good
       - gstreamer1.0-plugins-bad
       - gstreamer1.0-libav
       - bubblewrap
-      - libnss3
-      - libnspr4
-      - libasound2t64
-      - libcups2t64
-      - libgbm1
-      - libdrm2
-      - libxkbcommon0
-      - libxcomposite1
-      - libxdamage1
-      - libxrandr2
-      - libxshmfence1
 
 # WebKit starts its page and network processes from the path it was built
 # with: inside the snap they are under $SNAP

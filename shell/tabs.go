@@ -338,7 +338,6 @@ func (a *App) events(b *binding) webview.Events {
 				}
 				a.startScan(t, url)
 				a.hideSite(t, url)
-				a.offerExtension(t, url)
 				if t == a.tab() && a.st.Focus != ID("addr") {
 					a.addr.Set(url)
 				}
@@ -494,7 +493,7 @@ func (a *App) tick() {
 	a.lastTick = now
 	a.trimThumbs(45)
 	if now-a.lastFree > 30 {
-		// hand freed memory back to Windows (the heap is small; this is quick)
+		// hand freed memory back to the system (the heap is small; this is quick)
 		a.lastFree = now
 		go debug.FreeOSMemory()
 	}
