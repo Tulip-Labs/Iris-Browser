@@ -264,8 +264,105 @@ final class DownloadsPanel {
     }
 }
 
+/// the pages you went to, newest first, by day; type to find one
+final class HistoryPanel {
+    unowned let b: Browser
+    let box = UI.box(true, 2)
+    private let list = UI.box(true, 0)
+    private let search: GtkW
+
+    init(_ b: Browser) {
+        self.b = b
+        let head = UI.box(false, 8)
+        gtk_widget_set_margin_start(head, 10); gtk_widget_set_margin_end(head, 4); gtk_widget_set_margin_top(head, 4)
+        let title = UI.label("History", "iris-title")
+        gtk_widget_set_hexpand(title, 1)
+        gtk_label_set_xalign(OpaquePointer(title), 0)
+        UI.append(head, title)
+        UI.append(head, UI.textButton("Clear") { [unowned b] in
+            History.shared.clear()
+            b.closeMenu()
+            b.toast("History cleared")
+        })
+        UI.append(box, head)
+        let sb = UI.box(false, 8)
+        UI.cls(sb, "iris-find")
+        gtk_widget_set_margin_start(sb, 12); gtk_widget_set_margin_end(sb, 12); gtk_widget_set_margin_top(sb, 6); gtk_widget_set_margin_bottom(sb, 4)
+        UI.append(sb, UI.icon("edit-find-symbolic"))
+        search = gtk_text_new()!
+        gtk_text_set_placeholder_text(UnsafeMutablePointer<GtkText>(OpaquePointer(search)), "Find in history")
+        gtk_widget_set_hexpand(search, 1)
+        UI.append(sb, search)
+        UI.append(box, sb)
+        let scroller = gtk_scrolled_window_new()!
+        gtk_scrolled_window_set_policy(OpaquePointer(scroller), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
+        gtk_scrolled_window_set_propagate_natural_height(OpaquePointer(scroller), 1)
+        gtk_scrolled_window_set_max_content_height(OpaquePointer(scroller), 460)
+        gtk_scrolled_window_set_child(OpaquePointer(scroller), list)
+        UI.append(box, scroller)
+        on(Ptr(search), "changed") { [unowned self] in self.fill(UI.text(self.search)) }
+        fill("")
+    }
+
+    func focus() { gtk_widget_grab_focus(search) }
+
+    private func fill(_ q: String) {
+        var c = gtk_widget_get_first_child(list)
+        while let w = c { c = gtk_widget_get_next_sibling(w); gtk_box_remove(UnsafeMutablePointer<GtkBox>(OpaquePointer(list)), w) }
+        let needle = q.lowercased().trimmingCharacters(in: .whitespaces)
+        let all = History.shared.list.sorted { $0.last > $1.last }
+            .filter { needle.isEmpty || $0.title.lowercased().contains(needle) || $0.url.lowercased().contains(needle) }
+            .prefix(80)
+        if all.isEmpty {
+            let e = UI.label(needle.isEmpty ? "Nothing here yet" : "Nothing found", "iris-dim")
+            gtk_widget_set_margin_top(e, 16); gtk_widget_set_margin_bottom(e, 18)
+            UI.append(list, e)
+            return
+        }
+        let cal = Calendar.current
+        let fmt = DateFormatter()
+        fmt.dateStyle = .medium
+        var lastDay = ""
+        for v in all {
+            let d = Date(timeIntervalSince1970: v.last)
+            let day = cal.isDateInToday(d) ? "Today" : cal.isDateInYesterday(d) ? "Yesterday" : fmt.string(from: d)
+            if day != lastDay {
+                let l = UI.label(day, "iris-history-day")
+                gtk_label_set_xalign(OpaquePointer(l), 0)
+                UI.append(list, l)
+                lastDay = day
+            }
+            let row = gtk_button_new()!
+            UI.cls(row, "iris-flat", "iris-row")
+            let h = UI.box(false, 10)
+            let t = UI.label(v.title.isEmpty ? Search.display(v.url) : v.title)
+            UI.ellipsize(t, chars: 10)
+            gtk_widget_set_hexpand(t, 1)
+            UI.append(h, t)
+            let host = UI.label(Search.display(v.url), "iris-dim", "iris-keys")
+            UI.append(h, host)
+            gtk_button_set_child(UnsafeMutablePointer<GtkButton>(OpaquePointer(row)), h)
+            gtk_widget_set_tooltip_text(row, v.url)
+            let url = v.url
+            on(Ptr(row), "clicked") { [unowned self] in self.b.closeMenu(); self.b.go(url) }
+            UI.append(list, row)
+        }
+    }
+}
+
 extension Browser {
     // MARK: menus
+
+    func showHistory() {
+        let panel = HistoryPanel(self)
+        openMenu(panel.box, under: stage.bounds(of: menuButton) ?? addressFrame, width: 420, alignRight: true)
+        panel.focus()
+    }
+
+    /// a switch in the menu, with what it is and whether it is on
+    private func toggleRow(_ icon: String, _ text: String, _ on: Bool, _ f: @escaping () -> Void) -> GtkW {
+        UI.row(icon, text, keys: on ? "On" : "Off") { [unowned self] in f(); self.closeMenu() }
+    }
 
     func showAppMenu() {
         let m = UI.box(true, 0)
@@ -292,10 +389,19 @@ extension Browser {
         UI.append(m, UI.row("view-fullscreen-symbolic", "Full Screen", keys: "F11") { [unowned self] in self.closeMenu(); self.toggleWindowFullscreen() })
         UI.append(m, UI.separator())
         UI.append(m, UI.row("folder-download-symbolic", "Downloads", keys: "Ctrl+Shift+Y") { [unowned self] in self.closeMenu(); self.showDownloads() })
-        UI.append(m, UI.row("user-trash-symbolic", "Clear History") { [unowned self] in
-            self.closeMenu()
-            History.shared.clear()
-            self.toast("History cleared")
+        UI.append(m, UI.row("document-open-recent-symbolic", "History", keys: "Ctrl+H") { [unowned self] in self.closeMenu(); self.showHistory() })
+        UI.append(m, UI.separator())
+        let set = SettingsStore.shared.value
+        UI.append(m, toggleRow("media-playback-start-symbolic", "Light video on YouTube", set.lightVideo) { [unowned self] in
+            SettingsStore.shared.update { $0.lightVideo.toggle() }
+            self.toast("New YouTube tabs use \(SettingsStore.shared.value.lightVideo ? "H.264, lighter on the processor" : "the formats YouTube picks")")
+        })
+        UI.append(m, toggleRow("video-display-symbolic", "GPU video decoding", set.hardwareVideo) { [unowned self] in
+            SettingsStore.shared.update { $0.hardwareVideo.toggle() }
+            self.toast("This takes effect the next time Iris starts")
+        })
+        UI.append(m, toggleRow("weather-clear-night-symbolic", "Sleeping tabs", set.sleepTabs) {
+            SettingsStore.shared.update { $0.sleepTabs.toggle() }
         })
         UI.append(m, UI.separator())
         UI.append(m, UI.row("software-update-available-symbolic", "Check for Updates") { [unowned self] in
@@ -303,7 +409,7 @@ extension Browser {
         })
         UI.append(m, UI.row("help-about-symbolic", "About Iris") { [unowned self] in self.closeMenu(); self.about() })
         UI.append(m, UI.row("application-exit-symbolic", "Quit", keys: "Ctrl+Q") { [unowned self] in self.app?.quit() })
-        openMenu(m, under: stage.bounds(of: menuButton) ?? addressFrame, width: 290, alignRight: true)
+        openMenu(m, under: stage.bounds(of: menuButton) ?? addressFrame, width: 320, alignRight: true)
         for b in [minus, plusB] { if let it = menu { stage.part(it, b, Glass(radius: 17, tint: RGBA.white.alpha(0.4), bend: 3, rim: 8, dispersion: false)) } }
     }
 
@@ -343,9 +449,9 @@ extension Browser {
         UI.append(m, h)
         UI.append(m, UI.row("web-browser-symbolic", "No Container") { [unowned self] in self.closeMenu(); self.newTab() })
         for c in Containers.shared.list {
-            UI.append(m, UI.row(nil, c.name, dot: c.color) { [unowned self] in self.closeMenu(); self.newTab(container: c.id) })
+            UI.append(m, UI.row(nil, c.name, container: c) { [unowned self] in self.closeMenu(); self.newTab(container: c.id) })
         }
-        UI.append(m, UI.row(nil, "Private", dot: "#5e5ce6") { [unowned self] in self.closeMenu(); self.newTab(container: Container.privateID) })
+        UI.append(m, UI.row(nil, "Private", container: Containers.shared.get(Container.privateID)) { [unowned self] in self.closeMenu(); self.newTab(container: Container.privateID) })
         if !newTabOnly, let t = current, !t.url.isEmpty {
             UI.append(m, UI.separator())
             let h2 = UI.label("Open this page in", "iris-dim", "iris-keys")
@@ -356,7 +462,7 @@ extension Browser {
                 UI.append(m, UI.row("web-browser-symbolic", "No Container") { [unowned self] in self.closeMenu(); self.newTab(t.url, after: t) })
             }
             for c in Containers.shared.list where c.id != t.container {
-                UI.append(m, UI.row(nil, c.name, dot: c.color) { [unowned self] in self.closeMenu(); self.newTab(t.url, container: c.id, after: t) })
+                UI.append(m, UI.row(nil, c.name, container: c) { [unowned self] in self.closeMenu(); self.newTab(t.url, container: c.id, after: t) })
             }
         }
         UI.append(m, UI.separator())
@@ -370,10 +476,35 @@ extension Browser {
     func askNewContainer() {
         let d = adw_alert_dialog_new("New Container", "A container keeps its own cookies, sign-ins and site data, apart from every other.")!
         let a: UnsafeMutablePointer<AdwAlertDialog> = cp(d)!
+        let v = UI.box(true, 12)
         let entry = gtk_entry_new()!
         gtk_entry_set_placeholder_text(UnsafeMutablePointer<GtkEntry>(OpaquePointer(entry)), "Name")
         gtk_entry_set_activates_default(UnsafeMutablePointer<GtkEntry>(OpaquePointer(entry)), 1)
-        adw_alert_dialog_set_extra_child(a, entry)
+        UI.append(v, entry)
+        // its icon
+        var chosen = "star"
+        let grid = gtk_flow_box_new()!
+        let fb = OpaquePointer(grid)
+        gtk_flow_box_set_selection_mode(fb, GTK_SELECTION_NONE)
+        gtk_flow_box_set_max_children_per_line(fb, 6)
+        gtk_flow_box_set_min_children_per_line(fb, 6)
+        gtk_flow_box_set_homogeneous(fb, 1)
+        var buttons: [GtkW] = []
+        for name in Container.icons {
+            let b = gtk_button_new_from_icon_name("iris-\(name)-symbolic")!
+            UI.cls(b, "flat", "iris-icon-choice")
+            gtk_widget_set_tooltip_text(b, name.capitalized)
+            if name == chosen { UI.cls(b, "selected") }
+            on(Ptr(b), "clicked") {
+                chosen = name
+                for o in buttons { gtk_widget_remove_css_class(o, "selected") }
+                gtk_widget_add_css_class(b, "selected")
+            }
+            buttons.append(b)
+            gtk_flow_box_append(fb, b)
+        }
+        UI.append(v, grid)
+        adw_alert_dialog_set_extra_child(a, v)
         adw_alert_dialog_add_response(a, "cancel", "Cancel")
         adw_alert_dialog_add_response(a, "add", "Add")
         adw_alert_dialog_set_response_appearance(a, "add", .suggested)
@@ -383,7 +514,7 @@ extension Browser {
             guard str(r?.assumingMemoryBound(to: CChar.self)) == "add" else { return }
             let name = UI.text(entry).trimmingCharacters(in: .whitespaces)
             guard !name.isEmpty else { return }
-            let c = Containers.shared.add(name)
+            let c = Containers.shared.add(name, icon: chosen)
             self.newTab(container: c.id)
         }
         adw_dialog_present(cp(OpaquePointer(d)), window)
@@ -456,7 +587,7 @@ extension Browser {
         })
         UI.append(m, UI.separator())
         for c in Containers.shared.list where c.id != t.container && !t.url.isEmpty {
-            UI.append(m, UI.row(nil, "Open in \(c.name)", dot: c.color) { [unowned self] in
+            UI.append(m, UI.row(nil, "Open in \(c.name)", container: c) { [unowned self] in
                 self.closeMenu(); self.newTab(t.url, container: c.id, after: t)
             })
         }
@@ -495,7 +626,7 @@ extension Browser {
         if let link, !link.hasPrefix("javascript:") {
             UI.append(m, UI.row("tab-new-symbolic", "Open Link in New Tab") { [unowned self] in self.closeMenu(); self.openInBackground(link, from: t) })
             for c in Containers.shared.list where c.id != t.container {
-                UI.append(m, UI.row(nil, "Open Link in \(c.name)", dot: c.color) { [unowned self] in self.closeMenu(); self.newTab(link, container: c.id, after: t) })
+                UI.append(m, UI.row(nil, "Open Link in \(c.name)", container: c) { [unowned self] in self.closeMenu(); self.newTab(link, container: c.id, after: t) })
             }
             UI.append(m, UI.row("edit-copy-symbolic", "Copy Link") { [unowned self] in self.closeMenu(); copy(link) })
             UI.append(m, UI.row("folder-download-symbolic", "Download Link") { [unowned self] in self.closeMenu(); save(link) })

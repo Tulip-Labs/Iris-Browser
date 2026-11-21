@@ -17,10 +17,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import org.mozilla.geckoview.WebResponse
+import java.net.HttpURLConnection
+import java.net.URL
 
 /** one download, as the downloads manager shows it */
-class Download(val name: String, val mime: String, val total: Long) {
+class Download(val name: String, val mime: String, total: Long) {
+    var knownTotal by mutableStateOf(total)
+    val total: Long get() = knownTotal
     var received by mutableStateOf(0L)
     var done by mutableStateOf(false)
     var failed by mutableStateOf(false)
@@ -37,57 +40,65 @@ object Downloads {
     val list = mutableStateListOf<Download>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private fun fileName(r: WebResponse): Pair<String, String> {
-        val disposition = r.headers["Content-Disposition"] ?: r.headers["content-disposition"]
-        val type = (r.headers["Content-Type"] ?: r.headers["content-type"])?.substringBefore(';')?.trim()
-        var name = URLUtil.guessFileName(r.uri, disposition, type)
-        val mime = type ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "")) ?: "application/octet-stream"
-        name = name.replace('/', '_').ifEmpty { "download" }
-        return name to mime
-    }
-
-    fun save(c: Context, r: WebResponse, private: Boolean) {
-        val body = r.body ?: return
-        val (name, mime) = fileName(r)
-        val total = (r.headers["Content-Length"] ?: r.headers["content-length"])?.toLongOrNull() ?: -1
-        val d = Download(name, mime, total)
-        android.os.Handler(c.mainLooper).post { list.add(0, d) }
+    /** a file a page offers: fetched with the page's cookies, into Downloads */
+    fun fetch(c: Context, url: String, agent: String?, disposition: String?, mimeType: String?, length: Long, cookies: String?, referer: String) {
+        var name = URLUtil.guessFileName(url, disposition, mimeType).replace('/', '_').ifEmpty { "download" }
+        val mime = mimeType?.substringBefore(';')?.trim()?.takeIf { it.isNotEmpty() && it != "application/octet-stream" }
+            ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "")) ?: "application/octet-stream"
+        if (url.startsWith("data:") || url.startsWith("blob:")) {
+            android.widget.Toast.makeText(c, "This download can't be saved from here", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val d = Download(name, mime, length)
+        list.add(0, d)
+        val main = android.os.Handler(c.mainLooper)
         scope.launch {
             val resolver = c.contentResolver
-            val values = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, name)
-                put(MediaStore.Downloads.MIME_TYPE, mime)
-                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-                put(MediaStore.Downloads.IS_PENDING, 1)
-            }
-            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-            if (uri == null) { d.failed = true; body.close(); return@launch }
+            var uri: Uri? = null
             try {
-                resolver.openOutputStream(uri)?.use { out ->
-                    val buf = ByteArray(64 * 1024)
-                    var n = 0L
-                    var last = 0L
-                    while (isActive && !d.cancelled) {
-                        val k = body.read(buf)
-                        if (k < 0) break
-                        out.write(buf, 0, k)
-                        n += k
-                        if (n - last > 256 * 1024) { last = n; val v = n; android.os.Handler(c.mainLooper).post { d.received = v } }
-                    }
-                    val v = n
-                    android.os.Handler(c.mainLooper).post { d.received = v }
+                val conn = URL(url).openConnection() as HttpURLConnection
+                agent?.let { conn.setRequestProperty("User-Agent", it) }
+                cookies?.let { conn.setRequestProperty("Cookie", it) }
+                if (referer.startsWith("http")) conn.setRequestProperty("Referer", referer)
+                conn.instanceFollowRedirects = true
+                conn.connectTimeout = 20000
+                conn.readTimeout = 60000
+                val total = if (length > 0) length else conn.contentLengthLong
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, name)
+                    put(MediaStore.Downloads.MIME_TYPE, mime)
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
                 }
-                body.close()
+                uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: throw IllegalStateException("no place in Downloads")
+                conn.inputStream.use { body ->
+                    resolver.openOutputStream(uri)!!.use { out ->
+                        val buf = ByteArray(64 * 1024)
+                        var n = 0L
+                        var last = 0L
+                        while (isActive && !d.cancelled) {
+                            val k = body.read(buf)
+                            if (k < 0) break
+                            out.write(buf, 0, k)
+                            n += k
+                            if (n - last > 256 * 1024) { last = n; val v = n; main.post { d.received = v; d.knownTotal = total } }
+                        }
+                        val v = n
+                        main.post { d.received = v; d.knownTotal = total }
+                    }
+                }
+                conn.disconnect()
                 if (d.cancelled) {
                     resolver.delete(uri, null, null)
-                    android.os.Handler(c.mainLooper).post { d.failed = true }
+                    main.post { d.failed = true }
                 } else {
                     resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
-                    android.os.Handler(c.mainLooper).post { d.uri = uri; d.done = true }
+                    val u = uri
+                    main.post { d.uri = u; d.done = true }
                 }
             } catch (e: Exception) {
-                runCatching { resolver.delete(uri, null, null) }
-                android.os.Handler(c.mainLooper).post { d.failed = true }
+                uri?.let { runCatching { resolver.delete(it, null, null) } }
+                main.post { d.failed = true }
             }
         }
     }

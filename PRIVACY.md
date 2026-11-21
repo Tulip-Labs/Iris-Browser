@@ -21,9 +21,8 @@ behalf. Tulipan Labs runs no servers for Iris.
 - **GitHub**, once a day: Iris asks for the newest release, to tell you about updates (and,
   on Android, to download one when you say so). The request carries nothing about you
   beyond your network address.
-- **The web engine** (WebKitGTK on Linux; GeckoView, Firefox's engine, on Android) follows
-  its maker's own privacy terms. On Android, uBlock Origin runs inside Iris and updates its
-  filter lists from their publishers.
+- **The web engine** (WebKitGTK on Linux; Android System WebView on Android) follows its
+  maker's own privacy terms.
 
 ## Contact
 

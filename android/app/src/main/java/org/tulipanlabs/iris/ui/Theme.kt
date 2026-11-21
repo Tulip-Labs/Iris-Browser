@@ -57,3 +57,20 @@ fun Modifier.glass(shape: Shape = RoundedCornerShape(50), tint: Color = Color.Wh
             )),
             shape,
         )
+
+/** a container's icon */
+fun containerIcon(name: String): androidx.compose.ui.graphics.vector.ImageVector = when (name) {
+    "person" -> androidx.compose.material.icons.Icons.Filled.Person
+    "briefcase" -> androidx.compose.material.icons.Icons.Filled.Work
+    "cart" -> androidx.compose.material.icons.Icons.Filled.ShoppingCart
+    "bank" -> androidx.compose.material.icons.Icons.Filled.AccountBalance
+    "home" -> androidx.compose.material.icons.Icons.Filled.Home
+    "heart" -> androidx.compose.material.icons.Icons.Filled.Favorite
+    "game" -> androidx.compose.material.icons.Icons.Filled.SportsEsports
+    "book" -> androidx.compose.material.icons.Icons.AutoMirrored.Filled.MenuBook
+    "plane" -> androidx.compose.material.icons.Icons.Filled.Flight
+    "code" -> androidx.compose.material.icons.Icons.Filled.Code
+    "music" -> androidx.compose.material.icons.Icons.Filled.MusicNote
+    "private" -> androidx.compose.material.icons.Icons.Filled.VisibilityOff
+    else -> androidx.compose.material.icons.Icons.Filled.Star
+}

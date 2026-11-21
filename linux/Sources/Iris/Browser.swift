@@ -27,6 +27,8 @@ final class Browser {
     private var address: Item!
     private(set) var addressText: GtkW!
     private var chip: GtkW!
+    private var chipLabel: GtkW!
+    private var chipIcon: GtkW!
     private var actions: Item!
     var shieldButton: GtkW!, downloadsButton: GtkW!, containerButton: GtkW!, menuButton: GtkW!
     private(set) var ntp: NewTabPage!
@@ -59,6 +61,7 @@ final class Browser {
         stage.background = { [unowned self] s, w, h in self.drawBack(s, w, h) }
         stage.afterPages = { [unowned self] s in self.drawReach(s) }
         stage.layout = { [unowned self] w, h in self.layout(w, h) }
+        stage.chromeLive = { [unowned self] in self.editing || self.suggestions != nil }
         buildChrome()
         ntp = NewTabPage(self)
         buildStatus()
@@ -81,6 +84,21 @@ final class Browser {
             return false
         }
         Downloads.shared.changed.append { [weak self] d in self?.downloadChanged(d) }
+        every(ms: 60_000) { [weak self] in self?.sleepIdleTabs(); return self != nil }
+    }
+
+    /// Tabs left alone give their memory back: a background tab sleeps after
+    /// 10 minutes, and beyond 3 awake background tabs the longest unseen
+    /// ones sleep at once. Tabs playing sound never sleep. A sleeping tab
+    /// opens its page again when you go to it.
+    func sleepIdleTabs() {
+        guard SettingsStore.shared.value.sleepTabs else { return }
+        let now = Date()
+        let awake = tabs.filter { $0 !== current && $0.web != nil && !$0.playingAudio }
+            .sorted { $0.lastShown > $1.lastShown }
+        for (i, t) in awake.enumerated() where i >= 3 || now.timeIntervalSince(t.lastShown) > 600 {
+            t.sleep()
+        }
     }
 
     var win: UnsafeMutablePointer<GtkWindow> { UnsafeMutablePointer<GtkWindow>(OpaquePointer(window)) }
@@ -138,7 +156,12 @@ final class Browser {
         // the address
         let ab = UI.box(false, 8)
         UI.cls(ab, "iris-address")
-        chip = UI.label("", "iris-chip")
+        chip = UI.box(false, 5)
+        UI.cls(chip, "iris-chip")
+        chipIcon = UI.icon("iris-star-symbolic", 13)
+        chipLabel = UI.label("")
+        UI.append(chip, chipIcon)
+        UI.append(chip, chipLabel)
         gtk_widget_set_valign(chip, GTK_ALIGN_CENTER)
         gtk_widget_set_visible(chip, 0)
         let t = gtk_text_new()!
@@ -286,26 +309,56 @@ final class Browser {
     }
 
     /// the page's colour reaches up under the chrome (as Apple's toolbars
-    /// take on the colour of the page under them), for the glass to bend
+    /// take on the colour of the page under them), for the glass to bend.
+    /// Blurred, so it is made at most once a second (a playing video does
+    /// not make it again each frame) and kept as a texture.
+    private var reachTex: OpaquePointer?
+    private var reachRect = Rect()
+    private var reachAt = Date.distantPast
+    private var reachTimer: UInt32 = 0
+    private var reachFor: ObjectIdentifier?
+
+    func invalidateReach() { reachAt = .distantPast; stage.dirtyChrome() }
+
     private func drawReach(_ s: Snap) {
-        guard !fullscreen, let t = current, let page = t.page, page.alpha.value > 0.01,
-              let node = stage.node(of: page) else { return }
-        let top = card.y
-        gtk_snapshot_save(s)
-        var clip = grect(Rect(x: 0, y: 0, w: stage.width, h: top))
-        gtk_snapshot_push_clip(s, &clip)
+        guard !fullscreen, let t = current, let page = t.page, page.alpha.value > 0.01 else { return }
+        let fresh = !Stage.noCache && Date().timeIntervalSince(reachAt) < 1 && reachFor == ObjectIdentifier(t)
+        if !fresh || reachTex == nil, let node = stage.node(of: page) {
+            let top = card.y
+            if let sub = gtk_snapshot_new() {
+                var clip = grect(Rect(x: 0, y: 0, w: stage.width, h: top))
+                gtk_snapshot_push_clip(sub, &clip)
+                gtk_snapshot_push_blur(sub, 26)
+                // the page's first rows, stretched up to the window's top
+                gtk_snapshot_scale(sub, 1, Float(top / 3))
+                var up = gpoint(0, -top)
+                gtk_snapshot_translate(sub, &up)
+                gtk_snapshot_append_node(sub, node)
+                gtk_snapshot_pop(sub)
+                gtk_snapshot_pop(sub)
+                if let n = gtk_snapshot_free_to_node(sub), let (tex, r) = stage.renderTexture(n, Rect(x: 0, y: 0, w: stage.width, h: top)) {
+                    if let old = reachTex { g_object_unref(Ptr(old)) }
+                    reachTex = tex
+                    reachRect = r
+                    reachAt = Date()
+                    reachFor = ObjectIdentifier(t)
+                    stage.dirtyChrome()
+                    gsk_render_node_unref(n)
+                }
+            }
+            gsk_render_node_unref(node)
+        } else if fresh && reachTimer == 0 {
+            // the page changed meanwhile: look again in a second
+            reachTimer = after(ms: 1000) { [weak self] in
+                guard let self else { return }
+                self.reachTimer = 0
+                gtk_widget_queue_draw(self.stage.widget)
+            }
+        }
+        guard let tex = reachTex else { return }
         gtk_snapshot_push_opacity(s, 0.42 * page.alpha.value)
-        gtk_snapshot_push_blur(s, 26)
-        // the page's first rows, stretched up to the window's top
-        gtk_snapshot_scale(s, 1, Float(top / 3))
-        var up = gpoint(0, -top)
-        gtk_snapshot_translate(s, &up)
-        gtk_snapshot_append_node(s, node)
+        Stage.drawTexture(s, tex, reachRect)
         gtk_snapshot_pop(s)
-        gtk_snapshot_pop(s)
-        gtk_snapshot_pop(s)
-        gtk_snapshot_restore(s)
-        gsk_render_node_unref(node)
     }
 
     private func drawProgress(_ s: Snap, _ r: Rect) {
@@ -338,7 +391,7 @@ final class Browser {
             if !self.progressShown.settled || self.progressShown.target == 0 && self.progressShown.value < 0.02 {
                 if self.progressShown.target == 0 && self.progressShown.value < 0.02 { self.progressValue.snap(0) }
             }
-            gtk_widget_queue_draw(self.stage.widget)
+            self.stage.dirtyChrome()
             self.progressTicking = a || b
             return self.progressTicking
         }
@@ -354,6 +407,7 @@ final class Browser {
         let toolY = 44.0, toolH = 38.0
         card = showChrome ? Rect(x: pad, y: toolY + toolH + 8, w: W - 2 * pad, h: H - (toolY + toolH + 8) - pad) : Rect(x: 0, y: 0, w: W, h: H)
 
+        stage.chromeHeight = showChrome ? card.y : 0
         stage.place(handle, Rect(x: 0, y: 0, w: W, h: card.y), animate: false)
         let (cw, ch) = UI.natural(controls.w)
         stage.place(controls, Rect(x: W - pad - cw, y: tabY + (tabH - ch) / 2, w: cw, h: ch), animate: false)
@@ -498,8 +552,11 @@ final class Browser {
     func select(_ t: Tab) {
         let old = current
         if old === t { layout(stage.width, stage.height); return }
+        old?.lastShown = Date()
+        t.lastShown = Date()
         current = t
         if let p = t.pending { t.pending = nil; t.load(p) }
+        sleepIdleTabs()
         if let op = old?.page { stage.show(op, false) }
         if let np = t.page {
             stage.raise(np)
@@ -511,6 +568,7 @@ final class Browser {
         }
         old.map { gtk_widget_remove_css_class($0.pill, "selected") }
         gtk_widget_add_css_class(t.pill, "selected")
+        invalidateReach()
         indicator.glass?.tint = (Containers.shared.get(t.container).map { RGBA(hex: $0.color, 0.30) } ?? RGBA.white.alpha(0.70))
         closeMenu()
         find?.close()
@@ -570,12 +628,14 @@ final class Browser {
         let label = t.title.isEmpty ? (t.url.isEmpty ? "New Tab" : Search.display(t.url)) : t.title
         UI.setLabel(t.pillLabel, label)
         gtk_widget_set_tooltip_text(t.pill, label)
+        stage.dirtyChrome()
         guard t === current else { return }
         gtk_widget_set_sensitive(back, t.canBack ? 1 : 0)
         gtk_widget_set_sensitive(forward, t.canForward ? 1 : 0)
         gtk_button_set_icon_name(UnsafeMutablePointer<GtkButton>(OpaquePointer(reload)), t.loading ? "process-stop-symbolic" : "view-refresh-symbolic")
         if let c = Containers.shared.get(t.container) {
-            UI.setLabel(chip, c.name)
+            UI.setLabel(chipLabel, c.name)
+            gtk_image_set_from_icon_name(OpaquePointer(chipIcon), c.iconName)
             gtk_widget_set_visible(chip, 1)
             if let p = address.parts.first { p.glass.tint = RGBA(hex: c.color, 0.92) }
         } else {
@@ -587,7 +647,7 @@ final class Browser {
         showAddress()
         if t.page != nil { stage.show(ntp.item, false) }
         gtk_window_set_title(win, t.title.isEmpty ? "Iris" : t.title + " – Iris")
-        stage.kick()
+        stage.dirtyChrome()
     }
 
     // MARK: pop-ups and new windows
@@ -706,7 +766,19 @@ final class Browser {
         closeMenu()
         let wrap = UI.box(true, 0)
         UI.cls(wrap, "iris-menu")
-        UI.append(wrap, content)
+        // a long menu scrolls inside the window
+        let natural = UI.natural(content, forWidth: Int32(width ?? -1)).1
+        let room = max(160, stage.height - r.maxY - 24)
+        if natural > room {
+            let sc = gtk_scrolled_window_new()!
+            gtk_scrolled_window_set_policy(OpaquePointer(sc), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC)
+            gtk_scrolled_window_set_propagate_natural_height(OpaquePointer(sc), 1)
+            gtk_scrolled_window_set_max_content_height(OpaquePointer(sc), Int32(room - 12))
+            gtk_scrolled_window_set_child(OpaquePointer(sc), content)
+            UI.append(wrap, sc)
+        } else {
+            UI.append(wrap, content)
+        }
         let it = stage.add(wrap, .overlay, glass: Glass(radius: 18, tint: RGBA(0.98, 0.98, 1, 0.70), bend: 9, rim: 18, lens: 0.02, blur: 3, shadow: 1))
         var (w, h) = UI.natural(wrap)
         if let width { w = width; h = UI.natural(wrap, forWidth: Int32(width)).1 }

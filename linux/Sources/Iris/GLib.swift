@@ -147,6 +147,7 @@ enum Prop {
     case object(String, Ptr?, GType)
     case bool(String, Bool)
     case string(String, String)
+    case boxed(String, Ptr?, GType)
 }
 
 /// g_object_new with properties (the variadic form is out of Swift's reach)
@@ -164,6 +165,10 @@ func gnew(_ type: GType, _ props: [Prop]) -> Ptr {
             let s = strdup(n)!; owned.append(s); names.append(UnsafePointer(s))
             g_value_init(&values[i], GType(5 << 2)) // G_TYPE_BOOLEAN
             g_value_set_boolean(&values[i], v ? 1 : 0)
+        case let .boxed(n, v, t):
+            let s = strdup(n)!; owned.append(s); names.append(UnsafePointer(s))
+            g_value_init(&values[i], t)
+            g_value_set_boxed(&values[i], v)
         case let .string(n, v):
             let s = strdup(n)!; owned.append(s); names.append(UnsafePointer(s))
             g_value_init(&values[i], GType(16 << 2)) // G_TYPE_STRING
