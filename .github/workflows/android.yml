@@ -1,12 +1,20 @@
-# Builds Iris for Android (the Kotlin app in android/) and keeps the APK as
-# an artifact of the run. Runs by hand from the Actions tab, and on pushes
-# that touch the app.
+# Builds Iris for Android (Kotlin, Jetpack Compose and GeckoView, in
+# android/) and keeps the APK as an artifact of the run. Runs by hand from
+# the Actions tab, and on pushes that touch the app.
+#
+# Signing: updates install over Iris only when every APK carries the same
+# key. Put the release keystore in the repository's secrets once
+# (IRIS_KEYSTORE as base64, IRIS_KEYSTORE_PASSWORD, IRIS_KEY_ALIAS); without
+# them the APK is signed with the runner's throwaway debug key.
 name: Android
 
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     branches: [main]
+    paths: ["android/**", ".github/workflows/android.yml"]
+  pull_request:
     paths: ["android/**", ".github/workflows/android.yml"]
 
 jobs:
@@ -17,9 +25,24 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "25" # Cefrium (the page engine) needs JDK 25
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: The release key
+        env:
+          IRIS_KEYSTORE: ${{ secrets.IRIS_KEYSTORE }}
+        run: |
+          if [ -n "$IRIS_KEYSTORE" ]; then
+            echo "$IRIS_KEYSTORE" | base64 -d > "$RUNNER_TEMP/iris.jks"
+            echo "IRIS_KEYSTORE_FILE=$RUNNER_TEMP/iris.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No IRIS_KEYSTORE secret: this APK cannot update an Iris signed with the release key"
+          fi
       - name: Build
         working-directory: android
+        env:
+          IRIS_KEYSTORE_PASSWORD: ${{ secrets.IRIS_KEYSTORE_PASSWORD }}
+          IRIS_KEY_ALIAS: ${{ secrets.IRIS_KEY_ALIAS }}
+          IRIS_KEY_PASSWORD: ${{ secrets.IRIS_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleRelease

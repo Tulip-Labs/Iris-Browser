@@ -3,14 +3,17 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- updates: Iris downloads its new version and asks Android to install it -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
+        android:name=".IrisApp"
         android:label="Iris"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:theme="@style/Lite"
+        android:theme="@style/Iris"
         android:hardwareAccelerated="true"
-        android:usesCleartextTraffic="true"
         android:allowBackup="false"
         android:supportsRtl="true">
 
@@ -32,14 +35,6 @@
                 <data android:scheme="http" />
                 <data android:scheme="https" />
             </intent-filter>
-            <!-- pairing with Iris on a computer: iris://pair?... (litego:// from older versions) -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="iris" android:host="pair" />
-                <data android:scheme="litego" android:host="pair" />
-            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.WEB_SEARCH" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -50,5 +45,8 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+
+        <!-- told when an update has been installed (or failed to) -->
+        <receiver android:name=".UpdateReceiver" android:exported="false" />
     </application>
 </manifest>

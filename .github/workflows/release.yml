@@ -1,8 +1,6 @@
-# Builds Iris for Linux (the Flatpak bundle and the Snap) and Android, and
-# publishes them as a GitHub release with one SHA256SUMS file. The container
-# image goes out from container.yml, Nix builds from the repository itself.
-# Runs when a tag like v1.0.0 is pushed, or by hand from the Actions tab
-# (give the tag to publish).
+# Builds Iris for Linux (the Flatpak bundle) and Android (the APK) and
+# publishes them as a GitHub release with one SHA256SUMS file. Runs when a
+# tag like v2.0.0 is pushed, or by hand from the Actions tab (give the tag).
 name: Release
 
 on:
@@ -11,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to publish, for example v1.0.0"
+        description: "Tag to publish, for example v2.0.0"
         required: true
 
 permissions:
@@ -37,30 +35,9 @@ jobs:
     uses: ./.github/workflows/linux.yml
 
   android:
-    needs: create
-    runs-on: ubuntu-latest
-    env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "25" # Cefrium (the page engine) needs JDK 25
-      - name: Build Iris for Android
-        working-directory: android
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon assembleRelease
-      - name: Publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cp android/app/build/outputs/apk/release/*.apk Iris-android.apk
-          sha256sum Iris-android.apk
-          gh release upload "$TAG" Iris-android.apk --clobber
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
 
-  # the Linux files, the container launcher and the checksums of every file
   publish:
     needs: [create, linux, android]
     runs-on: ubuntu-24.04
@@ -73,10 +50,10 @@ jobs:
         with:
           path: art
           merge-multiple: true
-      - name: Linux files to the release (the Flatpak bundle, the Snap, the container launcher)
+      - name: The files (the Flatpak bundle and the APK; Iris for Android finds its updates here)
         run: |
           ls -l art
-          gh release upload "$TAG" art/*.flatpak art/*.snap packaging/container/iris-container --clobber
+          gh release upload "$TAG" art/Iris-x86_64.flatpak art/Iris-android.apk --clobber
       - name: Checksums of every file
         run: |
           mkdir all && cd all

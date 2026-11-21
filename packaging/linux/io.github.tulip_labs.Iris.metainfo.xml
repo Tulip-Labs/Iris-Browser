@@ -2,21 +2,20 @@
 <component type="desktop-application">
   <id>io.github.tulip_labs.Iris</id>
   <name>Iris</name>
-  <summary>A light, fast browser with shields built in</summary>
+  <summary>A browser made of glass, with shields built in</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
   <developer id="io.github.tulip_labs">
     <name>Tulip Labs</name>
   </developer>
   <description>
-    <p>Iris is a small browser written in Go. Its pages are drawn by WebKitGTK, and Iris adds what keeps browsing light and private.</p>
+    <p>Iris is a browser written in Swift with libadwaita. Its pages are drawn by WebKitGTK, and its interface is Liquid Glass: clear glass that bends what is behind it, drawn by GTK itself and sharp at every display scale.</p>
     <ul>
-      <li>Iris Shields: ads, trackers, cookie notices and fingerprinting blocked</li>
-      <li>Containers for separate sign-ins, private tabs and split view</li>
-      <li>Background tabs that sleep and unload to save memory</li>
-      <li>One light Liquid Glass look, sharp at every display scale</li>
+      <li>Iris Shields: about 100,000 ad and tracker domains blocked inside the engine, and the pop-ups ads open</li>
+      <li>Containers: worlds apart, each with its own cookies, storage and sign-ins, and private tabs</li>
+      <li>A menu of glass on a right click, a downloads panel, find in page</li>
+      <li>A translucent window that the compositor blurs where it can (niri and others)</li>
       <li>Every search answered by Google AI Mode from high-quality, current sources</li>
-      <li>Sync with Iris for Android over your own network, with no servers</li>
     </ul>
   </description>
   <launchable type="desktop-id">io.github.tulip_labs.Iris.desktop</launchable>
@@ -28,6 +27,7 @@
     <category>WebBrowser</category>
   </categories>
   <releases>
+    <release version="2.0.0" date="2026-11-21"/>
     <release version="1.0.26" date="2026-11-21"/>
     <release version="1.0.25" date="2026-11-20"/>
     <release version="1.0.22" date="2026-11-18"/>

@@ -2,17 +2,12 @@
 Type=Application
 Name=Iris
 GenericName=Web Browser
-Comment=A light, fast browser with shields built in
+Comment=A browser made of glass, with shields built in
 Exec=iris %U
 Icon=io.github.tulip_labs.Iris
 Terminal=false
 StartupNotify=true
 StartupWMClass=io.github.tulip_labs.Iris
-Categories=Network;WebBrowser;
+Categories=Network;WebBrowser;GTK;
 Keywords=web;browser;internet;iris;
 MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
-Actions=new-window;
-
-[Desktop Action new-window]
-Name=New Window
-Exec=iris --new-window

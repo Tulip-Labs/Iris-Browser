@@ -1,14 +1,18 @@
-# Iris as a Flatpak: the way to install Iris on Linux (Fedora Atomic, SteamOS,
-# Mint, Ubuntu and the rest).
+# Iris as a Flatpak: the way to install Iris on Linux.
 #
-# This manifest packages dist/linux, the folder ./build-iris.sh linux makes
-# (the program; WebKitGTK comes with the GNOME runtime), so CI builds the bundle published with each
-# release from the exact files it tested. A Flathub submission builds from
-# source instead, with every download listed: see README.md here.
+# Builds the Swift app in linux/ with the GNOME 50 SDK (GTK 4, libadwaita,
+# WebKitGTK 6) and Flathub's Swift 6 SDK extension. The Swift runtime is
+# linked into the program, so the app needs nothing beyond the GNOME runtime.
+#
+# This is the manifest CI uses for the bundle each release carries; its
+# build may fetch swift-adwaita and its packages from GitHub. A Flathub
+# submission would list every source instead (see README.md here).
 app-id: io.github.tulip_labs.Iris
-runtime: org.gnome.Platform # GTK 4 and WebKitGTK 6 (the freedesktop runtime has neither)
-runtime-version: "50" # on freedesktop 25.08
+runtime: org.gnome.Platform
+runtime-version: "50"
 sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.swift6
 command: iris
 separate-locales: false
 
@@ -20,14 +24,10 @@ finish-args:
   - --socket=pulseaudio
   - --device=dri
   - --filesystem=xdg-download
-  - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.freedesktop.FileManager1 # "show in folder" for downloads
-  - --talk-name=org.freedesktop.ScreenSaver # no screen saver while a video plays
-  - --own-name=org.mpris.MediaPlayer2.Iris.* # media keys and the desktop's player controls
-  - --system-talk-name=org.freedesktop.UPower # battery saving
 
 # H.264, H.265 and AAC for WebKit's video (GStreamer's libav plugin takes
-# ffmpeg from here): mounted at /app/lib/ffmpeg and put on the library path
+# ffmpeg from here)
 add-extensions:
   org.freedesktop.Platform.ffmpeg-full:
     directory: lib/ffmpeg
@@ -38,22 +38,34 @@ add-extensions:
 cleanup-commands:
   - mkdir -p /app/lib/ffmpeg
 
+build-options:
+  append-path: /usr/lib/sdk/swift6/bin
+  prepend-ld-library-path: /usr/lib/sdk/swift6/lib
+
 modules:
   - name: iris
     buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network # SwiftPM fetches swift-adwaita
     sources:
       - type: dir
-        path: ../../dist/linux
+        path: ../../linux
+        dest: linux
+      - type: dir
+        path: ../linux
+        dest: desktop
       - type: script
         dest-filename: iris.sh
         commands:
           - export TMPDIR="$XDG_RUNTIME_DIR/app/$FLATPAK_ID"
-          - exec /app/lib/iris-browser/iris "$@"
+          - exec /app/lib/iris/iris "$@"
     build-commands:
-      - mkdir -p /app/lib/iris-browser
-      - cp -a . /app/lib/iris-browser/
-      - rm -f /app/lib/iris-browser/iris.sh
+      - cd linux && swift build -c release --static-swift-stdlib
+      - install -Dm755 linux/.build/release/Iris /app/lib/iris/iris
+      - cp -r linux/.build/release/Iris_Iris.resources /app/lib/iris/
       - install -Dm755 iris.sh /app/bin/iris
-      - install -Dm644 io.github.tulip_labs.Iris.png /app/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
-      - install -Dm644 io.github.tulip_labs.Iris.desktop /app/share/applications/io.github.tulip_labs.Iris.desktop
-      - install -Dm644 io.github.tulip_labs.Iris.metainfo.xml /app/share/metainfo/io.github.tulip_labs.Iris.metainfo.xml
+      - install -Dm644 linux/Sources/Iris/Resources/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg /app/share/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg
+      - install -Dm644 linux/Sources/Iris/Resources/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png /app/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
+      - install -Dm644 desktop/io.github.tulip_labs.Iris.desktop /app/share/applications/io.github.tulip_labs.Iris.desktop
+      - install -Dm644 desktop/io.github.tulip_labs.Iris.metainfo.xml /app/share/metainfo/io.github.tulip_labs.Iris.metainfo.xml
