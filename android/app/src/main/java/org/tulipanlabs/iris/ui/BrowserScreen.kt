@@ -1,8 +1,13 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package org.tulipanlabs.iris.ui
 
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
@@ -10,9 +15,10 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,11 +29,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -36,200 +42,163 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import org.tulipanlabs.iris.BrowserModel
-import org.tulipanlabs.iris.Container
-import org.tulipanlabs.iris.Downloads
+import org.tulipanlabs.iris.R
 import org.tulipanlabs.iris.Search
 import org.tulipanlabs.iris.Store
 import org.tulipanlabs.iris.Tab
 
-enum class Sheet { NONE, SHIELDS, CONTAINERS, DOWNLOADS }
+enum class Sheet { NONE, MENU, SHIELDS, CONTAINERS, DOWNLOADS }
 
 @Composable
 fun BrowserScreen(model: BrowserModel) {
+    val p = LocalPalette.current
     var sheet by remember { mutableStateOf(Sheet.NONE) }
-    val snack = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
+    var note by remember { mutableStateOf<String?>(null) }
 
-    // a pop-up Iris stopped: say so, and offer it
+    // a pop-up Iris stopped: a note that offers it
     LaunchedEffect(model.blocked) {
         val b = model.blocked ?: return@LaunchedEffect
-        model.blocked = null
-        val r = snack.showSnackbar("Pop-up blocked", actionLabel = "Open", duration = SnackbarDuration.Short)
-        if (r == SnackbarResult.ActionPerformed) model.newTab(b.url, b.from.container, after = b.from)
+        note = "Pop-up stopped"
+        delay(4000)
+        if (model.blocked === b) model.blocked = null
+        note = null
     }
 
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFFEDE8FF), Color(0xFFF4F7FF), Color(0xFFF7F6FB))))) {
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(p.back))) {
         Column(Modifier.fillMaxSize().imePadding()) {
-            AnimatedVisibility(model.fullscreen == null, enter = slideInVertically() + fadeIn(), exit = slideOutVertically() + fadeOut()) {
+            AnimatedVisibility(!model.fullscreen, enter = slideInVertically() + fadeIn(), exit = slideOutVertically() + fadeOut()) {
                 Column(Modifier.statusBarsPadding()) {
                     TabStrip(model, onContainers = { sheet = Sheet.CONTAINERS })
                     AddressRow(model)
                 }
             }
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                Page(model)
-                SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(12.dp))
-            }
-            AnimatedVisibility(model.fullscreen == null, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
-                BottomBar(model, onShields = { sheet = Sheet.SHIELDS }, onDownloads = { sheet = Sheet.DOWNLOADS }, onContainers = { sheet = Sheet.CONTAINERS })
+            Box(Modifier.weight(1f).fillMaxWidth()) { PageArea(model) }
+            AnimatedVisibility(!model.fullscreen, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
+                BottomBar(model, onSheet = { sheet = it })
             }
         }
+        // a short note above the bar
+        AnimatedVisibility(note != null, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 84.dp),
+            enter = fadeIn() + slideInVertically { it / 2 }, exit = fadeOut()) {
+            Row(Modifier.glass(p, RoundedCornerShape(50), tint = p.panel, elevation = 8.dp).padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Txt(note ?: "", weight = FontWeight.Medium)
+                Spacer(Modifier.width(10.dp))
+                model.blocked?.let { b -> GlassPill("Open", { model.newTab(b.url, b.from.container, after = b.from); model.blocked = null; note = null }, strong = true) }
+            }
+        }
+        MenuSheet(model, sheet == Sheet.MENU, onSheet = { sheet = it })
+        ShieldsSheet(model, sheet == Sheet.SHIELDS) { sheet = Sheet.NONE }
+        ContainersSheet(model, sheet == Sheet.CONTAINERS) { sheet = Sheet.NONE }
+        DownloadsSheet(sheet == Sheet.DOWNLOADS) { sheet = Sheet.NONE }
+        ContextSheet(model, model.pressed) { model.pressed = null }
+        UpdateDialog()
     }
-
-    when (sheet) {
-        Sheet.SHIELDS -> ShieldsSheet(model) { sheet = Sheet.NONE }
-        Sheet.CONTAINERS -> ContainersSheet(model) { sheet = Sheet.NONE }
-        Sheet.DOWNLOADS -> DownloadsScreen { sheet = Sheet.NONE }
-        Sheet.NONE -> {}
-    }
-    model.pressed?.let { p -> ContextMenuSheet(model, p) { model.pressed = null } }
-    // a video in full screen, over everything
-    model.fullscreen?.let { v ->
-        AndroidView(factory = { ctx -> android.widget.FrameLayout(ctx).apply { setBackgroundColor(android.graphics.Color.BLACK) } },
-            update = { f -> if (v.parent !== f) { (v.parent as? android.view.ViewGroup)?.removeView(v); f.removeAllViews(); f.addView(v) } },
-            modifier = Modifier.fillMaxSize())
-    }
-    UpdateDialog()
 }
 
 /** the tabs, as on a computer: pills in a row, the selected one in glass */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TabStrip(model: BrowserModel, onContainers: () -> Unit) {
     val state = rememberLazyListState()
     val sel = model.tabs.indexOf(model.current)
     LaunchedEffect(sel, model.tabs.size) { if (sel >= 0) state.animateScrollToItem(sel) }
-    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 6.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         LazyRow(Modifier.weight(1f), state = state, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             itemsIndexed(model.tabs, key = { _, t -> t.id }) { _, t ->
-                TabPill(t, selected = t === model.current, onSelect = { model.select(t) }, onClose = { model.close(t) },
-                    modifier = Modifier.animateItem())
+                TabPill(t, selected = t === model.current, onSelect = { model.select(t) }, onClose = { model.close(t) }, modifier = Modifier.animateItem())
             }
         }
-        // the one "+": a tap opens a tab, a long press picks its container
-        Box(
-            Modifier.padding(start = 6.dp).size(36.dp).glass(CircleShape)
-                .combinedClickable(onClick = { model.newTab() }, onLongClick = onContainers),
-            contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Filled.Add, "New tab", tint = Ink) }
+        // a tap opens a tab, a long press picks its container
+        GlassButton(Glyph.PLUS, "New tab", { model.newTab() }, Modifier.padding(start = 6.dp), size = 38.dp, onLong = onContainers)
     }
 }
 
 @Composable
 private fun TabPill(t: Tab, selected: Boolean, onSelect: () -> Unit, onClose: () -> Unit, modifier: Modifier) {
+    val p = LocalPalette.current
     val c = Store.container(t.container)
-    val tint by animateColorAsState(
-        if (selected) (c?.let { Color(it.color).copy(alpha = 0.22f) } ?: Color.White.copy(alpha = 0.92f)) else Color.White.copy(alpha = 0.0f),
-        spring(stiffness = Spring.StiffnessMediumLow), label = "tab",
-    )
-    val shape = RoundedCornerShape(18.dp)
+    val width by animateDpAsState(if (selected) 176.dp else 128.dp, spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMediumLow), label = "tab")
+    val shape = RoundedCornerShape(19.dp)
+    val tint by animateColorAsState(c?.let { Color(it.color).copy(alpha = 0.26f) } ?: p.glass, label = "tint")
     Row(
-        modifier.height(36.dp).width(if (selected) 176.dp else 132.dp)
-            .then(if (selected) Modifier.glass(shape, tint) else Modifier.clip(shape).background(Color.White.copy(alpha = 0.35f)))
-            .clickable(onClick = onSelect)
+        modifier.height(38.dp).width(width)
+            .then(if (selected) Modifier.glass(p, shape, tint = tint) else Modifier.clip(shape).background(p.ink.copy(alpha = if (p.dark) 0.06f else 0.04f)))
+            .combinedClickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onSelect)
             .padding(start = 12.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (c != null) Icon(containerIcon(c.icon), c.name, Modifier.size(15.dp), tint = Color(c.color))
-        if (c != null) Spacer(Modifier.width(6.dp))
-        Text(
-            t.title.ifEmpty { Search.display(t.url).ifEmpty { "New Tab" } },
-            Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
-            fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, color = Ink,
-        )
-        if (selected) IconButton(onClick = onClose, Modifier.size(28.dp)) { Icon(Icons.Filled.Close, "Close tab", Modifier.size(16.dp), tint = Ink) }
+        if (c != null) {
+            GlyphIcon(Glyphs.container(c.icon), size = 15.dp, tint = Color(c.color))
+            Spacer(Modifier.width(6.dp))
+        }
+        Txt(t.title.ifEmpty { Search.display(t.url).ifEmpty { "New Tab" } }, Modifier.weight(1f), size = 13.sp,
+            weight = if (selected) FontWeight.SemiBold else FontWeight.Medium, color = if (selected) p.ink else p.ink2, maxLines = 1)
+        if (selected) GlassButton(Glyph.CLOSE, "Close tab", onClose, size = 30.dp, clear = true)
     }
 }
-
 
 /** the address: the site's name, or your question; tap to type */
 @Composable
 private fun AddressRow(model: BrowserModel) {
+    val p = LocalPalette.current
     val t = model.current
     val focus = LocalFocusManager.current
     var editing by remember { mutableStateOf(false) }
     var value by remember { mutableStateOf(TextFieldValue("")) }
     val requester = remember { FocusRequester() }
-    LaunchedEffect(t?.url, editing) {
-        if (!editing) value = TextFieldValue(Search.display(t?.url ?: ""))
-    }
-    // a new, empty tab is ready for typing
+    LaunchedEffect(t?.url, editing) { if (!editing) value = TextFieldValue(Search.display(t?.url ?: "")) }
     LaunchedEffect(t?.id) { if (t != null && t.url.isEmpty() && t.pending == null) runCatching { requester.requestFocus() } }
     Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
-        Row(
-            Modifier.fillMaxWidth().height(46.dp).glass(RoundedCornerShape(23.dp), Color.White.copy(alpha = if (editing) 0.95f else 0.75f)),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(Modifier.fillMaxWidth().height(48.dp).glass(p, RoundedCornerShape(24.dp)), verticalAlignment = Alignment.CenterVertically) {
             Spacer(Modifier.width(16.dp))
             val c = Store.container(t?.container)
-            if (c != null && !editing) {
-                Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Color(c.color)).padding(horizontal = 8.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Icon(containerIcon(c.icon), null, Modifier.size(13.dp), tint = Color.White)
-                    Spacer(Modifier.width(4.dp))
-                    Text(c.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            when {
+                c != null && !editing -> {
+                    Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Color(c.color)).padding(horizontal = 8.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        GlyphIcon(Glyphs.container(c.icon), size = 13.dp, tint = Color.White)
+                        Spacer(Modifier.width(4.dp))
+                        Txt(c.name, size = 12.sp, weight = FontWeight.SemiBold, color = Color.White)
+                    }
+                    Spacer(Modifier.width(8.dp))
                 }
-                Spacer(Modifier.width(8.dp))
-            } else if (!editing && (t?.url ?: "").startsWith("https://")) {
-                Icon(Icons.Filled.Lock, "Secure", Modifier.size(14.dp), tint = Ink.copy(alpha = 0.5f))
-                Spacer(Modifier.width(6.dp))
+                !editing && (t?.url ?: "").startsWith("https://") -> {
+                    GlyphIcon(Glyph.LOCK, size = 15.dp, tint = p.ink2)
+                    Spacer(Modifier.width(6.dp))
+                }
+                editing -> {
+                    GlyphIcon(Glyph.SEARCH, size = 17.dp, tint = p.ink2)
+                    Spacer(Modifier.width(8.dp))
+                }
             }
             BasicTextField(
                 value = value,
@@ -242,53 +211,52 @@ private fun AddressRow(model: BrowserModel) {
                     } else if (!f.isFocused) editing = false
                 },
                 singleLine = true,
-                textStyle = TextStyle(fontSize = 16.sp, color = Ink, fontWeight = if (editing) FontWeight.Normal else FontWeight.Medium),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.secondary),
+                textStyle = TextStyle(fontSize = 16.sp, color = p.ink, fontWeight = if (editing) FontWeight.Normal else FontWeight.Medium),
+                cursorBrush = SolidColor(p.accent),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
                 keyboardActions = KeyboardActions(onGo = { model.go(value.text); focus.clearFocus() }),
+                decorationBox = { inner ->
+                    Box {
+                        if (value.text.isEmpty()) Txt("Ask anything, or type an address", color = p.ink2, maxLines = 1)
+                        inner()
+                    }
+                },
             )
             if (editing && value.text.isNotEmpty()) {
-                IconButton(onClick = { value = TextFieldValue("") }) { Icon(Icons.Filled.Close, "Clear", tint = Ink) }
+                GlassButton(Glyph.CLOSE, "Clear", { value = TextFieldValue("") }, size = 40.dp, clear = true)
             } else if (t != null && t.url.isNotEmpty()) {
-                IconButton(onClick = { if (t.loading) t.stop() else t.reload() }) {
-                    Icon(if (t.loading) Icons.Filled.Close else Icons.Filled.Refresh, if (t.loading) "Stop" else "Reload", tint = Ink)
-                }
+                GlassButton(if (t.loading) Glyph.CLOSE else Glyph.RELOAD, if (t.loading) "Stop" else "Reload",
+                    { if (t.loading) t.stop() else t.reload() }, size = 40.dp, clear = true)
             }
+            Spacer(Modifier.width(4.dp))
         }
         // how far the page has loaded, along the bottom of the capsule
-        val p by animateFloatAsState((t?.progress ?: 0) / 100f, label = "progress")
-        AnimatedVisibility(t?.loading == true, Modifier.align(Alignment.BottomCenter), enter = fadeIn(), exit = fadeOut()) {
-            LinearProgressIndicator(progress = { p }, Modifier.fillMaxWidth().padding(horizontal = 22.dp).height(2.dp),
-                color = MaterialTheme.colorScheme.secondary, trackColor = Color.Transparent)
+        val prog by animateFloatAsState((t?.progress ?: 0) / 100f, label = "progress")
+        AnimatedVisibility(t?.loading == true, Modifier.align(Alignment.BottomCenter).padding(horizontal = 26.dp), enter = fadeIn(), exit = fadeOut()) {
+            Box(Modifier.fillMaxWidth().height(2.dp)) {
+                Box(Modifier.fillMaxWidth(prog.coerceIn(0.02f, 1f)).height(2.dp).clip(RoundedCornerShape(50)).background(p.accent))
+            }
         }
     }
 }
 
-/** the page itself, or the new-tab page; pull down at the top to reload */
+/** the page itself (Chromium's surface), or the new-tab page */
 @Composable
-private fun Page(model: BrowserModel) {
+private fun PageArea(model: BrowserModel) {
     val t = model.current
-    Box(Modifier.fillMaxSize().padding(horizontal = 6.dp).clip(RoundedCornerShape(18.dp))) {
+    Box(Modifier.fillMaxSize().padding(horizontal = 6.dp).clip(RoundedCornerShape(20.dp))) {
         val w = t?.web
         if (w == null) {
             NewTabPage(model)
         } else {
             AndroidView(
-                factory = { ctx ->
-                    SwipeRefreshLayout(ctx).apply {
-                        setColorSchemeColors(0xFF5B3CC4.toInt())
-                        setOnRefreshListener {
-                            model.current?.reload()
-                            postDelayed({ isRefreshing = false }, 900)
-                        }
-                    }
-                },
-                // the shown tab's WebView, moved into the pull-to-reload frame
+                factory = { ctx -> FrameLayout(ctx) },
+                // the shown tab's page, moved into the frame
                 update = { frame ->
                     if (w.parent !== frame) {
-                        (w.parent as? android.view.ViewGroup)?.removeView(w)
+                        (w.parent as? ViewGroup)?.removeView(w)
                         frame.removeAllViews()
-                        frame.addView(w, android.view.ViewGroup.LayoutParams(-1, -1))
+                        frame.addView(w, ViewGroup.LayoutParams(-1, -1))
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
@@ -297,23 +265,74 @@ private fun Page(model: BrowserModel) {
     }
 }
 
-/** back, forward, home, shields, containers and downloads */
+/** back, forward, home, Shields, tabs and the menu, on one capsule of glass */
 @Composable
-private fun BottomBar(model: BrowserModel, onShields: () -> Unit, onDownloads: () -> Unit, onContainers: () -> Unit) {
+private fun BottomBar(model: BrowserModel, onSheet: (Sheet) -> Unit) {
+    val p = LocalPalette.current
     val t = model.current
     Row(
-        Modifier.navigationBarsPadding().fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
-            .height(52.dp).glass(RoundedCornerShape(26.dp)),
+        Modifier.navigationBarsPadding().fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
+            .height(58.dp).glass(p, RoundedCornerShape(29.dp), elevation = 6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = { t?.back() }, enabled = t?.canBack == true) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-        IconButton(onClick = { t?.forward() }, enabled = t?.canForward == true) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward") }
-        IconButton(onClick = { t?.let { model.home(it) } }) { Icon(Icons.Filled.Home, "Home") }
+        GlassButton(Glyph.BACK, "Back", { t?.back() }, enabled = t?.canBack == true, clear = true)
+        GlassButton(Glyph.FORWARD, "Forward", { t?.forward() }, enabled = t?.canForward == true, clear = true)
+        GlassButton(Glyph.HOME, "Home", { t?.let { model.home(it) } }, clear = true)
         val on = t?.let { model.shieldsFor(it.url) } ?: Store.shields
-        IconButton(onClick = onShields) { Icon(if (on) Icons.Filled.Shield else Icons.Outlined.Shield, "Shields", tint = if (on) MaterialTheme.colorScheme.primary else Ink) }
-        IconButton(onClick = onContainers) { Icon(Icons.Filled.Layers, "Containers") }
-        IconButton(onClick = onDownloads) {
-            BadgedBox(badge = { if (Downloads.active > 0) Badge { Text("${Downloads.active}") } }) { Icon(Icons.Filled.Download, "Downloads") }
+        Box {
+            GlassButton(if (on) Glyph.SHIELD_ON else Glyph.SHIELD, "Shields", { onSheet(Sheet.SHIELDS) }, clear = true, tint = if (on) p.accent else p.ink2)
+            val n = t?.blocked ?: 0
+            if (on && n > 0) {
+                Box(Modifier.align(Alignment.TopEnd).padding(top = 2.dp).clip(RoundedCornerShape(50)).background(p.accent).padding(horizontal = 5.dp, vertical = 1.dp)) {
+                    Txt(if (n > 99) "99+" else "$n", size = 10.sp, weight = FontWeight.Bold, color = Color.White)
+                }
+            }
         }
+        GlassButton(Glyph.LAYERS, "Containers", { onSheet(Sheet.CONTAINERS) }, clear = true)
+        GlassButton(Glyph.MORE, "Menu", { onSheet(Sheet.MENU) }, clear = true)
+    }
+}
+
+/** the new-tab page: Iris (Ember's wallpaper, light by day and dark by
+ *  night), the name, and the sites you go to most */
+@Composable
+fun NewTabPage(model: BrowserModel) {
+    val p = LocalPalette.current
+    val sites = remember(model.current?.id) { Store.topSites(8) }
+    Box(Modifier.fillMaxSize()) {
+        Image(painterResource(if (p.dark) R.drawable.iris_dark else R.drawable.iris_light), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 36.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.height(24.dp))
+            Txt("Iris", size = 46.sp, weight = FontWeight.ExtraBold)
+            Spacer(Modifier.height(22.dp))
+            if (sites.isNotEmpty()) {
+                Row(Modifier.widthIn(max = 520.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    sites.take(4).forEach { v -> SiteTile(Search.display(v.url), Modifier.weight(1f)) { model.go(v.url) } }
+                }
+                if (sites.size > 4) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.widthIn(max = 520.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        sites.drop(4).take(4).forEach { v -> SiteTile(Search.display(v.url), Modifier.weight(1f)) { model.go(v.url) } }
+                        repeat(4 - sites.drop(4).take(4).size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SiteTile(name: String, modifier: Modifier, onClick: () -> Unit) {
+    val p = LocalPalette.current
+    Column(
+        modifier.glass(p, RoundedCornerShape(22.dp)).combinedClickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.size(40.dp).clip(CircleShape).background(p.accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+            Txt(name.take(1).uppercase(), size = 18.sp, weight = FontWeight.Bold, color = p.accent)
+        }
+        Spacer(Modifier.height(6.dp))
+        Txt(name.substringBefore('.').replaceFirstChar { it.uppercase() }, Modifier.padding(horizontal = 4.dp), size = 12.sp, maxLines = 1)
     }
 }

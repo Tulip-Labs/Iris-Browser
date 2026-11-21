@@ -3,7 +3,7 @@ import CAdwaita
 import Foundation
 
 final class IrisApp {
-    static let version = "2.0.1"
+    static let version = "2.1.0"
     static let id = "io.github.tulip_labs.Iris"
 
     let app: Application
@@ -27,15 +27,14 @@ final class IrisApp {
     private func startup() {
         g_set_prgname("iris")
         g_set_application_name("Iris")
-        // light, like glass in daylight
-        adw_style_manager_set_color_scheme(adw_style_manager_get_default(), .forceLight)
-        let css = gtk_css_provider_new()!
-        gtk_css_provider_load_from_string(css, UI.css)
-        gtk_style_context_add_provider_for_display(gdk_display_get_default(), OpaquePointer(css), 600)
+        // Light, Dark or Auto, as in Ember
+        UI.installCSS()
+        Look.watch()
         if let icons = Resources.path("icons") {
             gtk_icon_theme_add_search_path(gtk_icon_theme_get_for_display(gdk_display_get_default()), icons)
         }
         Containers.shared.sessionMade = { s in Downloads.shared.listen(s) }
+        Shields.shared.installed = { [unowned self] in self.reapplyShields() }
         Shields.shared.start()
     }
 
@@ -88,6 +87,15 @@ final class IrisApp {
     func removeContainer(_ id: String) {
         for b in browsers { b.closeTabs(in: id) }
         Containers.shared.remove(id)
+    }
+
+    /// new rules (a level, fresh lists): every page takes them, as it is
+    func reapplyShields() {
+        for b in browsers {
+            for t in b.tabs {
+                if let ucm = t.ucm { Shields.shared.apply(ucm, host: Search.host(t.url)) }
+            }
+        }
     }
 
     func shieldsChanged() {

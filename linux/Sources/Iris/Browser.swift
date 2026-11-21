@@ -77,6 +77,7 @@ final class Browser {
         gtk_widget_add_controller(stage.widget, OpaquePointer(click))
 
         Keys.attach(self)
+        Look.changed.append { [weak self] in self?.lookChanged() }
         on(Ptr(window), "realize") { [unowned self] in self.realized() }
         onBool0(Ptr(window), "close-request") { [unowned self] in
             self.saveSession()
@@ -101,6 +102,15 @@ final class Browser {
         }
     }
 
+    /// Light and Dark: the glass takes its tint as it draws; the pictures
+    /// made from it are made again
+    func lookChanged() {
+        ntp.lookChanged()
+        invalidateReach()
+        stage.dirtyChrome()
+        gtk_widget_queue_draw(stage.widget)
+    }
+
     var win: UnsafeMutablePointer<GtkWindow> { UnsafeMutablePointer<GtkWindow>(OpaquePointer(window)) }
 
     func present() { gtk_window_present(win) }
@@ -123,11 +133,11 @@ final class Browser {
         // the selected tab's glass, sliding from tab to tab
         let ind = UI.box()
         gtk_widget_set_can_target(ind, 0)
-        indicator = stage.add(ind, .chrome, glass: Glass(radius: 16, tint: RGBA.white.alpha(0.70), bend: 6, rim: 12, dispersion: true, shadow: 0.7))
+        indicator = stage.add(ind, .chrome, glass: Glass(radius: 16, level: 0.70, bend: 6, rim: 12, dispersion: true, shadow: 0.7))
         indicator.animateFrames = false
 
         let p = UI.button("list-add-symbolic", "New tab (Ctrl+T)") { [unowned self] in self.newTab() }
-        plus = stage.add(p, .chrome, glass: Glass(radius: 16, tint: RGBA.white.alpha(0.24), bend: 5, rim: 10), reactive: true)
+        plus = stage.add(p, .chrome, glass: Glass(radius: 16, level: 0.24, bend: 5, rim: 10), reactive: true)
         let pc = gtk_gesture_click_new()!
         gtk_gesture_single_set_button(OpaquePointer(pc), 3)
         onPress(Ptr(pc), "pressed") { [unowned self] _, _, _ in self.showContainerMenu(anchor: self.plus.frame.rect, newTabOnly: true) }
@@ -150,8 +160,8 @@ final class Browser {
             gtk_widget_set_valign(b, GTK_ALIGN_CENTER)
             UI.append(navBox, b)
         }
-        nav = stage.add(navBox, .chrome, glass: Glass(radius: 19, tint: RGBA.white.alpha(0.20)))
-        for b in [back!, forward!, reload!] { stage.part(nav, b, Glass(radius: 17, tint: RGBA.white.alpha(0.30), bend: 3, rim: 8, dispersion: false)) }
+        nav = stage.add(navBox, .chrome, glass: Glass(radius: 19, level: 0.20))
+        for b in [back!, forward!, reload!] { stage.part(nav, b, Glass(radius: 17, level: 0.30, bend: 3, rim: 8, dispersion: false)) }
 
         // the address
         let ab = UI.box(false, 8)
@@ -172,7 +182,7 @@ final class Browser {
         gtk_editable_set_alignment(OpaquePointer(t), 0.5)
         UI.append(ab, chip)
         UI.append(ab, t)
-        address = stage.add(ab, .chrome, glass: Glass(radius: 19, tint: RGBA.white.alpha(0.30), bend: 7, rim: 14), reactive: true)
+        address = stage.add(ab, .chrome, glass: Glass(radius: 19, level: 0.30, bend: 7, rim: 14), reactive: true)
         stage.part(address, chip, Glass(radius: 10, tint: RGBA(hex: "#0a84ff", 0.9), bend: 2, rim: 5, dispersion: false, rimLight: 0.6), onlyActive: false)
         address.front = { [unowned self] s, r in self.drawProgress(s, r) }
         wireAddress(t)
@@ -190,9 +200,9 @@ final class Browser {
             gtk_widget_set_valign(b, GTK_ALIGN_CENTER)
             UI.append(actBox, b)
         }
-        actions = stage.add(actBox, .chrome, glass: Glass(radius: 19, tint: RGBA.white.alpha(0.20)))
+        actions = stage.add(actBox, .chrome, glass: Glass(radius: 19, level: 0.20))
         for b in [shieldButton!, downloadsButton!, containerButton!, menuButton!] {
-            stage.part(actions, b, Glass(radius: 17, tint: RGBA.white.alpha(0.30), bend: 3, rim: 8, dispersion: false))
+            stage.part(actions, b, Glass(radius: 17, level: 0.30, bend: 3, rim: 8, dispersion: false))
         }
     }
 
@@ -291,19 +301,22 @@ final class Browser {
         var rr = rrect(r, radius)
         gtk_snapshot_push_rounded_clip(s, &rr)
         // translucent where the compositor blurs what is behind; nearly
-        // solid where it cannot (sharp windows behind would show through)
-        Draw.color(s, RGBA(0.955, 0.955, 0.975, blur ? 0.56 : 0.97), r)
-        Draw.radial(s, r, center: (w * 0.15, -40), radius: max(w, h) * 0.7,
-                    [(0, RGBA(0.55, 0.45, 1, 0.10)), (1, RGBA(0.55, 0.45, 1, 0))])
-        Draw.radial(s, r, center: (w * 0.9, -20), radius: max(w, h) * 0.6,
-                    [(0, RGBA(0.30, 0.75, 1, 0.08)), (1, RGBA(0.30, 0.75, 1, 0))])
+        // solid where it cannot (sharp windows behind would show through).
+        // Light: pearl with Iris's pink and sky; Dark: her night, indigo
+        let d = Look.dark
+        Draw.color(s, d ? RGBA(0.055, 0.045, 0.12, blur ? 0.66 : 0.97) : RGBA(0.955, 0.955, 0.975, blur ? 0.56 : 0.97), r)
+        Draw.radial(s, r, center: (w * 0.85, -40), radius: max(w, h) * 0.7,
+                    [(0, d ? RGBA(1, 0.37, 0.78, 0.14) : RGBA(1, 0.7, 0.86, 0.16)), (1, RGBA(1, 0.5, 0.8, 0))])
+        Draw.radial(s, r, center: (w * 0.1, h + 40), radius: max(w, h) * 0.6,
+                    [(0, d ? RGBA(0.18, 0.7, 1, 0.12) : RGBA(0.62, 0.86, 1, 0.16)), (1, RGBA(0.3, 0.75, 1, 0))])
         Draw.linear(s, Rect(x: 0, y: 0, w: w, h: card.y), from: (0, 0), to: (0, card.y),
-                    [(0, RGBA.white.alpha(0.45)), (1, RGBA.white.alpha(0.0))])
+                    [(0, RGBA.white.alpha(d ? 0.06 : 0.45)), (1, RGBA.white.alpha(0.0))])
         gtk_snapshot_pop(s)
         // the window's own rim of light
         if radius > 0 {
             Draw.rimStroke(s, r, radius, width: 1) {
-                Draw.linear(s, r, from: (0, 0), to: (0, h), [(0, RGBA.white.alpha(0.9)), (0.2, RGBA.white.alpha(0.35)), (1, RGBA.white.alpha(0.2))])
+                let k = Look.rim
+                Draw.linear(s, r, from: (0, 0), to: (0, h), [(0, RGBA.white.alpha(0.9 * k)), (0.2, RGBA.white.alpha(0.35 * k)), (1, RGBA.white.alpha(0.2 * k))])
             }
         }
     }
@@ -496,7 +509,7 @@ final class Browser {
     @discardableResult
     func newTab(_ url: String? = nil, container: String? = nil, after: Tab? = nil, select: Bool = true, related: UnsafeMutablePointer<WebKitWebView>? = nil, lazy: Bool = false) -> Tab {
         let t = Tab(browser: self, container: container)
-        let it = stage.add(t.pill, .chrome, glass: Glass(radius: 16, tint: RGBA.white.alpha(0.22), bend: 4, rim: 9, dispersion: false), reactive: true)
+        let it = stage.add(t.pill, .chrome, glass: Glass(radius: 16, level: 0.22, bend: 4, rim: 9, dispersion: false), reactive: true)
         it.glassFollowsHover = true
         it.alpha.value = 0
         it.scale.value = 0.86
@@ -569,7 +582,12 @@ final class Browser {
         old.map { gtk_widget_remove_css_class($0.pill, "selected") }
         gtk_widget_add_css_class(t.pill, "selected")
         invalidateReach()
-        indicator.glass?.tint = (Containers.shared.get(t.container).map { RGBA(hex: $0.color, 0.30) } ?? RGBA.white.alpha(0.70))
+        if let c = Containers.shared.get(t.container) {
+            indicator.glass?.level = nil
+            indicator.glass?.tint = RGBA(hex: c.color, 0.30)
+        } else {
+            indicator.glass?.level = 0.70
+        }
         closeMenu()
         find?.close()
         tabChanged(t)
@@ -660,7 +678,7 @@ final class Browser {
         guard let req = webkit_navigation_action_get_request(nav), let u = str(webkit_uri_request_get_uri(req)) else { return false }
         let host = Search.host(u) ?? ""
         let shields = Shields.shared.onFor(Search.host(t.url))
-        if shields && ShieldRules.blocked(host) {
+        if shields && ShieldHosts.blocked(host) {
             webkit_policy_decision_ignore(cp(d))
             return true
         }
@@ -673,7 +691,7 @@ final class Browser {
         }
         let gesture = webkit_navigation_action_is_user_gesture(nav) != 0
         let pageSite = Search.host(t.url).map(Search.site) ?? ""
-        let signIn = ShieldRules.never.contains { host == $0 || host.hasSuffix("." + $0) }
+        let signIn = ShieldConverter.never.contains { host == $0 || host.hasSuffix("." + $0) }
         if gesture && (Search.site(host) == pageSite || signIn || u == "about:blank") {
             return false // WebKit goes on and asks for the view ("create")
         }
@@ -779,7 +797,7 @@ final class Browser {
         } else {
             UI.append(wrap, content)
         }
-        let it = stage.add(wrap, .overlay, glass: Glass(radius: 18, tint: RGBA(0.98, 0.98, 1, 0.70), bend: 9, rim: 18, lens: 0.02, blur: 3, shadow: 1))
+        let it = stage.add(wrap, .overlay, glass: Glass(radius: 18, level: 0.70, panel: true, bend: 9, rim: 18, lens: 0.02, blur: 3, shadow: 1))
         var (w, h) = UI.natural(wrap)
         if let width { w = width; h = UI.natural(wrap, forWidth: Int32(width)).1 }
         var x = alignRight ? r.maxX - w : r.x
@@ -791,7 +809,7 @@ final class Browser {
         it.scale.value = 0.92
         stage.show(it, true)
         // each row lights up as glass under the pointer
-        rows(of: content).forEach { stage.part(it, $0, Glass(radius: 10, tint: RGBA.white.alpha(0.45), bend: 3, rim: 8, dispersion: false)) }
+        rows(of: content).forEach { stage.part(it, $0, Glass(radius: 10, level: 0.45, bend: 3, rim: 8, dispersion: false)) }
         menu = it
     }
 
@@ -820,7 +838,7 @@ final class Browser {
         let x = UI.button("window-close-symbolic", "Dismiss") { [weak self] in self?.hideToast() }
         UI.cls(x, "small"); gtk_widget_set_size_request(x, 24, 24)
         UI.append(b, x)
-        let it = stage.add(b, .overlay, glass: Glass(radius: 22, tint: RGBA.white.alpha(0.5), bend: 8, rim: 16, shadow: 1))
+        let it = stage.add(b, .overlay, glass: Glass(radius: 22, level: 0.5, bend: 8, rim: 16, shadow: 1))
         let (w, h) = UI.natural(b)
         it.frame.go(Rect(x: card.midX - w / 2, y: card.maxY - h - 18, w: w, h: h), animate: false)
         it.alpha.value = 0
@@ -841,7 +859,7 @@ final class Browser {
         gtk_widget_set_margin_start(statusLabel, 12); gtk_widget_set_margin_end(statusLabel, 12)
         gtk_widget_set_margin_top(statusLabel, 5); gtk_widget_set_margin_bottom(statusLabel, 5)
         gtk_widget_set_can_target(statusLabel, 0)
-        status = stage.add(statusLabel, .overlay, glass: Glass(radius: 14, tint: RGBA.white.alpha(0.55), bend: 5, rim: 10, dispersion: false))
+        status = stage.add(statusLabel, .overlay, glass: Glass(radius: 14, level: 0.55, bend: 5, rim: 10, dispersion: false))
         stage.show(status, false, animated: false)
     }
 

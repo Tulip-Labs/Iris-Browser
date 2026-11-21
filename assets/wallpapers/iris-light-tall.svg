@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 2340" width="2160" height="4680">
+  <!-- Iris, goddess of the rainbow, in liquid glass: Ember's light wallpaper.
+       An original drawing made for Ember (Tulip Labs), GPL-3.0 like Ember. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#fbf6f1"/><stop offset="0.4" stop-color="#f4e9f7"/><stop offset="0.75" stop-color="#e4ecff"/><stop offset="1" stop-color="#d9f1fb"/></linearGradient>
+    <radialGradient id="glowA" cx="0.72" cy="0.18" r="0.6"><stop offset="0" stop-color="#ffb3dc" stop-opacity="0.55"/><stop offset="1" stop-color="#ffb3dc" stop-opacity="0"/></radialGradient>
+    <radialGradient id="glowB" cx="0.12" cy="0.95" r="0.7"><stop offset="0" stop-color="#9fdcff" stop-opacity="0.55"/><stop offset="1" stop-color="#9fdcff" stop-opacity="0"/></radialGradient>
+    <linearGradient id="bow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff3b6b"/><stop offset="0.18" stop-color="#ff9f0a"/><stop offset="0.36" stop-color="#ffe14d"/>
+      <stop offset="0.54" stop-color="#34d399"/><stop offset="0.7" stop-color="#38bdf8"/><stop offset="0.86" stop-color="#6366f1"/><stop offset="1" stop-color="#d08cff"/>
+    </linearGradient>
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="34"/></filter>
+    <filter id="haze" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="90"/></filter>
+    <filter id="lensblur"><feGaussianBlur stdDeviation="3"/></filter>
+    <linearGradient id="glassFill" x1="0.2" y1="0.05" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.62"/><stop offset="0.42" stop-color="#fff" stop-opacity="0.14"/>
+      <stop offset="0.8" stop-color="#fff" stop-opacity="0.2"/><stop offset="1" stop-color="#fff" stop-opacity="0.5"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="0.35" stop-color="#fff" stop-opacity="0.3"/>
+      <stop offset="0.65" stop-color="#fff" stop-opacity="0.12"/><stop offset="1" stop-color="#fff" stop-opacity="0.9"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#fff" stop-opacity="0.55"/><stop offset="0.6" stop-color="#fff" stop-opacity="0.08"/><stop offset="1" stop-color="#fff" stop-opacity="0.22"/></radialGradient>
+    <filter id="inner" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="16" result="b"/><feOffset dx="-12" dy="16" result="o"/>
+      <feComposite in="SourceAlpha" in2="o" operator="out" result="edge"/><feFlood flood-color="#fff" flood-opacity="0.9"/><feComposite in2="edge" operator="in"/>
+    </filter>
+    <filter id="innerDark" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="b"/><feOffset dx="14" dy="-14" result="o"/>
+      <feComposite in="SourceAlpha" in2="o" operator="out" result="edge"/><feFlood flood-color="#8c7bd6" flood-opacity="0.35"/><feComposite in2="edge" operator="in"/>
+    </filter>
+    <filter id="shade" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="22"/><feOffset dx="14" dy="28"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.22"/></feComponentTransfer>
+    </filter>
+    <linearGradient id="fadeDown" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0.74" stop-color="#fff"/><stop offset="0.9" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="neck" maskUnits="userSpaceOnUse" x="0" y="0" width="1080" height="2340"><rect width="1080" height="2340" fill="url(#fadeDown)"/></mask>
+    <path id="head" d="
+      M 548 214
+      C 612 210 664 246 680 300
+      C 688 328 686 352 690 374
+      C 696 404 712 432 728 462
+      C 736 476 734 486 720 490
+      C 712 492 704 494 700 500
+      C 702 508 704 512 712 518
+      C 718 524 714 532 706 534
+      C 712 540 714 548 708 554
+      C 700 560 696 566 698 576
+      C 702 594 696 612 680 620
+      C 664 628 644 628 628 624
+      C 626 660 630 694 640 726
+      C 650 760 668 792 694 820
+      L 696 862
+      L 446 862
+      C 470 820 482 778 480 736
+      C 478 708 470 688 456 672
+      C 414 680 372 668 346 640
+      C 318 646 284 632 270 604
+      C 254 572 266 532 300 520
+      C 286 494 286 462 302 440
+      C 284 396 300 340 344 300
+      C 400 248 470 218 548 214 Z"/>
+    <path id="wing" d="
+      M 470 640
+      C 420 560 330 470 214 430
+      C 160 412 120 420 104 444
+      C 150 452 186 470 210 492
+      C 160 488 124 500 110 524
+      C 160 524 200 538 228 560
+      C 184 566 156 584 148 610
+      C 200 600 246 606 282 624
+      C 248 640 230 662 230 688
+      C 280 664 330 660 372 672
+      C 410 682 446 680 470 640 Z"/>
+    <g id="scene">
+      <rect width="1080" height="2340" fill="url(#sky)"/>
+      <rect width="1080" height="2340" fill="url(#glowA)"/>
+      <rect width="1080" height="2340" fill="url(#glowB)"/>
+      <path d="M -360 1640 A 900 900 0 0 1 1440 1640" fill="none" stroke="url(#bow)" stroke-width="420" filter="url(#haze)" opacity="0.4"/>
+      <path d="M -360 1640 A 900 900 0 0 1 1440 1640" fill="none" stroke="url(#bow)" stroke-width="150" filter="url(#soft)" opacity="0.62"/>
+      <path d="M -360 1640 A 900 900 0 0 1 1440 1640" fill="none" stroke="url(#bow)" stroke-width="64" opacity="0.55"/>
+    </g>
+    <clipPath id="hc"><use href="#head" transform="translate(70 880) scale(1.12)"/></clipPath>
+    <clipPath id="wc"><use href="#wing" transform="translate(70 880) scale(1.12)"/></clipPath>
+  </defs>
+  <use href="#scene"/>
+  
+  <g opacity="0.75"><circle cx="80" cy="580" r="36" fill="url(#orb)"/><circle cx="80" cy="580" r="36" fill="none" stroke="url(#rim)" stroke-width="1.6"/></g><g opacity="0.75"><circle cx="344" cy="585" r="13" fill="url(#orb)"/><circle cx="344" cy="585" r="13" fill="none" stroke="url(#rim)" stroke-width="1.6"/></g><g opacity="0.75"><circle cx="292" cy="396" r="23" fill="url(#orb)"/><circle cx="292" cy="396" r="23" fill="none" stroke="url(#rim)" stroke-width="1.6"/></g><g opacity="0.75"><circle cx="686" cy="762" r="30" fill="url(#orb)"/><circle cx="686" cy="762" r="30" fill="none" stroke="url(#rim)" stroke-width="1.6"/></g><g opacity="0.75"><circle cx="219" cy="241" r="19" fill="url(#orb)"/><circle cx="219" cy="241" r="19" fill="none" stroke="url(#rim)" stroke-width="1.6"/></g><g opacity="0.75"><circle cx="664" cy="369" r="11" fill="url(#orb)"/><circle cx="664" cy="369" r="11" fill="none" stroke="url(#rim)" stroke-width="1.6"/></g><g opacity="0.75"><circle cx="905" cy="354" r="13" fill="url(#orb)"/><circle cx="905" cy="354" r="13" fill="none" stroke="url(#rim)" stroke-width="1.6"/></g><g opacity="0.75"><circle cx="470" cy="781" r="32" fill="url(#orb)"/><circle cx="470" cy="781" r="32" fill="none" stroke="url(#rim)" stroke-width="1.6"/></g><g opacity="0.75"><circle cx="288" cy="564" r="26" fill="url(#orb)"/><circle cx="288" cy="564" r="26" fill="none" stroke="url(#rim)" stroke-width="1.6"/></g>
+  <g mask="url(#neck)">
+    <use href="#wing" transform="translate(70 880) scale(1.12)" filter="url(#shade)"/>
+    <g clip-path="url(#wc)">
+      <g filter="url(#lensblur)" transform="translate(430 1400) scale(1.15) translate(-430 -1400)"><use href="#scene"/></g>
+      <use href="#wing" transform="translate(70 880) scale(1.12)" fill="url(#glassFill)"/>
+      <use href="#wing" transform="translate(70 880) scale(1.12)" filter="url(#inner)"/>
+    </g>
+    <use href="#wing" transform="translate(70 880) scale(1.12)" fill="none" stroke="url(#rim)" stroke-width="4"/>
+    <use href="#head" transform="translate(70 880) scale(1.12)" filter="url(#shade)"/>
+    <g clip-path="url(#hc)">
+      <g filter="url(#lensblur)" transform="translate(590 1300) scale(1.12) translate(-590 -1320)"><use href="#scene"/></g>
+      <g transform="translate(70 880) scale(1.12)">
+        <use href="#head" fill="url(#glassFill)"/>
+        <use href="#head" filter="url(#innerDark)"/>
+        <use href="#head" filter="url(#inner)"/>
+        <!-- the hair: waves swept back into the knot, a ribbon of rainbow -->
+      <g fill="none" stroke="#ffffff" stroke-linecap="round">
+        <path d="M 640 262 C 580 250 520 262 470 300 C 430 330 400 370 380 420" stroke-opacity="0.55" stroke-width="7"/>
+        <path d="M 664 300 C 600 290 540 304 492 340 C 452 372 428 410 414 452" stroke-opacity="0.4" stroke-width="6"/>
+        <path d="M 672 338 C 616 334 566 350 524 384 C 492 410 470 442 456 482" stroke-opacity="0.3" stroke-width="5"/>
+        <path d="M 352 560 C 312 556 292 520 310 490 C 330 458 380 462 394 496 C 406 526 386 550 358 546 C 336 542 330 516 346 504 C 360 494 376 504 372 518" stroke-opacity="0.6" stroke-width="6"/>
+      </g>
+        <!-- brow, eye and lips, cut into the glass -->
+      <path d="M 628 368 C 648 356 670 356 686 366" fill="none" stroke="#ffffff" stroke-opacity="0.75" stroke-width="6" stroke-linecap="round"/>
+      <path d="M 640 394 C 654 386 670 386 682 394 C 672 402 652 404 640 394 Z" fill="#ffffff" fill-opacity="0.8"/>
+      <path d="M 640 398 C 650 410 668 410 680 400" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="3"/>
+      <path d="M 690 535 C 696 538 702 538 708 535" fill="none" stroke="#ffffff" stroke-opacity="0.7" stroke-width="4" stroke-linecap="round"/>
+      </g>
+    </g>
+    <g transform="translate(70 880) scale(1.12)">
+      <use href="#head" fill="none" stroke="url(#rim)" stroke-width="5"/>
+      <!-- glints where the light falls: crown, brow, nose, chin -->
+    <g fill="none" stroke="#ffffff" stroke-linecap="round">
+      <path d="M 520 232 C 580 226 630 244 660 280" stroke-width="12" opacity="0.95"/>
+      <path d="M 696 400 C 704 424 714 444 724 460" stroke-width="7" opacity="0.85"/>
+      <path d="M 690 592 C 692 602 688 610 682 614" stroke-width="5" opacity="0.7"/>
+      <path d="M 150 436 C 220 440 300 480 380 560" stroke-width="6" opacity="0.75"/>
+    </g>
+    </g>
+  </g>
+</svg>

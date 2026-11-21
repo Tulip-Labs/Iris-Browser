@@ -21,7 +21,7 @@ final class Suggestions {
         let wrap = UI.box(true, 0)
         UI.cls(wrap, "iris-menu")
         UI.append(wrap, box)
-        item = b.stage.add(wrap, .overlay, glass: Glass(radius: 18, tint: RGBA(0.98, 0.98, 1, 0.72), bend: 9, rim: 18, blur: 3, shadow: 1))
+        item = b.stage.add(wrap, .overlay, glass: Glass(radius: 18, level: 0.72, panel: true, bend: 9, rim: 18, blur: 3, shadow: 1))
         item.alpha.value = 0
         item.scale.value = 0.97
         b.stage.show(item, true)
@@ -68,7 +68,7 @@ final class Suggestions {
         UI.append(box, row)
         rows.append(row)
         urls.append(url)
-        b.stage.part(item, row, Glass(radius: 10, tint: RGBA.white.alpha(0.45), bend: 3, rim: 8, dispersion: false))
+        b.stage.part(item, row, Glass(radius: 10, level: 0.45, bend: 3, rim: 8, dispersion: false))
     }
 
     private func mark() {
@@ -125,10 +125,10 @@ final class FindBar {
         let down = UI.button("go-down-symbolic", "Next (Enter)") { webkit_find_controller_search_next(fc) }
         UI.append(h, up)
         UI.append(h, down)
-        item = b.stage.add(h, .overlay, glass: Glass(radius: 19, tint: RGBA.white.alpha(0.5), bend: 7, rim: 14, shadow: 1))
+        item = b.stage.add(h, .overlay, glass: Glass(radius: 19, level: 0.5, bend: 7, rim: 14, shadow: 1))
         let x = UI.button("window-close-symbolic", "Close (Esc)") { [weak b] in b?.find?.close() }
         UI.append(h, x)
-        for btn in [up, down, x] { b.stage.part(item, btn, Glass(radius: 17, tint: RGBA.white.alpha(0.35), bend: 3, rim: 8, dispersion: false)) }
+        for btn in [up, down, x] { b.stage.part(item, btn, Glass(radius: 17, level: 0.35, bend: 3, rim: 8, dispersion: false)) }
         on(Ptr(text), "changed") { [unowned self] in
             let q = UI.text(self.text)
             if q.isEmpty { webkit_find_controller_search_finish(fc); UI.setLabel(self.count, ""); return }
@@ -364,6 +364,24 @@ extension Browser {
         UI.row(icon, text, keys: on ? "On" : "Off") { [unowned self] in f(); self.closeMenu() }
     }
 
+    /// a row of choices, the chosen one in a drop of glass
+    private func choiceRow(_ title: String, _ options: [(String, Bool, () -> Void)]) -> GtkW {
+        let row = UI.box(false, 4)
+        gtk_widget_set_margin_start(row, 12); gtk_widget_set_margin_end(row, 6)
+        gtk_widget_set_margin_top(row, 2); gtk_widget_set_margin_bottom(row, 2)
+        let l = UI.label(title)
+        gtk_widget_set_hexpand(l, 1)
+        gtk_label_set_xalign(OpaquePointer(l), 0)
+        UI.append(row, l)
+        for (name, on, f) in options {
+            let b = UI.textButton(name) { [unowned self] in f(); self.closeMenu() }
+            UI.cls(b, "iris-choice")
+            if on { UI.cls(b, "selected") }
+            UI.append(row, b)
+        }
+        return row
+    }
+
     func showAppMenu() {
         let m = UI.box(true, 0)
         UI.append(m, UI.row("tab-new-symbolic", "New Tab", keys: "Ctrl+T") { [unowned self] in self.closeMenu(); self.newTab() })
@@ -392,6 +410,12 @@ extension Browser {
         UI.append(m, UI.row("document-open-recent-symbolic", "History", keys: "Ctrl+H") { [unowned self] in self.closeMenu(); self.showHistory() })
         UI.append(m, UI.separator())
         let set = SettingsStore.shared.value
+        UI.append(m, choiceRow("Look", Appearance.allCases.map { a in
+            (a.title, set.appearance == a, {
+                SettingsStore.shared.update { $0.appearance = a }
+                Look.apply()
+            })
+        }))
         UI.append(m, toggleRow("media-playback-start-symbolic", "Light video on YouTube", set.lightVideo) { [unowned self] in
             SettingsStore.shared.update { $0.lightVideo.toggle() }
             self.toast("New YouTube tabs use \(SettingsStore.shared.value.lightVideo ? "H.264, lighter on the processor" : "the formats YouTube picks")")
@@ -410,7 +434,7 @@ extension Browser {
         UI.append(m, UI.row("help-about-symbolic", "About Iris") { [unowned self] in self.closeMenu(); self.about() })
         UI.append(m, UI.row("application-exit-symbolic", "Quit", keys: "Ctrl+Q") { [unowned self] in self.app?.quit() })
         openMenu(m, under: stage.bounds(of: menuButton) ?? addressFrame, width: 320, alignRight: true)
-        for b in [minus, plusB] { if let it = menu { stage.part(it, b, Glass(radius: 17, tint: RGBA.white.alpha(0.4), bend: 3, rim: 8, dispersion: false)) } }
+        for b in [minus, plusB] { if let it = menu { stage.part(it, b, Glass(radius: 17, level: 0.4, bend: 3, rim: 8, dispersion: false)) } }
     }
 
     func zoom(_ d: Int) {
@@ -549,7 +573,7 @@ extension Browser {
         gtk_label_set_xalign(OpaquePointer(title), 0)
         gtk_widget_set_margin_start(title, 12); gtk_widget_set_margin_top(title, 6)
         UI.append(m, title)
-        let note = UI.label("Ads, trackers and the pop-ups they open are blocked inside the engine, before they load. Cookies never go to other sites.", "iris-dim", "iris-keys")
+        let note = UI.label("Ads and trackers are stopped inside the engine, before a request leaves the computer, as in Brave. Cookies never go to other sites.", "iris-dim", "iris-keys")
         gtk_label_set_wrap(OpaquePointer(note), 1)
         gtk_label_set_xalign(OpaquePointer(note), 0)
         gtk_widget_set_margin_start(note, 12); gtk_widget_set_margin_end(note, 12); gtk_widget_set_margin_bottom(note, 6)
@@ -569,7 +593,27 @@ extension Browser {
             self.closeMenu()
             self.app?.shieldsChanged()
         })
-        if Shields.shared.filter == nil && Shields.shared.on {
+        if all {
+            UI.append(m, UI.separator())
+            let level = SettingsStore.shared.value.shieldLevel
+            for l in ShieldLevel.allCases {
+                let r = UI.row(l == level ? "object-select-symbolic" : nil, l.title, keys: l.hint) { [unowned self] in
+                    self.closeMenu()
+                    guard l != SettingsStore.shared.value.shieldLevel else { return }
+                    SettingsStore.shared.update { $0.shieldLevel = l }
+                    Shields.shared.levelChanged()
+                    self.toast("Shields: \(l.title). Pages pick it up as they load.")
+                }
+                if l == level { UI.cls(r, "selected") }
+                UI.append(m, r)
+            }
+            let n = UI.label(level.about, "iris-dim", "iris-keys")
+            gtk_label_set_wrap(OpaquePointer(n), 1)
+            gtk_label_set_xalign(OpaquePointer(n), 0)
+            gtk_widget_set_margin_start(n, 12); gtk_widget_set_margin_end(n, 12); gtk_widget_set_margin_top(n, 4); gtk_widget_set_margin_bottom(n, 6)
+            UI.append(m, n)
+        }
+        if !Shields.shared.ready && Shields.shared.on {
             let w = UI.label("Getting the block list ready (the first start takes a moment)…", "iris-dim", "iris-keys")
             gtk_label_set_wrap(OpaquePointer(w), 1)
             gtk_widget_set_margin_start(w, 12); gtk_widget_set_margin_end(w, 12); gtk_widget_set_margin_bottom(w, 6)

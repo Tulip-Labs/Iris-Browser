@@ -36,6 +36,10 @@ struct Glass {
     /// how much of the material shows (0 none, 1 all): hovers fade it in
     var amount = 1.0
     var tint = RGBA.white.alpha(0.16)
+    /// when set, the tint comes from the look (Light or Dark) at this level
+    var level: Double?
+    /// a panel's tint (menus, notes): more solid, for reading
+    var panel = false
     /// refraction at the rim, in pixels pulled in from beyond the edge
     var bend = 7.0
     /// width of the bending rim
@@ -168,6 +172,9 @@ enum Draw {
     static func glass(_ s: Snap, _ scene: Node?, _ r: Rect, _ g: Glass, pointer: (Double, Double)? = nil,
                       hover: Double = 0, press: Double = 0) {
         guard g.amount > 0.004, r.w > 1, r.h > 1 else { return }
+        var g = g
+        if let l = g.level { g.tint = Look.tint(l, panel: g.panel) }
+        g.rimLight *= Look.rim
         let fade = g.amount < 0.999
         if fade { gtk_snapshot_push_opacity(s, g.amount) }
         let rad = min(g.radius, min(r.w, r.h) / 2)

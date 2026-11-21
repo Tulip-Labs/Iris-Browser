@@ -41,8 +41,8 @@ object Downloads {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** a file a page offers: fetched with the page's cookies, into Downloads */
-    fun fetch(c: Context, url: String, agent: String?, disposition: String?, mimeType: String?, length: Long, cookies: String?, referer: String) {
-        var name = URLUtil.guessFileName(url, disposition, mimeType).replace('/', '_').ifEmpty { "download" }
+    fun fetch(c: Context, url: String, agent: String?, disposition: String?, mimeType: String?, length: Long, cookies: String?, referer: String, suggested: String? = null) {
+        var name = (suggested?.takeIf { it.isNotBlank() } ?: URLUtil.guessFileName(url, disposition, mimeType)).replace('/', '_').ifEmpty { "download" }
         val mime = mimeType?.substringBefore(';')?.trim()?.takeIf { it.isNotEmpty() && it != "application/octet-stream" }
             ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "")) ?: "application/octet-stream"
         if (url.startsWith("data:") || url.startsWith("blob:")) {

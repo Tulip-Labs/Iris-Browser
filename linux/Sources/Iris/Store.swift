@@ -55,6 +55,10 @@ struct Settings: Codable {
     var hardwareVideo = false
     /// tabs left alone for a while give back their memory
     var sleepTabs = true
+    /// Light, Dark or Auto (the system's choice)
+    var appearance: Appearance = .auto
+    /// how hard Shields block: moderate, aggressive or ultra
+    var shieldLevel: ShieldLevel = .aggressive
 
     struct SavedTab: Codable {
         var url: String
@@ -76,6 +80,8 @@ struct Settings: Codable {
         lightVideo = try c.decodeIfPresent(Bool.self, forKey: .lightVideo) ?? true
         hardwareVideo = try c.decodeIfPresent(Bool.self, forKey: .hardwareVideo) ?? false
         sleepTabs = try c.decodeIfPresent(Bool.self, forKey: .sleepTabs) ?? true
+        appearance = (try? c.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? .auto
+        shieldLevel = (try? c.decodeIfPresent(ShieldLevel.self, forKey: .shieldLevel)) ?? .aggressive
     }
 }
 
