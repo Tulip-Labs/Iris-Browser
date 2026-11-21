@@ -79,7 +79,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    sourceSets["main"].assets.srcDir(ublockDir)
+    // a plain path (AGP 9 takes no Provider here); preBuild runs fetchUblock first
+    sourceSets.getByName("main").assets.directories.add(ublockDir.get().asFile.path)
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
