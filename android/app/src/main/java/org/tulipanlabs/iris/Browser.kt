@@ -1,39 +1,75 @@
 package org.tulipanlabs.iris
 
-import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.Application
-import android.graphics.Bitmap
-import android.graphics.Color
+import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.Message
-import android.view.View
+import android.os.Handler
+import android.os.Looper
 import android.view.ViewGroup
-import android.webkit.CookieManager
-import android.webkit.PermissionRequest
-import android.webkit.RenderProcessGoneDetail
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.widget.FrameLayout
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
-import androidx.webkit.ProfileStore
-import androidx.webkit.WebViewCompat
-import androidx.webkit.WebViewFeature
+import com.cefrium.Cefrium
+import com.cefrium.CefriumBrowser
+import com.cefrium.CefriumChromeClient
+import com.cefrium.CefriumContextMenu
+import com.cefrium.CefriumFileChooserCallback
+import com.cefrium.CefriumFileChooserParams
+import com.cefrium.CefriumLoadError
+import com.cefrium.CefriumNavigationClient
+import com.cefrium.CefriumNavigationRequest
+import com.cefrium.CefriumProfile
+import com.cefrium.CefriumRendererTerminationStatus
+import com.cefrium.CefriumResourceInterceptor
 import java.util.UUID
 
 /**
- * One tab: a WebView in its container's profile (cookies, storage and cache
- * of its own), made when the tab first opens something, so a new or
- * restored tab costs nothing until you go to it.
+ * A page: one Chromium browser (Cefrium, Chromium built into Iris) drawn
+ * into a view, the same engine whatever the phone's WebView is.
+ */
+class Page(ctx: Context, val b: CefriumBrowser) : FrameLayout(ctx) {
+    init {
+        addView(b.surfaceContainer, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+    }
+
+    fun goBack() = b.goBack()
+    fun goForward() = b.goForward()
+    fun reload() = b.reload()
+    fun stopLoading() = b.stopLoading()
+    fun loadUrl(u: String) = b.loadUrl(u)
+    fun onPause() = b.onPause()
+    fun onResume() = b.onResume()
+    fun destroy() = b.close()
+    val url: String get() = b.url ?: ""
+
+    /** the back and forward history, kept while the page sleeps */
+    fun saveState(out: Bundle) {
+        runCatching { b.serializeNavigationState()?.let { out.putByteArray("nav", it) } }
+        out.putString("url", b.url ?: "")
+    }
+
+    fun restoreState(s: Bundle): Boolean {
+        val nav = s.getByteArray("nav") ?: return false
+        return runCatching { b.restoreNavigationState(nav); true }.getOrDefault(false)
+    }
+
+    /** pages in the look's colours, where the engine offers it */
+    fun dark(on: Boolean) {
+        runCatching { b.javaClass.getMethod("setDarkMode", Boolean::class.javaPrimitiveType).invoke(b, on) }
+    }
+}
+
+/**
+ * One tab: a page in its container's profile (cookies, storage and cache of
+ * its own), made when the tab first opens something, so a new or restored
+ * tab costs nothing until you go to it.
  */
 class Tab(val container: String?, url: String = "") {
     val id: String = UUID.randomUUID().toString()
@@ -43,14 +79,15 @@ class Tab(val container: String?, url: String = "") {
     var loading by mutableStateOf(false)
     var canBack by mutableStateOf(false)
     var canForward by mutableStateOf(false)
-    var web by mutableStateOf<WebView?>(null)
+    var web by mutableStateOf<Page?>(null)
+    /** ads and trackers stopped on this page */
+    var blocked by mutableIntStateOf(0)
     /** an address to open when the tab is next shown */
     var pending: String? = null
     /** the page's history, kept while the tab sleeps */
     var saved: Bundle? = null
     var lastShown = System.currentTimeMillis()
-    /** a pop-up whose first address is not checked yet */
-    var popupFrom: Tab? = null
+    var crashed by mutableStateOf(false)
 
     val isPrivate get() = container == Container.PRIVATE
 
@@ -67,8 +104,8 @@ data class Blocked(val url: String, val from: Tab)
 data class Pressed(val tab: Tab, val link: String?, val image: String?)
 
 /**
- * The tabs and their WebViews, kept here so they outlive Compose's
- * recompositions and the activity's configuration changes.
+ * The tabs and their pages, kept here so they outlive Compose's
+ * recompositions.
  */
 class BrowserModel(app: Application) : AndroidViewModel(app) {
     val tabs = mutableStateListOf<Tab>()
@@ -76,16 +113,18 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         private set
     var blocked by mutableStateOf<Blocked?>(null)
     var pressed by mutableStateOf<Pressed?>(null)
-    /** a video in full screen (WebView hands Iris its view) */
-    var fullscreen by mutableStateOf<View?>(null)
-    private var fullscreenDone: WebChromeClient.CustomViewCallback? = null
-    /** a page's file field, answered by the activity's picker */
-    var fileRequest by mutableStateOf<Pair<ValueCallback<Array<Uri>>, WebChromeClient.FileChooserParams>?>(null)
-    /** a page asking for the camera or microphone, answered by the activity */
-    var mediaRequest by mutableStateOf<PermissionRequest?>(null)
+    /** a video in full screen: the bars step aside */
+    var fullscreen by mutableStateOf(false)
+    /** the activity pages are drawn in (Chromium's surfaces need one) */
+    var activity: Activity? = null
     private val closed = ArrayDeque<Pair<String, String?>>()
+    private val ui = Handler(Looper.getMainLooper())
+    private val ctx: Context get() = getApplication()
+    /** pages in dark colours (the look) */
+    var dark = false
+        set(v) { field = v; tabs.forEach { it.web?.dark(v) } }
 
-    val containersWork: Boolean = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
+    val containersWork = true
 
     init {
         Store.tabs.forEach { s ->
@@ -93,6 +132,7 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
             tabs.add(Tab(c).also { it.pending = s.url; it.title = s.title; it.url = s.url })
         }
         if (tabs.isEmpty()) newTab() else select(tabs[Store.selected.coerceIn(0, tabs.size - 1)])
+        Shields.changed = { css.clear() }
     }
 
     fun newTab(url: String? = null, container: String? = null, after: Tab? = null, select: Boolean = true): Tab {
@@ -112,10 +152,16 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         current?.let { it.lastShown = System.currentTimeMillis(); it.web?.onPause() }
         current = t
         t.lastShown = System.currentTimeMillis()
-        t.pending?.let { p -> t.pending = null; load(t, p) }
+        t.pending?.let { p -> if (activity != null) { t.pending = null; load(t, p) } }
         t.web?.onResume()
         Store.selected = tabs.indexOf(t)
         sleepIdle()
+    }
+
+    /** the activity is here: the shown tab opens what it was waiting for */
+    fun attached(a: Activity) {
+        activity = a
+        current?.let { t -> t.pending?.let { p -> t.pending = null; load(t, p) } }
     }
 
     /** Closing a tab never closes Iris: the one beside it takes its place,
@@ -148,12 +194,12 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
 
     fun load(t: Tab, url: String) {
         t.url = url
-        val w = web(t)
+        t.crashed = false
+        val w = web(t) ?: run { t.pending = url; return }
         val s = t.saved
-        if (s != null && t.pending == null && w.copyBackForwardList().size == 0) {
+        if (s != null) {
             t.saved = null
-            w.restoreState(s)
-            if (w.url != url) w.loadUrl(url)
+            if (!w.restoreState(s)) w.loadUrl(url)
         } else {
             w.loadUrl(url)
         }
@@ -186,32 +232,32 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
     private fun destroy(t: Tab) {
         t.web?.let { w ->
             (w.parent as? ViewGroup)?.removeView(w)
-            w.stopLoading()
-            w.destroy()
+            runCatching { w.stopLoading() }
+            runCatching { w.destroy() }
         }
         t.web = null
     }
 
+    // ---- profiles: containers and private tabs ----
+
+    private fun profileOf(t: Tab): CefriumProfile = when {
+        t.isPrivate -> CefriumProfile.incognito()
+        t.container != null -> CefriumProfile.get("c-" + t.container.lowercase().map { if (it.isLetterOrDigit()) it else '_' }.joinToString("").take(60))
+        else -> CefriumProfile.getDefault()
+    }
+
+    private fun clear(p: CefriumProfile) {
+        runCatching { p.cookieManager.removeAllCookies {} }
+        runCatching { p.listSiteData { sites -> for (d in sites) p.clearSiteData(d.site, null) } }
+    }
+
     /** the private tabs' profile is wiped when the last one closes */
-    private fun clearPrivate() {
-        if (!containersWork) return
-        runCatching {
-            val p = ProfileStore.getInstance().getProfile(PRIVATE_PROFILE) ?: return
-            p.cookieManager.removeAllCookies(null)
-            p.webStorage.deleteAllData()
-        }
-    }
+    private fun clearPrivate() = runCatching { clear(CefriumProfile.incognito()) }
 
-    fun profileName(t: Tab): String? = when {
-        t.container == null -> null
-        t.isPrivate -> PRIVATE_PROFILE
-        else -> "c-" + t.container
-    }
-
-    /** a container's profile and everything its sites kept go */
+    /** a container's tabs close and everything its sites kept goes */
     fun removeContainer(id: String) {
         tabs.filter { it.container == id }.forEach(::close)
-        if (containersWork) runCatching { ProfileStore.getInstance().deleteProfile("c-$id") }
+        runCatching { clear(CefriumProfile.get("c-" + id.lowercase().map { if (it.isLetterOrDigit()) it else '_' }.joinToString("").take(60))) }
     }
 
     fun shieldsFor(url: String) = Shields.onFor(url)
@@ -222,205 +268,226 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         val off = Store.shieldsOff.toMutableSet()
         if (!off.add(site)) off.remove(site)
         Store.shieldsOff = off
+        css.clear()
         t.reload()
     }
 
-    /** the tab's WebView, made on first use */
-    @SuppressLint("SetJavaScriptEnabled", "RequiresFeature")
-    fun web(t: Tab): WebView {
+    fun shieldsChanged() {
+        css.clear()
+        current?.reload()
+    }
+
+    // ---- the engine ----
+
+    private val youtube by lazy { runCatching { ctx.assets.open("js/youtube.js").bufferedReader().use { it.readText() } }.getOrDefault("") }
+
+    /** the tab's page, made on first use (null until the activity is here) */
+    fun web(t: Tab, popup: CefriumBrowser? = null): Page? {
         t.web?.let { return it }
-        val w = WebView(getApplication())
-        // a container keeps its cookies and site data in a profile of its own
-        // (Android System WebView 123 and newer)
-        profileName(t)?.let { name ->
-            if (containersWork) runCatching {
-                ProfileStore.getInstance().getOrCreateProfile(name)
-                WebViewCompat.setProfile(w, name)
-            }
-        }
-        w.setBackgroundColor(Color.WHITE)
-        val s = w.settings
-        s.javaScriptEnabled = true
-        s.domStorageEnabled = true
-        s.loadWithOverviewMode = true
-        s.useWideViewPort = true
-        s.setSupportZoom(true)
-        s.builtInZoomControls = true
-        s.displayZoomControls = false
-        s.mediaPlaybackRequiresUserGesture = false
-        s.setSupportMultipleWindows(true)
-        s.javaScriptCanOpenWindowsAutomatically = false
-        s.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-        s.allowFileAccess = false
-        s.allowContentAccess = false
-        if (t.isPrivate) s.cacheMode = WebSettings.LOAD_NO_CACHE
-        CookieManager.getInstance().setAcceptThirdPartyCookies(w, false)
-        w.webViewClient = Client(t)
-        w.webChromeClient = Chrome(t)
-        w.setDownloadListener { u, agent, disposition, mime, length ->
-            val cookies = runCatching { CookieManager.getInstance().getCookie(u) }.getOrNull()
-            Downloads.fetch(getApplication(), u, agent, disposition, mime, length, cookies, t.url)
-        }
-        w.setOnLongClickListener {
-            val h = w.hitTestResult
-            when (h.type) {
-                WebView.HitTestResult.SRC_ANCHOR_TYPE -> { pressed = Pressed(t, h.extra, null); true }
-                WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
-                    val msg = w.handler.obtainMessage()
-                    w.requestFocusNodeHref(msg)
-                    pressed = Pressed(t, msg.data.getString("url"), h.extra); true
-                }
-                WebView.HitTestResult.IMAGE_TYPE -> { pressed = Pressed(t, null, h.extra); true }
-                else -> false
-            }
-        }
+        val act = activity ?: return null
+        val b = popup ?: CefriumBrowser.createWithSurface(act, profileOf(t))
+        val w = Page(act, b)
+        b.setPinchToZoomEnabled(true)
+        b.setPullToRefreshEnabled(true)
+        if (youtube.isNotBlank()) runCatching { b.addDocumentStartJavaScript(youtube, setOf("*")) }
+        b.setResourceInterceptor(Shield(t))
+        b.setNavigationClient(Nav(t, w))
+        b.setChromeClient(Chrome(t))
+        b.setDownloadHandler(Downloader(t))
+        w.dark(dark)
         t.web = w
         if (t !== current) w.onPause()
         return w
     }
 
-    private inner class Client(val t: Tab) : WebViewClient() {
-        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-            if (request.isForMainFrame) return null
-            return Shields.intercept(t.url, request.url.toString())
+    /** what a request is, for the filter lists: the engine says, the address helps */
+    private fun kindOf(r: CefriumBrowser.ResourceRequest): Int {
+        val type = runCatching { r.type?.name ?: "" }.getOrDefault("")
+        when (type) {
+            "STYLESHEET" -> return Kind.STYLESHEET
+            "FONT" -> return Kind.FONT
+            "SCRIPT" -> return Kind.SCRIPT
+            "IMAGE", "FAVICON" -> return Kind.IMAGE
+            "MEDIA" -> return Kind.MEDIA
+            "XHR" -> return Kind.XHR
+            "SUB_FRAME" -> return Kind.SUBDOCUMENT
+            "PING" -> return Kind.PING
         }
+        val p = (Uri.parse(r.url ?: "").path ?: "").lowercase()
+        return when {
+            p.endsWith(".css") -> Kind.STYLESHEET
+            p.endsWith(".woff") || p.endsWith(".woff2") || p.endsWith(".ttf") || p.endsWith(".otf") -> Kind.FONT
+            p.endsWith(".js") || p.endsWith(".mjs") -> Kind.SCRIPT
+            listOf(".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico").any { p.endsWith(it) } -> Kind.IMAGE
+            listOf(".mp4", ".webm", ".m3u8", ".mp3", ".m4s").any { p.endsWith(it) } -> Kind.MEDIA
+            else -> Kind.OTHER
+        }
+    }
 
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            val u = request.url
-            // a pop-up's first address decides whether it may stay
-            t.popupFrom?.let { from ->
-                t.popupFrom = null
-                if (!popupAllowed(from, u.toString())) {
-                    view.post { close(t); blocked = Blocked(u.toString(), from) }
-                    return true
-                }
-            }
-            val scheme = u.scheme?.lowercase()
-            if (scheme == "http" || scheme == "https" || scheme == "about" || scheme == "data" || scheme == "blob") return false
-            // intent:, mailto:, tel: and other apps, only on a tap
-            if (request.hasGesture()) runCatching {
-                val i = if (scheme == "intent") android.content.Intent.parseUri(u.toString(), android.content.Intent.URI_INTENT_SCHEME)
-                else android.content.Intent(android.content.Intent.ACTION_VIEW, u)
-                i.addCategory(android.content.Intent.CATEGORY_BROWSABLE)
+    /** Iris Shields: Chromium asks before every request, on its network
+     *  thread; what is stopped never leaves the phone */
+    private inner class Shield(private val t: Tab) : CefriumResourceInterceptor {
+        override fun shouldBlockRequest(r: CefriumBrowser.ResourceRequest): Boolean {
+            val u = r.url ?: return false
+            val page = (r.topLevelUrl ?: "").ifEmpty { t.url }
+            val block = Shields.core.blocks(u, page, kindOf(r), r.isMainFrame)
+            if (block) ui.post { t.blocked++ }
+            return block
+        }
+    }
+
+    /** the style sheet hiding what ads leave on each site, kept for a few sites */
+    private val css = object : LinkedHashMap<String, String>(32, 0.75f, true) {
+        override fun removeEldestEntry(e: MutableMap.MutableEntry<String, String>?) = size > 24
+    }
+
+    private fun hide(w: Page, page: String) {
+        if (!page.startsWith("http")) return
+        val host = hostOf(page)
+        val sheet = synchronized(css) { css[host] ?: Shields.core.hidingCSS(page).also { css[host] = it } }
+        if (sheet.isEmpty()) return
+        val js = "(() => { const add = () => { let s = document.getElementById('iris-shields'); if (!s) { s = document.createElement('style'); " +
+            "s.id = 'iris-shields'; (document.head || document.documentElement).appendChild(s); } if (!s.textContent) s.textContent = " +
+            org.json.JSONObject.quote(sheet) + "; }; if (document.documentElement) add(); else document.addEventListener('DOMContentLoaded', add); })();"
+        runCatching { w.b.evaluateJavaScript(js) }
+    }
+
+    private inner class Nav(private val t: Tab, private val w: Page) : CefriumNavigationClient {
+        override fun onBeforeNavigate(browser: CefriumBrowser, request: CefriumNavigationRequest): Boolean {
+            val u = request.url ?: return false
+            val s = u.lowercase()
+            if (s.startsWith("http:") || s.startsWith("https:") || s.startsWith("about:") || s.startsWith("data:") || s.startsWith("blob:")) return false
+            // another app's link (intent:, tel:, mailto:, market:): only from a
+            // tap, so a page cannot open apps by itself
+            if (!request.hasGesture()) return true
+            try {
+                val i = if (s.startsWith("intent:")) Intent.parseUri(u, Intent.URI_INTENT_SCHEME) else Intent(Intent.ACTION_VIEW, Uri.parse(u))
+                i.addCategory(Intent.CATEGORY_BROWSABLE)
                 i.component = null
                 i.selector = null
-                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                getApplication<Application>().startActivity(i)
+                // an intent: link may not grant access to Iris's own files
+                i.flags = i.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION).inv()
+                i.clipData = null
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                ctx.startActivity(i)
+            } catch (e: Exception) {
+                // an intent: link with a web fallback opens that instead
+                if (s.startsWith("intent:")) {
+                    Regex("S\\.browser_fallback_url=([^;]+)").find(u)?.groupValues?.get(1)?.let { fb -> ui.post { w.loadUrl(Uri.decode(fb)) } }
+                }
             }
             return true
         }
 
-        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+        override fun onLoadStart(browser: CefriumBrowser, url: String) {
             t.url = url
+            t.blocked = 0
             t.loading = true
             t.progress = 5
-            t.canBack = view.canGoBack()
-            t.canForward = view.canGoForward()
         }
 
-        override fun onPageFinished(view: WebView, url: String) {
-            t.loading = false
-            t.progress = 100
+        override fun onUrlChanged(browser: CefriumBrowser, url: String) {
             t.url = url
-            t.canBack = view.canGoBack()
-            t.canForward = view.canGoForward()
-            if (!t.isPrivate) Store.visit(url, t.title)
-            save()
         }
 
-        override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
-            t.url = url
-            t.canBack = view.canGoBack()
-            t.canForward = view.canGoForward()
+        override fun onDocumentAvailable(browser: CefriumBrowser) = hide(w, t.url)
+
+        override fun onProgressChanged(browser: CefriumBrowser, percent: Int) {
+            t.progress = percent
         }
 
-        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+        override fun onLoadingStateChanged(browser: CefriumBrowser, loading: Boolean, canGoBack: Boolean, canGoForward: Boolean) {
+            t.canBack = canGoBack
+            t.canForward = canGoForward
+            t.loading = loading
+            if (!loading) {
+                hide(w, t.url)
+                t.progress = 100
+                if (!t.isPrivate) Store.visit(t.url, t.title)
+                save()
+            }
+        }
+
+        override fun onLoadError(browser: CefriumBrowser, error: CefriumLoadError) {}
+
+        override fun onRenderProcessTerminated(browser: CefriumBrowser, status: CefriumRendererTerminationStatus, errorCode: Int) {
             // the page's process ended (memory or a crash): the tab gets a
-            // fresh WebView and opens its page again when shown
-            t.web = null
-            (view.parent as? ViewGroup)?.removeView(view)
-            view.destroy()
-            t.pending = t.url.ifEmpty { null }
-            if (t === current) t.pending?.let { p -> t.pending = null; load(t, p) }
-            return true
+            // fresh page and opens its address again when shown
+            ui.post {
+                destroy(t)
+                t.pending = t.url.ifEmpty { null }
+                t.crashed = true
+                if (t === current) t.pending?.let { p -> t.pending = null; load(t, p) }
+            }
         }
     }
 
-    private inner class Chrome(val t: Tab) : WebChromeClient() {
-        override fun onProgressChanged(view: WebView, newProgress: Int) {
-            t.progress = newProgress
-            t.loading = newProgress < 100
+    private inner class Chrome(private val t: Tab) : CefriumChromeClient {
+        override fun onTitleChanged(browser: CefriumBrowser, title: String?) { t.title = title ?: "" }
+
+        override fun onFullscreenChanged(browser: CefriumBrowser, fullscreen: Boolean) {
+            if (t === current) this@BrowserModel.fullscreen = fullscreen
         }
 
-        override fun onReceivedTitle(view: WebView, title: String?) { t.title = title ?: "" }
-
-        // pop-ups: only when you tapped; a link opens as a tab, a script's
-        // window only to the same site or a sign-in (ads open no tabs)
-        override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
-            if (!isUserGesture) return false
-            val h = view.hitTestResult
-            val link = if (h.type == WebView.HitTestResult.SRC_ANCHOR_TYPE || h.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) h.extra else null
-            if (link != null && link.startsWith("http")) {
-                if (!popupAllowed(t, link) && Search.host(link)?.let(Shields::isBlocked) == true) {
-                    blocked = Blocked(link, t); return false
-                }
-                newTab(link, t.container, after = t)
+        // pop-ups: only from a tap; ads open no tabs
+        override fun onCreateWindow(browser: CefriumBrowser, popup: CefriumBrowser, url: String?, userGesture: Boolean): Boolean {
+            if (!userGesture) return false
+            val u = url ?: ""
+            if (u.startsWith("http") && !popupAllowed(t, u)) {
+                ui.post { blocked = Blocked(u, t) }
                 return false
             }
-            // a script's window: it becomes a tab whose first address is checked
-            val nt = Tab(t.container)
-            nt.popupFrom = t
+            val nt = Tab(t.container, u)
             tabs.add(tabs.indexOf(t) + 1, nt)
-            val w = web(nt)
-            (resultMsg.obj as WebView.WebViewTransport).webView = w
-            resultMsg.sendToTarget()
+            web(nt, popup)
             select(nt)
+            save()
             return true
         }
 
-        override fun onCloseWindow(window: WebView) {
-            tabs.firstOrNull { it.web === window }?.let(::close)
+        override fun onCloseWindow(browser: CefriumBrowser, popup: CefriumBrowser) {
+            ui.post { tabs.firstOrNull { it.web?.b === popup }?.let(::close) }
         }
 
-        override fun onShowCustomView(view: View, callback: CustomViewCallback) {
-            fullscreen = view
-            fullscreenDone = callback
-        }
-
-        override fun onHideCustomView() {
-            fullscreen = null
-            fullscreenDone = null
-        }
-
-        override fun onShowFileChooser(webView: WebView, filePathCallback: ValueCallback<Array<Uri>>, fileChooserParams: FileChooserParams): Boolean {
-            fileRequest?.first?.onReceiveValue(null)
-            fileRequest = filePathCallback to fileChooserParams
+        override fun onContextMenu(browser: CefriumBrowser, menu: CefriumContextMenu): Boolean {
+            val link = menu.linkUrl ?: ""
+            val image = menu.sourceUrl ?: ""
+            if (link.isEmpty() && image.isEmpty()) return false // text: the engine's own selection menu
+            menu.cancel()
+            ui.post { pressed = Pressed(t, link.ifEmpty { null }, image.ifEmpty { null }) }
             return true
         }
 
-        override fun onPermissionRequest(request: PermissionRequest) {
-            // calls (WebRTC): the camera and microphone, which Android lets
-            // Iris use once you allow it (the activity asks); protected
-            // video (DRM) for streaming sites
-            val ok = request.resources.filter {
-                it == PermissionRequest.RESOURCE_AUDIO_CAPTURE || it == PermissionRequest.RESOURCE_VIDEO_CAPTURE ||
-                    it == PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID
-            }
-            if (ok.isEmpty()) { request.deny() } else { mediaRequest = request }
-        }
+        // the engine's own file chooser and permission prompts (camera,
+        // microphone and location stay off unless the person allows them)
+        override fun onShowFileChooser(browser: CefriumBrowser, params: CefriumFileChooserParams, callback: CefriumFileChooserCallback): Boolean = false
     }
 
+    /** downloads go to the phone's Downloads folder, with the page's cookies */
+    private inner class Downloader(private val t: Tab) : CefriumBrowser.CefriumDownloadHandler {
+        override fun onBeforeDownload(item: CefriumBrowser.DownloadItem, callback: CefriumBrowser.BeforeDownloadCallback) {
+            val u = item.url ?: ""
+            if (!u.startsWith("http")) {
+                callback.allow(null) // a file the page made (blob:, data:): saved by the engine
+                return
+            }
+            callback.cancel()
+            val p = profileOf(t)
+            runCatching {
+                p.cookieManager.getCookie(u) { c ->
+                    ui.post { Downloads.fetch(ctx, u, Pages.mobileAgent(), null, item.mimeType, -1, c, t.url, item.suggestedName) }
+                }
+            }.onFailure { Downloads.fetch(ctx, u, Pages.mobileAgent(), null, item.mimeType, -1, null, t.url, item.suggestedName) }
+        }
+
+        override fun onDownloadUpdated(item: CefriumBrowser.DownloadItem) {}
+    }
+
+    /** a tapped pop-up opens as a tab, unless it goes to an ad or tracker */
     fun popupAllowed(from: Tab, url: String): Boolean {
         val host = Search.host(url) ?: return false
-        if (Shields.onFor(from.url) && Shields.isBlocked(host)) return false
-        val site = Search.host(from.url)?.let { Search.site(it) }
-        return Search.site(host) == site || Search.isSignIn(host)
-    }
-
-    fun exitFullscreen() {
-        fullscreenDone?.onCustomViewHidden()
-        fullscreen = null
-        fullscreenDone = null
+        return !(Shields.onFor(from.url) && Shields.isBlocked(host))
     }
 
     fun save() {
@@ -433,8 +500,11 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         save()
         tabs.forEach(::destroy)
     }
+}
 
-    companion object {
-        const val PRIVATE_PROFILE = "private"
-    }
+/** the engine's names, for the about line and the user agent */
+object Pages {
+    private val major get() = runCatching { Cefrium.getChromiumVersion().substringBefore('.') }.getOrDefault("150")
+    fun engine() = runCatching { "Chromium ${Cefrium.getChromiumVersion()} (Cefrium ${Cefrium.getVersion()})" }.getOrDefault("Chromium")
+    fun mobileAgent() = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/$major.0.0.0 Mobile Safari/537.36"
 }

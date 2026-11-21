@@ -1,61 +1,26 @@
+@file:OptIn(ExperimentalFoundationApi::class)
+
 package org.tulipanlabs.iris.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,301 +30,235 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
-import org.tulipanlabs.iris.Pressed
 import org.tulipanlabs.iris.BrowserModel
+import org.tulipanlabs.iris.BuildConfig
 import org.tulipanlabs.iris.Container
-import org.tulipanlabs.iris.Download
 import org.tulipanlabs.iris.Downloads
-import org.tulipanlabs.iris.IrisApp
+import org.tulipanlabs.iris.Pages
+import org.tulipanlabs.iris.Pressed
 import org.tulipanlabs.iris.Search
+import org.tulipanlabs.iris.ShieldLevel
+import org.tulipanlabs.iris.Shields
 import org.tulipanlabs.iris.Store
-import org.tulipanlabs.iris.Tab
 import org.tulipanlabs.iris.Updater
 import java.util.UUID
 
+/** the menu: the look, new tabs, downloads, updates */
 @Composable
-private fun SheetTitle(text: String) {
-    Text(text, Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+fun MenuSheet(model: BrowserModel, open: Boolean, onSheet: (Sheet) -> Unit) {
+    val scope = rememberCoroutineScope()
+    val close = { onSheet(Sheet.NONE) }
+    GlassSheet(open, close, "Iris") {
+        SectionTitle("Look")
+        val looks = listOf("auto", "light", "dark")
+        Segmented(listOf(Glyph.AUTO to "Auto", Glyph.SUN to "Light", Glyph.MOON to "Dark"), looks.indexOf(Look.appearance).coerceAtLeast(0),
+            { Look.set(looks[it]) }, Modifier.padding(horizontal = 18.dp, vertical = 6.dp))
+        Spacer(Modifier.height(6.dp))
+        GlassRow(Glyph.PLUS, "New tab", { close(); model.newTab() })
+        GlassRow(Glyph.EYE_OFF, "New private tab", { close(); model.newTab(container = Container.PRIVATE) })
+        GlassRow(Glyph.HISTORY, "Reopen closed tab", { close(); model.reopenClosed() })
+        Separator()
+        GlassRow(Glyph.DOWNLOAD, "Downloads", { onSheet(Sheet.DOWNLOADS) }, sub = if (Downloads.active > 0) "${Downloads.active} downloading" else null)
+        GlassRow(Glyph.LAYERS, "Containers", { onSheet(Sheet.CONTAINERS) })
+        GlassRow(Glyph.SHIELD_ON, "Shields", { onSheet(Sheet.SHIELDS) }, sub = Store.shieldLevel.title)
+        Separator()
+        GlassRow(Glyph.UPDATE, "Check for updates", { close(); scope.launch { Updater.check(force = true) } })
+        Txt("Iris ${BuildConfig.VERSION_NAME} · pages by ${Pages.engine()} · Tulip Labs · GPL-3.0",
+            Modifier.padding(horizontal = 24.dp, vertical = 8.dp), size = 12.sp, color = LocalPalette.current.ink2)
+    }
 }
 
-private val clearItem @Composable get() = ListItemDefaults.colors(containerColor = Color.Transparent)
-
-/** Iris Shields: for this site, for everywhere, and uBlock Origin's lists */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Iris Shields: for this site, everywhere, and how hard */
 @Composable
-fun ShieldsSheet(model: BrowserModel, onClose: () -> Unit) {
+fun ShieldsSheet(model: BrowserModel, open: Boolean, onClose: () -> Unit) {
+    val p = LocalPalette.current
     val t = model.current
-    var everywhere by remember { mutableStateOf(Store.shields) }
-    var here by remember { mutableStateOf(t?.let { model.shieldsFor(it.url) } ?: true) }
+    var everywhere by remember(open) { mutableStateOf(Store.shields) }
+    var level by remember(open) { mutableStateOf(Store.shieldLevel) }
     val site = t?.url?.let { Search.host(it) }?.let { Search.site(it) }
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(), containerColor = Color(0xFFF8F7FC)) {
-        SheetTitle("Shields")
-        Text("Requests to about 100,000 ad and tracker domains are stopped before they leave the phone, ads open no pop-ups, and no site gets cookies from another.",
-            Modifier.padding(horizontal = 24.dp), fontSize = 14.sp, color = Ink.copy(alpha = 0.7f))
-        Spacer(Modifier.height(8.dp))
-        if (site != null && everywhere) {
-            ListItem(
-                headlineContent = { Text(site) }, supportingContent = { Text(if (here) "Protected" else "Shields are off here") },
-                trailingContent = { Switch(here, { here = it; t?.let(model::toggleSiteShields) }) }, colors = clearItem,
-            )
+    var here by remember(open, site) { mutableStateOf(t?.let { model.shieldsFor(it.url) } ?: true) }
+    GlassSheet(open, onClose, "Shields") {
+        Txt("Ads and trackers are stopped inside Chromium, before a request leaves the phone, as in Brave. Cookies never go to other sites.",
+            Modifier.padding(horizontal = 24.dp), size = 14.sp, color = p.ink2)
+        if (t != null && t.blocked > 0) {
+            Txt("${t.blocked} stopped on this page", Modifier.padding(horizontal = 24.dp, vertical = 6.dp), size = 14.sp, weight = FontWeight.SemiBold, color = p.accent)
         }
-        ListItem(
-            headlineContent = { Text("Everywhere") },
-            trailingContent = { Switch(everywhere, { everywhere = it; Store.shields = it; t?.reload() }) }, colors = clearItem,
-        )
-        Spacer(Modifier.navigationBarsPadding().height(16.dp))
+        Spacer(Modifier.height(6.dp))
+        if (site != null && everywhere) {
+            GlassRow(if (here) Glyph.SHIELD_ON else Glyph.SHIELD, site, sub = if (here) "Protected" else "Shields are off here") {
+                GlassToggle(here) { here = it; t?.let(model::toggleSiteShields) }
+            }
+        }
+        GlassRow(Glyph.GLOBE, "Everywhere") {
+            GlassToggle(everywhere) { everywhere = it; Store.shields = it; model.shieldsChanged() }
+        }
+        if (everywhere) {
+            SectionTitle("How hard")
+            for (l in ShieldLevel.entries) {
+                GlassRow(if (l == level) Glyph.CHECK else null, l.title, {
+                    if (l != level) {
+                        level = l
+                        Store.shieldLevel = l
+                        Shields.levelChanged()
+                    }
+                }, sub = l.hint, tint = p.accent)
+            }
+            Txt(level.about, Modifier.padding(horizontal = 24.dp, vertical = 6.dp), size = 13.sp, color = p.ink2)
+            Txt("If a site looks wrong, turn Shields off for it above.", Modifier.padding(horizontal = 24.dp), size = 13.sp, color = p.ink2)
+        }
     }
 }
 
 /** containers: worlds apart, each with its own cookies, storage and sign-ins */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ContainersSheet(model: BrowserModel, onClose: () -> Unit) {
-    var list by remember { mutableStateOf(Store.containers) }
+fun ContainersSheet(model: BrowserModel, open: Boolean, onClose: () -> Unit) {
+    val p = LocalPalette.current
+    var list by remember(open) { mutableStateOf(Store.containers) }
     var naming by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<Container?>(null) }
     val t = model.current
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = Color(0xFFF8F7FC)) {
-        SheetTitle("Containers")
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            Text("New tab in", Modifier.padding(horizontal = 24.dp, vertical = 4.dp), fontSize = 13.sp, color = Ink.copy(alpha = 0.6f))
-            ListItem(headlineContent = { Text("No container") }, leadingContent = { Icon(Icons.Filled.Public, null) }, colors = clearItem,
-                modifier = Modifier.clickable { onClose(); model.newTab() })
-            list.forEach { c ->
-                ListItem(
-                    headlineContent = { Text(c.name) },
-                    leadingContent = { Icon(containerIcon(c.icon), null, tint = Color(c.color)) },
-                    trailingContent = { IconButton(onClick = { removing = c }) { Icon(Icons.Filled.Delete, "Remove ${c.name}") } },
-                    colors = clearItem,
-                    modifier = Modifier.clickable { onClose(); model.newTab(container = c.id) },
-                )
+    GlassSheet(open && !naming && removing == null, onClose, "Containers") {
+        SectionTitle("New tab in")
+        GlassRow(Glyph.GLOBE, "No container", { onClose(); model.newTab() })
+        list.forEach { c ->
+            GlassRow(Glyphs.container(c.icon), c.name, { onClose(); model.newTab(container = c.id) }, tint = Color(c.color)) {
+                GlassButton(Glyph.TRASH, "Remove ${c.name}", { removing = c }, size = 36.dp, clear = true, tint = p.ink2)
             }
-            ListItem(headlineContent = { Text("Private") }, leadingContent = { Icon(Icons.Filled.VisibilityOff, null) }, colors = clearItem,
-                modifier = Modifier.clickable { onClose(); model.newTab(container = Container.PRIVATE) })
-            if (t != null && t.url.isNotEmpty()) {
-                HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                Text("Open this page in", Modifier.padding(horizontal = 24.dp, vertical = 4.dp), fontSize = 13.sp, color = Ink.copy(alpha = 0.6f))
-                list.filter { it.id != t.container }.forEach { c ->
-                    ListItem(headlineContent = { Text(c.name) }, leadingContent = { Icon(containerIcon(c.icon), null, tint = Color(c.color)) },
-                        colors = clearItem, modifier = Modifier.clickable { onClose(); model.newTab(t.url, c.id, after = t) })
+        }
+        GlassRow(Glyph.EYE_OFF, "Private", { onClose(); model.newTab(container = Container.PRIVATE) })
+        if (t != null && t.url.isNotEmpty()) {
+            Separator()
+            SectionTitle("Open this page in")
+            list.filter { it.id != t.container }.forEach { c ->
+                GlassRow(Glyphs.container(c.icon), c.name, { onClose(); model.newTab(t.url, c.id, after = t) }, tint = Color(c.color))
+            }
+        }
+        Separator()
+        GlassRow(Glyph.PLUS, "New container", { naming = true })
+    }
+    var name by remember(naming) { mutableStateOf("") }
+    var icon by remember(naming) { mutableStateOf("star") }
+    GlassDialog(naming, "New container", { naming = false }, "Add", {
+        if (name.isNotBlank()) {
+            val used = list.map { it.color }.toSet()
+            val color = Container.palette.firstOrNull { it !in used } ?: Container.palette[list.size % Container.palette.size]
+            list = list + Container(UUID.randomUUID().toString(), name.trim(), color, icon)
+            Store.containers = list
+        }
+        naming = false
+    }) {
+        Box(Modifier.fillMaxWidth().glass(p, RoundedCornerShape(14.dp)).padding(horizontal = 14.dp, vertical = 12.dp)) {
+            BasicTextField(name, { name = it }, singleLine = true, textStyle = TextStyle(fontSize = 16.sp, color = p.ink), cursorBrush = SolidColor(p.accent),
+                decorationBox = { inner -> Box { if (name.isEmpty()) Txt("Name", color = p.ink2); inner() } })
+        }
+        Spacer(Modifier.height(12.dp))
+        Container.icons.chunked(6).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                row.forEach { n ->
+                    Box(
+                        Modifier.padding(3.dp).size(38.dp).clip(RoundedCornerShape(12.dp))
+                            .background(if (n == icon) p.accent.copy(alpha = 0.18f) else Color.Transparent)
+                            .combinedClickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { icon = n },
+                        contentAlignment = Alignment.Center,
+                    ) { GlyphIcon(Glyphs.container(n), size = 20.dp, tint = if (n == icon) p.accent else p.ink) }
                 }
             }
-            HorizontalDivider(Modifier.padding(vertical = 6.dp))
-            ListItem(headlineContent = { Text("New container") }, leadingContent = { Icon(Icons.Filled.Add, null) }, colors = clearItem,
-                modifier = Modifier.clickable { naming = true })
-            Spacer(Modifier.navigationBarsPadding().height(16.dp))
         }
     }
-    if (naming) {
-        var name by remember { mutableStateOf("") }
-        var icon by remember { mutableStateOf("star") }
-        AlertDialog(
-            onDismissRequest = { naming = false },
-            title = { Text("New container") },
-            text = {
-                Column {
-                    OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Name") })
-                    Spacer(Modifier.height(12.dp))
-                    LazyVerticalGrid(GridCells.Fixed(6), Modifier.height(96.dp)) {
-                        items(Container.icons) { n ->
-                            Box(
-                                Modifier.padding(3.dp).size(38.dp).clip(RoundedCornerShape(10.dp))
-                                    .background(if (n == icon) IrisViolet.copy(alpha = 0.16f) else Color.Transparent)
-                                    .clickable { icon = n },
-                                contentAlignment = Alignment.Center,
-                            ) { Icon(containerIcon(n), n, tint = if (n == icon) IrisViolet else Ink) }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (name.isNotBlank()) {
-                        val used = list.map { it.color }.toSet()
-                        val color = Container.palette.firstOrNull { it !in used } ?: Container.palette[list.size % Container.palette.size]
-                        list = list + Container(UUID.randomUUID().toString(), name.trim(), color, icon)
-                        Store.containers = list
-                    }
-                    naming = false
-                }) { Text("Add") }
-            },
-            dismissButton = { TextButton(onClick = { naming = false }) { Text("Cancel") } },
-        )
-    }
-    removing?.let { c ->
-        AlertDialog(
-            onDismissRequest = { removing = null },
-            title = { Text("Remove ${c.name}?") },
-            text = { Text("Its tabs close, and its cookies, sign-ins and site data are deleted.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    model.removeContainer(c.id)
-                    list = list - c
-                    Store.containers = list
-                    removing = null
-                }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { removing = null }) { Text("Cancel") } },
-        )
+    GlassDialog(removing != null, "Remove ${removing?.name ?: ""}?", { removing = null }, "Remove", {
+        removing?.let { c ->
+            model.removeContainer(c.id)
+            list = list - c
+            Store.containers = list
+        }
+        removing = null
+    }, danger = true) {
+        Txt("Its tabs close, and its cookies, sign-ins and site data are deleted.", color = p.ink2)
     }
 }
 
-/** the downloads manager */
+/** the downloads */
 @Composable
-fun DownloadsScreen(onClose: () -> Unit) {
+fun DownloadsSheet(open: Boolean, onClose: () -> Unit) {
+    val p = LocalPalette.current
     val ctx = LocalContext.current
-    Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(Color(0xFFF7F6FB)).statusBarsPadding().navigationBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-                Text("Downloads", Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Ink)
-                if (Downloads.list.any { it.done || it.failed }) TextButton(onClick = { Downloads.clearFinished() }) { Text("Clear") }
+    GlassSheet(open, onClose, "Downloads") {
+        if (Downloads.list.isEmpty()) {
+            Txt("Nothing downloaded yet", Modifier.padding(24.dp), color = p.ink2)
+        }
+        Downloads.list.forEach { d ->
+            val sub = when {
+                d.failed -> if (d.cancelled) "Cancelled" else "Failed"
+                d.done -> android.text.format.Formatter.formatShortFileSize(ctx, d.received) + " · Downloads folder"
+                d.total > 0 -> android.text.format.Formatter.formatShortFileSize(ctx, d.received) + " of " + android.text.format.Formatter.formatShortFileSize(ctx, d.total)
+                else -> android.text.format.Formatter.formatShortFileSize(ctx, d.received)
             }
-            if (Downloads.list.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Nothing downloaded yet", color = Ink.copy(alpha = 0.55f))
+            Column {
+                GlassRow(Glyph.DOWNLOAD, d.name, { if (d.done) Downloads.open(ctx, d) }, sub = sub, tint = if (d.failed) p.danger else p.accent) {
+                    GlassButton(Glyph.TRASH, if (d.done) "Delete" else "Cancel", { Downloads.remove(ctx, d) }, size = 36.dp, clear = true, tint = p.ink2)
                 }
-            } else {
-                LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(Downloads.list) { d -> DownloadRow(ctx, d) }
-                }
+                if (!d.done && !d.failed) ProgressLine(if (d.total > 0) d.progress else null, Modifier.padding(start = 58.dp, end = 24.dp, bottom = 6.dp))
             }
         }
-    }
-}
-
-@Composable
-private fun DownloadRow(ctx: Context, d: Download) {
-    Column(Modifier.fillMaxWidth().glass(RoundedCornerShape(18.dp)).clickable(enabled = d.done) { Downloads.open(ctx, d) }.padding(14.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.Download, null, tint = if (d.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(d.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, color = Ink)
-                Text(
-                    when {
-                        d.failed -> if (d.cancelled) "Cancelled" else "Failed"
-                        d.done -> android.text.format.Formatter.formatShortFileSize(ctx, d.received) + " · Downloads folder"
-                        d.total > 0 -> android.text.format.Formatter.formatShortFileSize(ctx, d.received) + " of " + android.text.format.Formatter.formatShortFileSize(ctx, d.total)
-                        else -> android.text.format.Formatter.formatShortFileSize(ctx, d.received)
-                    },
-                    fontSize = 13.sp, color = Ink.copy(alpha = 0.6f),
-                )
-            }
-            IconButton(onClick = { Downloads.remove(ctx, d) }) { Icon(Icons.Filled.Delete, if (d.done) "Delete" else "Cancel") }
-        }
-        if (!d.done && !d.failed) {
-            Spacer(Modifier.height(8.dp))
-            if (d.total > 0) LinearProgressIndicator(progress = { d.progress }, Modifier.fillMaxWidth())
-            else LinearProgressIndicator(Modifier.fillMaxWidth())
-        }
+        if (Downloads.list.any { it.done || it.failed }) GlassRow(Glyph.CLOSE, "Clear finished", { Downloads.clearFinished() })
     }
 }
 
 /** what a long press on a link or an image offers */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ContextMenuSheet(model: BrowserModel, p: Pressed, onClose: () -> Unit) {
+fun ContextSheet(model: BrowserModel, p0: Pressed?, onClose: () -> Unit) {
     val ctx = LocalContext.current
-    val tab = p.tab
-    fun copy(s: String) {
-        (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("link", s))
-    }
-    fun share(s: String) {
-        ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, s), null)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    }
-    fun download(u: String) {
-        val cookies = runCatching { android.webkit.CookieManager.getInstance().getCookie(u) }.getOrNull()
-        Downloads.fetch(ctx, u, tab.web?.settings?.userAgentString, null, null, -1, cookies, tab.url)
-    }
-    val link = p.link?.takeIf { it.startsWith("http") }
-    val src = p.image?.takeIf { it.startsWith("http") }
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(), containerColor = Color(0xFFF8F7FC)) {
-        Text(link ?: src ?: "", Modifier.padding(horizontal = 24.dp, vertical = 4.dp), maxLines = 2, overflow = TextOverflow.Ellipsis,
-            fontSize = 13.sp, color = Ink.copy(alpha = 0.6f))
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            @Composable
-            fun item(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, f: () -> Unit) =
-                ListItem(headlineContent = { Text(text) }, leadingContent = { Icon(icon, null) }, colors = clearItem,
-                    modifier = Modifier.clickable { onClose(); f() })
-            if (link != null) {
-                item(Icons.AutoMirrored.Filled.OpenInNew, "Open in new tab") { model.newTab(link, tab.container, after = tab, select = false) }
-                Store.containers.filter { it.id != tab.container }.forEach { c ->
-                    item(Icons.Filled.Public, "Open in ${c.name}") { model.newTab(link, c.id, after = tab) }
-                }
-                item(Icons.Filled.ContentCopy, "Copy link") { copy(link) }
-                item(Icons.Filled.Share, "Share link") { share(link) }
-                item(Icons.Filled.Download, "Download link") { download(link) }
+    val p = LocalPalette.current
+    // the last one stays shown while the sheet slides away
+    var last by remember { mutableStateOf<Pressed?>(null) }
+    if (p0 != null) last = p0
+    val pr = last
+    fun copy(s: String) = (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("link", s))
+    fun share(s: String) = ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, s), null)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    fun download(u: String, tabUrl: String) = Downloads.fetch(ctx, u, Pages.mobileAgent(), null, null, -1, null, tabUrl)
+    GlassSheet(p0 != null, onClose) {
+        if (pr != null) {
+        val tab = pr.tab
+        val link = pr.link?.takeIf { it.startsWith("http") }
+        val src = pr.image?.takeIf { it.startsWith("http") }
+        Txt(link ?: src ?: "", Modifier.padding(horizontal = 24.dp, vertical = 8.dp), size = 13.sp, color = p.ink2, maxLines = 2)
+        if (link != null) {
+            GlassRow(Glyph.OPEN, "Open in new tab", { onClose(); model.newTab(link, tab.container, after = tab, select = false) })
+            Store.containers.filter { it.id != tab.container }.forEach { c ->
+                GlassRow(Glyphs.container(c.icon), "Open in ${c.name}", { onClose(); model.newTab(link, c.id, after = tab) }, tint = Color(c.color))
             }
-            if (src != null) {
-                item(Icons.Filled.Image, "Open image in new tab") { model.newTab(src, tab.container, after = tab) }
-                item(Icons.Filled.ContentCopy, "Copy image address") { copy(src) }
-                item(Icons.Filled.Download, "Save image") { download(src) }
-            }
-            Spacer(Modifier.navigationBarsPadding().height(12.dp))
+            GlassRow(Glyph.COPY, "Copy link", { onClose(); copy(link) })
+            GlassRow(Glyph.SHARE, "Share link", { onClose(); share(link) })
+            GlassRow(Glyph.DOWNLOAD, "Download link", { onClose(); download(link, tab.url) })
+        }
+        if (src != null) {
+            GlassRow(Glyph.IMAGE, "Open image in new tab", { onClose(); model.newTab(src, tab.container, after = tab) })
+            GlassRow(Glyph.COPY, "Copy image address", { onClose(); copy(src) })
+            GlassRow(Glyph.DOWNLOAD, "Save image", { onClose(); download(src, tab.url) })
         }
     }
-}
-
-/** the new-tab page: colour, the name, and the sites you go to most */
-@Composable
-fun NewTabPage(model: BrowserModel) {
-    val sites = remember(model.current?.id) { Store.topSites(8) }
-    Box(
-        Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF4B2FB8), Color(0xFF8F4BD9), Color(0xFF2F56D9), Color(0xFF1AA3D9)))),
-    ) {
-        Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Text("Iris", fontSize = 44.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
-            Spacer(Modifier.height(28.dp))
-            if (sites.isNotEmpty()) {
-                LazyVerticalGrid(GridCells.Fixed(4), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(sites) { v ->
-                        val name = Search.display(v.url)
-                        Column(
-                            Modifier.glass(RoundedCornerShape(20.dp), Color.White.copy(alpha = 0.22f)).clickable { model.go(v.url) }.padding(vertical = 12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Box(Modifier.size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.9f)), contentAlignment = Alignment.Center) {
-                                Text(name.take(1).uppercase(), fontWeight = FontWeight.Bold, color = IrisViolet, fontSize = 18.sp)
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            Text(name.substringBefore('.').replaceFirstChar { it.uppercase() }, fontSize = 12.sp, color = Color.White,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 4.dp))
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
 /** a newer Iris: install it */
 @Composable
 fun UpdateDialog() {
-    val r = Updater.available ?: return
+    val r = Updater.available
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    AlertDialog(
-        onDismissRequest = { if (!Updater.downloading) Updater.available = null },
-        title = { Text("Iris ${r.version} is ready") },
-        text = {
-            if (Updater.downloading) LinearProgressIndicator(progress = { Updater.progress }, Modifier.fillMaxWidth())
-            else Text("Iris downloads it from GitHub and Android installs it over this version. Your tabs stay.")
-        },
-        confirmButton = {
-            TextButton(enabled = !Updater.downloading, onClick = { scope.launch { Updater.install(ctx, r) } }) { Text("Update") }
-        },
-        dismissButton = { TextButton(enabled = !Updater.downloading, onClick = { Updater.available = null }) { Text("Later") } },
-    )
+    val p = LocalPalette.current
+    GlassDialog(r != null, "Iris ${r?.version ?: ""} is ready", { if (!Updater.downloading) Updater.available = null },
+        if (Updater.downloading) "Downloading…" else "Update", { if (r != null && !Updater.downloading) scope.launch { Updater.install(ctx, r) } }, cancel = "Later") {
+        if (Updater.downloading) ProgressLine(Updater.progress)
+        else Txt("Iris downloads it from GitHub and Android installs it over this version. Your tabs stay.", color = p.ink2)
+    }
 }

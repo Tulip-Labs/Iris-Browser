@@ -1,15 +1,17 @@
 import CAdwaita
 import Foundation
 
-/// The new-tab page: slow drifting colour for the glass to bend, a capsule
-/// that takes you to the address bar, and the sites you go to most.
+/// The new-tab page: Iris, goddess of the rainbow (Ember's wallpaper, light
+/// by day and dark by night) for the glass to bend, a capsule that takes
+/// you to the address bar, and the sites you go to most.
 final class NewTabPage {
     unowned let b: Browser
     let box = UI.box(true, 22)
     let item: Item
     private let tiles = UI.box(false, 14)
-    private var phase = Double.random(in: 0..<100)
-    private var timer: UInt32 = 0
+    private var tex: OpaquePointer?
+    private var texRect = Rect()
+    private var texKey = ""
     private var search: GtkW!
 
     init(_ b: Browser) {
@@ -41,7 +43,7 @@ final class NewTabPage {
         item.clip = 12
         item.animateFrames = false
         item.behind = { [unowned self] s, r in self.paint(s, r) }
-        b.stage.part(item, s, Glass(radius: 26, tint: RGBA.white.alpha(0.30), bend: 10, rim: 20, lens: 0.03), onlyActive: false)
+        b.stage.part(item, s, Glass(radius: 26, level: 0.30, bend: 10, rim: 20, lens: 0.03), onlyActive: false)
         refresh()
     }
 
@@ -70,41 +72,57 @@ final class NewTabPage {
             let url = v.url
             on(Ptr(t), "clicked") { [unowned self] in self.b.go(url) }
             UI.append(tiles, t)
-            b.stage.part(item, t, Glass(radius: 20, tint: RGBA.white.alpha(0.24), bend: 7, rim: 14), onlyActive: false)
+            b.stage.part(item, t, Glass(radius: 20, level: 0.24, bend: 7, rim: 14), onlyActive: false)
         }
         gtk_widget_set_visible(tiles, gtk_widget_get_first_child(tiles) == nil ? 0 : 1)
-        animate()
     }
 
-    private func animate() {
-        guard timer == 0, b.stage.animations else { return }
-        // a slow drift, 20 frames a second, and only while the window is
-        // the one in use (no work behind other windows)
-        timer = every(ms: 50) { [weak self] in
-            guard let self else { return false }
-            if !self.item.shown && self.item.alpha.value < 0.01 { self.timer = 0; return false }
-            if gtk_window_is_active(self.b.win) == 0 { return true }
-            self.phase += 0.05
-            gtk_widget_queue_draw(self.b.stage.widget)
-            return true
-        }
+    func lookChanged() {
+        if let t = tex { g_object_unref(Ptr(t)) }
+        tex = nil
+        texKey = ""
     }
 
-    /// colour that drifts like light through water
+    /// the wallpaper, covering the page, softened a little so the glass
+    /// and the words stay first; made once per size and look
     private func paint(_ s: Snap, _ r: Rect) {
-        if item.shown { animate() }
-        Draw.linear(s, r, from: (r.x, r.y), to: (r.maxX, r.maxY), [(0, RGBA(hex: "#4b2fb8")), (0.55, RGBA(hex: "#2f56d9")), (1, RGBA(hex: "#1aa3d9"))])
-        let p = phase
-        let blobs: [(Double, Double, Double, String, Double)] = [
-            (0.25 + 0.18 * sin(p * 0.23), 0.30 + 0.16 * cos(p * 0.19), 0.55, "#ff6ec7", 0.70),
-            (0.75 + 0.15 * cos(p * 0.17), 0.25 + 0.20 * sin(p * 0.21), 0.50, "#3ee6ff", 0.60),
-            (0.60 + 0.20 * sin(p * 0.13 + 2), 0.80 + 0.12 * cos(p * 0.16), 0.60, "#ffb86b", 0.55),
-            (0.20 + 0.14 * cos(p * 0.11 + 1), 0.85 + 0.10 * sin(p * 0.14), 0.45, "#8f6bff", 0.80),
-        ]
-        let size = max(r.w, r.h)
-        for (bx, by, br, c, a) in blobs {
-            Draw.radial(s, r, center: (r.x + r.w * bx, r.y + r.h * by), radius: size * br,
-                        [(0, RGBA(hex: c, a)), (1, RGBA(hex: c, 0))])
+        let key = "\(r.w)x\(r.h)/\(Look.dark)"
+        if key != texKey || tex == nil {
+            if let t = tex { g_object_unref(Ptr(t)) }
+            tex = nil
+            texKey = key
+            if let made = picture(r) { tex = made.0; texRect = made.1 }
         }
+        if let tex {
+            Stage.drawTexture(s, tex, Rect(x: r.x + texRect.x, y: r.y + texRect.y, w: texRect.w, h: texRect.h))
+        } else {
+            Draw.color(s, Look.dark ? RGBA(hex: "#141233") : RGBA(hex: "#ece6f4"), r)
+        }
+    }
+
+    private func picture(_ r: Rect) -> (OpaquePointer, Rect)? {
+        guard r.w > 1, r.h > 1, let path = Resources.path("wallpapers/iris-\(Look.dark ? "dark" : "light").jpg") else { return nil }
+        let scale = gtk_widget_get_scale_factor(b.stage.widget)
+        let pw = Int32(r.w * Double(scale)), ph = Int32(r.h * Double(scale))
+        let wide = Double(pw) / Double(max(1, ph)) > 16.0 / 9
+        guard let pb = gdk_pixbuf_new_from_file_at_scale(path, wide ? pw : -1, wide ? -1 : ph, 1, nil) else { return nil }
+        let src = gdk_texture_new_for_pixbuf(pb)
+        g_object_unref(Ptr(pb))
+        guard let src, let sub = gtk_snapshot_new() else { return nil }
+        let tw = Double(gdk_texture_get_width(src)) / Double(scale), th = Double(gdk_texture_get_height(src)) / Double(scale)
+        let k = max(r.w / tw, r.h / th)
+        let c = Rect(x: (r.w - tw * k) / 2, y: (r.h - th * k) / 2, w: tw * k, h: th * k)
+        var clip = grect(Rect(x: 0, y: 0, w: r.w, h: r.h))
+        gtk_snapshot_push_clip(sub, &clip)
+        gtk_snapshot_push_blur(sub, 10)
+        Stage.drawTexture(sub, OpaquePointer(src), Rect(x: c.x - 30, y: c.y - 30, w: c.w + 60, h: c.h + 60))
+        gtk_snapshot_pop(sub)
+        // a veil, so the words read on any part of her
+        Draw.color(sub, Look.dark ? RGBA(0.02, 0.01, 0.06, 0.22) : RGBA(1, 1, 1, 0.16), Rect(x: 0, y: 0, w: r.w, h: r.h))
+        gtk_snapshot_pop(sub)
+        g_object_unref(Ptr(src))
+        guard let node = gtk_snapshot_free_to_node(sub) else { return nil }
+        defer { gsk_render_node_unref(node) }
+        return b.stage.renderTexture(node, Rect(x: 0, y: 0, w: r.w, h: r.h))
     }
 }

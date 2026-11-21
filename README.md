@@ -9,7 +9,7 @@
 <p align="center">
   <b>A browser made of glass.</b><br>
   Linux: Swift, libadwaita and WebKitGTK, in real Liquid Glass.<br>
-  Android: Kotlin, Jetpack Compose and Android System WebView. Every search asks Google AI Mode.
+  Android: Kotlin, Jetpack Compose and Chromium inside the app (Cefrium). Every search asks Google AI Mode.
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="#whats-new-in-201">New</a> ·
+  <a href="#whats-new-in-210">New</a> ·
   <a href="#what-it-does">Features</a> ·
   <a href="#install">Install</a> ·
   <a href="#shortcuts">Shortcuts</a> ·
@@ -30,12 +30,28 @@
 </p>
 
 <p align="center">
-  <img src="assets/screens/linux-menu.png" width="860" alt="Iris for Linux: the menu, a sheet of liquid glass over the page">
+  <img src="assets/screens/linux-menu.png" width="860" alt="Iris for Linux: the menu, with the look (Auto, Light, Dark), a sheet of liquid glass">
 </p>
 
 ---
 
-## What's new in 2.0.1
+## What's new in 2.1.0
+
+- **Light, Dark or Auto**, as in [Ember](https://github.com/Tulip-Labs/Ember). Auto follows the system; with Ember on niri it turns dark at night. Pages follow the look.
+- **The new-tab page is Iris herself**, Ember's wallpaper: the goddess of the rainbow in liquid glass, light by day and dark by night.
+- **Shields with three levels**, as in Brave, stopping ads and trackers inside the engine before a request leaves the device, with uBlock Origin's lists:
+
+  | Level | What it stops |
+  |---|---|
+  | Moderate | Ads and trackers from other sites (EasyList, EasyPrivacy). A site's own requests always load. |
+  | Aggressive (default) | Also a site's own ads and trackers, uBlock Origin's filters, and the empty boxes ads leave. |
+  | Ultra aggressive | Also cookie notices, newsletter and sign-up pop-ups and other annoyances. |
+
+  uBlock Origin's fixes for sites the lists would break stay on at every level, and Shields can be turned off for one site.
+- **Android: Chromium inside Iris again** (Cefrium), the same engine on every phone, and **Liquid Glass with no Material Design**: Iris's own bars, panels, switches and line icons.
+- **A new icon.**
+
+## What was new in 2.0.1
 
 - **Lighter on Linux.**
   - All tabs share one WebKit web context: one pool of web processes and caches. Containers keep their own cookies and storage.
@@ -62,7 +78,7 @@ Iris is made again from the start.
 - **Springs.** Tabs slide into place. The selected tab's glass slides from tab to tab and stretches on the way. Menus open and close as glass.
 - **Containers, worlds apart.** On both platforms, each container keeps its own cookies, storage, cache and sign-ins.
 - **Ads open no tabs.** A pop-up needs your click, and goes only to the same site or a sign-in page. Anything else is stopped, with an Open button if you meant it.
-- **Android in Kotlin with Jetpack Compose** (its engine since 2.0.1 is Android System WebView).
+- **Android in Kotlin with Jetpack Compose** (its engine since 2.1.0 is Chromium inside the app, through Cefrium).
 - **A new icon.** The goddess in liquid glass, rising out of her rainbow.
 - **Fewer packages.** Windows, Nix, the Snap and the container image are gone. Linux ships as a Flatpak.
 
@@ -71,8 +87,8 @@ Iris is made again from the start.
 ### Linux
 
 <p align="center">
-  <img src="assets/screens/linux-new-tab.png" width="420" alt="The new-tab page: drifting colour under a glass capsule">
-  <img src="assets/screens/linux-context-menu.png" width="420" alt="Iris's own glass menu on a right click in a page">
+  <img src="assets/screens/linux-new-tab.png" width="420" alt="The new-tab page in Light: Iris, goddess of the rainbow, under a glass capsule">
+  <img src="assets/screens/linux-dark.png" width="420" alt="The new-tab page in Dark: Iris at night">
 </p>
 
 - **Liquid Glass chrome.** The tabs, the address bar and the button groups float as glass.
@@ -106,15 +122,16 @@ Iris is made again from the start.
 
 ### Android
 
-- **Engine.** Android System WebView (Chromium, kept up to date by the phone) with Jetpack Compose and Material 3. The tabs and their WebViews live in a ViewModel, so they survive rotation.
-- **Containers.** Through WebView profiles (WebView 123 and newer), each container keeps its own cookies, cache, localStorage and IndexedDB.
-- **Shields.** Requests to about 100,000 ad and tracker domains are stopped before they leave the phone, and third-party cookies are refused.
+- **Engine.** Chromium carried in the app (Cefrium, CEF for Android), the same on every phone, with H.264 and AAC. The interface is Jetpack Compose drawn as Liquid Glass (no Material components). The tabs and their pages live in a ViewModel.
+- **Look.** Light, Dark or Auto (the phone's choice), from the menu.
+- **Containers.** Cefrium profiles: each container keeps its own cookies, cache, localStorage and IndexedDB.
+- **Shields.** Chromium asks Iris before every request; ads and trackers never leave the phone. Moderate, Aggressive or Ultra aggressive, with uBlock Origin's lists, and the boxes ads leave are hidden.
 - **Tabs.**
   - A strip of tabs on top with one "+" (long-press it to pick a container).
   - The bottom bar has back, forward, home, Shields, containers and downloads.
   - Background tabs beyond 3 sleep and keep their history.
 - **Downloads manager.** Files go to the phone's Downloads folder (no storage permission needed), with progress, open and delete.
-- **Pull to reload** at the top of a page. **Calls** in the browser, with the camera and microphone asked once.
+- **Pull to reload** at the top of a page. **Calls** in the browser, through the engine's own prompts.
 - **Auto-update.** Iris checks GitHub once a day, downloads the new APK and has Android install it over itself.
 - **Closing tabs.** Closing the tab you are on opens the one beside it; closing the last tab leaves a fresh one.
 
@@ -182,16 +199,19 @@ linux/                      Iris for Linux (Swift package)
     Tab.swift               a WebKit web view and its signals
     Containers.swift        one WebKit network session per container
     Engine.swift            the shared web context, memory limits, light video
-    Shields.swift           the block list as WebKit content rules
+    Shields.swift           the levels' lists, fetched and compiled as WebKit content rules
+    ShieldRules.swift       filter lists turned into WebKit content rules
+    Look.swift              Light, Dark or Auto
     Overlays.swift          menus, suggestions, find, downloads, the right-click menu
     NewTab.swift, Keys.swift, Downloads.swift, History.swift, Updates.swift, Search.swift
   Sources/CBlur/            ext-background-effect-v1: blur behind the window
-android/                    Iris for Android (Kotlin, Compose, System WebView)
+android/                    Iris for Android (Kotlin, Compose, Chromium through Cefrium)
   app/src/main/java/org/tulipanlabs/iris/
-    Browser.kt              tabs and their WebViews in a ViewModel, profiles, pop-up rules
-    Shields.kt              ad and tracker domains stopped on the way out
-    ui/                     Compose: tab strip, address, page (WebView in AndroidView),
-                            pull to reload, sheets, downloads manager
+    Browser.kt              tabs and their Chromium pages in a ViewModel, profiles, pop-up rules
+    Shields.kt, ShieldCore.kt  the levels, the lists, every request's answer
+    Filters.kt              the filter engine (ABP and uBlock syntax)
+    ui/                     Compose drawn as Liquid Glass: tab strip, address, page,
+                            sheets, switches, line icons, the look
     Downloads.kt, Updater.kt, Store.kt, Search.kt
 packaging/                  the Flatpak manifest, desktop file and metainfo
 assets/icon/                the icon (SVG) and its renders

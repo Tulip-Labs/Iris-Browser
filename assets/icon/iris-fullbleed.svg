@@ -1,17 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <!-- Iris, goddess of the rainbow and messenger of the gods: her profile in
        liquid glass before her rainbow, a wing of glass behind her. An
-       original drawing made for the Iris browser. -->
+       original drawing made for the Iris browser, in the style of Ember's night wallpaper. -->
   <defs>
-    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#24145e"/>
-      <stop offset="0.55" stop-color="#4a2db4"/>
-      <stop offset="1" stop-color="#0f86c6"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="0.28" cy="0.2" r="0.75">
-      <stop offset="0" stop-color="#ff8fd8" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#ff8fd8" stop-opacity="0"/>
-    </radialGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#07051a"/><stop offset="0.42" stop-color="#1d1450"/><stop offset="0.78" stop-color="#1b2d7a"/><stop offset="1" stop-color="#073a5e"/></linearGradient><radialGradient id="glowB" cx="0.1" cy="0.98" r="0.75"><stop offset="0" stop-color="#2fb4ff" stop-opacity="0.3"/><stop offset="1" stop-color="#2fb4ff" stop-opacity="0"/></radialGradient><filter id="haze" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="46"/></filter>
+    <radialGradient id="glow" cx="0.82" cy="0.12" r="0.7"><stop offset="0" stop-color="#ff5fc8" stop-opacity="0.38"/><stop offset="1" stop-color="#ff5fc8" stop-opacity="0"/></radialGradient>
     <linearGradient id="bow" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#ff3b6b"/>
       <stop offset="0.18" stop-color="#ff9f0a"/>
@@ -24,7 +17,7 @@
     <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="12"/></filter>
     <filter id="lensblur"><feGaussianBlur stdDeviation="3"/></filter>
     <linearGradient id="glassFill" x1="0.2" y1="0.05" x2="0.8" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.58"/>
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.45"/>
       <stop offset="0.42" stop-color="#ffffff" stop-opacity="0.10"/>
       <stop offset="0.8" stop-color="#ffffff" stop-opacity="0.16"/>
       <stop offset="1" stop-color="#ffffff" stop-opacity="0.42"/>
@@ -54,7 +47,7 @@
       <feOffset dx="12" dy="26"/>
       <feComponentTransfer><feFuncA type="linear" slope="0.38"/></feComponentTransfer>
     </filter>
-    <path id="squircle" d="M512 40c330 0 472 142 472 472s-142 472-472 472S40 842 40 512 182 40 512 40z"/>
+    <path id="squircle" d="M0 0h1024v1024H0z"/>
     <clipPath id="sq"><use href="#squircle"/></clipPath>
 
     <!-- her profile, facing right: brow and nose in one line, as in the old
@@ -100,21 +93,18 @@
       C 410 682 446 680 470 640 Z"/>
   </defs>
 
-  <g>
+  <g clip-path="url(#sq)">
     <rect width="1024" height="1024" fill="url(#sky)"/>
     <rect width="1024" height="1024" fill="url(#glow)"/>
-    <g id="bowg">
-      <path d="M -150 1300 A 690 690 0 0 1 1230 1300" fill="none" stroke="url(#bow)" stroke-width="200" filter="url(#soft)" opacity="0.85"/>
-      <path d="M -150 1300 A 690 690 0 0 1 1230 1300" fill="none" stroke="url(#bow)" stroke-width="120"/>
-    </g>
+    <rect width="1024" height="1024" fill="url(#glowB)"/><circle cx="244" cy="283" r="1.7" fill="#fff" opacity="0.66"/><circle cx="641" cy="34" r="0.8" fill="#fff" opacity="0.80"/><circle cx="266" cy="122" r="3.2" fill="#fff" opacity="0.58"/><circle cx="857" cy="248" r="2.3" fill="#fff" opacity="0.39"/><circle cx="650" cy="451" r="2.1" fill="#fff" opacity="0.74"/><circle cx="688" cy="33" r="2.6" fill="#fff" opacity="0.65"/><circle cx="308" cy="16" r="2.9" fill="#fff" opacity="0.58"/><circle cx="736" cy="457" r="2.5" fill="#fff" opacity="0.85"/><circle cx="404" cy="416" r="1.9" fill="#fff" opacity="0.86"/><circle cx="900" cy="51" r="1.1" fill="#fff" opacity="0.43"/><circle cx="989" cy="227" r="2.3" fill="#fff" opacity="0.48"/><circle cx="519" cy="201" r="1.6" fill="#fff" opacity="0.65"/><circle cx="598" cy="470" r="2.4" fill="#fff" opacity="0.86"/><circle cx="877" cy="515" r="2.4" fill="#fff" opacity="0.40"/><circle cx="881" cy="502" r="3.0" fill="#fff" opacity="0.64"/><circle cx="731" cy="110" r="2.8" fill="#fff" opacity="0.64"/><circle cx="292" cy="33" r="2.8" fill="#fff" opacity="0.89"/><circle cx="91" cy="416" r="1.8" fill="#fff" opacity="0.39"/><circle cx="301" cy="400" r="2.9" fill="#fff" opacity="0.33"/><circle cx="629" cy="23" r="2.5" fill="#fff" opacity="0.50"/><circle cx="902" cy="510" r="2.0" fill="#fff" opacity="0.90"/><circle cx="317" cy="40" r="2.2" fill="#fff" opacity="0.32"/><circle cx="202" cy="212" r="2.3" fill="#fff" opacity="0.39"/><circle cx="43" cy="451" r="1.6" fill="#fff" opacity="0.88"/><circle cx="918" cy="196" r="1.9" fill="#fff" opacity="0.61"/><circle cx="659" cy="310" r="2.1" fill="#fff" opacity="0.67"/><circle cx="963" cy="264" r="1.8" fill="#fff" opacity="0.73"/><circle cx="243" cy="157" r="3.1" fill="#fff" opacity="0.61"/><circle cx="562" cy="6" r="1.8" fill="#fff" opacity="0.65"/><circle cx="21" cy="320" r="2.3" fill="#fff" opacity="0.34"/><circle cx="642" cy="242" r="2.4" fill="#fff" opacity="0.51"/><circle cx="724" cy="384" r="0.9" fill="#fff" opacity="0.34"/><circle cx="692" cy="501" r="1.4" fill="#fff" opacity="0.57"/><circle cx="607" cy="166" r="1.7" fill="#fff" opacity="0.49"/><circle cx="378" cy="310" r="1.5" fill="#fff" opacity="0.53"/><circle cx="791" cy="14" r="2.2" fill="#fff" opacity="0.74"/><circle cx="317" cy="116" r="2.7" fill="#fff" opacity="0.44"/><circle cx="192" cy="226" r="2.5" fill="#fff" opacity="0.36"/><circle cx="330" cy="174" r="2.8" fill="#fff" opacity="0.56"/><circle cx="876" cy="88" r="1.6" fill="#fff" opacity="0.69"/><circle cx="906" cy="235" r="1.3" fill="#fff" opacity="0.37"/><circle cx="542" cy="99" r="2.7" fill="#fff" opacity="0.80"/><circle cx="188" cy="145" r="2.7" fill="#fff" opacity="0.69"/><circle cx="826" cy="180" r="1.1" fill="#fff" opacity="0.48"/><circle cx="813" cy="141" r="1.6" fill="#fff" opacity="0.55"/><circle cx="430" cy="213" r="3.0" fill="#fff" opacity="0.39"/><g id="bowg"><path d="M -320 1160 A 840 840 0 0 1 1340 1160" fill="none" stroke="url(#bow)" stroke-width="380" filter="url(#haze)" opacity="0.54"/><path d="M -320 1160 A 840 840 0 0 1 1340 1160" fill="none" stroke="url(#bow)" stroke-width="170" filter="url(#soft)" opacity="0.8500000000000001"/><path d="M -320 1160 A 840 840 0 0 1 1340 1160" fill="none" stroke="url(#bow)" stroke-width="74" opacity="0.85"/></g>
 
-    <!-- the wing -->
+    <g transform="translate(512 548) scale(0.74) translate(-512 -540)"><!-- the wing -->
     <use href="#wing" filter="url(#shade)"/>
     <clipPath id="wingClip"><use href="#wing"/></clipPath>
     <g clip-path="url(#wingClip)">
       <g filter="url(#lensblur)" transform="translate(330 470) scale(1.15) translate(-320 -480)">
         <rect width="1024" height="1024" fill="url(#sky)"/>
-        <path d="M -150 1300 A 690 690 0 0 1 1230 1300" fill="none" stroke="url(#bow)" stroke-width="120"/>
+        <path d="M -320 1160 A 840 840 0 0 1 1340 1160" fill="none" stroke="url(#bow)" stroke-width="240" filter="url(#haze)" opacity="0.55"/>
       </g>
       <use href="#wing" fill="url(#glassFill)"/>
       <use href="#wing" filter="url(#inner)"/>
@@ -129,7 +119,7 @@
       <g filter="url(#lensblur)" transform="translate(520 520) scale(1.12) translate(-520 -540)">
         <rect width="1024" height="1024" fill="url(#sky)"/>
         <rect width="1024" height="1024" fill="url(#glow)"/>
-        <path d="M -150 1300 A 690 690 0 0 1 1230 1300" fill="none" stroke="url(#bow)" stroke-width="120"/>
+        <path d="M -320 1160 A 840 840 0 0 1 1340 1160" fill="none" stroke="url(#bow)" stroke-width="240" filter="url(#haze)" opacity="0.55"/>
       </g>
       <use href="#head" fill="url(#glassFill)"/>
       <use href="#head" filter="url(#innerDark)"/>
@@ -155,6 +145,7 @@
       <path d="M 696 400 C 704 424 714 444 724 460" stroke-width="7" opacity="0.85"/>
       <path d="M 690 592 C 692 602 688 610 682 614" stroke-width="5" opacity="0.7"/>
       <path d="M 150 436 C 220 440 300 480 380 560" stroke-width="6" opacity="0.75"/>
-    </g>
+    </g></g>
+    
   </g>
 </svg>

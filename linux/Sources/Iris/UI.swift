@@ -139,8 +139,29 @@ enum UI {
         gtk_editable_set_text(OpaquePointer(t), s)
     }
 
+    nonisolated(unsafe) private static var provider: OpaquePointer?
+
+    /// Iris's style sheet, in the look's colours
+    static func installCSS() {
+        let p = gtk_css_provider_new()!
+        provider = OpaquePointer(p)
+        gtk_css_provider_load_from_string(p, css)
+        gtk_style_context_add_provider_for_display(gdk_display_get_default(), OpaquePointer(p), 600)
+    }
+
+    static func reloadCSS() {
+        if let p = provider { gtk_css_provider_load_from_string(UnsafeMutablePointer(p), css) }
+    }
+
     static var css: String {
-        var s = baseCSS
+        let ink = Look.dark ? "#f5f5f7" : "#1c1c21"
+        var s = baseCSS.replacingOccurrences(of: "#1c1c21", with: ink)
+        if Look.dark {
+            s = s.replacingOccurrences(of: "background: alpha(white, .55); border-radius: 999px; box-shadow: inset 0 0 0 1px alpha(white, .8);",
+                                       with: "background: alpha(white, .10); border-radius: 999px; box-shadow: inset 0 0 0 1px alpha(white, .22);")
+                .replacingOccurrences(of: "windowcontrols button:hover { background: alpha(white, .85); }", with: "windowcontrols button:hover { background: alpha(white, .2); }")
+                .replacingOccurrences(of: "color: #0a6bd6;", with: "color: #64b5ff;")
+        }
         for (i, c) in Container.palette.enumerated() { s += "\n.iris-c\(i) { color: \(c); }" }
         s += "\n.iris-cp { color: #5e5ce6; }"
         return s
@@ -151,8 +172,8 @@ enum UI {
     window.iris.csd { border-radius: 14px; }
     iris-stage { color: #1c1c21; }
     .iris-flat, .iris-flat:hover, .iris-flat:active, .iris-flat:checked, .iris-flat:focus {
-      background: none; box-shadow: none; border: none; outline: none; text-shadow: none;
-      -gtk-icon-shadow: none; min-height: 0; min-width: 0; padding: 0; }
+      background: none; box-shadow: none; border: none; outline: none; text-shadow: none; -gtk-icon-shadow: none; }
+    .iris-flat { min-height: 0; min-width: 0; padding: 0; }
     .iris-icon { min-width: 34px; min-height: 34px; border-radius: 999px; color: #1c1c21; }
     .iris-icon:disabled { color: alpha(#1c1c21, .32); }
     .iris-icon.small { min-width: 22px; min-height: 22px; }
@@ -169,6 +190,8 @@ enum UI {
     .iris-history-day { font-size: 12px; font-weight: 700; color: alpha(#1c1c21, .5); margin: 8px 12px 2px; }
     .iris-row { padding: 7px 12px; border-radius: 10px; min-height: 22px; }
     .iris-row.selected { background: alpha(#0a84ff, .14); }
+    .iris-choice { padding: 3px 10px; border-radius: 999px; font-weight: 600; color: #1c1c21; }
+    .iris-choice.selected { background: alpha(#0a84ff, .18); box-shadow: inset 0 0 0 1px alpha(#0a84ff, .45); }
     .iris-text-button { padding: 4px 12px; border-radius: 999px; font-weight: 600; color: #0a6bd6; }
     .iris-menu { padding: 6px; }
     .iris-dim { color: alpha(#1c1c21, .58); }
@@ -177,8 +200,8 @@ enum UI {
     .iris-sep { margin: 4px 10px; background: alpha(#1c1c21, .10); min-height: 1px; }
     .iris-tile { padding: 12px 6px 10px; border-radius: 20px; min-width: 92px; }
     .iris-tile label { font-size: 12.5px; font-weight: 500; }
-    .iris-ntp-title { font-size: 34px; font-weight: 800; letter-spacing: -0.5px; color: white; }
-    .iris-ntp-sub { font-size: 13px; color: alpha(white, .85); }
+    .iris-ntp-title { font-size: 40px; font-weight: 800; letter-spacing: -0.8px; color: #1c1c21; }
+    .iris-ntp-sub { font-size: 13px; color: alpha(#1c1c21, .7); }
     progressbar.iris trough { min-height: 4px; border-radius: 2px; background: alpha(#1c1c21, .08); }
     progressbar.iris progress { min-height: 4px; border-radius: 2px; background: #0a84ff; }
     .iris-find text { font-size: 14px; min-width: 180px; background: none; }

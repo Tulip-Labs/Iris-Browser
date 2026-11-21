@@ -37,6 +37,16 @@ object Store {
         get() = p.getBoolean("shields", true)
         set(v) = p.edit().putBoolean("shields", v).apply()
 
+    /** how hard Shields block: Moderate, Aggressive or Ultra aggressive */
+    var shieldLevel: ShieldLevel
+        get() = ShieldLevel.of(p.getString("shieldLevel", null))
+        set(v) = p.edit().putString("shieldLevel", v.name).apply()
+
+    /** Light, Dark or Auto (the phone's choice) */
+    var appearance: String
+        get() = p.getString("appearance", "auto") ?: "auto"
+        set(v) = p.edit().putString("appearance", v).apply()
+
     /** sites with Shields off */
     var shieldsOff: Set<String>
         get() = p.getStringSet("shieldsOff", emptySet()) ?: emptySet()

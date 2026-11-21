@@ -32,11 +32,13 @@ final class SearchTests: XCTestCase {
         XCTAssertEqual(Search.display("https://www.example.com/x"), "example.com")
     }
 
-    func testShieldRules() {
-        XCTAssertTrue(ShieldRules.usable("ads.example.com"))
-        XCTAssertFalse(ShieldRules.usable("cloudfront.net"))
-        XCTAssertFalse(ShieldRules.usable("accounts.google.com"))
-        let json = ShieldRules.json(domains: ["ads.example.com", "gstatic.com"])
+    func testShieldDomains() {
+        XCTAssertTrue(ShieldConverter.usable("ads.example.com"))
+        XCTAssertFalse(ShieldConverter.usable("cloudfront.net"))
+        XCTAssertFalse(ShieldConverter.usable("accounts.google.com"))
+        var c = ShieldConverter(level: .aggressive)
+        c.add(domains: ["ads.example.com", "gstatic.com"])
+        let json = c.finish().joined()
         XCTAssertTrue(json.contains("ads\\\\.example\\\\.com"))
         XCTAssertFalse(json.contains("gstatic"))
     }
