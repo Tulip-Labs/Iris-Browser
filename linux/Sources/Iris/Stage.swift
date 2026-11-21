@@ -118,6 +118,16 @@ final class Stage {
     /// drawn into the scene after the pages (the page's colour reaching up)
     var afterPages: ((Snap) -> Void)?
     var pointer: (Double, Double)?
+    /// the height of the chrome (tabs and toolbar), kept as one picture
+    /// while nothing in it changes, so a playing video redraws only itself
+    var chromeHeight = 0.0
+    /// the chrome is drawn live (no picture) while this says so (typing)
+    var chromeLive: () -> Bool = { false }
+    private var chromeDirty = true
+    private var chromeTex: OpaquePointer?
+    private var chromeTexRect = Rect()
+    private var chromeTexKey = ""
+    private var inChrome = false
     var animations = true
     private var ticking = false
     private var lastFrame: Int64 = 0
@@ -138,11 +148,16 @@ final class Stage {
         gtk_event_controller_set_propagation_phase(motion, GTK_PHASE_CAPTURE)
         onXY(Ptr(motion), "motion") { [unowned self] x, y in
             self.pointer = (x, y)
+            // in the chrome, anything may light up: draw it afresh
+            if y < self.chromeHeight + 8 || self.inChrome {
+                self.inChrome = y < self.chromeHeight + 8
+                self.dirtyChrome()
+            }
             if self.items.contains(where: { $0.reactive && $0.hover.value > 0.01 }) || self.items.contains(where: { $0.parts.contains { $0.hover.value > 0.01 } }) {
                 gtk_widget_queue_draw(self.widget)
             }
         }
-        on(Ptr(motion), "leave") { [unowned self] in self.pointer = nil; self.kick() }
+        on(Ptr(motion), "leave") { [unowned self] in self.pointer = nil; self.inChrome = false; self.dirtyChrome(); self.kick() }
         gtk_widget_add_controller(widget, motion)
         var anim: gboolean = 1
         g_object_get_property_bool(gtk_settings_get_default(), "gtk-enable-animations", &anim)
@@ -238,7 +253,49 @@ final class Stage {
 
     // MARK: motion
 
+    /// something in the chrome changed: its picture is made again
+    func dirtyChrome() {
+        chromeDirty = true
+        gtk_widget_queue_draw(widget)
+    }
+
+    /// renders a node to a texture on the GPU, aligned to the screen's
+    /// pixels (at fractional scales too); drawn with drawTexture, it lands
+    /// texel for texel
+    func renderTexture(_ node: Node, _ r: Rect) -> (OpaquePointer, Rect)? {
+        guard let native = gtk_widget_get_native(widget), let renderer = gtk_native_get_renderer(native),
+              let surface = gtk_native_get_surface(native) else { return nil }
+        let s = gdk_surface_get_scale(surface)
+        // where the stage's origin falls between screen pixels
+        var sx = 0.0, sy = 0.0
+        gtk_native_get_surface_transform(native, &sx, &sy)
+        var o = graphene_point_t(), at = graphene_point_t()
+        _ = gtk_widget_compute_point(widget, UnsafeMutablePointer<GtkWidget>(OpaquePointer(native)), &o, &at)
+        let dx = (Double(at.x) + sx + r.x) * s, dy = (Double(at.y) + sy + r.y) * s
+        let fx = dx - dx.rounded(.down), fy = dy - dy.rounded(.down)
+        guard let sub = gtk_snapshot_new() else { return nil }
+        var t = gpoint(fx, fy)
+        gtk_snapshot_translate(sub, &t)
+        gtk_snapshot_scale(sub, Float(s), Float(s))
+        var back = gpoint(-r.x, -r.y)
+        gtk_snapshot_translate(sub, &back)
+        gtk_snapshot_append_node(sub, node)
+        guard let scaled = gtk_snapshot_free_to_node(sub) else { return nil }
+        let pw = (r.w * s + fx).rounded(.up), ph = (r.h * s + fy).rounded(.up)
+        var vp = grect(Rect(x: 0, y: 0, w: pw, h: ph))
+        let tex = gsk_renderer_render_texture(renderer, scaled, &vp)
+        gsk_render_node_unref(scaled)
+        guard let tex else { return nil }
+        return (OpaquePointer(tex), Rect(x: r.x - fx / s, y: r.y - fy / s, w: pw / s, h: ph / s))
+    }
+
+    static func drawTexture(_ s: Snap, _ tex: OpaquePointer, _ r: Rect) {
+        var g = grect(r)
+        gtk_snapshot_append_texture(s, tex, &g)
+    }
+
     func kick() {
+        chromeDirty = true
         gtk_widget_queue_draw(widget)
         if ticking { return }
         ticking = true
@@ -251,6 +308,8 @@ final class Stage {
     }
 
     private static let debugFrames = getenv("IRIS_FRAMES") != nil
+    /// IRIS_NO_CACHE=1 draws the chrome live every frame (to compare)
+    static let noCache = getenv("IRIS_NO_CACHE") != nil
 
     private func tick(_ now: Int64) -> Bool {
         if Stage.debugFrames && lastFrame != 0 { fputs("frame \(Double(now - lastFrame) / 1000) ms\n", stderr) }
@@ -303,7 +362,7 @@ final class Stage {
         let resized = w != width || h != height
         width = w
         height = h
-        if resized || !laidOut { layout?(w, h) }
+        if resized || !laidOut { layout?(w, h); chromeDirty = true }
         laidOut = true
         for it in items where gtk_widget_get_child_visible(it.w) != 0 {
             let r = it.frame.rect
@@ -338,9 +397,29 @@ final class Stage {
         let scene = gtk_snapshot_free_to_node(sub)
         if let scene { gtk_snapshot_append_node(s, scene) }
 
-        let sub2 = gtk_snapshot_new()!
-        for it in items where it.layer == .chrome { draw(sub2, it, scene: scene) }
-        let chrome = gtk_snapshot_free_to_node(sub2)
+        // the chrome: drawn live while it moves or you type in it, otherwise
+        // kept as one picture made again only when something in it changes
+        var chrome: Node?
+        let key = "\(width)x\(height)/\(chromeHeight)"
+        let live = ticking || chromeLive() || chromeHeight <= 0 || Stage.noCache
+        if !live && !chromeDirty && chromeTex != nil && key == chromeTexKey {
+            chrome = gsk_texture_node_new(chromeTex, [grect(chromeTexRect)])
+        } else {
+            let sub2 = gtk_snapshot_new()!
+            for it in items where it.layer == .chrome { draw(sub2, it, scene: scene) }
+            chrome = gtk_snapshot_free_to_node(sub2)
+            if let c = chrome, !live, let (tex, r) = renderTexture(c, Rect(x: 0, y: 0, w: width, h: chromeHeight)) {
+                if let old = chromeTex { g_object_unref(Ptr(old)) }
+                chromeTex = tex
+                chromeTexRect = r
+                chromeTexKey = key
+                chromeDirty = false
+                gsk_render_node_unref(c)
+                chrome = gsk_texture_node_new(tex, [grect(r)])
+            } else if live {
+                chromeDirty = true
+            }
+        }
         if let chrome { gtk_snapshot_append_node(s, chrome) }
 
         if items.contains(where: { $0.layer == .overlay && gtk_widget_get_child_visible($0.w) != 0 }) {

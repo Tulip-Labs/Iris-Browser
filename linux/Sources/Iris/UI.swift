@@ -60,12 +60,21 @@ enum UI {
     }
 
     /// a row of a menu: icon, text and the keys that do the same
-    static func row(_ iconName: String?, _ text: String, keys: String? = nil, dot: String? = nil, _ f: @escaping () -> Void) -> GtkW {
+    /// a container's icon in its colour
+    static func containerIcon(_ c: Container, _ size: Int32 = 16) -> GtkW {
+        let i = icon(c.iconName, size)
+        cls(i, c.colorClass)
+        return i
+    }
+
+    static func row(_ iconName: String?, _ text: String, keys: String? = nil, dot: String? = nil, container: Container? = nil, _ f: @escaping () -> Void) -> GtkW {
         let b = gtk_button_new()!
         cls(b, "iris-flat", "iris-row")
         gtk_widget_set_focus_on_click(b, 0)
         let h = box(false, 10)
-        if let dot {
+        if let container {
+            append(h, containerIcon(container))
+        } else if let dot {
             let d = gtk_drawing_area_new()!
             gtk_widget_set_size_request(d, 16, 16)
             gtk_widget_set_valign(d, GTK_ALIGN_CENTER)
@@ -130,7 +139,14 @@ enum UI {
         gtk_editable_set_text(OpaquePointer(t), s)
     }
 
-    static let css = """
+    static var css: String {
+        var s = baseCSS
+        for (i, c) in Container.palette.enumerated() { s += "\n.iris-c\(i) { color: \(c); }" }
+        s += "\n.iris-cp { color: #5e5ce6; }"
+        return s
+    }
+
+    static let baseCSS = """
     window.iris, window.iris.background { background: none; box-shadow: none; }
     window.iris.csd { border-radius: 14px; }
     iris-stage { color: #1c1c21; }
@@ -147,7 +163,10 @@ enum UI {
     .iris-address text { font-size: 14.5px; background: none; caret-color: #0a84ff; }
     .iris-address text selection { background: alpha(#0a84ff, .24); color: inherit; }
     .iris-address text placeholder { color: alpha(#1c1c21, .45); }
-    .iris-chip { font-size: 12px; font-weight: 600; padding: 1px 9px; border-radius: 999px; color: white; }
+    .iris-chip { font-size: 12px; font-weight: 600; padding: 1px 9px 1px 7px; border-radius: 999px; color: white; }
+    .iris-icon-choice { min-width: 34px; min-height: 34px; border-radius: 10px; }
+    .iris-icon-choice.selected { background: alpha(#0a84ff, .18); box-shadow: inset 0 0 0 2px alpha(#0a84ff, .6); }
+    .iris-history-day { font-size: 12px; font-weight: 700; color: alpha(#1c1c21, .5); margin: 8px 12px 2px; }
     .iris-row { padding: 7px 12px; border-radius: 10px; min-height: 22px; }
     .iris-row.selected { background: alpha(#0a84ff, .14); }
     .iris-text-button { padding: 4px 12px; border-radius: 999px; font-weight: 600; color: #0a6bd6; }

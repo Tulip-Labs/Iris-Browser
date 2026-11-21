@@ -78,10 +78,13 @@ final class NewTabPage {
 
     private func animate() {
         guard timer == 0, b.stage.animations else { return }
-        timer = every(ms: 33) { [weak self] in
+        // a slow drift, 20 frames a second, and only while the window is
+        // the one in use (no work behind other windows)
+        timer = every(ms: 50) { [weak self] in
             guard let self else { return false }
             if !self.item.shown && self.item.alpha.value < 0.01 { self.timer = 0; return false }
-            self.phase += 0.033
+            if gtk_window_is_active(self.b.win) == 0 { return true }
+            self.phase += 0.05
             gtk_widget_queue_draw(self.b.stage.widget)
             return true
         }

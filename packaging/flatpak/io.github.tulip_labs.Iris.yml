@@ -22,7 +22,10 @@ finish-args:
   - --socket=wayland
   - --socket=fallback-x11
   - --socket=pulseaudio
-  - --device=dri
+  # the GPU, and cameras for calls (WebRTC); screen sharing goes through
+  # the desktop's portal and PipeWire
+  - --device=all
+  - --filesystem=xdg-run/pipewire-0
   - --filesystem=xdg-download
   - --talk-name=org.freedesktop.FileManager1 # "show in folder" for downloads
 

@@ -11,6 +11,26 @@ struct Container: Codable, Equatable {
     var id: String
     var name: String
     var color: String
+    /// one of Container.icons (a container from an older Iris has none and
+    /// takes one from its name)
+    var icon: String?
+
+    static let icons = ["person", "briefcase", "cart", "bank", "home", "heart", "game", "book", "plane", "code", "music", "star"]
+
+    var iconName: String {
+        if id == Container.privateID { return "view-conceal-symbolic" }
+        if let icon, Container.icons.contains(icon) { return "iris-\(icon)-symbolic" }
+        let n = name.lowercased()
+        let guess = n.contains("work") ? "briefcase" : n.contains("shop") ? "cart" : n.contains("bank") || n.contains("money") ? "bank"
+            : n.contains("person") || n.contains("me") ? "person" : n.contains("home") || n.contains("family") ? "home" : "star"
+        return "iris-\(guess)-symbolic"
+    }
+
+    /// the CSS class that gives an icon the container's colour
+    var colorClass: String {
+        if id == Container.privateID { return "iris-cp" }
+        return "iris-c\(Container.palette.firstIndex(of: color) ?? 0)"
+    }
 
     static let palette = ["#0a84ff", "#ff9f0a", "#30d158", "#ff375f", "#bf5af2", "#64d2ff", "#ffd60a", "#ac8e68"]
     static let privateID = "private"
@@ -26,10 +46,10 @@ final class Containers {
 
     private init() {
         list = file.load() ?? [
-            Container(id: UUID().uuidString.lowercased(), name: "Personal", color: Container.palette[0]),
-            Container(id: UUID().uuidString.lowercased(), name: "Work", color: Container.palette[1]),
-            Container(id: UUID().uuidString.lowercased(), name: "Shopping", color: Container.palette[3]),
-            Container(id: UUID().uuidString.lowercased(), name: "Banking", color: Container.palette[2]),
+            Container(id: UUID().uuidString.lowercased(), name: "Personal", color: Container.palette[0], icon: "person"),
+            Container(id: UUID().uuidString.lowercased(), name: "Work", color: Container.palette[1], icon: "briefcase"),
+            Container(id: UUID().uuidString.lowercased(), name: "Shopping", color: Container.palette[3], icon: "cart"),
+            Container(id: UUID().uuidString.lowercased(), name: "Banking", color: Container.palette[2], icon: "bank"),
         ]
         file.save(list)
     }
@@ -75,10 +95,10 @@ final class Containers {
     }
 
     @discardableResult
-    func add(_ name: String) -> Container {
+    func add(_ name: String, icon: String? = nil) -> Container {
         let used = Set(list.map(\.color))
         let color = Container.palette.first { !used.contains($0) } ?? Container.palette[list.count % Container.palette.count]
-        let c = Container(id: UUID().uuidString.lowercased(), name: name, color: color)
+        let c = Container(id: UUID().uuidString.lowercased(), name: name, color: color, icon: icon)
         list.append(c)
         file.save(list)
         return c

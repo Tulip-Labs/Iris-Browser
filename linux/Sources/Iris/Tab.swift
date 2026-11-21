@@ -16,6 +16,10 @@ final class Tab {
     /// an address to open when the tab is first selected (tabs restored
     /// from the last session wait until you go to them)
     var pending: String?
+    /// when the tab was last the one shown
+    var lastShown = Date()
+    /// asleep: its page is gone (memory given back) until it is shown again
+    var asleep: Bool { web == nil && pending != nil }
     weak var browser: Browser?
 
     private(set) var web: GtkW?
@@ -46,7 +50,7 @@ final class Tab {
         UI.cls(close, "small"); gtk_widget_set_size_request(close, 24, 24)
         UI.append(pill, favicon)
         if let c = Containers.shared.get(container) {
-            UI.append(pill, UI.dot(RGBA(hex: c.color), size: 10))
+            UI.append(pill, UI.containerIcon(c, 14))
         }
         UI.append(pill, pillLabel)
         UI.append(pill, close)
@@ -68,6 +72,12 @@ final class Tab {
         webkit_settings_set_enable_webrtc(settings, 1)
         webkit_settings_set_enable_media_stream(settings, 1)
         webkit_settings_set_enable_encrypted_media(settings, 1)
+        // calls and meetings: WebRTC, the camera, the microphone and sharing
+        // the screen (asked for each site, through the desktop's portals)
+        webkit_settings_set_enable_media(settings, 1)
+        webkit_settings_set_enable_mediasource(settings, 1)
+        webkit_settings_set_enable_media_capabilities(settings, 1)
+        Engine.addLightVideo(ucm)
         var props: [Prop] = [
             .object("user-content-manager", Ptr(ucm), webkit_user_content_manager_get_type()),
             .object("settings", Ptr(settings), webkit_settings_get_type()),
@@ -78,6 +88,8 @@ final class Tab {
             props.append(.object("related-view", Ptr(related), webkit_web_view_get_type()))
         } else {
             props.append(.object("network-session", Ptr(Containers.shared.session(container)), webkit_network_session_get_type()))
+            // every tab in the one shared web context
+            props.append(.object("web-context", Ptr(Engine.context), webkit_web_context_get_type()))
         }
         let w = gnew(webkit_web_view_get_type(), props).assumingMemoryBound(to: GtkWidget.self)
         g_object_unref(Ptr(settings))
@@ -206,6 +218,7 @@ final class Tab {
         guard let wv = webView, let tex = webkit_web_view_get_favicon(wv) else { return }
         gtk_image_set_from_paintable(OpaquePointer(favicon), OpaquePointer(tex))
         gtk_widget_remove_css_class(favicon, "iris-dim")
+        browser?.stage.dirtyChrome()
     }
 
     func back() { if let w = webView { webkit_web_view_go_back(w) } }
@@ -235,6 +248,19 @@ final class Tab {
         }, data)
     }
 
+    /// gives back the page's memory; the tab opens its address again when shown
+    func sleep() {
+        guard web != nil, !url.isEmpty else { return }
+        pending = url
+        if let p = page { browser?.stage.remove(p, animated: false) }
+        page = nil
+        destroy()
+        progress = 0
+        loading = false
+    }
+
+    var playingAudio: Bool { webView.map { webkit_web_view_is_playing_audio($0) != 0 } ?? false }
+
     func destroy() {
         if let ucm { Shields.shared.forget(ucm) }
         if let w = web {
@@ -242,5 +268,6 @@ final class Tab {
             g_object_unref(Ptr(w))
         }
         web = nil
+        ucm = nil
     }
 }

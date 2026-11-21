@@ -1,5 +1,6 @@
 import Foundation
 
 // Iris for Linux: Swift, libadwaita (through swift-adwaita) and WebKitGTK.
+Engine.videoEnvironment()
 let iris = IrisApp()
 exit(Int32(iris.run()))
