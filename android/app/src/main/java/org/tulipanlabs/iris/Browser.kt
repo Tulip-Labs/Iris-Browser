@@ -1,24 +1,39 @@
 package org.tulipanlabs.iris
 
+import android.annotation.SuppressLint
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.net.Uri
+import android.os.Bundle
+import android.os.Message
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.PermissionRequest
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
-import org.mozilla.geckoview.AllowOrDeny
-import org.mozilla.geckoview.GeckoResult
-import org.mozilla.geckoview.GeckoSession
-import org.mozilla.geckoview.GeckoSession.NavigationDelegate.LoadRequest
-import org.mozilla.geckoview.GeckoSessionSettings
-import org.mozilla.geckoview.WebResponse
+import androidx.webkit.ProfileStore
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import java.util.UUID
 
 /**
- * One tab: a GeckoSession in its container (contextId keeps cookies,
- * storage, cache and IndexedDB apart), made when the tab first opens
- * something, so a new or restored tab costs nothing until you go to it.
+ * One tab: a WebView in its container's profile (cookies, storage and cache
+ * of its own), made when the tab first opens something, so a new or
+ * restored tab costs nothing until you go to it.
  */
 class Tab(val container: String?, url: String = "") {
     val id: String = UUID.randomUUID().toString()
@@ -28,35 +43,52 @@ class Tab(val container: String?, url: String = "") {
     var loading by mutableStateOf(false)
     var canBack by mutableStateOf(false)
     var canForward by mutableStateOf(false)
-    var session by mutableStateOf<GeckoSession?>(null)
-    /** an address to open when the tab is first shown */
+    var web by mutableStateOf<WebView?>(null)
+    /** an address to open when the tab is next shown */
     var pending: String? = null
+    /** the page's history, kept while the tab sleeps */
+    var saved: Bundle? = null
+    var lastShown = System.currentTimeMillis()
+    /** a pop-up whose first address is not checked yet */
+    var popupFrom: Tab? = null
 
     val isPrivate get() = container == Container.PRIVATE
+
+    fun back() { web?.goBack() }
+    fun forward() { web?.goForward() }
+    fun reload() { web?.reload() }
+    fun stop() { web?.stopLoading() }
 }
 
 /** a pop-up the page asked for and Iris stopped */
 data class Blocked(val url: String, val from: Tab)
 
+/** what a long press on a page landed on */
+data class Pressed(val tab: Tab, val link: String?, val image: String?)
 
 /**
- * The tabs and their sessions, kept here so they outlive Compose's
+ * The tabs and their WebViews, kept here so they outlive Compose's
  * recompositions and the activity's configuration changes.
  */
 class BrowserModel(app: Application) : AndroidViewModel(app) {
-    private val runtime = (app as IrisApp).runtime
     val tabs = mutableStateListOf<Tab>()
     var current by mutableStateOf<Tab?>(null)
         private set
     var blocked by mutableStateOf<Blocked?>(null)
-    var prompt by mutableStateOf<Prompt?>(null)
-    var fullscreen by mutableStateOf(false)
-    var contextMenu by mutableStateOf<Pair<Tab, GeckoSession.ContentDelegate.ContextElement>?>(null)
+    var pressed by mutableStateOf<Pressed?>(null)
+    /** a video in full screen (WebView hands Iris its view) */
+    var fullscreen by mutableStateOf<View?>(null)
+    private var fullscreenDone: WebChromeClient.CustomViewCallback? = null
+    /** a page's file field, answered by the activity's picker */
+    var fileRequest by mutableStateOf<Pair<ValueCallback<Array<Uri>>, WebChromeClient.FileChooserParams>?>(null)
+    /** a page asking for the camera or microphone, answered by the activity */
+    var mediaRequest by mutableStateOf<PermissionRequest?>(null)
     private val closed = ArrayDeque<Pair<String, String?>>()
 
+    val containersWork: Boolean = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
+
     init {
-        val saved = Store.tabs
-        saved.forEach { s ->
+        Store.tabs.forEach { s ->
             val c = if (s.container == null || Store.container(s.container) != null) s.container else null
             tabs.add(Tab(c).also { it.pending = s.url; it.title = s.title; it.url = s.url })
         }
@@ -68,8 +100,8 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         val i = after?.let { tabs.indexOf(it) } ?: -1
         if (i >= 0) tabs.add(i + 1, t) else tabs.add(t)
         if (!url.isNullOrEmpty()) {
-            if (select) load(t, url) else t.pending = url
             t.url = url
+            if (select) load(t, url) else t.pending = url
         }
         if (select || current == null) select(t)
         save()
@@ -77,37 +109,28 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun select(t: Tab) {
-        current?.session?.setActive(false)
+        current?.let { it.lastShown = System.currentTimeMillis(); it.web?.onPause() }
         current = t
+        t.lastShown = System.currentTimeMillis()
         t.pending?.let { p -> t.pending = null; load(t, p) }
-        t.session?.setActive(true)
+        t.web?.onResume()
         Store.selected = tabs.indexOf(t)
+        sleepIdle()
     }
 
-    /** Closing a tab never closes Iris: the one next to it takes its place,
+    /** Closing a tab never closes Iris: the one beside it takes its place,
      *  and closing the last one leaves a fresh tab. */
     fun close(t: Tab) {
         val i = tabs.indexOf(t)
         if (i < 0) return
         if (t.url.isNotEmpty() && !t.isPrivate) closed.addLast(t.url to t.container)
         tabs.removeAt(i)
-        t.session?.close()
-        t.session = null
+        destroy(t)
         if (current === t) {
             current = null
             if (tabs.isEmpty()) newTab() else select(tabs[minOf(i, tabs.size - 1)])
         }
-        save()
-    }
-
-    /** back to the new-tab page in this tab */
-    fun home(t: Tab) {
-        t.session?.close()
-        t.session = null
-        t.url = ""
-        t.title = ""
-        t.canBack = false
-        t.canForward = false
+        if (t.isPrivate && tabs.none { it.isPrivate }) clearPrivate()
         save()
     }
 
@@ -125,33 +148,73 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
 
     fun load(t: Tab, url: String) {
         t.url = url
-        session(t).loadUri(url)
+        val w = web(t)
+        val s = t.saved
+        if (s != null && t.pending == null && w.copyBackForwardList().size == 0) {
+            t.saved = null
+            w.restoreState(s)
+            if (w.url != url) w.loadUrl(url)
+        } else {
+            w.loadUrl(url)
+        }
         save()
     }
 
-    /** the tab's session, made on first use (a pop-up's is left for
-     *  GeckoView to open) */
-    fun session(t: Tab, open: Boolean = true): GeckoSession {
-        t.session?.let { return it }
-        val settings = GeckoSessionSettings.Builder()
-            .usePrivateMode(t.isPrivate)
-            .useTrackingProtection(shieldsFor(t.url))
-            .allowJavascript(true)
-        // each container its own world
-        t.container?.takeIf { it != Container.PRIVATE }?.let { settings.contextId(it) }
-        val s = GeckoSession(settings.build())
-        wire(t, s)
-        if (open) s.open(runtime)
-        t.session = s
-        if (t === current) s.setActive(true)
-        return s
+    /** back to the new-tab page in this tab */
+    fun home(t: Tab) {
+        destroy(t)
+        t.url = ""
+        t.title = ""
+        t.canBack = false
+        t.canForward = false
+        save()
     }
 
-    fun shieldsFor(url: String): Boolean {
-        if (!Store.shields) return false
-        val h = Search.host(url) ?: return true
-        return Search.site(h) !in Store.shieldsOff
+    /** Tabs left alone give their memory back: beyond 3 awake background
+     *  tabs, the longest unseen sleep (their history kept). */
+    private fun sleepIdle() {
+        val awake = tabs.filter { it !== current && it.web != null }.sortedByDescending { it.lastShown }
+        awake.drop(3).forEach { t ->
+            val b = Bundle()
+            t.web?.saveState(b)
+            t.saved = b
+            t.pending = t.url.ifEmpty { null }
+            destroy(t)
+        }
     }
+
+    private fun destroy(t: Tab) {
+        t.web?.let { w ->
+            (w.parent as? ViewGroup)?.removeView(w)
+            w.stopLoading()
+            w.destroy()
+        }
+        t.web = null
+    }
+
+    /** the private tabs' profile is wiped when the last one closes */
+    private fun clearPrivate() {
+        if (!containersWork) return
+        runCatching {
+            val p = ProfileStore.getInstance().getProfile(PRIVATE_PROFILE) ?: return
+            p.cookieManager.removeAllCookies(null)
+            p.webStorage.deleteAllData()
+        }
+    }
+
+    fun profileName(t: Tab): String? = when {
+        t.container == null -> null
+        t.isPrivate -> PRIVATE_PROFILE
+        else -> "c-" + t.container
+    }
+
+    /** a container's profile and everything its sites kept go */
+    fun removeContainer(id: String) {
+        tabs.filter { it.container == id }.forEach(::close)
+        if (containersWork) runCatching { ProfileStore.getInstance().deleteProfile("c-$id") }
+    }
+
+    fun shieldsFor(url: String) = Shields.onFor(url)
 
     fun toggleSiteShields(t: Tab) {
         val h = Search.host(t.url) ?: return
@@ -159,71 +222,205 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         val off = Store.shieldsOff.toMutableSet()
         if (!off.add(site)) off.remove(site)
         Store.shieldsOff = off
-        t.session?.settings?.useTrackingProtection = shieldsFor(t.url)
-        t.session?.reload()
+        t.reload()
     }
 
-    private fun wire(t: Tab, s: GeckoSession) {
-        s.navigationDelegate = object : GeckoSession.NavigationDelegate {
-            override fun onLocationChange(session: GeckoSession, url: String?, perms: MutableList<GeckoSession.PermissionDelegate.ContentPermission>, hasUserGesture: Boolean) {
-                t.url = url ?: ""
-                session.settings.useTrackingProtection = shieldsFor(t.url)
-                save()
+    /** the tab's WebView, made on first use */
+    @SuppressLint("SetJavaScriptEnabled", "RequiresFeature")
+    fun web(t: Tab): WebView {
+        t.web?.let { return it }
+        val w = WebView(getApplication())
+        // a container keeps its cookies and site data in a profile of its own
+        // (Android System WebView 123 and newer)
+        profileName(t)?.let { name ->
+            if (containersWork) runCatching {
+                ProfileStore.getInstance().getOrCreateProfile(name)
+                WebViewCompat.setProfile(w, name)
             }
-            override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) { t.canBack = canGoBack }
-            override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) { t.canForward = canGoForward }
+        }
+        w.setBackgroundColor(Color.WHITE)
+        val s = w.settings
+        s.javaScriptEnabled = true
+        s.domStorageEnabled = true
+        s.loadWithOverviewMode = true
+        s.useWideViewPort = true
+        s.setSupportZoom(true)
+        s.builtInZoomControls = true
+        s.displayZoomControls = false
+        s.mediaPlaybackRequiresUserGesture = false
+        s.setSupportMultipleWindows(true)
+        s.javaScriptCanOpenWindowsAutomatically = false
+        s.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        s.allowFileAccess = false
+        s.allowContentAccess = false
+        if (t.isPrivate) s.cacheMode = WebSettings.LOAD_NO_CACHE
+        CookieManager.getInstance().setAcceptThirdPartyCookies(w, false)
+        w.webViewClient = Client(t)
+        w.webChromeClient = Chrome(t)
+        w.setDownloadListener { u, agent, disposition, mime, length ->
+            val cookies = runCatching { CookieManager.getInstance().getCookie(u) }.getOrNull()
+            Downloads.fetch(getApplication(), u, agent, disposition, mime, length, cookies, t.url)
+        }
+        w.setOnLongClickListener {
+            val h = w.hitTestResult
+            when (h.type) {
+                WebView.HitTestResult.SRC_ANCHOR_TYPE -> { pressed = Pressed(t, h.extra, null); true }
+                WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
+                    val msg = w.handler.obtainMessage()
+                    w.requestFocusNodeHref(msg)
+                    pressed = Pressed(t, msg.data.getString("url"), h.extra); true
+                }
+                WebView.HitTestResult.IMAGE_TYPE -> { pressed = Pressed(t, null, h.extra); true }
+                else -> false
+            }
+        }
+        t.web = w
+        if (t !== current) w.onPause()
+        return w
+    }
 
-            // pop-ups: only when you tapped, and to the same site or a
-            // sign-in; anything else is stopped (ads open no tabs)
-            override fun onLoadRequest(session: GeckoSession, request: LoadRequest): GeckoResult<AllowOrDeny>? {
-                if (request.target != GeckoSession.NavigationDelegate.TARGET_WINDOW_NEW) return null
-                val host = Search.host(request.uri) ?: return GeckoResult.deny()
-                val from = Search.host(t.url)?.let { Search.site(it) }
-                val ok = request.hasUserGesture && (Search.site(host) == from || Search.isSignIn(host))
-                if (ok) return null
-                if (request.hasUserGesture) blocked = Blocked(request.uri, t)
-                return GeckoResult.deny()
-            }
+    private inner class Client(val t: Tab) : WebViewClient() {
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            if (request.isForMainFrame) return null
+            return Shields.intercept(t.url, request.url.toString())
+        }
 
-            override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
-                val nt = Tab(t.container)
-                val i = tabs.indexOf(t)
-                tabs.add(if (i >= 0) i + 1 else tabs.size, nt)
-                val ns = session(nt, open = false)
-                nt.url = uri
-                select(nt)
-                return GeckoResult.fromValue(ns)
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            val u = request.url
+            // a pop-up's first address decides whether it may stay
+            t.popupFrom?.let { from ->
+                t.popupFrom = null
+                if (!popupAllowed(from, u.toString())) {
+                    view.post { close(t); blocked = Blocked(u.toString(), from) }
+                    return true
+                }
             }
+            val scheme = u.scheme?.lowercase()
+            if (scheme == "http" || scheme == "https" || scheme == "about" || scheme == "data" || scheme == "blob") return false
+            // intent:, mailto:, tel: and other apps, only on a tap
+            if (request.hasGesture()) runCatching {
+                val i = if (scheme == "intent") android.content.Intent.parseUri(u.toString(), android.content.Intent.URI_INTENT_SCHEME)
+                else android.content.Intent(android.content.Intent.ACTION_VIEW, u)
+                i.addCategory(android.content.Intent.CATEGORY_BROWSABLE)
+                i.component = null
+                i.selector = null
+                i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                getApplication<Application>().startActivity(i)
+            }
+            return true
         }
-        s.progressDelegate = object : GeckoSession.ProgressDelegate {
-            override fun onPageStart(session: GeckoSession, url: String) { t.loading = true; t.progress = 5 }
-            override fun onPageStop(session: GeckoSession, success: Boolean) {
-                t.loading = false
-                t.progress = 100
-                if (success && !t.isPrivate) Store.visit(t.url, t.title)
-            }
-            override fun onProgressChange(session: GeckoSession, progress: Int) { t.progress = progress }
+
+        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+            t.url = url
+            t.loading = true
+            t.progress = 5
+            t.canBack = view.canGoBack()
+            t.canForward = view.canGoForward()
         }
-        s.contentDelegate = object : GeckoSession.ContentDelegate {
-            override fun onTitleChange(session: GeckoSession, title: String?) { t.title = title ?: "" }
-            override fun onCloseRequest(session: GeckoSession) { close(t) }
-            override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) { fullscreen = fullScreen }
-            override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
-                Downloads.save(getApplication<Application>(), response, t.isPrivate)
-            }
-            override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, element: GeckoSession.ContentDelegate.ContextElement) {
-                contextMenu = t to element
-            }
-            override fun onCrash(session: GeckoSession) {
-                t.session = null
-                if (t === current) t.url.takeIf { it.isNotEmpty() }?.let { load(t, it) }
-            }
-            override fun onKill(session: GeckoSession) {
-                t.session = null
-                t.pending = t.url.ifEmpty { null }
-            }
+
+        override fun onPageFinished(view: WebView, url: String) {
+            t.loading = false
+            t.progress = 100
+            t.url = url
+            t.canBack = view.canGoBack()
+            t.canForward = view.canGoForward()
+            if (!t.isPrivate) Store.visit(url, t.title)
+            save()
         }
-        s.promptDelegate = Prompts.delegate(this)
+
+        override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
+            t.url = url
+            t.canBack = view.canGoBack()
+            t.canForward = view.canGoForward()
+        }
+
+        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+            // the page's process ended (memory or a crash): the tab gets a
+            // fresh WebView and opens its page again when shown
+            t.web = null
+            (view.parent as? ViewGroup)?.removeView(view)
+            view.destroy()
+            t.pending = t.url.ifEmpty { null }
+            if (t === current) t.pending?.let { p -> t.pending = null; load(t, p) }
+            return true
+        }
+    }
+
+    private inner class Chrome(val t: Tab) : WebChromeClient() {
+        override fun onProgressChanged(view: WebView, newProgress: Int) {
+            t.progress = newProgress
+            t.loading = newProgress < 100
+        }
+
+        override fun onReceivedTitle(view: WebView, title: String?) { t.title = title ?: "" }
+
+        // pop-ups: only when you tapped; a link opens as a tab, a script's
+        // window only to the same site or a sign-in (ads open no tabs)
+        override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
+            if (!isUserGesture) return false
+            val h = view.hitTestResult
+            val link = if (h.type == WebView.HitTestResult.SRC_ANCHOR_TYPE || h.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) h.extra else null
+            if (link != null && link.startsWith("http")) {
+                if (!popupAllowed(t, link) && Search.host(link)?.let(Shields::isBlocked) == true) {
+                    blocked = Blocked(link, t); return false
+                }
+                newTab(link, t.container, after = t)
+                return false
+            }
+            // a script's window: it becomes a tab whose first address is checked
+            val nt = Tab(t.container)
+            nt.popupFrom = t
+            tabs.add(tabs.indexOf(t) + 1, nt)
+            val w = web(nt)
+            (resultMsg.obj as WebView.WebViewTransport).webView = w
+            resultMsg.sendToTarget()
+            select(nt)
+            return true
+        }
+
+        override fun onCloseWindow(window: WebView) {
+            tabs.firstOrNull { it.web === window }?.let(::close)
+        }
+
+        override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+            fullscreen = view
+            fullscreenDone = callback
+        }
+
+        override fun onHideCustomView() {
+            fullscreen = null
+            fullscreenDone = null
+        }
+
+        override fun onShowFileChooser(webView: WebView, filePathCallback: ValueCallback<Array<Uri>>, fileChooserParams: FileChooserParams): Boolean {
+            fileRequest?.first?.onReceiveValue(null)
+            fileRequest = filePathCallback to fileChooserParams
+            return true
+        }
+
+        override fun onPermissionRequest(request: PermissionRequest) {
+            // calls (WebRTC): the camera and microphone, which Android lets
+            // Iris use once you allow it (the activity asks); protected
+            // video (DRM) for streaming sites
+            val ok = request.resources.filter {
+                it == PermissionRequest.RESOURCE_AUDIO_CAPTURE || it == PermissionRequest.RESOURCE_VIDEO_CAPTURE ||
+                    it == PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID
+            }
+            if (ok.isEmpty()) { request.deny() } else { mediaRequest = request }
+        }
+    }
+
+    fun popupAllowed(from: Tab, url: String): Boolean {
+        val host = Search.host(url) ?: return false
+        if (Shields.onFor(from.url) && Shields.isBlocked(host)) return false
+        val site = Search.host(from.url)?.let { Search.site(it) }
+        return Search.site(host) == site || Search.isSignIn(host)
+    }
+
+    fun exitFullscreen() {
+        fullscreenDone?.onCustomViewHidden()
+        fullscreen = null
+        fullscreenDone = null
     }
 
     fun save() {
@@ -234,6 +431,10 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         save()
-        tabs.forEach { it.session?.close() }
+        tabs.forEach(::destroy)
+    }
+
+    companion object {
+        const val PRIVATE_PROFILE = "private"
     }
 }

@@ -1,27 +1,24 @@
-Iris 2.0.0 is a new Iris, made again from the start.
+Iris 2.0.1: lighter, history, container icons, calls, and Iris for Android on System WebView.
 
-**Linux: Swift, libadwaita and WebKitGTK, in Liquid Glass**
-- Written in Swift with swift-adwaita; pages by WebKitGTK; installed as a Flatpak.
-- Real Liquid Glass, not frosted: the glass bends what lies behind it (pulled in at the rim, with a touch of colour splitting), with a rim of light and a highlight that follows the pointer. Drawn by GTK's own renderer, sharp at every display scale (niri at 1.25 included).
-- A translucent window: on compositors that offer background blur (niri 26.04 and newer, through ext-background-effect), the desktop shows through, blurred.
-- Springs everywhere: tabs slide into place, the selected tab's glass slides from tab to tab and stretches on the way, menus open and close as glass.
-- Containers are worlds apart: each has its own cookies, storage, cache and sign-ins on disk. Private tabs leave nothing.
-- Iris Shields block about 100,000 ad and tracker domains inside WebKit; per site or everywhere.
-- Ads open no tabs: a pop-up needs your click, and goes only to the same site or a sign-in page. Anything else is stopped, with an Open button if you wanted it.
-- Iris's own glass menu on a right click (links, images, video, selections, text fields, the page), a downloads panel, find in page.
-- Updates: Iris tells you when a new version is out; Flatpak installs it.
+**Linux**
+- Lighter on memory:
+  - every tab shares one WebKit web context (one pool of web processes and caches), and containers keep their own cookies and storage;
+  - each web process has a memory limit and gives memory back early;
+  - background tabs sleep after 10 minutes, no more than 3 stay awake, and a tab playing sound never sleeps.
+- Lighter on the GPU: the glass chrome is kept as one picture while nothing in it changes, so a playing video redraws only itself. In a test with software rendering, an animated page drew 2.1 times the frames.
+- Light video on YouTube (on by default): YouTube sends H.264 instead of VP9 or AV1, a fraction of the processor time. It's a switch in the menu.
+- Video in blocks: decoding on the graphics chip is now off by default, because some drivers broke the picture into blocks. A menu switch turns it back on from the next start.
+- History: in the menu and with Ctrl+H, by day, and searchable.
+- Container icons: twelve to choose from when making a container. They show on tabs, in menus and in the address bar.
+- Calls: WebRTC with the camera, microphone and screen sharing (the Flatpak can now reach cameras and PipeWire).
 
-**Android: Kotlin, Jetpack Compose and GeckoView**
-- Firefox's engine (GeckoView) with Material 3; containers through GeckoView's contextId; one engine runtime for all tabs.
-- Shields: Firefox's strict tracking protection, cookie banners refused, and uBlock Origin built in.
-- A downloads manager, pull down to reload, and Iris updates itself from GitHub.
-- Closing the tab you are on no longer closes Iris. Ads open no tabs.
-- A cleaner bar: no tab counter, one "+" (in the tab strip), no placeholder text, no shields label, no AI star; downloads where the menu was.
-
-**Also**
-- A new icon: Iris, goddess of the rainbow, in liquid glass.
-- Windows, Nix, the Snap and the container image are gone; Linux ships as a Flatpak.
+**Android**
+- Iris for Android now runs on Android System WebView: a small APK, the phone's own up-to-date Chromium, and good battery life.
+- Containers through WebView profiles (each with its own cookies and storage).
+- Shields stop requests to about 100,000 ad and tracker domains.
+- Ads open no tabs.
+- A downloads manager, pull to reload, calls, sleeping tabs and auto-update.
 
 **Install**
-- Linux: `flatpak install --user Iris-x86_64.flatpak` (needs the GNOME 50 runtime from Flathub).
-- Android: `Iris-android.apk`. Earlier versions were signed with a different key, so Android may ask you to uninstall the old Iris first; from 2.0.0 on, updates install over it.
+- Linux: `flatpak install --user Iris-x86_64.flatpak`
+- Android: `Iris-android.apk` (Android 10 and newer). Updates install over it when every release is signed with the same key.

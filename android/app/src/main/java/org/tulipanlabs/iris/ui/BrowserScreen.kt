@@ -90,6 +90,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import kotlinx.coroutines.launch
 import org.tulipanlabs.iris.BrowserModel
 import org.tulipanlabs.iris.Container
@@ -101,7 +102,7 @@ import org.tulipanlabs.iris.Tab
 enum class Sheet { NONE, SHIELDS, CONTAINERS, DOWNLOADS }
 
 @Composable
-fun BrowserScreen(model: BrowserModel, pickFiles: (org.tulipanlabs.iris.Prompt) -> Unit) {
+fun BrowserScreen(model: BrowserModel) {
     var sheet by remember { mutableStateOf(Sheet.NONE) }
     val snack = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -116,7 +117,7 @@ fun BrowserScreen(model: BrowserModel, pickFiles: (org.tulipanlabs.iris.Prompt) 
 
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFFEDE8FF), Color(0xFFF4F7FF), Color(0xFFF7F6FB))))) {
         Column(Modifier.fillMaxSize().imePadding()) {
-            AnimatedVisibility(!model.fullscreen, enter = slideInVertically() + fadeIn(), exit = slideOutVertically() + fadeOut()) {
+            AnimatedVisibility(model.fullscreen == null, enter = slideInVertically() + fadeIn(), exit = slideOutVertically() + fadeOut()) {
                 Column(Modifier.statusBarsPadding()) {
                     TabStrip(model, onContainers = { sheet = Sheet.CONTAINERS })
                     AddressRow(model)
@@ -126,7 +127,7 @@ fun BrowserScreen(model: BrowserModel, pickFiles: (org.tulipanlabs.iris.Prompt) 
                 Page(model)
                 SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(12.dp))
             }
-            AnimatedVisibility(!model.fullscreen, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
+            AnimatedVisibility(model.fullscreen == null, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
                 BottomBar(model, onShields = { sheet = Sheet.SHIELDS }, onDownloads = { sheet = Sheet.DOWNLOADS }, onContainers = { sheet = Sheet.CONTAINERS })
             }
         }
@@ -138,8 +139,13 @@ fun BrowserScreen(model: BrowserModel, pickFiles: (org.tulipanlabs.iris.Prompt) 
         Sheet.DOWNLOADS -> DownloadsScreen { sheet = Sheet.NONE }
         Sheet.NONE -> {}
     }
-    model.contextMenu?.let { (tab, el) -> ContextMenuSheet(model, tab, el) { model.contextMenu = null } }
-    model.prompt?.let { p -> PromptDialog(p, pickFiles) { model.prompt = null } }
+    model.pressed?.let { p -> ContextMenuSheet(model, p) { model.pressed = null } }
+    // a video in full screen, over everything
+    model.fullscreen?.let { v ->
+        AndroidView(factory = { ctx -> android.widget.FrameLayout(ctx).apply { setBackgroundColor(android.graphics.Color.BLACK) } },
+            update = { f -> if (v.parent !== f) { (v.parent as? android.view.ViewGroup)?.removeView(v); f.removeAllViews(); f.addView(v) } },
+            modifier = Modifier.fillMaxSize())
+    }
     UpdateDialog()
 }
 
@@ -181,7 +187,7 @@ private fun TabPill(t: Tab, selected: Boolean, onSelect: () -> Unit, onClose: ()
             .padding(start = 12.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (c != null) Box(Modifier.size(8.dp).clip(CircleShape).background(Color(c.color)))
+        if (c != null) Icon(containerIcon(c.icon), c.name, Modifier.size(15.dp), tint = Color(c.color))
         if (c != null) Spacer(Modifier.width(6.dp))
         Text(
             t.title.ifEmpty { Search.display(t.url).ifEmpty { "New Tab" } },
@@ -214,8 +220,12 @@ private fun AddressRow(model: BrowserModel) {
             Spacer(Modifier.width(16.dp))
             val c = Store.container(t?.container)
             if (c != null && !editing) {
-                Text(c.name, Modifier.clip(RoundedCornerShape(10.dp)).background(Color(c.color)).padding(horizontal = 8.dp, vertical = 2.dp),
-                    color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Row(Modifier.clip(RoundedCornerShape(10.dp)).background(Color(c.color)).padding(horizontal = 8.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Icon(containerIcon(c.icon), null, Modifier.size(13.dp), tint = Color.White)
+                    Spacer(Modifier.width(4.dp))
+                    Text(c.name, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                }
                 Spacer(Modifier.width(8.dp))
             } else if (!editing && (t?.url ?: "").startsWith("https://")) {
                 Icon(Icons.Filled.Lock, "Secure", Modifier.size(14.dp), tint = Ink.copy(alpha = 0.5f))
@@ -240,7 +250,7 @@ private fun AddressRow(model: BrowserModel) {
             if (editing && value.text.isNotEmpty()) {
                 IconButton(onClick = { value = TextFieldValue("") }) { Icon(Icons.Filled.Close, "Clear", tint = Ink) }
             } else if (t != null && t.url.isNotEmpty()) {
-                IconButton(onClick = { if (t.loading) t.session?.stop() else t.session?.reload() }) {
+                IconButton(onClick = { if (t.loading) t.stop() else t.reload() }) {
                     Icon(if (t.loading) Icons.Filled.Close else Icons.Filled.Refresh, if (t.loading) "Stop" else "Reload", tint = Ink)
                 }
             }
@@ -258,33 +268,31 @@ private fun AddressRow(model: BrowserModel) {
 @Composable
 private fun Page(model: BrowserModel) {
     val t = model.current
-    var pull by remember { mutableFloatStateOf(0f) }
-    val shown by animateFloatAsState(pull, spring(stiffness = Spring.StiffnessMedium), label = "pull")
-    Box(Modifier.fillMaxSize().padding(horizontal = if (model.fullscreen) 0.dp else 6.dp)
-        .clip(RoundedCornerShape(if (model.fullscreen) 0.dp else 18.dp))) {
-        if (t?.session == null) {
+    Box(Modifier.fillMaxSize().padding(horizontal = 6.dp).clip(RoundedCornerShape(18.dp))) {
+        val w = t?.web
+        if (w == null) {
             NewTabPage(model)
         } else {
             AndroidView(
                 factory = { ctx ->
-                    GeckoHost(ctx, onPull = { pull = it }, onRelease = { go ->
-                        pull = 0f
-                        if (go) model.current?.session?.reload()
-                    })
+                    SwipeRefreshLayout(ctx).apply {
+                        setColorSchemeColors(0xFF5B3CC4.toInt())
+                        setOnRefreshListener {
+                            model.current?.reload()
+                            postDelayed({ isRefreshing = false }, 900)
+                        }
+                    }
                 },
-                update = { host -> host.show(t.session) },
+                // the shown tab's WebView, moved into the pull-to-reload frame
+                update = { frame ->
+                    if (w.parent !== frame) {
+                        (w.parent as? android.view.ViewGroup)?.removeView(w)
+                        frame.removeAllViews()
+                        frame.addView(w, android.view.ViewGroup.LayoutParams(-1, -1))
+                    }
+                },
                 modifier = Modifier.fillMaxSize(),
             )
-        }
-        if (shown > 0.02f) {
-            Box(
-                Modifier.align(Alignment.TopCenter).offset(y = (shown * 72).dp - 20.dp).size(40.dp).glass(CircleShape, elevation = 4.dp)
-                    .alpha(shown.coerceAtMost(1f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (shown >= 1f) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                else Icon(Icons.Filled.Refresh, "Pull to reload", Modifier.rotate(shown * 270f), tint = Ink)
-            }
         }
     }
 }
@@ -298,8 +306,8 @@ private fun BottomBar(model: BrowserModel, onShields: () -> Unit, onDownloads: (
             .height(52.dp).glass(RoundedCornerShape(26.dp)),
         horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = { t?.session?.goBack() }, enabled = t?.canBack == true) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-        IconButton(onClick = { t?.session?.goForward() }, enabled = t?.canForward == true) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward") }
+        IconButton(onClick = { t?.back() }, enabled = t?.canBack == true) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+        IconButton(onClick = { t?.forward() }, enabled = t?.canForward == true) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Forward") }
         IconButton(onClick = { t?.let { model.home(it) } }) { Icon(Icons.Filled.Home, "Home") }
         val on = t?.let { model.shieldsFor(it.url) } ?: Store.shields
         IconButton(onClick = onShields) { Icon(if (on) Icons.Filled.Shield else Icons.Outlined.Shield, "Shields", tint = if (on) MaterialTheme.colorScheme.primary else Ink) }

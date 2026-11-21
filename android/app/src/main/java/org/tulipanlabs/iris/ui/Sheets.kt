@@ -75,9 +75,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
-import org.mozilla.geckoview.GeckoSession
-import org.mozilla.geckoview.GeckoWebExecutor
-import org.mozilla.geckoview.WebRequest
+import org.tulipanlabs.iris.Pressed
 import org.tulipanlabs.iris.BrowserModel
 import org.tulipanlabs.iris.Container
 import org.tulipanlabs.iris.Download
@@ -106,7 +104,7 @@ fun ShieldsSheet(model: BrowserModel, onClose: () -> Unit) {
     val site = t?.url?.let { Search.host(it) }?.let { Search.site(it) }
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(), containerColor = Color(0xFFF8F7FC)) {
         SheetTitle("Shields")
-        Text("Ads, trackers, fingerprinting, cookie banners and the pop-ups ads open are stopped inside the engine. Each site's cookies stay its own.",
+        Text("Requests to about 100,000 ad and tracker domains are stopped before they leave the phone, ads open no pop-ups, and no site gets cookies from another.",
             Modifier.padding(horizontal = 24.dp), fontSize = 14.sp, color = Ink.copy(alpha = 0.7f))
         Spacer(Modifier.height(8.dp))
         if (site != null && everywhere) {
@@ -117,16 +115,8 @@ fun ShieldsSheet(model: BrowserModel, onClose: () -> Unit) {
         }
         ListItem(
             headlineContent = { Text("Everywhere") },
-            trailingContent = { Switch(everywhere, { everywhere = it; IrisApp.instance.applyShields(it); t?.session?.reload() }) }, colors = clearItem,
+            trailingContent = { Switch(everywhere, { everywhere = it; Store.shields = it; t?.reload() }) }, colors = clearItem,
         )
-        val options = IrisApp.instance.ublock?.metaData?.optionsPageUrl
-        if (options != null) {
-            ListItem(
-                headlineContent = { Text("Filter lists and rules") }, supportingContent = { Text("uBlock Origin") },
-                leadingContent = { Icon(Icons.Filled.Tune, null) }, colors = clearItem,
-                modifier = Modifier.clickable { onClose(); model.newTab(options) },
-            )
-        }
         Spacer(Modifier.navigationBarsPadding().height(16.dp))
     }
 }
@@ -148,7 +138,7 @@ fun ContainersSheet(model: BrowserModel, onClose: () -> Unit) {
             list.forEach { c ->
                 ListItem(
                     headlineContent = { Text(c.name) },
-                    leadingContent = { Box(Modifier.size(14.dp).clip(CircleShape).background(Color(c.color))) },
+                    leadingContent = { Icon(containerIcon(c.icon), null, tint = Color(c.color)) },
                     trailingContent = { IconButton(onClick = { removing = c }) { Icon(Icons.Filled.Delete, "Remove ${c.name}") } },
                     colors = clearItem,
                     modifier = Modifier.clickable { onClose(); model.newTab(container = c.id) },
@@ -160,7 +150,7 @@ fun ContainersSheet(model: BrowserModel, onClose: () -> Unit) {
                 HorizontalDivider(Modifier.padding(vertical = 6.dp))
                 Text("Open this page in", Modifier.padding(horizontal = 24.dp, vertical = 4.dp), fontSize = 13.sp, color = Ink.copy(alpha = 0.6f))
                 list.filter { it.id != t.container }.forEach { c ->
-                    ListItem(headlineContent = { Text(c.name) }, leadingContent = { Box(Modifier.size(14.dp).clip(CircleShape).background(Color(c.color))) },
+                    ListItem(headlineContent = { Text(c.name) }, leadingContent = { Icon(containerIcon(c.icon), null, tint = Color(c.color)) },
                         colors = clearItem, modifier = Modifier.clickable { onClose(); model.newTab(t.url, c.id, after = t) })
                 }
             }
@@ -172,16 +162,32 @@ fun ContainersSheet(model: BrowserModel, onClose: () -> Unit) {
     }
     if (naming) {
         var name by remember { mutableStateOf("") }
+        var icon by remember { mutableStateOf("star") }
         AlertDialog(
             onDismissRequest = { naming = false },
             title = { Text("New container") },
-            text = { OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Name") }) },
+            text = {
+                Column {
+                    OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Name") })
+                    Spacer(Modifier.height(12.dp))
+                    LazyVerticalGrid(GridCells.Fixed(6), Modifier.height(96.dp)) {
+                        items(Container.icons) { n ->
+                            Box(
+                                Modifier.padding(3.dp).size(38.dp).clip(RoundedCornerShape(10.dp))
+                                    .background(if (n == icon) IrisViolet.copy(alpha = 0.16f) else Color.Transparent)
+                                    .clickable { icon = n },
+                                contentAlignment = Alignment.Center,
+                            ) { Icon(containerIcon(n), n, tint = if (n == icon) IrisViolet else Ink) }
+                        }
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
                     if (name.isNotBlank()) {
                         val used = list.map { it.color }.toSet()
                         val color = Container.palette.firstOrNull { it !in used } ?: Container.palette[list.size % Container.palette.size]
-                        list = list + Container(UUID.randomUUID().toString(), name.trim(), color)
+                        list = list + Container(UUID.randomUUID().toString(), name.trim(), color, icon)
                         Store.containers = list
                     }
                     naming = false
@@ -197,8 +203,7 @@ fun ContainersSheet(model: BrowserModel, onClose: () -> Unit) {
             text = { Text("Its tabs close, and its cookies, sign-ins and site data are deleted.") },
             confirmButton = {
                 TextButton(onClick = {
-                    model.tabs.filter { it.container == c.id }.forEach(model::close)
-                    IrisApp.instance.runtime.storageController.clearDataForSessionContext(c.id)
+                    model.removeContainer(c.id)
                     list = list - c
                     Store.containers = list
                     removing = null
@@ -261,11 +266,12 @@ private fun DownloadRow(ctx: Context, d: Download) {
     }
 }
 
-/** what a long press on a link, an image or a video offers */
+/** what a long press on a link or an image offers */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ContextMenuSheet(model: BrowserModel, tab: Tab, el: GeckoSession.ContentDelegate.ContextElement, onClose: () -> Unit) {
+fun ContextMenuSheet(model: BrowserModel, p: Pressed, onClose: () -> Unit) {
     val ctx = LocalContext.current
+    val tab = p.tab
     fun copy(s: String) {
         (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("link", s))
     }
@@ -274,12 +280,13 @@ fun ContextMenuSheet(model: BrowserModel, tab: Tab, el: GeckoSession.ContentDele
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
     fun download(u: String) {
-        GeckoWebExecutor(IrisApp.instance.runtime).fetch(WebRequest(u)).accept({ r -> r?.let { Downloads.save(ctx, it, tab.isPrivate) } }, { })
+        val cookies = runCatching { android.webkit.CookieManager.getInstance().getCookie(u) }.getOrNull()
+        Downloads.fetch(ctx, u, tab.web?.settings?.userAgentString, null, null, -1, cookies, tab.url)
     }
-    val link = el.linkUri
-    val src = el.srcUri
+    val link = p.link?.takeIf { it.startsWith("http") }
+    val src = p.image?.takeIf { it.startsWith("http") }
     ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(), containerColor = Color(0xFFF8F7FC)) {
-        Text(link ?: src ?: el.title ?: "", Modifier.padding(horizontal = 24.dp, vertical = 4.dp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+        Text(link ?: src ?: "", Modifier.padding(horizontal = 24.dp, vertical = 4.dp), maxLines = 2, overflow = TextOverflow.Ellipsis,
             fontSize = 13.sp, color = Ink.copy(alpha = 0.6f))
         Column(Modifier.verticalScroll(rememberScrollState())) {
             @Composable
@@ -296,14 +303,9 @@ fun ContextMenuSheet(model: BrowserModel, tab: Tab, el: GeckoSession.ContentDele
                 item(Icons.Filled.Download, "Download link") { download(link) }
             }
             if (src != null) {
-                val image = el.type == GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE
-                item(Icons.Filled.Image, if (image) "Open image in new tab" else "Open video in new tab") { model.newTab(src, tab.container, after = tab) }
-                item(Icons.Filled.ContentCopy, if (image) "Copy image address" else "Copy video address") { copy(src) }
-                item(Icons.Filled.Download, if (image) "Save image" else "Save video") { download(src) }
-            }
-            val text = el.textContent
-            if (link == null && src == null && !text.isNullOrBlank()) {
-                item(Icons.Filled.Search, "Ask Google AI Mode") { model.newTab(Search.aiUrl(text), tab.container, after = tab) }
+                item(Icons.Filled.Image, "Open image in new tab") { model.newTab(src, tab.container, after = tab) }
+                item(Icons.Filled.ContentCopy, "Copy image address") { copy(src) }
+                item(Icons.Filled.Download, "Save image") { download(src) }
             }
             Spacer(Modifier.navigationBarsPadding().height(12.dp))
         }

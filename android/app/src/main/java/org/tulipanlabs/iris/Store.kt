@@ -7,10 +7,12 @@ import org.json.JSONObject
 import java.util.UUID
 
 /** a container: a world of its own (cookies, storage, cache, sign-ins) */
-data class Container(val id: String, val name: String, val color: Long) {
+data class Container(val id: String, val name: String, val color: Long, val icon: String = "star") {
     companion object {
         const val PRIVATE = "private"
         val palette = listOf(0xFF0A84FF, 0xFFFF9F0A, 0xFF30D158, 0xFFFF375F, 0xFFBF5AF2, 0xFF64D2FF, 0xFFFFD60A, 0xFFAC8E68)
+        /** the icons a container can wear (the same twelve as on Linux) */
+        val icons = listOf("person", "briefcase", "cart", "bank", "home", "heart", "game", "book", "plane", "code", "music", "star")
     }
 }
 
@@ -25,8 +27,8 @@ object Store {
     fun init(c: Context) {
         p = c.getSharedPreferences("iris", Context.MODE_PRIVATE)
         if (!p.contains("containers")) {
-            containers = listOf("Personal", "Work", "Shopping", "Banking").mapIndexed { i, n ->
-                Container(UUID.randomUUID().toString(), n, Container.palette[i])
+            containers = listOf("Personal" to "person", "Work" to "briefcase", "Shopping" to "cart", "Banking" to "bank").mapIndexed { i, (n, icon) ->
+                Container(UUID.randomUUID().toString(), n, Container.palette[i], icon)
             }
         }
     }
@@ -47,17 +49,17 @@ object Store {
     var containers: List<Container>
         get() = runCatching {
             val a = JSONArray(p.getString("containers", "[]"))
-            (0 until a.length()).map { a.getJSONObject(it).let { o -> Container(o.getString("id"), o.getString("name"), o.getLong("color")) } }
+            (0 until a.length()).map { a.getJSONObject(it).let { o -> Container(o.getString("id"), o.getString("name"), o.getLong("color"), o.optString("icon", "star")) } }
         }.getOrDefault(emptyList())
         set(v) {
             val a = JSONArray()
-            v.forEach { a.put(JSONObject().put("id", it.id).put("name", it.name).put("color", it.color)) }
+            v.forEach { a.put(JSONObject().put("id", it.id).put("name", it.name).put("color", it.color).put("icon", it.icon)) }
             p.edit().putString("containers", a.toString()).apply()
         }
 
     fun container(id: String?): Container? = when (id) {
         null -> null
-        Container.PRIVATE -> Container(Container.PRIVATE, "Private", 0xFF5E5CE6)
+        Container.PRIVATE -> Container(Container.PRIVATE, "Private", 0xFF5E5CE6, "private")
         else -> containers.firstOrNull { it.id == id }
     }
 

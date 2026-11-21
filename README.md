@@ -9,7 +9,7 @@
 <p align="center">
   <b>A browser made of glass.</b><br>
   Linux: Swift, libadwaita and WebKitGTK, in real Liquid Glass.<br>
-  Android: Kotlin, Jetpack Compose and GeckoView. Every search asks Google AI Mode.
+  Android: Kotlin, Jetpack Compose and Android System WebView. Every search asks Google AI Mode.
 </p>
 
 <p align="center">
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="#whats-new-in-200">New</a> ·
+  <a href="#whats-new-in-201">New</a> ·
   <a href="#what-it-does">Features</a> ·
   <a href="#install">Install</a> ·
   <a href="#shortcuts">Shortcuts</a> ·
@@ -35,7 +35,22 @@
 
 ---
 
-## What's new in 2.0.0
+## What's new in 2.0.1
+
+- **Lighter on Linux.**
+  - All tabs share one WebKit web context: one pool of web processes and caches. Containers keep their own cookies and storage.
+  - Each web process has a memory limit and gives memory back early.
+  - Sleeping tabs: a background tab sleeps after 10 minutes, and no more than 3 stay awake (never one playing sound).
+- **Less work for the GPU.** The glass chrome is kept as one picture while nothing in it changes, so a playing video redraws only itself.
+- **Light video.** YouTube sends H.264 instead of VP9 or AV1, a fraction of the processor time. It's a switch in the menu.
+- **Clean video.** Decoding on the graphics chip is off by default, because some drivers broke the picture into blocks. A menu switch turns it on.
+- **History** (Ctrl+H), **container icons**, and **calls** (WebRTC with camera, microphone and screen sharing).
+- **Android on System WebView.** Kotlin and Compose on the phone's own Chromium:
+  - containers through WebView profiles;
+  - Shields that stop ad and tracker domains;
+  - pop-up rules, a downloads manager, pull to reload, and auto-update.
+
+## What was new in 2.0.0
 
 Iris is made again from the start.
 
@@ -47,11 +62,7 @@ Iris is made again from the start.
 - **Springs.** Tabs slide into place. The selected tab's glass slides from tab to tab and stretches on the way. Menus open and close as glass.
 - **Containers, worlds apart.** On both platforms, each container keeps its own cookies, storage, cache and sign-ins.
 - **Ads open no tabs.** A pop-up needs your click, and goes only to the same site or a sign-in page. Anything else is stopped, with an Open button if you meant it.
-- **Android in Kotlin with Jetpack Compose and GeckoView.** It has:
-  - Firefox's engine with uBlock Origin built in;
-  - a downloads manager;
-  - pull down to reload;
-  - updates from GitHub, installed over itself.
+- **Android in Kotlin with Jetpack Compose** (its engine since 2.0.1 is Android System WebView).
 - **A new icon.** The goddess in liquid glass, rising out of her rainbow.
 - **Fewer packages.** Windows, Nix, the Snap and the container image are gone. Linux ships as a Flatpak.
 
@@ -95,16 +106,15 @@ Iris is made again from the start.
 
 ### Android
 
-- **Engine.** GeckoView (Firefox's engine) with Jetpack Compose and Material 3. One engine runtime is shared by all tabs, and the tabs live in a ViewModel, so they survive rotation.
-- **Containers.** Through GeckoView's `contextId`, each container keeps its own cookies, cache, localStorage and IndexedDB.
-- **Shields.**
-  - Firefox's strict tracking protection.
-  - Total Cookie Protection.
-  - Cookie banners refused.
-  - uBlock Origin built in, with its filter lists one tap away.
-- **Tabs.** A strip of tabs on top with one "+" (long-press it to pick a container). The bottom bar has back, forward, home, Shields, containers and downloads.
+- **Engine.** Android System WebView (Chromium, kept up to date by the phone) with Jetpack Compose and Material 3. The tabs and their WebViews live in a ViewModel, so they survive rotation.
+- **Containers.** Through WebView profiles (WebView 123 and newer), each container keeps its own cookies, cache, localStorage and IndexedDB.
+- **Shields.** Requests to about 100,000 ad and tracker domains are stopped before they leave the phone, and third-party cookies are refused.
+- **Tabs.**
+  - A strip of tabs on top with one "+" (long-press it to pick a container).
+  - The bottom bar has back, forward, home, Shields, containers and downloads.
+  - Background tabs beyond 3 sleep and keep their history.
 - **Downloads manager.** Files go to the phone's Downloads folder (no storage permission needed), with progress, open and delete.
-- **Pull to reload** at the top of a page.
+- **Pull to reload** at the top of a page. **Calls** in the browser, with the camera and microphone asked once.
 - **Auto-update.** Iris checks GitHub once a day, downloads the new APK and has Android install it over itself.
 - **Closing tabs.** Closing the tab you are on opens the one beside it; closing the last tab leaves a fresh one.
 
@@ -156,8 +166,6 @@ Or the Flatpak, as CI builds it:
     cd android
     ./gradlew assembleRelease
 
-The build fetches uBlock Origin from its GitHub release and bundles it.
-
 To let updates install over Iris, sign every release with the same key. Put the keystore in the repository's secrets (`IRIS_KEYSTORE` as base64, `IRIS_KEYSTORE_PASSWORD`, `IRIS_KEY_ALIAS`); `.github/workflows/android.yml` uses them.
 
 ## How it is made
@@ -173,17 +181,18 @@ linux/                      Iris for Linux (Swift package)
     Browser.swift           a window: tabs, address, toolbar, pop-up rules, layout
     Tab.swift               a WebKit web view and its signals
     Containers.swift        one WebKit network session per container
+    Engine.swift            the shared web context, memory limits, light video
     Shields.swift           the block list as WebKit content rules
     Overlays.swift          menus, suggestions, find, downloads, the right-click menu
     NewTab.swift, Keys.swift, Downloads.swift, History.swift, Updates.swift, Search.swift
   Sources/CBlur/            ext-background-effect-v1: blur behind the window
-android/                    Iris for Android (Kotlin, Compose, GeckoView)
+android/                    Iris for Android (Kotlin, Compose, System WebView)
   app/src/main/java/org/tulipanlabs/iris/
-    IrisApp.kt              the one GeckoRuntime, Shields, uBlock Origin
-    Browser.kt              tabs and their GeckoSessions in a ViewModel, pop-up rules
-    ui/                     Compose: tab strip, address, page (GeckoView in AndroidView),
-                            pull to reload, sheets, downloads manager, prompts
-    Downloads.kt, Updater.kt, Store.kt, Search.kt, Prompts.kt
+    Browser.kt              tabs and their WebViews in a ViewModel, profiles, pop-up rules
+    Shields.kt              ad and tracker domains stopped on the way out
+    ui/                     Compose: tab strip, address, page (WebView in AndroidView),
+                            pull to reload, sheets, downloads manager
+    Downloads.kt, Updater.kt, Store.kt, Search.kt
 packaging/                  the Flatpak manifest, desktop file and metainfo
 assets/icon/                the icon (SVG) and its renders
 ```
