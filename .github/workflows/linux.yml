@@ -34,7 +34,7 @@ jobs:
       - name: WPE WebKit, GTK and libadwaita development files
         run: |
           pacman -Syu --noconfirm --needed wpewebkit libadwaita gtk4 libsoup3 wayland libdrm pkgconf \
-            unzip python sway grim cantarell-fonts mesa > /dev/null
+            unzip diffutils python sway grim cantarell-fonts mesa > /dev/null
           pkg-config --modversion wpe-webkit-2.0 wpe-platform-2.0 gtk4 libadwaita-1
       - name: Zig 0.15.2
         run: |

@@ -75,7 +75,7 @@ import java.io.File
 class SandboxActivity : ComponentActivity() {
     private var web: WebView? = null
     private var url by mutableStateOf("")
-    private var progress by mutableIntStateOf(0)
+    private var loadProgress by mutableIntStateOf(0)
     private var note by mutableStateOf<String?>(null)
     /** the host whose failing certificate this sandbox was opened for */
     private var certHost: String? = null
@@ -110,7 +110,7 @@ class SandboxActivity : ComponentActivity() {
         CookieManager.getInstance().setAcceptThirdPartyCookies(w, false)
         w.webViewClient = Client()
         w.webChromeClient = object : WebChromeClient() {
-            override fun onProgressChanged(view: WebView, newProgress: Int) { progress = newProgress }
+            override fun onProgressChanged(view: WebView, newProgress: Int) { loadProgress = newProgress }
             override fun onPermissionRequest(request: PermissionRequest) = request.deny()
             override fun onGeolocationPermissionsShowPrompt(origin: String, callback: GeolocationPermissions.Callback) = callback.invoke(origin, false, false)
         }
@@ -139,7 +139,7 @@ class SandboxActivity : ComponentActivity() {
                     GlassButton(Glyph.RELOAD, "Reload", { w.reload() }, size = 38.dp, clear = true)
                     GlassButton(Glyph.CLOSE, "Close the sandbox", { finish() }, size = 38.dp, clear = true)
                 }
-                if (progress in 1..99) ProgressLine(progress / 100f)
+                if (loadProgress in 1..99) ProgressLine(loadProgress / 100f)
                 Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 6.dp).clip(RoundedCornerShape(20.dp))) {
                     AndroidView(factory = { w }, modifier = Modifier.fillMaxSize())
                 }
