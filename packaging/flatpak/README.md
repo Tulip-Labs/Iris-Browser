@@ -1,8 +1,9 @@
 # Iris as a Flatpak
 
 `io.github.tulip_labs.Iris.yml` builds WPE WebKit 2.54.3 (with WPEPlatform)
-and then Iris from `linux/` (Zig 0.15.2, GTK 4 and libadwaita) with the GNOME
-50 SDK. WPE takes a few hours the first time; CI keeps it in its cache.
+and then Iris from `linux/` (Odin; Wayland, EGL and OpenGL ES, no GTK) with
+the GNOME 50 SDK, which gives WPE GLib, libsoup and GStreamer. No Flatpak
+runtime ships WPE WebKit, so it is built here. WPE takes a few hours the first time; CI keeps it in its cache.
 CI builds it on every push (`.github/workflows/linux.yml`, job `flatpak`), and
 each release carries the bundle, `Iris-x86_64.flatpak`:
 
@@ -20,7 +21,7 @@ To build it yourself:
 ## Flathub
 
 Every source in the manifest is fixed by checksum or commit (WPE WebKit,
-woff2, Zig), and
+woff2, libseccomp, Odin), and
 Flathub asks that manifests and submissions be made by people, not AI tools.
 That submission is for a person on the team to prepare.
 

@@ -8,14 +8,14 @@
 
 <p align="center">
   <b>A browser made of glass.</b><br>
-  Linux: Zig, libadwaita and WPE WebKit, in real Liquid Glass.<br>
+  Linux: Odin, Wayland and WPE WebKit, in real Liquid Glass. No GTK.<br>
   Android: Kotlin, Jetpack Compose and Android System WebView. Every search asks Google AI Mode.
 </p>
 
 <p align="center">
-  <img alt="Zig" src="https://img.shields.io/badge/Zig-0.15-F7A41D?style=flat-square&logo=zig&logoColor=white">
+  <img alt="Odin" src="https://img.shields.io/badge/Odin-dev--2026--11-3882D2?style=flat-square">
   <img alt="WPE WebKit" src="https://img.shields.io/badge/WPE_WebKit-2.54-2B8DD6?style=flat-square">
-  <img alt="libadwaita" src="https://img.shields.io/badge/GNOME-libadwaita-4A86CF?style=flat-square&logo=gnome&logoColor=white">
+  <img alt="Wayland" src="https://img.shields.io/badge/Wayland-native-FFBC00?style=flat-square&logo=wayland&logoColor=black">
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-Compose-7F52FF?style=flat-square&logo=kotlin&logoColor=white">
   <img alt="Android 10 and newer" src="https://img.shields.io/badge/Android-10%2B-3DDC84?style=flat-square&logo=android&logoColor=white">
   <img alt="License: GPL 3.0" src="https://img.shields.io/badge/license-GPL%203.0-6B7280?style=flat-square">
@@ -38,10 +38,10 @@
 
 ## What is new in 2.2.0
 
-- **Iris for Linux is now Zig and WPE WebKit.** No Swift, no binding layers: Zig calls GTK, libadwaita and WPE through their C headers.
-  - Each page frame arrives from WPE as a DMA-BUF and goes into GTK as a texture without a copy, so the Liquid Glass bends the live page.
-  - Iris draws a page's own pop-ups in glass too: `<select>` lists, `alert()`, `confirm()` and `prompt()`.
-  - The ad and tracker domains are compiled into Iris as Zig arrays, and the lists become WPE content rules inside the engine.
+- **Iris for Linux is now Odin and WPE WebKit, with no GTK.** Odin talks to Wayland, EGL, OpenGL ES and WPE directly, through foreign declarations checked against the real C headers.
+  - Each page frame arrives from WPE as a DMA-BUF and Iris samples it in its own OpenGL ES renderer without a copy, so the Liquid Glass (now a shader) bends the live page.
+  - The tabs, address bar, menus and dialogs are an HTML page in a WPE view of their own, transparent; Iris draws the glass under them.
+  - Iris draws a page's own pop-ups in glass too: `<select>` lists, `alert()`, `confirm()` and `prompt()`; file fields use the desktop's portal.
   - Every tab stays awake: no sleeping tabs.
 - **Every new tab is Google AI Mode**, in Iris's Liquid Glass; the start page is gone, and your tabs still open where you left them.
 - **Faster**: the next new tab is loaded ahead, Google's names are looked up early, and results open without Google's redirect.
@@ -113,7 +113,7 @@ Iris is made again from the start.
   - Removing a container deletes everything its sites kept.
 - **Private tabs.** One in-memory world, gone when the last private tab closes.
 - **The sandbox.** Sites Iris does not trust (http, a bare IP, a failing certificate) open in it without asking: a WPE web context of its own (its own web processes, in WebKit's process sandbox), a network session per tab in memory only, and no downloads, camera, microphone, location, clipboard, WebGL, WebRTC or pop-ups. Its tabs have an orange rim.
-- **Iris Shields.** About 100,000 ad and tracker domains, compiled into Iris as Zig arrays, become WPE content rules. They are compiled once and blocked inside the engine before a request leaves. You can turn Shields off for one site or everywhere.
+- **Iris Shields.** About 100,000 ad and tracker domains, built into Iris, become WPE content rules. They are compiled once and blocked inside the engine before a request leaves. You can turn Shields off for one site or everywhere.
 - **Cookies stay home.** Third-party cookies are refused, and WebKit's tracking prevention is on.
 - **Pop-ups.**
   - Links that open a new window open as a tab next to yours.
@@ -130,8 +130,8 @@ Iris is made again from the start.
   - Full screen for videos and with F11.
   - Your tabs come back next time.
   - A daily check for a newer Iris.
-- **A page's own pop-ups in glass.** `<select>` lists open as glass menus where the page put them; `alert()`, `confirm()` and `prompt()` are Adwaita dialogs; file fields use the desktop's file chooser.
-- **Sharp at every scale.** WPE renders each page at the window's scale and GTK draws everything, at 1.25, 1.5 or 2.
+- **A page's own pop-ups in glass.** `<select>` lists open as glass menus where the page put them; `alert()`, `confirm()` and `prompt()` are glass dialogs; file fields use the desktop's file chooser (through its portal).
+- **Sharp at every scale.** Wayland's fractional scaling: WPE renders each page, and Iris its chrome, at the screen's own pixels, at 1.25, 1.5 or 2.
 
 ### Android
 
@@ -181,12 +181,14 @@ On niri, the blur behind the window comes on by itself on 26.04 and newer. No wi
 
 ## Build
 
-**Linux.** You need Zig 0.15.2 and the development files of libadwaita, GTK 4.14 or newer, WPE WebKit 2.54 or newer built with WPEPlatform (`wpe-webkit-2.0`, `wpe-platform-2.0`), libsoup 3, Wayland and libdrm. Arch Linux's `wpewebkit` package has them. Keep a system C compiler (gcc) installed: with it, Zig uses the system's libc and its headers in /usr/include.
+**Linux.** You need Odin (dev-2026-11 or newer), a C compiler to link with (clang, or gcc through `ODIN_CLANG_PATH`), and the development files of WPE WebKit 2.54 or newer built with WPEPlatform (`wpe-webkit-2.0`, `wpe-platform-2.0`), libsoup 3, Wayland (`wayland-client`, `wayland-egl`, `wayland-cursor`), xkbcommon, EGL and OpenGL ES. Arch Linux's packages have them all.
 
     cd linux
-    zig build test
-    zig build -Doptimize=ReleaseFast
-    ./zig-out/bin/iris
+    ./build.sh test          # the tests
+    ./build.sh check         # every C binding against the real headers
+    ./build.sh               # a quick build to work on (no optimisation)
+    ./build.sh release       # the optimised build, as the Flatpak ships it
+    ./iris
 
 Or the Flatpak, as CI builds it:
 
@@ -202,26 +204,30 @@ To let updates install over Iris, sign every release with the same key. Put the 
 ## How it is made
 
 ```
-linux/                      Iris for Linux (Zig, through the C headers)
-  build.zig                 links libadwaita, GTK, WPE WebKit and WPEPlatform; translates
-                            their headers (src/c.h) with Zig's translate-c
+linux/                      Iris for Linux (Odin; no GTK, no X11)
+  build.sh                  builds, tests and checks (odin build src)
+  plat/window.odin          the window: its own Wayland client (xdg-shell, fractional scale,
+                            viewporter, cursor shapes, decorations, background blur), keys
+                            through xkbcommon, EGL
+  wl/                       Wayland's protocols as Odin tables (generated from the XML)
   src/
-    webview.zig             Iris's WPEPlatform: its own display, views, toplevels and
-                            clipboard; each frame (DMA-BUF) becomes a GdkDmabufTexture
-                            without a copy; GTK's input becomes WPE events
-    stage.zig               the window's content: one GTK widget that lays out every piece
-                            and draws it in layers (back, pages, chrome, overlays)
-    glass.zig               Liquid Glass from GTK render nodes: lens, rim refraction in three
-                            steps, dispersion, rim light, pointer light
-    browser.zig             a window: tabs, address, toolbar, pop-up rules, layout
-    tab.zig                 a WPE web view and its signals
-    engine.zig              the web context, containers, downloads, the sandbox, light video
-    shields.zig, rules.zig  the levels' lists, turned into WPE content rules and compiled
-    overlays.zig            menus, suggestions, find, downloads, the right-click menu, and
-                            a page's own <select> lists, dialogs and file fields
-    app.zig, keys.zig, store.zig, search.zig, updates.zig, ui.zig, core.zig
-  tools/domains.zig         the ad and tracker domains as a sorted Zig array, at build time
-  c/                        ext-background-effect-v1: blur behind the window
+    platform.odin           Iris's WPEPlatform: its own display, views, toplevels and
+                            clipboard (GObject subclasses written in Odin); each frame, a
+                            DMA-BUF, becomes an EGL image sampled with no copy; Wayland's
+                            input becomes WPE events
+    render.odin             the OpenGL ES 3 renderer: the dawn, the page, Liquid Glass
+    chrome.odin, chrome/    the chrome: an HTML page in a WPE view of its own, and what it
+                            and Iris tell each other (state, glass, hit regions, choices)
+    browser.odin            the window's tabs, layout, input routing, pop-up rules
+    tab.odin                a WPE web view and its signals
+    engine.odin             the web context, containers, downloads, the sandbox, light video
+    shields.odin, rules.odin  the levels' lists, turned into WPE content rules and compiled
+    portal.odin             file fields through the desktop's portal (D-Bus)
+    glib.odin, wpe*.odin, soup_gen.odin  the C functions Iris calls, declared once
+    main.odin, store.odin, search.odin, updates.odin, clipboard.odin
+  abi/                      checks every foreign declaration, struct and protocol table
+                            against the C headers (clang reads them)
+  tools/                    makes the bindings and protocol tables from the headers
 android/                    Iris for Android (Kotlin, Compose, System WebView)
   app/src/main/java/org/tulipanlabs/iris/
     Browser.kt              tabs and their Chromium pages in a ViewModel, profiles, pop-up rules
@@ -234,14 +240,15 @@ packaging/                  the Flatpak manifest, desktop file and metainfo
 assets/icon/                the icon (SVG) and its renders
 ```
 
-How the glass is drawn: each frame, the window first draws everything behind the glass (its tint and the page) into one scene. It then draws each piece of glass over that scene:
+How the glass is drawn (Linux): each frame, Iris draws everything behind the glass (the dawn and the page) into one texture, and a blurred copy of it. Then each piece of glass is one shader pass over that texture:
 
-- a slightly magnified copy of what lies behind;
-- three copies pulled in from beyond the edge, each seen only through a mask that fades in towards the rim, so lines curve as they cross it;
-- red and blue split a little at the outermost step;
-- a faint tint, the rim of light and the pointer's light.
+- the middle is a gentle lens, a little magnified;
+- towards the rim, what lies behind is pulled in from beyond the edge, more the nearer the edge, so lines curve as they cross it;
+- red, green and blue bend by slightly different amounts at the rim (dispersion);
+- panels mix in the blurred copy (frost), for reading;
+- a faint tint, a line of light inside the top rim, the pointer's light, and a soft violet shadow below.
 
-Every step is a GTK render node (clip, transform, mask, blend, colour matrix, gradients), so it runs on GTK's GL and Vulkan renderers alike, at any scale.
+The chrome's own HTML is drawn last, over its glass, so its words and lines sit on the glass at the screen's own pixels.
 
 ## License
 

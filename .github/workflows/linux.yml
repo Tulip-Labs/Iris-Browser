@@ -1,8 +1,9 @@
-# Iris for Linux: builds the Zig app (linux/) against WPE WebKit and runs its
-# tests, starts it at a fractional scale under a headless Wayland compositor
-# to check it opens and draws, and builds the Flatpak bundle (which builds
-# WPE WebKit itself). The release workflow calls this too and publishes the
-# bundle.
+# Iris for Linux: builds the Odin app (linux/) against WPE WebKit, checks
+# every hand-written C binding against the real headers, runs the tests,
+# draws one frame offscreen, starts Iris at a fractional scale under a
+# headless Wayland compositor, and builds the Flatpak bundle (which builds
+# WPE WebKit itself: no runtime ships it). The release workflow calls this
+# too and publishes the bundle.
 name: Linux
 
 on:
@@ -17,47 +18,58 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Zig 0.15.2, the official build as PyPI's ziglang wheel carries it
-  ZIG_WHEEL: https://files.pythonhosted.org/packages/db/81/f9f5c7fd68d80b8edff2a641a1c95ac4125356387d298374227040b8e1e8/ziglang-0.15.2-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl
-  ZIG_SHA256: 806316453d1ede7174ed3fefb8e5348154629089c3bb5fe812dfd0e172fac130
+  # Odin dev-2026-11a, pinned by checksum
+  ODIN_URL: https://github.com/odin-lang/Odin/releases/download/dev-2026-11a/odin-linux-amd64-dev-2026-11a.tar.gz
+  ODIN_SHA256: 65c9f6e97d6f8a30930e151f270ce5aeaa98fe8b2ba49fe067394e2af04f7618
 
 jobs:
   # Arch Linux has WPE WebKit 2.54 with WPEPlatform, so the app builds in
-  # minutes here; the Flatpak below builds its own WPE.
-  zig:
+  # seconds here; the Flatpak below builds its own WPE.
+  odin:
     runs-on: ubuntu-24.04
     container:
       image: archlinux:latest
       options: --shm-size=1g --privileged
     steps:
       - uses: actions/checkout@v4
-      # gcc too: with a system C compiler on PATH, Zig uses the system's libc
-      # and /usr/include (wayland-client.h lives there on Arch)
-      - name: WPE WebKit, GTK and libadwaita development files
+      - name: WPE WebKit, Wayland, EGL and the tools
         run: |
-          pacman -Syu --noconfirm --needed wpewebkit libadwaita gtk4 libsoup3 wayland libdrm pkgconf \
-            unzip diffutils gcc python sway grim cantarell-fonts mesa > /dev/null
-          pkg-config --modversion wpe-webkit-2.0 wpe-platform-2.0 gtk4 libadwaita-1
-      - name: Zig 0.15.2
+          pacman -Syu --noconfirm --needed wpewebkit libsoup3 wayland wayland-protocols libxkbcommon mesa libdrm \
+            pkgconf clang gcc python diffutils sway grim cantarell-fonts noto-fonts > /dev/null
+          pkg-config --modversion wpe-webkit-2.0 wpe-platform-2.0 wpe-platform-headless-2.0 wayland-client egl glesv2
+      - name: Odin
         run: |
-          curl -sSfL "$ZIG_WHEEL" -o /tmp/zig.whl
-          echo "$ZIG_SHA256  /tmp/zig.whl" | sha256sum -c -
-          unzip -q /tmp/zig.whl -d /opt/zig && chmod +x /opt/zig/ziglang/zig
-          echo /opt/zig/ziglang >> $GITHUB_PATH
+          curl -sSfL "$ODIN_URL" -o /tmp/odin.tar.gz
+          echo "$ODIN_SHA256  /tmp/odin.tar.gz" | sha256sum -c -
+          mkdir -p /opt/odin && tar -xzf /tmp/odin.tar.gz -C /opt/odin --strip-components=1
+          echo /opt/odin >> $GITHUB_PATH
+          echo ODIN_ROOT=/opt/odin >> $GITHUB_ENV
       - name: Google AI Mode's glass is the same on Android and Linux
         run: cmp linux/src/aimode.js android/app/src/main/assets/js/aimode.js
+      - name: Every C binding against the real headers
+        run: sh linux/abi/check.sh
       - name: Tests
-        working-directory: linux
-        run: zig build test --summary all
-      - name: Build
-        working-directory: linux
-        run: zig build -Doptimize=ReleaseFast
+        run: sh linux/build.sh test
+      - name: Build (optimised, as the Flatpak ships it)
+        run: sh linux/build.sh release
+      - name: One frame offscreen (every shader compiles; the glass draws)
+        run: |
+          LIBGL_ALWAYS_SOFTWARE=1 linux/iris --render-check /tmp/iris-render.ppm
+          # as a PNG for people to look at
+          python3 - <<'PY'
+          import struct, zlib
+          magic, size, depth, px = open('/tmp/iris-render.ppm', 'rb').read().split(b'\n', 3)
+          w, h = map(int, size.split())
+          rows = b''.join(b'\0' + px[y * w * 3:(y + 1) * w * 3] for y in range(h))
+          chunk = lambda t, b: struct.pack('>I', len(b)) + t + b + struct.pack('>I', zlib.crc32(t + b))
+          png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(rows, 6)) + chunk(b'IEND', b'')
+          open('/tmp/iris-render.png', 'wb').write(png)
+          PY
       # Iris at 1.25, as on niri: it must open, lay out and draw its glass
       # and a page. (Only this test turns WebKit's process sandbox off,
       # because a CI container cannot make the namespaces it needs; Iris
       # itself never does.)
       - name: Start Iris at a fractional scale
-        working-directory: linux
         run: |
           export XDG_RUNTIME_DIR=$(mktemp -d) WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 WLR_HEADLESS_OUTPUTS=1
           chmod 700 $XDG_RUNTIME_DIR
@@ -65,13 +77,12 @@ jobs:
           sway -c /tmp/sway.conf > /tmp/sway.log 2>&1 &
           for i in $(seq 1 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; sleep 0.2; done
           export WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
-          export HOME=$(mktemp -d) GDK_BACKEND=wayland LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
-          ./zig-out/bin/iris > /tmp/iris.log 2>&1 &
+          export HOME=$(mktemp -d) LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+          linux/iris > /tmp/iris.log 2>&1 &
           sleep 60
           grim /tmp/iris-1.25.png
           pgrep -x iris > /dev/null || { echo "Iris did not stay open"; cat /tmp/iris.log; exit 1; }
           cat /tmp/iris.log
-          # the window drew: the screen is not one flat colour
           python3 - <<'PY'
           d = open('/tmp/iris-1.25.png', 'rb').read()
           assert len(set(d[1000:200000])) > 64, "the screen is empty"
@@ -80,8 +91,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: linux-screen
-          path: /tmp/iris-1.25.png
+          name: linux-screens
+          path: |
+            /tmp/iris-1.25.png
+            /tmp/iris-render.png
+            /tmp/iris.log
+          if-no-files-found: ignore
 
   # The bundle, built on the runner itself with Flathub's GNOME 50 SDK, then
   # installed and started. WPE WebKit is built inside it; the cache keeps

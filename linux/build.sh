@@ -4,7 +4,7 @@
 #   ./build.sh release      the optimised build, as the Flatpak ships it
 #   ./build.sh test         the tests
 #   ./build.sh check        the hand-written C bindings against the real headers
-#   ./build.sh install DIR  release build into DIR/libexec/iris and DIR/share/iris
+#   ./build.sh install DIR  release build into DIR/libexec/iris
 # Needs Odin (dev-2026-11 or newer), a C compiler for linking (gcc or clang;
 # ODIN_CLANG_PATH picks it) and the development files of WPE WebKit 2.54+
 # with WPEPlatform, libsoup 3, wayland, wayland-egl, xkbcommon, EGL and GLES.
@@ -23,7 +23,6 @@ check) sh abi/check.sh ;;
 install)
 	odin_build -o:speed -out:iris
 	install -Dm755 iris "$2/libexec/iris"
-	mkdir -p "$2/share/iris" && cp -r resources/icons "$2/share/iris/"
 	;;
 *) echo "usage: $0 [dev|release|test|check|install DIR]" >&2; exit 2 ;;
 esac

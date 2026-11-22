@@ -1,9 +1,11 @@
 # Iris as a Flatpak: the way to install Iris on Linux.
 #
 # Builds WPE WebKit 2.54.3 (with its WPEPlatform API: Iris brings its own
-# display, views and toplevels, and puts each frame in GTK as a DMA-BUF
-# texture) and the Zig app in linux/ against the GNOME 50 SDK (GTK 4,
-# libadwaita). Zig 0.15.2 is a build tool only; nothing of it is in the app.
+# display, views and toplevels, and samples each frame, a DMA-BUF, in its
+# own OpenGL ES renderer) and the Odin app in linux/, which talks to
+# Wayland, EGL and WPE directly: no GTK, no X11. No Flathub runtime ships
+# WPE WebKit, so it is built here; the GNOME 50 runtime gives it GLib,
+# libsoup and GStreamer. Odin is a build tool only.
 #
 # WebKit's process sandbox stays on: inside a Flatpak, WebKit runs its web
 # processes through flatpak-spawn --sandbox.
@@ -21,8 +23,7 @@ separate-locales: false
 finish-args:
   - --share=ipc
   - --share=network
-  - --socket=wayland
-  - --socket=fallback-x11
+  - --socket=wayland # Iris is Wayland only
   - --socket=pulseaudio
   # the GPU (DMA-BUF frames and video decoding), and cameras for calls
   # (WebRTC); screen sharing goes through the desktop's portal and PipeWire
@@ -128,7 +129,9 @@ modules:
     buildsystem: simple
     build-options:
       env:
-        ZIG_GLOBAL_CACHE_DIR: /run/build/iris/zig-cache
+        ODIN_ROOT: /run/build/iris/odin
+        # the SDK links with gcc (it has no clang)
+        ODIN_CLANG_PATH: /usr/bin/gcc
     sources:
       - type: dir
         path: ../../linux
@@ -136,13 +139,11 @@ modules:
       - type: dir
         path: ../linux
         dest: desktop
-      # Zig 0.15.2 (the official build, as PyPI's ziglang wheel carries it)
+      # Odin dev-2026-11a, a build tool only: nothing of it is in the app
       - type: archive
-        archive-type: zip
-        url: https://files.pythonhosted.org/packages/db/81/f9f5c7fd68d80b8edff2a641a1c95ac4125356387d298374227040b8e1e8/ziglang-0.15.2-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl
-        sha256: 806316453d1ede7174ed3fefb8e5348154629089c3bb5fe812dfd0e172fac130
-        strip-components: 0
-        dest: zig
+        url: https://github.com/odin-lang/Odin/releases/download/dev-2026-11a/odin-linux-amd64-dev-2026-11a.tar.gz
+        sha256: 65c9f6e97d6f8a30930e151f270ce5aeaa98fe8b2ba49fe067394e2af04f7618
+        dest: odin
         only-arches: [x86_64]
       - type: script
         dest-filename: iris.sh
@@ -150,10 +151,8 @@ modules:
           - export TMPDIR="$XDG_RUNTIME_DIR/app/$FLATPAK_ID"
           - exec /app/libexec/iris "$@"
     build-commands:
-      - chmod +x zig/ziglang/zig
-      # the program in libexec, its icons in share/iris/icons beside it
-      - cd linux && PKG_CONFIG_PATH=/app/lib/pkgconfig:$PKG_CONFIG_PATH ../zig/ziglang/zig build -Doptimize=ReleaseFast --prefix /app
-      - install -Dm755 /app/bin/iris /app/libexec/iris && rm /app/bin/iris
+      # the program in libexec (optimised: -o:speed)
+      - PATH="$PWD/odin:$PATH" sh linux/build.sh install /app
       - install -Dm755 iris.sh /app/bin/iris
       - install -Dm644 linux/resources/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg /app/share/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg
       - install -Dm644 linux/resources/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png /app/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png

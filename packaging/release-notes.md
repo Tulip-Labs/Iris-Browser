@@ -1,12 +1,14 @@
-Iris 2.2.0: Iris for Linux rebuilt in Zig on WPE WebKit, Google AI Mode in every new tab, a light look in the colours of dawn, an automatic sandbox for sites Iris does not trust, a new icon, and Android on System WebView again.
+Iris 2.2.0: Iris for Linux rebuilt in Odin on Wayland and WPE WebKit, with no GTK; Google AI Mode in every new tab, a light look in the colours of dawn, an automatic sandbox for sites Iris does not trust, a new icon, and Android on System WebView again.
 
-**Linux: Zig and WPE WebKit**
-- **No Swift.** Iris for Linux is Zig, calling GTK 4, libadwaita and WPE WebKit through their C headers, with no binding layers.
-- **The page in the glass, without a copy.** Iris brings its own WPEPlatform display and views: each frame WPE renders arrives as a DMA-BUF and goes into GTK as a texture, so the Liquid Glass bends the live page.
-- **Shields inside the engine.** The ad and tracker domains are compiled into Iris as Zig arrays; the lists become WPE content rules, compiled once and kept.
-- **A page's own pop-ups in glass**: `<select>` lists as glass menus, `alert()`, `confirm()` and `prompt()` as Adwaita dialogs, file fields through the desktop's file chooser (never in the sandbox).
+**Linux: Odin, Wayland and WPE WebKit, no GTK**
+- **No Swift, no Zig, no GTK.** Iris for Linux is Odin, talking to Wayland, EGL, OpenGL ES and WPE WebKit directly. Every C function, struct and Wayland table it declares is checked against the real headers in CI.
+- **The page in the glass, without a copy.** Iris brings its own WPEPlatform display and views: each frame WPE renders arrives as a DMA-BUF and Iris samples it in its own OpenGL ES renderer, so the Liquid Glass, now a shader, bends the live page.
+- **The chrome is a page.** Tabs, address bar, menus, panels and dialogs are HTML in a WPE view of their own, transparent; Iris draws the glass under them and sends each click and key to the chrome or to the page.
+- **A page's own pop-ups in glass**: `<select>` lists as glass menus, `alert()`, `confirm()` and `prompt()` as glass dialogs, file fields through the desktop's portal (never in the sandbox).
+- **Shields inside the engine.** About 100,000 ad and tracker domains are built into Iris; the lists become WPE content rules, compiled once and kept.
 - **Every tab stays awake.** Sleeping tabs are gone.
-- The Flatpak builds WPE WebKit 2.54.3 itself; WebKit's process sandbox stays on (flatpak-spawn inside the Flatpak).
+- **Wayland only**, with fractional scaling, the compositor's cursor shapes and background blur where offered.
+- The Flatpak builds WPE WebKit 2.54.3 itself (no Flatpak runtime ships it); WebKit's process sandbox stays on (flatpak-spawn inside the Flatpak).
 
 **Both**
 - **Every new tab is Google AI Mode**, ready for a question, dressed in Iris's Liquid Glass: the dawn behind the page, its panels clear, and the question box made of glass. (Only AI Mode is restyled; no other page.) The Iris start page is gone. Your tabs still open where you left them.
