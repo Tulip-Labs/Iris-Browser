@@ -1,3 +1,17 @@
+Iris 2.2.2: a closed tab is really closed on Linux.
+
+**Linux**
+- **Closing a tab now ends its page.** Since 2.2.0, a closed tab's page lived on out of sight: a video kept playing and its memory was never given back, so closing tabs did not lower Iris's memory. Iris held one reference too many on each page; it now lets go of it.
+
+**Android**
+- The same version number as Linux; nothing else changed.
+
+**Install**
+- Linux: `flatpak install --user Iris-x86_64.flatpak`
+- Android: `Iris-android.apk` (Android 10 and newer). It installs over 2.2.1.
+
+---
+
 Iris 2.2.1: Iris for Linux opens and stays open in the Flatpak again.
 
 **Linux**
