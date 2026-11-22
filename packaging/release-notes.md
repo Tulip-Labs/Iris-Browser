@@ -1,3 +1,18 @@
+Iris 2.2.1: Iris for Linux opens and stays open in the Flatpak again.
+
+**Linux**
+- **Iris no longer closes a few seconds after it opens** (2.2.0 in the Flatpak, seen on Fedora). WebKit names its sandboxed web processes after the program, and Iris's name was not a valid application ID, so the Flatpak portal refused to start them and Iris stopped. Iris now uses its own ID, io.github.tulip_labs.Iris, and WebKit's process sandbox stays on.
+- Each web process's memory limit is applied again (2.2.0 passed it to WebKit the wrong way, with a warning in the terminal).
+
+**Android**
+- The same version number as Linux; nothing else changed.
+
+**Install**
+- Linux: `flatpak install --user Iris-x86_64.flatpak`
+- Android: `Iris-android.apk` (Android 10 and newer). It installs over 2.2.0.
+
+---
+
 Iris 2.2.0: Iris for Linux rebuilt in Odin on Wayland and WPE WebKit, with no GTK; Google AI Mode in every new tab, a light look in the colours of dawn, an automatic sandbox for sites Iris does not trust, a new icon, and Android on System WebView again.
 
 **Linux: Odin, Wayland and WPE WebKit, no GTK**

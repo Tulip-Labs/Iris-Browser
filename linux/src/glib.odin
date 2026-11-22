@@ -143,6 +143,7 @@ foreign gobject {
 	g_value_init :: proc(v: ^GValue, type: GType) -> ^GValue ---
 	g_value_unset :: proc(v: ^GValue) ---
 	g_value_set_object :: proc(v: ^GValue, o: rawptr) ---
+	g_value_set_boxed :: proc(v: ^GValue, b: rawptr) ---
 	g_value_set_uint :: proc(v: ^GValue, x: u32) ---
 	g_value_set_boolean :: proc(v: ^GValue, x: gboolean) ---
 	g_value_set_string :: proc(v: ^GValue, x: cstring) ---
@@ -152,6 +153,7 @@ foreign gobject {
 
 @(default_calling_convention = "c")
 foreign gio {
+	g_application_id_is_valid :: proc(id: cstring) -> gboolean ---
 	g_bus_get_sync :: proc(type: i32, cancellable: ^GCancellable, err: ^^GError) -> ^GDBusConnection ---
 	g_dbus_connection_call :: proc(c: ^GDBusConnection, bus_name, object_path, interface_name, method_name: cstring, parameters: ^GVariant, reply_type: ^GVariantType, flags: u32, timeout: i32, cancellable: ^GCancellable, callback: GAsyncReadyCallback, data: rawptr) ---
 	g_dbus_connection_call_finish :: proc(c: ^GDBusConnection, res: ^GAsyncResult, err: ^^GError) -> ^GVariant ---
@@ -167,7 +169,8 @@ G_BUS_TYPE_SESSION :: i32(2)
 Prop :: struct {
 	name:  cstring,
 	value: union { rawptr, u32, bool, cstring },
-	type:  GType, // the object type for rawptr values
+	type:  GType, // the object or boxed type for rawptr values
+	boxed: bool,  // a boxed type (a struct GLib copies), not a GObject
 }
 
 gnew :: proc(type: GType, props: ..Prop) -> rawptr {
@@ -179,7 +182,8 @@ gnew :: proc(type: GType, props: ..Prop) -> rawptr {
 		switch v in p.value {
 		case rawptr:
 			g_value_init(&values[i], p.type)
-			g_value_set_object(&values[i], v)
+			if p.boxed do g_value_set_boxed(&values[i], v)
+			else do g_value_set_object(&values[i], v)
 		case u32:
 			g_value_init(&values[i], G_TYPE_UINT)
 			g_value_set_uint(&values[i], v)

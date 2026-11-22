@@ -80,7 +80,10 @@ main :: proc() {
 		}
 	}
 	video_environment()
-	g_set_prgname("iris")
+	// WebKit names its sandboxed web processes after this (WTF::applicationID),
+	// and the Flatpak portal only lets them start under the app's own ID:
+	// "iris" is not a valid ID, so WebKit made one up and the portal refused it.
+	g_set_prgname(APP_ID)
 	g_set_application_name("Iris")
 	main_loop = g_main_loop_new(nil, 0)
 	g_main_context_set_poll_func(g_main_context_default(), poll_with_wayland)

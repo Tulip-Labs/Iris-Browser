@@ -85,3 +85,12 @@ test_versions :: proc(t: ^testing.T) {
 	testing.expect(t, version_newer("2.2.1", "2.2.0"))
 	testing.expect(t, !version_newer("2.2.0", "2.2"))
 }
+
+// WebKit names its sandboxed web processes after the program name only when
+// it is a valid application ID; otherwise the Flatpak portal refuses to start
+// them and Iris closes (2.2.0 on Fedora).
+@(test)
+test_app_id :: proc(t: ^testing.T) {
+	testing.expect(t, g_application_id_is_valid(APP_ID) != 0, "APP_ID is not a valid application ID")
+	testing.expect(t, g_application_id_is_valid("iris") == 0, "g_application_id_is_valid changed its rules")
+}
