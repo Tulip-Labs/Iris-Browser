@@ -63,8 +63,7 @@ updates_check :: proc() {
 		if len(v) == 0 || !version_newer(v, VERSION) do return
 		delete(release_page)
 		release_page = strings.clone(len(r.html_url) > 0 ? r.html_url : "https://github.com/Tulip-Labs/Iris-Browser/releases")
-		chrome_call(fmt.tprintf("toast(%s, %s, %s)", json_str(fmt.tprintf("Iris %s is out. Your software centre or flatpak update installs it.", v), context.temp_allocator),
-			json_str("What's new", context.temp_allocator), json_str(release_page, context.temp_allocator)))
+		chrome_toast(fmt.tprintf("Iris %s is out. Your software centre or flatpak update installs it.", v), "What's new", release_page, life_ms = 10000)
 	}), msg)
 }
 

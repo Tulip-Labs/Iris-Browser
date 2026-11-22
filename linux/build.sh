@@ -10,7 +10,7 @@
 # with WPEPlatform, libsoup 3, wayland, wayland-egl, xkbcommon, EGL and GLES.
 set -eu
 cd "$(dirname "$0")"
-LIBS="wpe-webkit-2.0 wpe-platform-2.0 wpe-platform-headless-2.0 libsoup-3.0 glib-2.0 gio-2.0 wayland-client wayland-egl wayland-cursor xkbcommon egl glesv2"
+LIBS="harfbuzz fontconfig wpe-webkit-2.0 wpe-platform-2.0 wpe-platform-headless-2.0 libsoup-3.0 glib-2.0 gio-2.0 wayland-client wayland-egl wayland-cursor xkbcommon egl glesv2"
 # the folders the libraries are in, for the linker (WPE in /app/lib in the Flatpak)
 LDIRS=$(pkg-config --libs-only-L $LIBS | tr -s ' ')
 [ -n "${ODIN_CLANG_PATH:-}" ] || { command -v clang >/dev/null || export ODIN_CLANG_PATH=$(command -v gcc); }

@@ -7,8 +7,6 @@
 // sends each pointer event and key to the chrome or to the page.
 package iris
 
-import "core:encoding/base64"
-import "core:encoding/json"
 import "core:fmt"
 import "core:strings"
 import plat "../plat"
@@ -29,17 +27,10 @@ Browser :: struct {
 	closed:        [dynamic]Saved_Tab,
 	fullscreen:    bool,
 	page_fullscreen: bool,
-	// the chrome
-	chrome_web:    ^WebKitWebView,
-	chrome_ucm:    ^WebKitUserContentManager,
-	chrome:        ^Page,
-	chrome_ready:  bool,
+	// the keyboard goes to the chrome (a field, a menu) rather than the page
 	chrome_focus:  bool,
-	chrome_modal:  bool,
-	glass:         [dynamic]Glass_Rect,
-	hits:          [dynamic][4]f32,
+	/// where the page is (logical pixels)
 	card:          [4]f32,
-	push_pending:  bool,
 	// input
 	hover:         Target,
 	grab:          Target,
@@ -61,9 +52,6 @@ Context_Info :: struct {
 
 b: Browser
 
-CHROME_HTML :: #load("chrome/chrome.html", string)
-CHROME_CSS :: #load("chrome/chrome.css", string)
-CHROME_JS :: #load("chrome/chrome.js", string)
 
 // ---------------------------------------------------------------- start
 
@@ -71,18 +59,17 @@ browser_start :: proc() -> bool {
 	w := &b.win
 	if !plat.open(w, {app_id = "io.github.tulip_labs.Iris", title = "Iris", width = 1280, height = 820, min_width = 480, min_height = 360}) do return false
 	renderer_init(w.egl_display)
+	text_init()
 	clipboard_init(w)
 	w.keymap = proc(w: ^plat.Window, format: u32, fd: i32, size: u32) { set_keymap(format, fd, size) }
 	w.pointer = proc(w: ^plat.Window, e: plat.Pointer_Event) { browser_pointer(e) }
 	w.key = proc(w: ^plat.Window, e: plat.Key_Event) { browser_key(e) }
 	w.focus = proc(w: ^plat.Window, on: bool) {
 		if b.current != nil && b.current.page != nil do page_set_active(b.current.page, on)
-		if b.chrome != nil do page_set_active(b.chrome, on)
 	}
 	w.resized = proc(w: ^plat.Window) { browser_layout() }
 	w.close = proc(w: ^plat.Window) { browser_quit() }
 	w.presented = proc(w: ^plat.Window) {
-		if b.chrome != nil do flush_rendered(b.chrome)
 		if b.current != nil && b.current.page != nil do flush_rendered(b.current.page)
 	}
 	w.draw = browser_draw
@@ -113,20 +100,14 @@ browser_draw :: proc(w: ^plat.Window) {
 		draw_texture(p.tex, c.x, c.y, c.z, c.w, r)
 	}
 	frame_scene_done()
-	if !b.page_fullscreen {
-		for g in b.glass do draw_glass(g.x, g.y, g.w, g.h, glass_style(g))
-	}
-	if b.chrome != nil {
-		page_latch(b.chrome)
-		draw_texture(b.chrome.tex, 0, 0, f32(w.width), f32(w.height))
-	}
+	chrome_draw(f32(w.width), f32(w.height))
 }
 
 /// Iris's glass for each kind the chrome asks for
 glass_style :: proc(g: Glass_Rect) -> Glass {
 	switch g.kind {
 	case 1: // panels, menus, notes: frosted, for reading
-		return {radius = g.r, tint = {0.99, 0.99, 1, 0.62}, bend = 9, rim = 18, lens = 0.02, frost = 0.85, shadow = 1.2, rim_light = 1, dispersion = true}
+		return {radius = g.r, tint = {0.99, 0.99, 1, 0.8}, bend = 3.5, rim = 10, lens = 0.01, frost = 1, shadow = 1.2, rim_light = 1, dispersion = true}
 	case 2: // the selected tab's pill
 		return {radius = g.r, tint = {1, 1, 1, 0.42}, bend = 6, rim = 12, lens = 0.02, shadow = 0.5, rim_light = 1}
 	case 3: // a hovered button
@@ -138,10 +119,7 @@ glass_style :: proc(g: Glass_Rect) -> Glass {
 
 browser_layout :: proc() {
 	w := &b.win
-	if b.chrome != nil do page_place(b.chrome, 0, 0, f64(w.width), f64(w.height), w.scale)
-	if b.page_fullscreen {
-		b.card = {0, 0, f32(w.width), f32(w.height)}
-	}
+	b.card = chrome_card(f32(w.width), f32(w.height))
 	if t := b.current; t != nil && t.page != nil {
 		c := b.card
 		if c.z > 0 && c.w > 0 do page_place(t.page, f64(c.x), f64(c.y), f64(c.z), f64(c.w), w.scale)
@@ -395,16 +373,15 @@ browser_popup :: proc(t: ^Tab, nav: ^WebKitNavigationAction) -> ^WebKitWebView {
 }
 
 @(private="file") target_at :: proc(x, y: f64) -> Target {
-	if b.page_fullscreen do return .Page
-	if b.chrome_modal do return .Chrome
-	for h in b.hits do if inside(h, x, y) do return .Chrome
+	if chrome_modal() do return .Chrome
+	if _, ok := chrome_hit_at({f32(x), f32(y)}); ok do return .Chrome
 	if b.current != nil && b.current.page != nil && inside(b.card, x, y) do return .Page
 	return .Chrome
 }
 
 @(private="file") send_to :: proc(t: Target, e: plat.Pointer_Event) {
 	switch t {
-	case .Chrome: if b.chrome != nil do page_pointer(b.chrome, e)
+	case .Chrome: chrome_pointer(e)
 	case .Page: if b.current != nil && b.current.page != nil do page_pointer(b.current.page, e)
 	case .None:
 	}
@@ -424,8 +401,11 @@ browser_pointer :: proc(e: plat.Pointer_Event) {
 		send_to(t, {kind = .Enter, x = e.x, y = e.y, time = e.time, mods = e.mods})
 		cursor := plat.Cursor_Shape.Default
 		if t == .Page && b.current != nil && b.current.page != nil do cursor = b.current.page.cursor
-		if t == .Chrome && b.chrome != nil do cursor = b.chrome.cursor
 		plat.set_cursor(&b.win, cursor)
+	}
+	if t == .Chrome {
+		h, _ := chrome_hit_at({f32(e.x), f32(e.y)})
+		plat.set_cursor(&b.win, h.cursor)
 	}
 	if e.kind == .Enter do return
 	if e.kind == .Button {
@@ -438,14 +418,14 @@ browser_pointer :: proc(e: plat.Pointer_Event) {
 		}
 	}
 	send_to(t, e)
-	if len(b.glass) > 0 && e.kind == .Motion do plat.invalidate(&b.win) // the pointer's light on the glass
+	if e.kind == .Motion do plat.invalidate(&b.win) // the pointer's light on the glass
 }
 
 /// Iris's own keys first; the rest go to the chrome or the page
 browser_key :: proc(e: plat.Key_Event) {
 	if e.pressed && browser_shortcut(e) do return
-	if b.chrome_focus || b.chrome_modal {
-		if b.chrome != nil do page_key(b.chrome, e)
+	if chrome_wants_keys() {
+		chrome_key(e)
 	} else if b.current != nil && b.current.page != nil {
 		page_key(b.current.page, e)
 	}
@@ -457,18 +437,18 @@ browser_key :: proc(e: plat.Key_Event) {
 	alt := .Alt in e.mods
 	if ctrl && !alt {
 		switch e.sym {
-		case 't': if shift { browser_reopen() } else { browser_new_tab({select = true}); chrome_call("focusAddress()") }
+		case 't': if shift { browser_reopen() } else { browser_new_tab({select = true}); chrome_focus_address() }
 		case 'n': browser_new_tab({container = shift ? PRIVATE_ID : "", select = true})
 		case 'w': if b.current != nil do browser_close(b.current)
 		case 'q': browser_quit()
-		case 'l', 'k': chrome_call("focusAddress()")
+		case 'l', 'k': chrome_focus_address()
 		case 'r':
 			if b.current != nil && b.current.web != nil {
 				if shift { webkit_web_view_reload_bypass_cache(b.current.web) } else { tab_reload(b.current) }
 			}
-		case 'f': chrome_call("openFind()")
-		case 'j': chrome_call("openDownloads()")
-		case 'y': if !shift do return false; chrome_call("openDownloads()")
+		case 'f': chrome_open_find()
+		case 'j': chrome_open_downloads()
+		case 'y': if !shift do return false; chrome_open_downloads()
 		case plat.KEY_plus, plat.KEY_equal, plat.KEY_KP_Add: browser_zoom(1)
 		case plat.KEY_minus, plat.KEY_KP_Subtract: browser_zoom(-1)
 		case plat.KEY_0, plat.KEY_KP_0: browser_zoom(0)
@@ -494,13 +474,13 @@ browser_key :: proc(e: plat.Key_Event) {
 	}
 	switch e.sym {
 	case plat.KEY_F5: if b.current != nil do tab_reload(b.current)
-	case plat.KEY_F6: chrome_call("focusAddress()")
+	case plat.KEY_F6: chrome_focus_address()
 	case plat.KEY_F11:
 		b.fullscreen = !b.fullscreen
 		plat.set_fullscreen(&b.win, b.fullscreen)
 	case plat.KEY_Escape:
-		if b.chrome_modal {
-			chrome_call("closeAll()")
+		if chrome_modal() || ui.find_open {
+			chrome_close_all()
 			return true
 		}
 		if b.fullscreen || b.page_fullscreen {
@@ -517,7 +497,7 @@ browser_key :: proc(e: plat.Key_Event) {
 // ---------------------------------------------------------------- what pages ask for
 
 browser_toast :: proc(text: string) {
-	chrome_call(fmt.tprintf("toast(%s)", json_str(text, context.temp_allocator)))
+	chrome_toast(text)
 }
 
 browser_hover_link :: proc(t: ^Tab, link: string) {
@@ -526,7 +506,7 @@ browser_hover_link :: proc(t: ^Tab, link: string) {
 		// the link's site is looked up while the pointer rests on it
 		if h, ok := host_of(link, context.temp_allocator); ok && t.web != nil do warm_dns(webkit_web_view_get_network_session(t.web), h)
 	}
-	chrome_call(fmt.tprintf("status(%s)", json_str(link, context.temp_allocator)))
+	chrome_status(link)
 }
 
 browser_permission :: proc(t: ^Tab, req: ^WebKitPermissionRequest) {
@@ -550,7 +530,7 @@ browser_permission :: proc(t: ^Tab, req: ^WebKitPermissionRequest) {
 	b.asks += 1
 	b.permissions[b.asks] = cast(^WebKitPermissionRequest)g_object_ref(req)
 	site := display_url(t.url, context.temp_allocator)
-	chrome_call(fmt.tprintf("permission(%d, %s)", b.asks, json_str(strings.concatenate({len(site) > 0 ? site : "This page", " wants to ", what}, context.temp_allocator), context.temp_allocator)))
+	chrome_permission(b.asks, strings.concatenate({len(site) > 0 ? site : "This page", " wants to ", what}, context.temp_allocator))
 }
 
 browser_context_menu :: proc(t: ^Tab, menu: ^WebKitContextMenu, hit: ^WebKitHitTestResult) {
@@ -567,41 +547,28 @@ browser_context_menu :: proc(t: ^Tab, menu: ^WebKitContextMenu, hit: ^WebKitHitT
 	ci.editable = webkit_hit_test_result_context_is_editable(hit) != 0
 	ci.selection = webkit_hit_test_result_context_is_selection(hit) != 0
 	b.context_tab = t
-	if strings.has_prefix(ci.link, "javascript:") do ci.link = ""
-	conts := strings.builder_make(context.temp_allocator)
-	strings.write_byte(&conts, '[')
-	first := true
-	for k in containers {
-		if k.id == t.container do continue
-		if !first do strings.write_byte(&conts, ',')
-		fmt.sbprintf(&conts, "{{\"id\":%s,\"name\":%s}}", json_str(k.id, context.temp_allocator), json_str(k.name, context.temp_allocator))
-		first = false
+	if strings.has_prefix(ci.link, "javascript:") {
+		delete(ci.link)
+		ci.link = ""
 	}
-	strings.write_byte(&conts, ']')
-	chrome_call(fmt.tprintf("contextMenu({{\"x\":%f,\"y\":%f,\"link\":%s,\"image\":%s,\"media\":%s,\"editable\":%v,\"selection\":%v,\"containers\":%s}})",
-		b.card.x + f32(x), b.card.y + f32(y), json_str(ci.link, context.temp_allocator), json_str(ci.image, context.temp_allocator),
-		json_str(ci.media, context.temp_allocator), ci.editable, ci.selection, strings.to_string(conts)))
+	chrome_context_menu(b.card.x + f32(x), b.card.y + f32(y))
 }
 
 browser_option_menu :: proc(t: ^Tab, menu: ^WebKitOptionMenu, rect: ^WPERectangle) {
 	b.asks += 1
 	id := b.asks
 	b.options[id] = cast(^WebKitOptionMenu)g_object_ref(menu)
-	items := strings.builder_make(context.temp_allocator)
-	strings.write_byte(&items, '[')
+	items := make([dynamic]Option_Item, context.temp_allocator)
 	for i in 0 ..< webkit_option_menu_get_n_items(menu) {
 		it := webkit_option_menu_get_item(menu, i)
-		if i > 0 do strings.write_byte(&items, ',')
-		fmt.sbprintf(&items, "{{\"label\":%s,\"group\":%v,\"selected\":%v,\"enabled\":%v}}",
-			json_str(string(webkit_option_menu_item_get_label(it)), context.temp_allocator),
-			webkit_option_menu_item_is_group_label(it) != 0, webkit_option_menu_item_is_selected(it) != 0, webkit_option_menu_item_is_enabled(it) != 0)
+		append(&items, Option_Item{string(webkit_option_menu_item_get_label(it)), webkit_option_menu_item_is_group_label(it) != 0,
+			webkit_option_menu_item_is_selected(it) != 0, webkit_option_menu_item_is_enabled(it) != 0})
 	}
-	strings.write_byte(&items, ']')
 	r := rect != nil ? rect^ : WPERectangle{}
-	chrome_call(fmt.tprintf("optionMenu(%d, %f, %f, %d, %s)", id, b.card.x + f32(r.x), b.card.y + f32(r.y + r.height), r.width, strings.to_string(items)))
+	chrome_option_menu(id, b.card.x + f32(r.x), b.card.y + f32(r.y + r.height), f32(r.width), items[:])
 	on(menu, "close", rawptr(proc "c" (m: ^WebKitOptionMenu, d: rawptr) {
 		context = main_context
-		chrome_call("closeOption()")
+		chrome_close_option()
 	}), nil)
 }
 
@@ -611,8 +578,7 @@ browser_script_dialog :: proc(t: ^Tab, d: ^WebKitScriptDialog) {
 	host := display_url(t.url, context.temp_allocator)
 	kind := webkit_script_dialog_get_dialog_type(d)
 	default_text := kind == WEBKIT_SCRIPT_DIALOG_PROMPT ? string(webkit_script_dialog_prompt_get_default_text(d)) : ""
-	chrome_call(fmt.tprintf("dialog(%d, %d, %s, %s, %s)", b.asks, kind, json_str(len(host) > 0 ? host : "This page", context.temp_allocator),
-		json_str(string(webkit_script_dialog_get_message(d)), context.temp_allocator), json_str(default_text, context.temp_allocator)))
+	chrome_dialog(b.asks, int(kind), len(host) > 0 ? host : "This page", string(webkit_script_dialog_get_message(d)), default_text)
 }
 
 browser_file_chooser :: proc(t: ^Tab, req: ^WebKitFileChooserRequest) {
@@ -649,21 +615,3 @@ browser_restore :: proc() {
 	}
 }
 
-// ---------------------------------------------------------------- helpers
-
-/// a BGRA picture (a favicon) as "w:h:base64 of RGBA" for the chrome's canvas
-bgra_to_data_url :: proc(px: []u8, w, h, stride: i32) -> string {
-	rgba := make([]u8, int(w * h * 4), context.temp_allocator)
-	for y in 0 ..< h do for x in 0 ..< w {
-		s := int(y * stride + x * 4)
-		d := int((y * w + x) * 4)
-		if s + 3 >= len(px) do continue
-		a := px[s + 3]
-		un :: proc(c, a: u8) -> u8 { return a == 0 ? 0 : u8(min(255, int(c) * 255 / int(a))) }
-		rgba[d], rgba[d + 1], rgba[d + 2], rgba[d + 3] = un(px[s + 2], a), un(px[s + 1], a), un(px[s], a), a
-	}
-	enc, _ := base64.encode(rgba, allocator = context.temp_allocator)
-	return fmt.aprintf("%d:%d:%s", w, h, enc)
-}
-
-@(private="file") _json :: json.Value

@@ -36,6 +36,8 @@ foreign glib {
 /// Iris wrote goes out
 @(private="file") poll_with_wayland :: proc "c" (fds: [^]GPollFD, n: u32, timeout: i32) -> i32 {
 	context = main_context
+	// a turn of the loop is over: what it made for the moment goes
+	free_all(context.temp_allocator)
 	w := &b.win
 	if w.display != nil {
 		for wl.display_prepare_read(w.display) != 0 {

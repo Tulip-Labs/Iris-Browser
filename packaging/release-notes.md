@@ -3,7 +3,7 @@ Iris 2.2.0: Iris for Linux rebuilt in Odin on Wayland and WPE WebKit, with no GT
 **Linux: Odin, Wayland and WPE WebKit, no GTK**
 - **No Swift, no Zig, no GTK.** Iris for Linux is Odin, talking to Wayland, EGL, OpenGL ES and WPE WebKit directly. Every C function, struct and Wayland table it declares is checked against the real headers in CI.
 - **The page in the glass, without a copy.** Iris brings its own WPEPlatform display and views: each frame WPE renders arrives as a DMA-BUF and Iris samples it in its own OpenGL ES renderer, so the Liquid Glass, now a shader, bends the live page.
-- **The chrome is a page.** Tabs, address bar, menus, panels and dialogs are HTML in a WPE view of their own, transparent; Iris draws the glass under them and sends each click and key to the chrome or to the page.
+- **The chrome is Odin too.** Tabs, address bar, menus, panels and dialogs are drawn by Iris itself in the same frame as their glass: text shaped by HarfBuzz in the desktop's own font (fontconfig, with fallbacks for every script), glyphs and line icons rasterised by Iris at the screen's own pixels. No HTML, no second web view.
 - **A page's own pop-ups in glass**: `<select>` lists as glass menus, `alert()`, `confirm()` and `prompt()` as glass dialogs, file fields through the desktop's portal (never in the sandbox).
 - **Shields inside the engine.** About 100,000 ad and tracker domains are built into Iris; the lists become WPE content rules, compiled once and kept.
 - **Every tab stays awake.** Sleeping tabs are gone.

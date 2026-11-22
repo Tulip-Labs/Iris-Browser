@@ -119,6 +119,8 @@ clipboard_offer :: proc(text: string) {
 	if clip.device == nil do return
 	delete(clip.text)
 	clip.text = strings.clone(text)
+	delete(clipboard_text)
+	clipboard_text = strings.clone(text)
 	if clip.source != nil do wl.wl_data_source_destroy(clip.source)
 	clip.source = wl.wl_data_device_manager_create_data_source(clip.win.data_devices)
 	wl.wl_data_source_add_listener(clip.source, &source_listener, nil)

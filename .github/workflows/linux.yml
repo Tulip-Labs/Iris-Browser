@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: WPE WebKit, Wayland, EGL and the tools
         run: |
-          pacman -Syu --noconfirm --needed wpewebkit libsoup3 wayland wayland-protocols libxkbcommon mesa libdrm \
+          pacman -Syu --noconfirm --needed wpewebkit libsoup3 harfbuzz fontconfig wayland wayland-protocols libxkbcommon mesa libdrm \
             pkgconf clang gcc python diffutils sway grim cantarell-fonts noto-fonts > /dev/null
           pkg-config --modversion wpe-webkit-2.0 wpe-platform-2.0 wpe-platform-headless-2.0 wayland-client egl glesv2
       - name: Odin
@@ -52,7 +52,7 @@ jobs:
         run: sh linux/build.sh test
       - name: Build (optimised, as the Flatpak ships it)
         run: sh linux/build.sh release
-      - name: One frame offscreen (every shader compiles; the glass draws)
+      - name: The chrome offscreen (every shader compiles, the glass and text draw, clicks and keys work)
         run: |
           LIBGL_ALWAYS_SOFTWARE=1 linux/iris --render-check /tmp/iris-render.ppm
           # as a PNG for people to look at
@@ -64,6 +64,15 @@ jobs:
           chunk = lambda t, b: struct.pack('>I', len(b)) + t + b + struct.pack('>I', zlib.crc32(t + b))
           png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(rows, 6)) + chunk(b'IEND', b'')
           open('/tmp/iris-render.png', 'wb').write(png)
+          PY
+          python3 - <<'PY'
+          import struct, zlib
+          magic, size, depth, px = open('/tmp/iris-render-typing.ppm', 'rb').read().split(b'\n', 3)
+          w, h = map(int, size.split())
+          rows = b''.join(b'\0' + px[y * w * 3:(y + 1) * w * 3] for y in range(h))
+          chunk = lambda t, b: struct.pack('>I', len(b)) + t + b + struct.pack('>I', zlib.crc32(t + b))
+          png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(rows, 6)) + chunk(b'IEND', b'')
+          open('/tmp/iris-render-typing.png', 'wb').write(png)
           PY
       # Iris at 1.25, as on niri: it must open, lay out and draw its glass
       # and a page. (Only this test turns WebKit's process sandbox off,
@@ -95,6 +104,7 @@ jobs:
           path: |
             /tmp/iris-1.25.png
             /tmp/iris-render.png
+            /tmp/iris-render-typing.png
             /tmp/iris.log
           if-no-files-found: ignore
 

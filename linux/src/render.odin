@@ -225,7 +225,7 @@ void main() {
 	o = vec4(col, 1.0) * inside;
 }`
 
-@(private="file") compile :: proc(frag: string) -> Program {
+compile :: proc(frag: string, vert := VERT) -> Program {
 	sh :: proc(kind: u32, src: string) -> u32 {
 		s := gl.CreateShader(kind)
 		cs := strings.clone_to_cstring(src, context.temp_allocator)
@@ -242,7 +242,7 @@ void main() {
 		return s
 	}
 	p := gl.CreateProgram()
-	gl.AttachShader(p, sh(gl.VERTEX_SHADER, VERT))
+	gl.AttachShader(p, sh(gl.VERTEX_SHADER, vert))
 	gl.AttachShader(p, sh(gl.FRAGMENT_SHADER, frag))
 	gl.BindAttribLocation(p, 0, "a_pos")
 	gl.LinkProgram(p)
@@ -252,7 +252,7 @@ void main() {
 	return {id = p}
 }
 
-@(private="file") loc :: proc(p: ^Program, name: string) -> i32 {
+loc :: proc(p: ^Program, name: string) -> i32 {
 	if l, ok := p.locs[name]; ok do return l
 	l := gl.GetUniformLocation(p.id, strings.clone_to_cstring(name, context.temp_allocator))
 	p.locs[name] = l
@@ -498,3 +498,39 @@ cstr :: proc(s: string) -> cstring {
 }
 
 @(private="file") _m :: math.PI
+
+// ---------------------------------------------------------------- clipping
+
+@(private="file") clips: [dynamic][4]i32
+
+/// what follows is drawn only inside r (logical pixels); clips nest
+clip_push :: proc(r: [4]f32) {
+	s := rnd.scale
+	x0 := i32(math.floor(r.x * s))
+	y0 := i32(math.floor(r.y * s))
+	x1 := i32(math.ceil((r.x + r.z) * s))
+	y1 := i32(math.ceil((r.y + r.w) * s))
+	if len(clips) > 0 {
+		p := clips[len(clips) - 1]
+		x0, y0 = max(x0, p.x), max(y0, p.y)
+		x1, y1 = min(x1, p.z), min(y1, p.w)
+	}
+	append(&clips, [4]i32{x0, y0, max(x0, x1), max(y0, y1)})
+	apply_clip()
+}
+
+clip_pop :: proc() {
+	if len(clips) > 0 do pop(&clips)
+	apply_clip()
+}
+
+@(private="file") apply_clip :: proc() {
+	if len(clips) == 0 {
+		gl.Disable(gl.SCISSOR_TEST)
+		return
+	}
+	c := clips[len(clips) - 1]
+	gl.Enable(gl.SCISSOR_TEST)
+	// GL counts rows from the bottom
+	gl.Scissor(c.x, rnd.sh - c.w, c.z - c.x, c.w - c.y)
+}

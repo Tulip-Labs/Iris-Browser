@@ -9,6 +9,7 @@ package iris
 
 import "base:runtime"
 import "core:log"
+import "core:strings"
 import plat "../plat"
 
 @(private="file") display_type, view_type, toplevel_type, clipboard_type: GType
@@ -189,9 +190,13 @@ cursor_for :: proc(css: string) -> plat.Cursor_Shape {
 }
 
 clipboard_mirroring: bool
+/// the text on the clipboard (the desktop's, or what Iris copied), for the chrome's fields
+clipboard_text: string
 
 /// the desktop copied something: pages can paste it
 clipboard_from_desktop :: proc(text: string) {
+	delete(clipboard_text)
+	clipboard_text = strings.clone(text)
 	if the_clipboard == nil do return
 	c := wpe_clipboard_content_new()
 	t := cstr(text)

@@ -38,9 +38,9 @@
 
 ## What is new in 2.2.0
 
-- **Iris for Linux is now Odin and WPE WebKit, with no GTK.** Odin talks to Wayland, EGL, OpenGL ES and WPE directly, through foreign declarations checked against the real C headers.
+- **Iris for Linux is now Odin and WPE WebKit, with no GTK.** Odin talks to Wayland, EGL, OpenGL ES, HarfBuzz, fontconfig and WPE directly, through foreign declarations checked against the real C headers.
   - Each page frame arrives from WPE as a DMA-BUF and Iris samples it in its own OpenGL ES renderer without a copy, so the Liquid Glass (now a shader) bends the live page.
-  - The tabs, address bar, menus and dialogs are an HTML page in a WPE view of their own, transparent; Iris draws the glass under them.
+  - The tabs, address bar, menus and dialogs are drawn by Iris itself, in the same frame as their glass: text shaped by HarfBuzz in the desktop's font, glyphs and icons rasterised by Iris.
   - Iris draws a page's own pop-ups in glass too: `<select>` lists, `alert()`, `confirm()` and `prompt()`; file fields use the desktop's portal.
   - Every tab stays awake: no sleeping tabs.
 - **Every new tab is Google AI Mode**, in Iris's Liquid Glass; the start page is gone, and your tabs still open where you left them.
@@ -181,7 +181,7 @@ On niri, the blur behind the window comes on by itself on 26.04 and newer. No wi
 
 ## Build
 
-**Linux.** You need Odin (dev-2026-11 or newer), a C compiler to link with (clang, or gcc through `ODIN_CLANG_PATH`), and the development files of WPE WebKit 2.54 or newer built with WPEPlatform (`wpe-webkit-2.0`, `wpe-platform-2.0`), libsoup 3, Wayland (`wayland-client`, `wayland-egl`, `wayland-cursor`), xkbcommon, EGL and OpenGL ES. Arch Linux's packages have them all.
+**Linux.** You need Odin (dev-2026-11 or newer), a C compiler to link with (clang, or gcc through `ODIN_CLANG_PATH`), and the development files of WPE WebKit 2.54 or newer built with WPEPlatform (`wpe-webkit-2.0`, `wpe-platform-2.0`), libsoup 3, HarfBuzz, fontconfig, Wayland (`wayland-client`, `wayland-egl`, `wayland-cursor`), xkbcommon, EGL and OpenGL ES. Arch Linux's packages have them all.
 
     cd linux
     ./build.sh test          # the tests
@@ -216,8 +216,13 @@ linux/                      Iris for Linux (Odin; no GTK, no X11)
                             DMA-BUF, becomes an EGL image sampled with no copy; Wayland's
                             input becomes WPE events
     render.odin             the OpenGL ES 3 renderer: the dawn, the page, Liquid Glass
-    chrome.odin, chrome/    the chrome: an HTML page in a WPE view of its own, and what it
-                            and Iris tell each other (state, glass, hit regions, choices)
+    chrome.odin             the chrome, drawn each frame with its glass: tabs, bars, the
+                            address, panels, menus, dialogs, notes; clicks and keys
+    text.odin, text_ffi.odin  text: fontconfig finds the fonts, HarfBuzz shapes and gives
+                            each glyph's outline, one atlas holds them
+    raster.odin, icons.odin Iris's rasteriser (exact area coverage) for glyphs and the
+                            line icons (SVG path data)
+    line.odin               an editable line: cursor, selection, words, clipboard, undo
     browser.odin            the window's tabs, layout, input routing, pop-up rules
     tab.odin                a WPE web view and its signals
     engine.odin             the web context, containers, downloads, the sandbox, light video
@@ -248,7 +253,7 @@ How the glass is drawn (Linux): each frame, Iris draws everything behind the gla
 - panels mix in the blurred copy (frost), for reading;
 - a faint tint, a line of light inside the top rim, the pointer's light, and a soft violet shadow below.
 
-The chrome's own HTML is drawn last, over its glass, so its words and lines sit on the glass at the screen's own pixels.
+The chrome's words and icons are drawn right after each piece of its glass, in the same frame, at the screen's own pixels.
 
 ## License
 

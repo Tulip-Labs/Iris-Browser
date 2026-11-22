@@ -25,7 +25,11 @@ Tab :: struct {
 	/// a pop-up waiting for its first address (the page wrote it into a
 	/// blank window: Iris shows it only once it knows where it goes)
 	held:           bool,
-	favicon:        string, // a data: URL for the chrome
+	/// the site's icon, premultiplied BGRA, uploaded when next drawn
+	favicon_px:     []u8,
+	favicon_w, favicon_h, favicon_stride: i32,
+	favicon_tex:    Texture,
+	favicon_dirty:  bool,
 }
 
 @(private="file") next_tab_id := 1
@@ -122,7 +126,8 @@ tab_free :: proc(t: ^Tab) {
 	delete(t.container)
 	delete(t.url)
 	delete(t.title)
-	delete(t.favicon)
+	delete(t.favicon_px)
+	if t.favicon_tex.owned do texture_free(&t.favicon_tex)
 	delete(t.allowed_certs)
 	free(t)
 }
@@ -285,7 +290,11 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 		defer g_bytes_unref(b)
 		n: uint
 		p := g_bytes_get_data(b, &n)
-		set_str(&t.favicon, bgra_to_data_url(([^]u8)(p)[:n], webkit_image_get_width(best), webkit_image_get_height(best), i32(webkit_image_get_stride(best))))
+		delete(t.favicon_px)
+		t.favicon_px = make([]u8, int(n))
+		copy(t.favicon_px, ([^]u8)(p)[:n])
+		t.favicon_w, t.favicon_h, t.favicon_stride = webkit_image_get_width(best), webkit_image_get_height(best), i32(webkit_image_get_stride(best))
+		t.favicon_dirty = true
 		browser_tab_changed(t)
 	}), g_object_ref(t.web))
 }
