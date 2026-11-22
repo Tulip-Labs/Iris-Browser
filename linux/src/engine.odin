@@ -59,6 +59,9 @@ LIGHT_VIDEO :: `(() => {
 
 /// Google AI Mode in Iris's glass (the same file as Iris for Android's)
 AI_GLASS :: #load("aimode.js", string)
+/// YouTube with no ads and nothing for it to notice (the same file as Iris
+/// for Android's)
+YOUTUBE :: #load("youtube.js", string)
 
 @(private="file") add_script :: proc(ucm: ^WebKitUserContentManager, source: string, all_frames: bool, hosts: []cstring) {
 	list: [8]cstring
@@ -72,10 +75,9 @@ AI_GLASS :: #load("aimode.js", string)
 add_page_scripts :: proc(ucm: ^WebKitUserContentManager) {
 	google := [?]cstring{"https://www.google.com/*", "https://google.com/*"}
 	add_script(ucm, AI_GLASS, false, google[:])
-	if settings().lightVideo {
-		yt := [?]cstring{"https://*.youtube.com/*", "https://youtube.com/*", "https://*.youtube-nocookie.com/*"}
-		add_script(ucm, LIGHT_VIDEO, true, yt[:])
-	}
+	yt := [?]cstring{"https://*.youtube.com/*", "https://youtube.com/*", "https://*.youtube-nocookie.com/*"}
+	add_script(ucm, YOUTUBE, true, yt[:])
+	if settings().lightVideo do add_script(ucm, LIGHT_VIDEO, true, yt[:])
 }
 
 GOOGLE_HOSTS :: [?]string{"www.google.com", "www.gstatic.com", "ssl.gstatic.com", "fonts.gstatic.com", "encrypted-tbn0.gstatic.com", "lh3.googleusercontent.com"}

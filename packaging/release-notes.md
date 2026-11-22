@@ -1,10 +1,10 @@
-Iris 2.2.2: a closed tab is really closed on Linux.
+Iris 2.2.2: YouTube with no ads, and a closed tab is really closed on Linux.
+
+**Both**
+- **YouTube with no ads, and nothing for YouTube to notice**, as uBlock Origin's and Brave's YouTube filters work: the player's answer loses its ads before the player reads it, so no ad is ever scheduled and no request is blocked for YouTube to find; YouTube's ad blocker notice is taken out the same way. A feed ad that still appears is hidden, and an ad that still plays is skipped, muted. The same script on Linux and Android.
 
 **Linux**
 - **Closing a tab now ends its page.** Since 2.2.0, a closed tab's page lived on out of sight: a video kept playing and its memory was never given back, so closing tabs did not lower Iris's memory. Iris held one reference too many on each page; it now lets go of it.
-
-**Android**
-- The same version number as Linux; nothing else changed.
 
 **Install**
 - Linux: `flatpak install --user Iris-x86_64.flatpak`

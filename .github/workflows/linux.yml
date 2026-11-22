@@ -44,8 +44,10 @@ jobs:
           mkdir -p /opt/odin && tar -xzf /tmp/odin.tar.gz -C /opt/odin --strip-components=1
           echo /opt/odin >> $GITHUB_PATH
           echo ODIN_ROOT=/opt/odin >> $GITHUB_ENV
-      - name: Google AI Mode's glass is the same on Android and Linux
-        run: cmp linux/src/aimode.js android/app/src/main/assets/js/aimode.js
+      - name: AI Mode's glass and the YouTube script are the same on Android and Linux
+        run: |
+          cmp linux/src/aimode.js android/app/src/main/assets/js/aimode.js
+          cmp linux/src/youtube.js android/app/src/main/assets/js/youtube.js
       - name: Every C binding against the real headers
         run: sh linux/abi/check.sh
       - name: Tests
