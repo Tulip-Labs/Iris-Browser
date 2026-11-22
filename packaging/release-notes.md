@@ -1,4 +1,12 @@
-Iris 2.1.1: Google AI Mode in every new tab, a light look in the colours of dawn, an automatic sandbox for sites Iris does not trust, a new icon, and Android on System WebView again.
+Iris 2.2.0: Iris for Linux rebuilt in Zig on WPE WebKit, Google AI Mode in every new tab, a light look in the colours of dawn, an automatic sandbox for sites Iris does not trust, a new icon, and Android on System WebView again.
+
+**Linux: Zig and WPE WebKit**
+- **No Swift.** Iris for Linux is Zig, calling GTK 4, libadwaita and WPE WebKit through their C headers, with no binding layers.
+- **The page in the glass, without a copy.** Iris brings its own WPEPlatform display and views: each frame WPE renders arrives as a DMA-BUF and goes into GTK as a texture, so the Liquid Glass bends the live page.
+- **Shields inside the engine.** The ad and tracker domains are compiled into Iris as Zig arrays; the lists become WPE content rules, compiled once and kept.
+- **A page's own pop-ups in glass**: `<select>` lists as glass menus, `alert()`, `confirm()` and `prompt()` as Adwaita dialogs, file fields through the desktop's file chooser (never in the sandbox).
+- **Every tab stays awake.** Sleeping tabs are gone.
+- The Flatpak builds WPE WebKit 2.54.3 itself; WebKit's process sandbox stays on (flatpak-spawn inside the Flatpak).
 
 **Both**
 - **Every new tab is Google AI Mode**, ready for a question, dressed in Iris's Liquid Glass: the dawn behind the page, its panels clear, and the question box made of glass. (Only AI Mode is restyled; no other page.) The Iris start page is gone. Your tabs still open where you left them.
@@ -6,7 +14,7 @@ Iris 2.1.1: Google AI Mode in every new tab, a light look in the colours of dawn
 - **The sandbox, automatic.** A site Iris does not trust (no encryption, a bare IP address, or a certificate that fails) opens in the sandbox without asking: web processes of its own, a world in memory that sees none of your cookies, storage or sign-ins and is wiped when you close it, and no downloads, camera, microphone, location, clipboard or pop-ups. Going on to a trusted site takes you out of it.
 - **Ads that open new tabs are stopped** (Android, see below; Linux already did).
 - **Light only**, and lighter: Iris's glass over a dawn of lilac, rose and peach, with a deep violet ink.
-- **A new icon**: Iris's profile, her hair in sheets of liquid glass.
+- **A new icon**: a clear glass ring on a white tile, light entering and leaving as a rainbow.
 - **No more menu.** Find in page (Ctrl+F) and zoom (Ctrl+plus, minus and 0) stay as keys. The downloads button appears while a file comes in, then stays with the number finished until you open it.
 - Tabs no longer sleep in the background.
 
@@ -17,7 +25,7 @@ Iris 2.1.1: Google AI Mode in every new tab, a light look in the colours of dawn
 - File fields, calls (camera and microphone) and full-screen video work again. The APK is small again.
 
 **Linux**
-- The sandbox is a WebKit web context of its own, each page in WebKit's bubblewrap sandbox, with a network session per sandboxed tab that lives in memory only. Its tabs have an orange rim.
+- The sandbox is a WPE web context of its own, each page in WebKit's process sandbox, with a network session per sandboxed tab that lives in memory only. Its tabs have an orange rim.
 
 **Install**
 - Linux: `flatpak install --user Iris-x86_64.flatpak`

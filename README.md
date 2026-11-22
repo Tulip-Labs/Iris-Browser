@@ -8,12 +8,13 @@
 
 <p align="center">
   <b>A browser made of glass.</b><br>
-  Linux: Swift, libadwaita and WebKitGTK, in real Liquid Glass.<br>
+  Linux: Zig, libadwaita and WPE WebKit, in real Liquid Glass.<br>
   Android: Kotlin, Jetpack Compose and Android System WebView. Every search asks Google AI Mode.
 </p>
 
 <p align="center">
-  <img alt="Swift" src="https://img.shields.io/badge/Swift-6.3-F05138?style=flat-square&logo=swift&logoColor=white">
+  <img alt="Zig" src="https://img.shields.io/badge/Zig-0.15-F7A41D?style=flat-square&logo=zig&logoColor=white">
+  <img alt="WPE WebKit" src="https://img.shields.io/badge/WPE_WebKit-2.54-2B8DD6?style=flat-square">
   <img alt="libadwaita" src="https://img.shields.io/badge/GNOME-libadwaita-4A86CF?style=flat-square&logo=gnome&logoColor=white">
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-Compose-7F52FF?style=flat-square&logo=kotlin&logoColor=white">
   <img alt="Android 10 and newer" src="https://img.shields.io/badge/Android-10%2B-3DDC84?style=flat-square&logo=android&logoColor=white">
@@ -21,7 +22,7 @@
 </p>
 
 <p align="center">
-  <a href="#what-is-new-in-211">New</a> ·
+  <a href="#what-is-new-in-220">New</a> ·
   <a href="#what-it-does">Features</a> ·
   <a href="#install">Install</a> ·
   <a href="#shortcuts">Shortcuts</a> ·
@@ -30,17 +31,22 @@
 </p>
 
 <p align="center">
-  <img src="assets/icon/iris-256.png" width="160" alt="Iris's icon: her profile, her hair in sheets of liquid glass">
+  <img src="assets/icon/iris-256.png" width="160" alt="Iris's icon: a clear glass ring on a white tile, light entering and leaving as a rainbow">
 </p>
 
 ---
 
-## What is new in 2.1.1
+## What is new in 2.2.0
 
+- **Iris for Linux is now Zig and WPE WebKit.** No Swift, no binding layers: Zig calls GTK, libadwaita and WPE through their C headers.
+  - Each page frame arrives from WPE as a DMA-BUF and goes into GTK as a texture without a copy, so the Liquid Glass bends the live page.
+  - Iris draws a page's own pop-ups in glass too: `<select>` lists, `alert()`, `confirm()` and `prompt()`.
+  - The ad and tracker domains are compiled into Iris as Zig arrays, and the lists become WPE content rules inside the engine.
+  - Every tab stays awake: no sleeping tabs.
 - **Every new tab is Google AI Mode**, in Iris's Liquid Glass; the start page is gone, and your tabs still open where you left them.
 - **Faster**: the next new tab is loaded ahead, Google's names are looked up early, and results open without Google's redirect.
 - **An automatic sandbox** for sites Iris does not trust (http, a bare IP, a failing certificate): processes and a throwaway world of their own, and none of your data.
-- **Light only**, in the colours of dawn, and **a new icon**.
+- **Light only**, in the colours of dawn, and **a new icon**: a clear glass ring, light entering and leaving as a rainbow.
 - **No menu**: Ctrl+F finds, Ctrl+plus and minus zoom; the downloads button shows only while it has something to show.
 - **Android on System WebView again**, with ads that open new tabs stopped.
 
@@ -102,12 +108,12 @@ Iris is made again from the start.
 - **Search.** Type an address, or anything else to ask Google AI Mode. Iris asks it to answer from high-quality, current sources. `yt cats` searches YouTube.
 - **Containers.**
   - Personal, Work, Shopping and Banking to start with, and any you add.
-  - Each is a WebKit network session of its own on disk.
+  - Each is a WPE network session of its own on disk.
   - Open a new tab in a container, or open the current page in another one.
   - Removing a container deletes everything its sites kept.
 - **Private tabs.** One in-memory world, gone when the last private tab closes.
-- **The sandbox.** Sites Iris does not trust (http, a bare IP, a failing certificate) open in it without asking: a WebKit web context of its own (its own web processes, in WebKit's bubblewrap sandbox), a network session per tab in memory only, and no downloads, camera, microphone, location, clipboard, WebGL, WebRTC or pop-ups. Its tabs have an orange rim.
-- **Iris Shields.** About 100,000 ad and tracker domains become WebKit content rules. They are compiled once and blocked inside the engine before a request leaves. You can turn Shields off for one site or everywhere.
+- **The sandbox.** Sites Iris does not trust (http, a bare IP, a failing certificate) open in it without asking: a WPE web context of its own (its own web processes, in WebKit's process sandbox), a network session per tab in memory only, and no downloads, camera, microphone, location, clipboard, WebGL, WebRTC or pop-ups. Its tabs have an orange rim.
+- **Iris Shields.** About 100,000 ad and tracker domains, compiled into Iris as Zig arrays, become WPE content rules. They are compiled once and blocked inside the engine before a request leaves. You can turn Shields off for one site or everywhere.
 - **Cookies stay home.** Third-party cookies are refused, and WebKit's tracking prevention is on.
 - **Pop-ups.**
   - Links that open a new window open as a tab next to yours.
@@ -117,14 +123,15 @@ Iris is made again from the start.
   - images and video: open, copy the address, save;
   - selected text: copy, or ask Google AI Mode about it;
   - text fields: cut, copy, paste, select all;
-  - the page: back, forward, reload, inspect.
+  - the page: back, forward, reload, select all.
 - **Downloads.** Saved to your Downloads folder, shown in a glass panel with progress. The button appears while a file comes in and then shows how many finished, until you open it.
 - **The rest.**
   - No menu: find in page with Ctrl+F, zoom with Ctrl+plus, minus and 0.
   - Full screen for videos and with F11.
   - Your tabs come back next time.
   - A daily check for a newer Iris.
-- **Sharp at every scale.** GTK draws everything, at 1.25, 1.5 or 2.
+- **A page's own pop-ups in glass.** `<select>` lists open as glass menus where the page put them; `alert()`, `confirm()` and `prompt()` are Adwaita dialogs; file fields use the desktop's file chooser.
+- **Sharp at every scale.** WPE renders each page at the window's scale and GTK draws everything, at 1.25, 1.5 or 2.
 
 ### Android
 
@@ -174,12 +181,12 @@ On niri, the blur behind the window comes on by itself on 26.04 and newer. No wi
 
 ## Build
 
-**Linux.** You need Swift 6.3 and the development files of libadwaita, GtkSourceView 5, WebKitGTK 6 and libsoup 3.
+**Linux.** You need Zig 0.15.2 and the development files of libadwaita, GTK 4.14 or newer, WPE WebKit 2.54 or newer built with WPEPlatform (`wpe-webkit-2.0`, `wpe-platform-2.0`), libsoup 3, Wayland and libdrm. Arch Linux's `wpewebkit` package has them.
 
     cd linux
-    swift build -c release
-    swift test
-    .build/release/Iris
+    zig build test
+    zig build -Doptimize=ReleaseFast
+    ./zig-out/bin/iris
 
 Or the Flatpak, as CI builds it:
 
@@ -195,24 +202,26 @@ To let updates install over Iris, sign every release with the same key. Put the 
 ## How it is made
 
 ```
-linux/                      Iris for Linux (Swift package)
-  Sources/Iris/
-    Stage.swift             the window's content: a GTK widget made in Swift that lays out
-                            every piece and draws it in layers (back, pages, chrome, overlays)
-    Glass.swift             Liquid Glass from GTK render nodes: lens, rim refraction in three
+linux/                      Iris for Linux (Zig, through the C headers)
+  build.zig                 links libadwaita, GTK, WPE WebKit and WPEPlatform; translates
+                            their headers (src/c.h) with Zig's translate-c
+  src/
+    webview.zig             Iris's WPEPlatform: its own display, views, toplevels and
+                            clipboard; each frame (DMA-BUF) becomes a GdkDmabufTexture
+                            without a copy; GTK's input becomes WPE events
+    stage.zig               the window's content: one GTK widget that lays out every piece
+                            and draws it in layers (back, pages, chrome, overlays)
+    glass.zig               Liquid Glass from GTK render nodes: lens, rim refraction in three
                             steps, dispersion, rim light, pointer light
-    Motion.swift            springs, and the liquid stretch of the sliding tab
-    Browser.swift           a window: tabs, address, toolbar, pop-up rules, layout
-    Tab.swift               a WebKit web view and its signals
-    Containers.swift        one WebKit network session per container
-    Engine.swift            the shared web context, memory limits, light video
-    Shields.swift           the levels' lists, fetched and compiled as WebKit content rules
-    ShieldRules.swift       filter lists turned into WebKit content rules
-    Look.swift              the light look
-    Sandbox.swift           the sandbox for sites Iris does not trust
-    Overlays.swift          menus, suggestions, find, downloads, the right-click menu
-    Keys.swift, Downloads.swift, History.swift, Updates.swift, Search.swift
-  Sources/CBlur/            ext-background-effect-v1: blur behind the window
+    browser.zig             a window: tabs, address, toolbar, pop-up rules, layout
+    tab.zig                 a WPE web view and its signals
+    engine.zig              the web context, containers, downloads, the sandbox, light video
+    shields.zig, rules.zig  the levels' lists, turned into WPE content rules and compiled
+    overlays.zig            menus, suggestions, find, downloads, the right-click menu, and
+                            a page's own <select> lists, dialogs and file fields
+    app.zig, keys.zig, store.zig, search.zig, updates.zig, ui.zig, core.zig
+  tools/domains.zig         the ad and tracker domains as a sorted Zig array, at build time
+  c/                        ext-background-effect-v1: blur behind the window
 android/                    Iris for Android (Kotlin, Compose, System WebView)
   app/src/main/java/org/tulipanlabs/iris/
     Browser.kt              tabs and their Chromium pages in a ViewModel, profiles, pop-up rules

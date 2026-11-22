@@ -9,7 +9,7 @@
     <name>Tulip Labs</name>
   </developer>
   <description>
-    <p>Iris is a browser written in Swift with libadwaita. Its pages are drawn by WebKitGTK, and its interface is Liquid Glass: clear glass that bends what is behind it, drawn by GTK itself and sharp at every display scale.</p>
+    <p>Iris is a browser written in Zig with libadwaita. Its pages are drawn by WPE WebKit, and its interface is Liquid Glass: clear glass that bends what is behind it, drawn by GTK itself and sharp at every display scale.</p>
     <ul>
       <li>Iris Shields: about 100,000 ad and tracker domains blocked inside the engine, and the pop-ups ads open</li>
       <li>Containers: worlds apart, each with its own cookies, storage and sign-ins, and private tabs</li>
@@ -27,7 +27,7 @@
     <category>WebBrowser</category>
   </categories>
   <releases>
-    <release version="2.1.1" date="2026-11-22"/>
+    <release version="2.2.0" date="2026-11-22"/>
     <release version="2.1.0" date="2026-11-22"/>
     <release version="2.0.1" date="2026-11-22"/>
     <release version="2.0.0" date="2026-11-21"/>

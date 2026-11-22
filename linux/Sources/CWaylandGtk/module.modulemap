@@ -1,5 +1,0 @@
-module CWaylandGtk [system] {
-    header "shim.h"
-    link "wayland-client"
-    export *
-}

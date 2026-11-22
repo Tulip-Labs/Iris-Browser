@@ -1,18 +1,20 @@
 # Iris as a Flatpak: the way to install Iris on Linux.
 #
-# Builds the Swift app in linux/ with the GNOME 50 SDK (GTK 4, libadwaita,
-# WebKitGTK 6) and Flathub's Swift 6 SDK extension. The Swift runtime is
-# linked into the program, so the app needs nothing beyond the GNOME runtime.
+# Builds WPE WebKit 2.54.3 (with its WPEPlatform API: Iris brings its own
+# display, views and toplevels, and puts each frame in GTK as a DMA-BUF
+# texture) and the Zig app in linux/ against the GNOME 50 SDK (GTK 4,
+# libadwaita). Zig 0.15.2 is a build tool only; nothing of it is in the app.
 #
-# This is the manifest CI uses for the bundle each release carries; its
-# build may fetch swift-adwaita and its packages from GitHub. A Flathub
-# submission would list every source instead (see README.md here).
+# WebKit's process sandbox stays on: inside a Flatpak, WebKit runs its web
+# processes through flatpak-spawn --sandbox.
+#
+# This is the manifest CI uses for the bundle each release carries. WPE
+# WebKit takes a few hours to build the first time; CI keeps the built
+# module in its cache until this file's WPE part changes.
 app-id: io.github.tulip_labs.Iris
 runtime: org.gnome.Platform
 runtime-version: "50"
 sdk: org.gnome.Sdk
-sdk-extensions:
-  - org.freedesktop.Sdk.Extension.swift6
 command: iris
 separate-locales: false
 
@@ -22,8 +24,8 @@ finish-args:
   - --socket=wayland
   - --socket=fallback-x11
   - --socket=pulseaudio
-  # the GPU, and cameras for calls (WebRTC); screen sharing goes through
-  # the desktop's portal and PipeWire
+  # the GPU (DMA-BUF frames and video decoding), and cameras for calls
+  # (WebRTC); screen sharing goes through the desktop's portal and PipeWire
   - --device=all
   - --filesystem=xdg-run/pipewire-0
   - --filesystem=xdg-download
@@ -41,16 +43,73 @@ add-extensions:
 cleanup-commands:
   - mkdir -p /app/lib/ffmpeg
 
-build-options:
-  append-path: /usr/lib/sdk/swift6/bin
-  prepend-ld-library-path: /usr/lib/sdk/swift6/lib
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/doc
+  - "*.a"
 
 modules:
+  # WOFF2 web fonts (most sites use them)
+  - name: woff2
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_SHARED_LIBS=ON
+      - -DCMAKE_INSTALL_LIBDIR=lib
+    sources:
+      - type: git
+        url: https://github.com/google/woff2.git
+        tag: v1.0.2
+        commit: 1bccf208bca986e53a647dfe4811322adb06ecf8
+
+  # the web engine
+  - name: wpewebkit
+    buildsystem: cmake-ninja
+    builddir: true
+    build-options:
+      cflags: -g1
+      cxxflags: -g1
+    config-opts:
+      - -DPORT=WPE
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DENABLE_WPE_PLATFORM=ON
+      - -DENABLE_WPE_PLATFORM_HEADLESS=ON
+      - -DENABLE_WPE_PLATFORM_DRM=OFF
+      - -DENABLE_WPE_PLATFORM_WAYLAND=OFF
+      - -DENABLE_WPE_LEGACY_API=OFF
+      - -DENABLE_WPE_QT_API=OFF
+      - -DENABLE_DOCUMENTATION=OFF
+      - -DENABLE_INTROSPECTION=OFF
+      - -DENABLE_JOURNALD_LOG=OFF
+      - -DENABLE_WEBDRIVER=OFF
+      - -DENABLE_MINIBROWSER=OFF
+      - -DENABLE_API_TESTS=OFF
+      - -DENABLE_LAYOUT_TESTS=OFF
+      - -DENABLE_SPEECH_SYNTHESIS=OFF
+      - -DUSE_FLITE=OFF
+      - -DUSE_LIBHYPHEN=OFF
+      - -DUSE_LIBBACKTRACE=OFF
+      - -DUSE_JPEGXL=OFF
+      - -DUSE_AVIF=OFF
+      - -DUSE_SYSPROF_CAPTURE=OFF
+      - -DUSE_SYSTEM_UNIFDEF=OFF
+      # the sandbox for web processes: flatpak-spawn inside the Flatpak
+      - -DENABLE_BUBBLEWRAP_SANDBOX=ON
+      - -DBWRAP_EXECUTABLE=/usr/bin/bwrap
+      - -DDBUS_PROXY_EXECUTABLE=/usr/bin/xdg-dbus-proxy
+    sources:
+      - type: archive
+        url: https://wpewebkit.org/releases/wpewebkit-2.54.3.tar.xz
+        sha256: 787afd32ae23eac061621465390f44a462e874a9ebaba0b65521d7237fa8a5e4
+
   - name: iris
     buildsystem: simple
     build-options:
-      build-args:
-        - --share=network # SwiftPM fetches swift-adwaita
+      env:
+        ZIG_GLOBAL_CACHE_DIR: /run/build/iris/zig-cache
     sources:
       - type: dir
         path: ../../linux
@@ -58,17 +117,26 @@ modules:
       - type: dir
         path: ../linux
         dest: desktop
+      # Zig 0.15.2 (the official build, as PyPI's ziglang wheel carries it)
+      - type: archive
+        archive-type: zip
+        url: https://files.pythonhosted.org/packages/db/81/f9f5c7fd68d80b8edff2a641a1c95ac4125356387d298374227040b8e1e8/ziglang-0.15.2-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl
+        sha256: 806316453d1ede7174ed3fefb8e5348154629089c3bb5fe812dfd0e172fac130
+        strip-components: 0
+        dest: zig
+        only-arches: [x86_64]
       - type: script
         dest-filename: iris.sh
         commands:
           - export TMPDIR="$XDG_RUNTIME_DIR/app/$FLATPAK_ID"
-          - exec /app/lib/iris/iris "$@"
+          - exec /app/libexec/iris "$@"
     build-commands:
-      - cd linux && swift build -c release --static-swift-stdlib
-      - install -Dm755 linux/.build/release/Iris /app/lib/iris/iris
-      - cp -r linux/.build/release/Iris_Iris.resources /app/lib/iris/
+      - chmod +x zig/ziglang/zig
+      # the program in libexec, its icons in share/iris/icons beside it
+      - cd linux && PKG_CONFIG_PATH=/app/lib/pkgconfig:$PKG_CONFIG_PATH ../zig/ziglang/zig build -Doptimize=ReleaseFast --prefix /app
+      - install -Dm755 /app/bin/iris /app/libexec/iris && rm /app/bin/iris
       - install -Dm755 iris.sh /app/bin/iris
-      - install -Dm644 linux/Sources/Iris/Resources/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg /app/share/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg
-      - install -Dm644 linux/Sources/Iris/Resources/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png /app/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
+      - install -Dm644 linux/resources/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg /app/share/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg
+      - install -Dm644 linux/resources/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png /app/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
       - install -Dm644 desktop/io.github.tulip_labs.Iris.desktop /app/share/applications/io.github.tulip_labs.Iris.desktop
       - install -Dm644 desktop/io.github.tulip_labs.Iris.metainfo.xml /app/share/metainfo/io.github.tulip_labs.Iris.metainfo.xml

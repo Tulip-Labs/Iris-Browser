@@ -6,3 +6,5 @@ linux/deps/
 android/.gradle/
 android/app/build/
 android/local.properties
+linux/.zig-cache/
+linux/zig-out/

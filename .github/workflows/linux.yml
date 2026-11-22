@@ -1,7 +1,8 @@
-# Iris for Linux: builds the Swift app (linux/) and runs its tests, starts it
-# at a fractional scale under a headless Wayland compositor to check it opens
-# and draws, and builds the Flatpak bundle. The release workflow calls this
-# too and publishes the bundle.
+# Iris for Linux: builds the Zig app (linux/) against WPE WebKit and runs its
+# tests, starts it at a fractional scale under a headless Wayland compositor
+# to check it opens and draws, and builds the Flatpak bundle (which builds
+# WPE WebKit itself). The release workflow calls this too and publishes the
+# bundle.
 name: Linux
 
 on:
@@ -15,29 +16,44 @@ concurrency:
   group: linux-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Zig 0.15.2, the official build as PyPI's ziglang wheel carries it
+  ZIG_WHEEL: https://files.pythonhosted.org/packages/db/81/f9f5c7fd68d80b8edff2a641a1c95ac4125356387d298374227040b8e1e8/ziglang-0.15.2-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl
+  ZIG_SHA256: 806316453d1ede7174ed3fefb8e5348154629089c3bb5fe812dfd0e172fac130
+
 jobs:
-  swift:
+  # Arch Linux has WPE WebKit 2.54 with WPEPlatform, so the app builds in
+  # minutes here; the Flatpak below builds its own WPE.
+  zig:
     runs-on: ubuntu-24.04
     container:
-      image: swift:6.3-noble
+      image: archlinux:latest
       options: --shm-size=1g --privileged
     steps:
       - uses: actions/checkout@v4
-      - name: GTK, libadwaita and WebKitGTK development files
+      - name: WPE WebKit, GTK and libadwaita development files
         run: |
-          apt-get update -qq
-          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq pkg-config libadwaita-1-dev libgtksourceview-5-dev \
-            libwebkitgtk-6.0-dev libsoup-3.0-dev libwayland-dev sway grim xwayland dbus-x11 fonts-cantarell > /dev/null
-      - name: Build
-        working-directory: linux
-        run: swift build -c release
+          pacman -Syu --noconfirm --needed wpewebkit libadwaita gtk4 libsoup3 wayland libdrm pkgconf \
+            unzip python sway grim cantarell-fonts mesa > /dev/null
+          pkg-config --modversion wpe-webkit-2.0 wpe-platform-2.0 gtk4 libadwaita-1
+      - name: Zig 0.15.2
+        run: |
+          curl -sSfL "$ZIG_WHEEL" -o /tmp/zig.whl
+          echo "$ZIG_SHA256  /tmp/zig.whl" | sha256sum -c -
+          unzip -q /tmp/zig.whl -d /opt/zig && chmod +x /opt/zig/ziglang/zig
+          echo /opt/zig/ziglang >> $GITHUB_PATH
+      - name: Google AI Mode's glass is the same on Android and Linux
+        run: cmp linux/src/aimode.js android/app/src/main/assets/js/aimode.js
       - name: Tests
         working-directory: linux
-        run: swift test
-      # Iris at 1.25, as on niri: it must open, lay out and draw its glass.
-      # (Only this test turns WebKit's process sandbox off, because a CI
-      # container cannot make the namespaces it needs; Iris itself never
-      # does.)
+        run: zig build test --summary all
+      - name: Build
+        working-directory: linux
+        run: zig build -Doptimize=ReleaseFast
+      # Iris at 1.25, as on niri: it must open, lay out and draw its glass
+      # and a page. (Only this test turns WebKit's process sandbox off,
+      # because a CI container cannot make the namespaces it needs; Iris
+      # itself never does.)
       - name: Start Iris at a fractional scale
         working-directory: linux
         run: |
@@ -48,14 +64,13 @@ jobs:
           for i in $(seq 1 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; sleep 0.2; done
           export WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
           export HOME=$(mktemp -d) GDK_BACKEND=wayland LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
-          .build/release/Iris > /tmp/iris.log 2>&1 &
+          ./zig-out/bin/iris > /tmp/iris.log 2>&1 &
           sleep 60
           grim /tmp/iris-1.25.png
-          pgrep -x Iris > /dev/null || { echo "Iris did not stay open"; cat /tmp/iris.log; exit 1; }
+          pgrep -x iris > /dev/null || { echo "Iris did not stay open"; cat /tmp/iris.log; exit 1; }
           cat /tmp/iris.log
           # the window drew: the screen is not one flat colour
           python3 - <<'PY'
-          import zlib, struct
           d = open('/tmp/iris-1.25.png', 'rb').read()
           assert len(set(d[1000:200000])) > 64, "the screen is empty"
           print("drawn")
@@ -66,13 +81,18 @@ jobs:
           name: linux-screen
           path: /tmp/iris-1.25.png
 
-  # The bundle, built on the runner itself with Flathub's GNOME 50 SDK and
-  # Swift 6 extension (the flatpak-builder container could not update its own
-  # SDK on the runner's overlay filesystem), then installed and started.
+  # The bundle, built on the runner itself with Flathub's GNOME 50 SDK, then
+  # installed and started. WPE WebKit is built inside it; the cache keeps
+  # the built module (and ccache) so later runs build only Iris.
   flatpak:
     runs-on: ubuntu-24.04
+    timeout-minutes: 345
     steps:
       - uses: actions/checkout@v4
+      - name: Room to build WebKit
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
       - name: Flatpak, flatpak-builder and Weston
         run: |
           sudo rm -f /var/lib/man-db/auto-update
@@ -82,13 +102,25 @@ jobs:
           # bubblewrap needs user namespaces, which Ubuntu limits by default
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - uses: actions/cache/restore@v4
+        with:
+          path: .flatpak-builder
+          key: flatpak-wpe-${{ hashFiles('packaging/flatpak/io.github.tulip_labs.Iris.yml') }}
+          restore-keys: flatpak-wpe-
       - name: Build the bundle
         run: |
-          flatpak-builder --user --install-deps-from=flathub --force-clean --repo=repo --default-branch=stable \
+          flatpak-builder --user --install-deps-from=flathub --force-clean --ccache --repo=repo --default-branch=stable \
             build packaging/flatpak/io.github.tulip_labs.Iris.yml
           flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
             repo Iris-x86_64.flatpak io.github.tulip_labs.Iris stable
           mkdir -p art && cp Iris-x86_64.flatpak art/ && ls -l art
+      # kept even when the build stops part way, so the next run goes on
+      # from what was built
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .flatpak-builder
+          key: flatpak-wpe-${{ hashFiles('packaging/flatpak/io.github.tulip_labs.Iris.yml') }}-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
         with:
           name: linux
@@ -105,7 +137,7 @@ jobs:
           export WAYLAND_DISPLAY=wayland-1
           dbus-run-session -- flatpak run --user --env=LIBGL_ALWAYS_SOFTWARE=1 io.github.tulip_labs.Iris about:blank > /tmp/log.txt 2>&1 &
           sleep 40
-          alive=0; pgrep -f /app/lib/iris/iris >/dev/null && alive=1
+          alive=0; pgrep -f /app/libexec/iris >/dev/null && alive=1
           grep -v dbus /tmp/log.txt | tail -60
           flatpak kill io.github.tulip_labs.Iris 2>/dev/null || true
           [ $alive = 1 ] || { echo "Iris from the Flatpak exited before 40 seconds"; exit 1; }
