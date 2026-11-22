@@ -52,6 +52,15 @@
             </intent-filter>
         </activity>
 
+        <!-- the sandbox: sites Iris does not trust, in a process of their own -->
+        <activity
+            android:name=".SandboxActivity"
+            android:process=":sandbox"
+            android:exported="false"
+            android:theme="@style/Iris"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- told when an update has been installed (or failed to) -->
         <receiver android:name=".UpdateReceiver" android:exported="false" />
     </application>

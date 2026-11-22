@@ -8,20 +8,21 @@
 
 <p align="center">
   <b>A browser made of glass.</b><br>
-  Linux: Swift, libadwaita and WebKitGTK, in real Liquid Glass.<br>
-  Android: Kotlin, Jetpack Compose and Chromium inside the app (Cefrium). Every search asks Google AI Mode.
+  Linux: Odin, Wayland and WPE WebKit, in real Liquid Glass. No GTK.<br>
+  Android: Kotlin, Jetpack Compose and Android System WebView. Every search asks Google AI Mode.
 </p>
 
 <p align="center">
-  <img alt="Swift" src="https://img.shields.io/badge/Swift-6.3-F05138?style=flat-square&logo=swift&logoColor=white">
-  <img alt="libadwaita" src="https://img.shields.io/badge/GNOME-libadwaita-4A86CF?style=flat-square&logo=gnome&logoColor=white">
+  <img alt="Odin" src="https://img.shields.io/badge/Odin-dev--2026--11-3882D2?style=flat-square">
+  <img alt="WPE WebKit" src="https://img.shields.io/badge/WPE_WebKit-2.54-2B8DD6?style=flat-square">
+  <img alt="Wayland" src="https://img.shields.io/badge/Wayland-native-FFBC00?style=flat-square&logo=wayland&logoColor=black">
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-Compose-7F52FF?style=flat-square&logo=kotlin&logoColor=white">
   <img alt="Android 10 and newer" src="https://img.shields.io/badge/Android-10%2B-3DDC84?style=flat-square&logo=android&logoColor=white">
   <img alt="License: GPL 3.0" src="https://img.shields.io/badge/license-GPL%203.0-6B7280?style=flat-square">
 </p>
 
 <p align="center">
-  <a href="#whats-new-in-210">New</a> ·
+  <a href="#what-is-new-in-220">New</a> ·
   <a href="#what-it-does">Features</a> ·
   <a href="#install">Install</a> ·
   <a href="#shortcuts">Shortcuts</a> ·
@@ -30,12 +31,26 @@
 </p>
 
 <p align="center">
-  <img src="assets/screens/linux-menu.png" width="860" alt="Iris for Linux: the menu, with the look (Auto, Light, Dark), a sheet of liquid glass">
+  <img src="assets/icon/iris-256.png" width="160" alt="Iris's icon: a clear glass ring on a white tile, light entering and leaving as a rainbow">
 </p>
 
 ---
 
-## What's new in 2.1.0
+## What is new in 2.2.0
+
+- **Iris for Linux is now Odin and WPE WebKit, with no GTK.** Odin talks to Wayland, EGL, OpenGL ES, HarfBuzz, fontconfig and WPE directly, through foreign declarations checked against the real C headers.
+  - Each page frame arrives from WPE as a DMA-BUF and Iris samples it in its own OpenGL ES renderer without a copy, so the Liquid Glass (now a shader) bends the live page.
+  - The tabs, address bar, menus and dialogs are drawn by Iris itself, in the same frame as their glass: text shaped by HarfBuzz in the desktop's font, glyphs and icons rasterised by Iris.
+  - Iris draws a page's own pop-ups in glass too: `<select>` lists, `alert()`, `confirm()` and `prompt()`; file fields use the desktop's portal.
+  - Every tab stays awake: no sleeping tabs.
+- **Every new tab is Google AI Mode**, in Iris's Liquid Glass; the start page is gone, and your tabs still open where you left them.
+- **Faster**: the next new tab is loaded ahead, Google's names are looked up early, and results open without Google's redirect.
+- **An automatic sandbox** for sites Iris does not trust (http, a bare IP, a failing certificate): processes and a throwaway world of their own, and none of your data.
+- **Light only**, in the colours of dawn, and **a new icon**: a clear glass ring, light entering and leaving as a rainbow.
+- **No menu**: Ctrl+F finds, Ctrl+plus and minus zoom; the downloads button shows only while it has something to show.
+- **Android on System WebView again**, with ads that open new tabs stopped.
+
+## What was new in 2.1.0
 
 - **Light, Dark or Auto**, as in [Ember](https://github.com/Tulip-Labs/Ember). Auto follows the system; with Ember on niri it turns dark at night. Pages follow the look.
 - **The new-tab page is Iris herself**, Ember's wallpaper: the goddess of the rainbow in liquid glass, light by day and dark by night.
@@ -78,7 +93,7 @@ Iris is made again from the start.
 - **Springs.** Tabs slide into place. The selected tab's glass slides from tab to tab and stretches on the way. Menus open and close as glass.
 - **Containers, worlds apart.** On both platforms, each container keeps its own cookies, storage, cache and sign-ins.
 - **Ads open no tabs.** A pop-up needs your click, and goes only to the same site or a sign-in page. Anything else is stopped, with an Open button if you meant it.
-- **Android in Kotlin with Jetpack Compose** (its engine since 2.1.0 is Chromium inside the app, through Cefrium).
+- **Android in Kotlin with Jetpack Compose** (its engine is Android System WebView).
 - **A new icon.** The goddess in liquid glass, rising out of her rainbow.
 - **Fewer packages.** Windows, Nix, the Snap and the container image are gone. Linux ships as a Flatpak.
 
@@ -86,22 +101,19 @@ Iris is made again from the start.
 
 ### Linux
 
-<p align="center">
-  <img src="assets/screens/linux-new-tab.png" width="420" alt="The new-tab page in Light: Iris, goddess of the rainbow, under a glass capsule">
-  <img src="assets/screens/linux-dark.png" width="420" alt="The new-tab page in Dark: Iris at night">
-</p>
-
 - **Liquid Glass chrome.** The tabs, the address bar and the button groups float as glass.
   - The page's own colour reaches up under the toolbar (as Safari's does), so the glass has something to bend.
   - Menus, suggestions, find, downloads and notices are glass over the page itself.
+- **Google AI Mode in every new tab**, in Iris's glass: the dawn behind it, its panels clear, the question box of glass. The next new tab is loaded ahead, so it opens at once.
 - **Search.** Type an address, or anything else to ask Google AI Mode. Iris asks it to answer from high-quality, current sources. `yt cats` searches YouTube.
 - **Containers.**
   - Personal, Work, Shopping and Banking to start with, and any you add.
-  - Each is a WebKit network session of its own on disk.
+  - Each is a WPE network session of its own on disk.
   - Open a new tab in a container, or open the current page in another one.
   - Removing a container deletes everything its sites kept.
 - **Private tabs.** One in-memory world, gone when the last private tab closes.
-- **Iris Shields.** About 100,000 ad and tracker domains become WebKit content rules. They are compiled once and blocked inside the engine before a request leaves. You can turn Shields off for one site or everywhere.
+- **The sandbox.** Sites Iris does not trust (http, a bare IP, a failing certificate) open in it without asking: a WPE web context of its own (its own web processes, in WebKit's process sandbox), a network session per tab in memory only, and no downloads, camera, microphone, location, clipboard, WebGL, WebRTC or pop-ups. Its tabs have an orange rim.
+- **Iris Shields.** About 100,000 ad and tracker domains, built into Iris, become WPE content rules. They are compiled once and blocked inside the engine before a request leaves. You can turn Shields off for one site or everywhere.
 - **Cookies stay home.** Third-party cookies are refused, and WebKit's tracking prevention is on.
 - **Pop-ups.**
   - Links that open a new window open as a tab next to yours.
@@ -111,27 +123,28 @@ Iris is made again from the start.
   - images and video: open, copy the address, save;
   - selected text: copy, or ask Google AI Mode about it;
   - text fields: cut, copy, paste, select all;
-  - the page: back, forward, reload, inspect.
-- **Downloads.** Saved to your Downloads folder, shown in a glass panel with progress. Open a file or show it in its folder.
+  - the page: back, forward, reload, select all.
+- **Downloads.** Saved to your Downloads folder, shown in a glass panel with progress. The button appears while a file comes in and then shows how many finished, until you open it.
 - **The rest.**
-  - Find in page and zoom.
+  - No menu: find in page with Ctrl+F, zoom with Ctrl+plus, minus and 0.
   - Full screen for videos and with F11.
   - Your tabs come back next time.
   - A daily check for a newer Iris.
-- **Sharp at every scale.** GTK draws everything, at 1.25, 1.5 or 2.
+- **A page's own pop-ups in glass.** `<select>` lists open as glass menus where the page put them; `alert()`, `confirm()` and `prompt()` are glass dialogs; file fields use the desktop's file chooser (through its portal).
+- **Sharp at every scale.** Wayland's fractional scaling: WPE renders each page, and Iris its chrome, at the screen's own pixels, at 1.25, 1.5 or 2.
 
 ### Android
 
-- **Engine.** Chromium carried in the app (Cefrium, CEF for Android), the same on every phone, with H.264 and AAC. The interface is Jetpack Compose drawn as Liquid Glass (no Material components). The tabs and their pages live in a ViewModel.
-- **Look.** Light, Dark or Auto (the phone's choice), from the menu.
-- **Containers.** Cefrium profiles: each container keeps its own cookies, cache, localStorage and IndexedDB.
-- **Shields.** Chromium asks Iris before every request; ads and trackers never leave the phone. Moderate, Aggressive or Ultra aggressive, with uBlock Origin's lists, and the boxes ads leave are hidden.
+- **Engine.** Android System WebView (Chromium, kept up to date by the phone). The interface is Jetpack Compose drawn as Liquid Glass (no Material components). The tabs and their pages live in a ViewModel.
+- **Look.** Light, in the colours of dawn. Every new tab is Google AI Mode in Iris's glass.
+- **The sandbox.** Sites Iris does not trust open in a process of their own with WebView data made fresh each time, and none of your data.
+- **Containers.** WebView profiles (System WebView 123 and newer): each container keeps its own cookies, cache, localStorage and IndexedDB.
+- **Shields.** WebView asks Iris before every request; ads and trackers never leave the phone. Ads that open new tabs are stopped too: a page opens no tab by itself, a tapped ad link opens nothing, and a script's window stays hidden until Iris knows it is not an ad. Moderate, Aggressive or Ultra aggressive, with uBlock Origin's lists, and the boxes ads leave are hidden.
 - **Tabs.**
   - A strip of tabs on top with one "+" (long-press it to pick a container).
-  - The bottom bar has back, forward, home, Shields, containers and downloads.
-  - Background tabs beyond 3 sleep and keep their history.
+  - The bottom bar has back, forward, home, Shields, containers, and downloads while there are any (with the number finished).
 - **Downloads manager.** Files go to the phone's Downloads folder (no storage permission needed), with progress, open and delete.
-- **Pull to reload** at the top of a page. **Calls** in the browser, through the engine's own prompts.
+- **Calls** in the browser (camera and microphone, asked once), file fields and full-screen video.
 - **Auto-update.** Iris checks GitHub once a day, downloads the new APK and has Android install it over itself.
 - **Closing tabs.** Closing the tab you are on opens the one beside it; closing the last tab leaves a fresh one.
 
@@ -159,6 +172,7 @@ On niri, the blur behind the window comes on by itself on 26.04 and newer. No wi
 | Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+1…9 | Change tab |
 | Ctrl+R, F5 / Ctrl+Shift+R | Reload / reload without the cache |
 | Alt+← / Alt+→ | Back / forward |
+| Alt+Home | Google AI Mode |
 | Ctrl+F | Find in page |
 | Ctrl+Plus / Ctrl+Minus / Ctrl+0 | Zoom |
 | Ctrl+Shift+Y, Ctrl+J | Downloads |
@@ -167,12 +181,14 @@ On niri, the blur behind the window comes on by itself on 26.04 and newer. No wi
 
 ## Build
 
-**Linux.** You need Swift 6.3 and the development files of libadwaita, GtkSourceView 5, WebKitGTK 6 and libsoup 3.
+**Linux.** You need Odin (dev-2026-11 or newer), a C compiler to link with (clang, or gcc through `ODIN_CLANG_PATH`), and the development files of WPE WebKit 2.54 or newer built with WPEPlatform (`wpe-webkit-2.0`, `wpe-platform-2.0`), libsoup 3, HarfBuzz, fontconfig, Wayland (`wayland-client`, `wayland-egl`, `wayland-cursor`), xkbcommon, EGL and OpenGL ES. Arch Linux's packages have them all.
 
     cd linux
-    swift build -c release
-    swift test
-    .build/release/Iris
+    ./build.sh test          # the tests
+    ./build.sh check         # every C binding against the real headers
+    ./build.sh               # a quick build to work on (no optimisation)
+    ./build.sh release       # the optimised build, as the Flatpak ships it
+    ./iris
 
 Or the Flatpak, as CI builds it:
 
@@ -188,24 +204,36 @@ To let updates install over Iris, sign every release with the same key. Put the 
 ## How it is made
 
 ```
-linux/                      Iris for Linux (Swift package)
-  Sources/Iris/
-    Stage.swift             the window's content: a GTK widget made in Swift that lays out
-                            every piece and draws it in layers (back, pages, chrome, overlays)
-    Glass.swift             Liquid Glass from GTK render nodes: lens, rim refraction in three
-                            steps, dispersion, rim light, pointer light
-    Motion.swift            springs, and the liquid stretch of the sliding tab
-    Browser.swift           a window: tabs, address, toolbar, pop-up rules, layout
-    Tab.swift               a WebKit web view and its signals
-    Containers.swift        one WebKit network session per container
-    Engine.swift            the shared web context, memory limits, light video
-    Shields.swift           the levels' lists, fetched and compiled as WebKit content rules
-    ShieldRules.swift       filter lists turned into WebKit content rules
-    Look.swift              Light, Dark or Auto
-    Overlays.swift          menus, suggestions, find, downloads, the right-click menu
-    NewTab.swift, Keys.swift, Downloads.swift, History.swift, Updates.swift, Search.swift
-  Sources/CBlur/            ext-background-effect-v1: blur behind the window
-android/                    Iris for Android (Kotlin, Compose, Chromium through Cefrium)
+linux/                      Iris for Linux (Odin; no GTK, no X11)
+  build.sh                  builds, tests and checks (odin build src)
+  plat/window.odin          the window: its own Wayland client (xdg-shell, fractional scale,
+                            viewporter, cursor shapes, decorations, background blur), keys
+                            through xkbcommon, EGL
+  wl/                       Wayland's protocols as Odin tables (generated from the XML)
+  src/
+    platform.odin           Iris's WPEPlatform: its own display, views, toplevels and
+                            clipboard (GObject subclasses written in Odin); each frame, a
+                            DMA-BUF, becomes an EGL image sampled with no copy; Wayland's
+                            input becomes WPE events
+    render.odin             the OpenGL ES 3 renderer: the dawn, the page, Liquid Glass
+    chrome.odin             the chrome, drawn each frame with its glass: tabs, bars, the
+                            address, panels, menus, dialogs, notes; clicks and keys
+    text.odin, text_ffi.odin  text: fontconfig finds the fonts, HarfBuzz shapes and gives
+                            each glyph's outline, one atlas holds them
+    raster.odin, icons.odin Iris's rasteriser (exact area coverage) for glyphs and the
+                            line icons (SVG path data)
+    line.odin               an editable line: cursor, selection, words, clipboard, undo
+    browser.odin            the window's tabs, layout, input routing, pop-up rules
+    tab.odin                a WPE web view and its signals
+    engine.odin             the web context, containers, downloads, the sandbox, light video
+    shields.odin, rules.odin  the levels' lists, turned into WPE content rules and compiled
+    portal.odin             file fields through the desktop's portal (D-Bus)
+    glib.odin, wpe*.odin, soup_gen.odin  the C functions Iris calls, declared once
+    main.odin, store.odin, search.odin, updates.odin, clipboard.odin
+  abi/                      checks every foreign declaration, struct and protocol table
+                            against the C headers (clang reads them)
+  tools/                    makes the bindings and protocol tables from the headers
+android/                    Iris for Android (Kotlin, Compose, System WebView)
   app/src/main/java/org/tulipanlabs/iris/
     Browser.kt              tabs and their Chromium pages in a ViewModel, profiles, pop-up rules
     Shields.kt, ShieldCore.kt  the levels, the lists, every request's answer
@@ -217,14 +245,15 @@ packaging/                  the Flatpak manifest, desktop file and metainfo
 assets/icon/                the icon (SVG) and its renders
 ```
 
-How the glass is drawn: each frame, the window first draws everything behind the glass (its tint and the page) into one scene. It then draws each piece of glass over that scene:
+How the glass is drawn (Linux): each frame, Iris draws everything behind the glass (the dawn and the page) into one texture, and a blurred copy of it. Then each piece of glass is one shader pass over that texture:
 
-- a slightly magnified copy of what lies behind;
-- three copies pulled in from beyond the edge, each seen only through a mask that fades in towards the rim, so lines curve as they cross it;
-- red and blue split a little at the outermost step;
-- a faint tint, the rim of light and the pointer's light.
+- the middle is a gentle lens, a little magnified;
+- towards the rim, what lies behind is pulled in from beyond the edge, more the nearer the edge, so lines curve as they cross it;
+- red, green and blue bend by slightly different amounts at the rim (dispersion);
+- panels mix in the blurred copy (frost), for reading;
+- a faint tint, a line of light inside the top rim, the pointer's light, and a soft violet shadow below.
 
-Every step is a GTK render node (clip, transform, mask, blend, colour matrix, gradients), so it runs on GTK's GL and Vulkan renderers alike, at any scale.
+The chrome's words and icons are drawn right after each piece of its glass, in the same frame, at the screen's own pixels.
 
 ## License
 

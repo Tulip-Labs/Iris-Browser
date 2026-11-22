@@ -1,29 +1,32 @@
 # Iris as a Flatpak: the way to install Iris on Linux.
 #
-# Builds the Swift app in linux/ with the GNOME 50 SDK (GTK 4, libadwaita,
-# WebKitGTK 6) and Flathub's Swift 6 SDK extension. The Swift runtime is
-# linked into the program, so the app needs nothing beyond the GNOME runtime.
+# Builds WPE WebKit 2.54.3 (with its WPEPlatform API: Iris brings its own
+# display, views and toplevels, and samples each frame, a DMA-BUF, in its
+# own OpenGL ES renderer) and the Odin app in linux/, which talks to
+# Wayland, EGL and WPE directly: no GTK, no X11. No Flathub runtime ships
+# WPE WebKit, so it is built here; the GNOME 50 runtime gives it GLib,
+# libsoup and GStreamer. Odin is a build tool only.
 #
-# This is the manifest CI uses for the bundle each release carries; its
-# build may fetch swift-adwaita and its packages from GitHub. A Flathub
-# submission would list every source instead (see README.md here).
+# WebKit's process sandbox stays on: inside a Flatpak, WebKit runs its web
+# processes through flatpak-spawn --sandbox.
+#
+# This is the manifest CI uses for the bundle each release carries. WPE
+# WebKit takes a few hours to build the first time; CI keeps the built
+# module in its cache until this file's WPE part changes.
 app-id: io.github.tulip_labs.Iris
 runtime: org.gnome.Platform
 runtime-version: "50"
 sdk: org.gnome.Sdk
-sdk-extensions:
-  - org.freedesktop.Sdk.Extension.swift6
 command: iris
 separate-locales: false
 
 finish-args:
   - --share=ipc
   - --share=network
-  - --socket=wayland
-  - --socket=fallback-x11
+  - --socket=wayland # Iris is Wayland only
   - --socket=pulseaudio
-  # the GPU, and cameras for calls (WebRTC); screen sharing goes through
-  # the desktop's portal and PipeWire
+  # the GPU (DMA-BUF frames and video decoding), and cameras for calls
+  # (WebRTC); screen sharing goes through the desktop's portal and PipeWire
   - --device=all
   - --filesystem=xdg-run/pipewire-0
   - --filesystem=xdg-download
@@ -41,16 +44,94 @@ add-extensions:
 cleanup-commands:
   - mkdir -p /app/lib/ffmpeg
 
-build-options:
-  append-path: /usr/lib/sdk/swift6/bin
-  prepend-ld-library-path: /usr/lib/sdk/swift6/lib
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/doc
+  - "*.a"
 
 modules:
+  # WOFF2 web fonts (most sites use them)
+  - name: woff2
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_SHARED_LIBS=ON
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      # woff2 still asks for CMake 2.8, which CMake 4 refuses unless told
+      # the oldest policies to use
+      - -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+    sources:
+      # after 1.0.2: builds with GCC 15 (<stdint.h>) and has fixes for
+      # bounds checks on malformed fonts
+      - type: git
+        url: https://github.com/google/woff2.git
+        commit: 7b67e12355fe7da148db5c19d4261f0a498a9537
+        disable-submodules: true
+
+  # the system-call filter WebKit's process sandbox uses (built here in
+  # case the SDK carries no development files for it)
+  - name: libseccomp
+    buildsystem: autotools
+    config-opts:
+      - --disable-static
+      - --disable-python
+    cleanup:
+      - /bin
+    sources:
+      - type: archive
+        url: https://github.com/seccomp/libseccomp/releases/download/v2.6.0/libseccomp-2.6.0.tar.gz
+        sha256: 83b6085232d1588c379dc9b9cae47bb37407cf262e6e74993c61ba72d2a784dc
+
+  # the web engine
+  - name: wpewebkit
+    buildsystem: cmake-ninja
+    builddir: true
+    build-options:
+      cflags: -g1
+      cxxflags: -g1
+    config-opts:
+      - -DPORT=WPE
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DENABLE_WPE_PLATFORM=ON
+      - -DENABLE_WPE_PLATFORM_HEADLESS=ON
+      - -DENABLE_WPE_PLATFORM_DRM=OFF
+      - -DENABLE_WPE_PLATFORM_WAYLAND=OFF
+      - -DENABLE_WPE_LEGACY_API=OFF
+      - -DENABLE_WPE_QT_API=OFF
+      - -DENABLE_DOCUMENTATION=OFF
+      - -DENABLE_INTROSPECTION=OFF
+      - -DENABLE_JOURNALD_LOG=OFF
+      - -DENABLE_WEBDRIVER=OFF
+      - -DENABLE_MINIBROWSER=OFF
+      - -DENABLE_API_TESTS=OFF
+      - -DENABLE_LAYOUT_TESTS=OFF
+      - -DENABLE_SPEECH_SYNTHESIS=OFF
+      - -DUSE_FLITE=OFF
+      - -DUSE_LIBHYPHEN=OFF
+      - -DUSE_LIBBACKTRACE=OFF
+      - -DUSE_JPEGXL=OFF
+      - -DUSE_AVIF=OFF
+      - -DUSE_SYSPROF_CAPTURE=OFF
+      - -DUSE_SYSTEM_UNIFDEF=OFF
+      # the sandbox for web processes: flatpak-spawn inside the Flatpak
+      - -DENABLE_BUBBLEWRAP_SANDBOX=ON
+      - -DBWRAP_EXECUTABLE=/usr/bin/bwrap
+      - -DDBUS_PROXY_EXECUTABLE=/usr/bin/xdg-dbus-proxy
+    sources:
+      - type: archive
+        url: https://wpewebkit.org/releases/wpewebkit-2.54.3.tar.xz
+        sha256: 787afd32ae23eac061621465390f44a462e874a9ebaba0b65521d7237fa8a5e4
+
   - name: iris
     buildsystem: simple
     build-options:
-      build-args:
-        - --share=network # SwiftPM fetches swift-adwaita
+      env:
+        ODIN_ROOT: /run/build/iris/odin
+        # the SDK links with gcc (it has no clang)
+        ODIN_CLANG_PATH: /usr/bin/gcc
     sources:
       - type: dir
         path: ../../linux
@@ -58,17 +139,22 @@ modules:
       - type: dir
         path: ../linux
         dest: desktop
+      # Odin dev-2026-11a, a build tool only: nothing of it is in the app
+      - type: archive
+        url: https://github.com/odin-lang/Odin/releases/download/dev-2026-11a/odin-linux-amd64-dev-2026-11a.tar.gz
+        sha256: 65c9f6e97d6f8a30930e151f270ce5aeaa98fe8b2ba49fe067394e2af04f7618
+        dest: odin
+        only-arches: [x86_64]
       - type: script
         dest-filename: iris.sh
         commands:
           - export TMPDIR="$XDG_RUNTIME_DIR/app/$FLATPAK_ID"
-          - exec /app/lib/iris/iris "$@"
+          - exec /app/libexec/iris "$@"
     build-commands:
-      - cd linux && swift build -c release --static-swift-stdlib
-      - install -Dm755 linux/.build/release/Iris /app/lib/iris/iris
-      - cp -r linux/.build/release/Iris_Iris.resources /app/lib/iris/
+      # the program in libexec (optimised: -o:speed)
+      - PATH="$PWD/odin:$PATH" sh linux/build.sh install /app
       - install -Dm755 iris.sh /app/bin/iris
-      - install -Dm644 linux/Sources/Iris/Resources/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg /app/share/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg
-      - install -Dm644 linux/Sources/Iris/Resources/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png /app/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
+      - install -Dm644 linux/resources/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg /app/share/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg
+      - install -Dm644 linux/resources/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png /app/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
       - install -Dm644 desktop/io.github.tulip_labs.Iris.desktop /app/share/applications/io.github.tulip_labs.Iris.desktop
       - install -Dm644 desktop/io.github.tulip_labs.Iris.metainfo.xml /app/share/metainfo/io.github.tulip_labs.Iris.metainfo.xml

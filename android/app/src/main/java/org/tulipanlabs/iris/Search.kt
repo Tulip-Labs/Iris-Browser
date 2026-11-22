@@ -20,6 +20,45 @@ object Search {
 
     fun aiUrl(q: String) = "https://www.google.com/search?gl=us&hl=en&udm=50&q=" + enc(q.trim() + SEP + AI_INSTRUCTION)
 
+    /** the home of every new tab: Google AI Mode, ready for a question */
+    const val HOME = "https://www.google.com/search?gl=us&hl=en&udm=50"
+
+    /** whether an address is Google AI Mode (its page gets Iris's glass) */
+    fun isAIMode(url: String): Boolean {
+        val u = runCatching { URI(url) }.getOrNull() ?: return false
+        val h = u.host ?: return false
+        if (h != "www.google.com" && h != "google.com") return false
+        return u.path == "/aimode" || (u.path == "/search" && (u.rawQuery ?: "").split('&').contains("udm=50"))
+    }
+
+    /** Google's way out to a result (google.com/url?q=…): the result itself, without the extra stop */
+    fun unwrapRedirect(url: String): String? {
+        val u = runCatching { URI(url) }.getOrNull() ?: return null
+        val h = u.host ?: return null
+        if ((h != "www.google.com" && h != "google.com") || u.path != "/url") return null
+        val params = (u.rawQuery ?: return null).split('&').associate {
+            it.substringBefore('=') to runCatching { URLDecoder.decode(it.substringAfter('=', ""), "UTF-8") }.getOrDefault("")
+        }
+        val t = params["q"] ?: params["url"] ?: return null
+        return t.takeIf { it.startsWith("https://") || it.startsWith("http://") }
+    }
+
+    /**
+     * Sites Iris does not trust, opened in the sandbox without asking: no
+     * encryption (http), or a bare public IP. (A site whose certificate
+     * fails joins them when it fails.) Your own network is trusted.
+     */
+    fun untrusted(url: String): Boolean {
+        val u = runCatching { URI(url) }.getOrNull() ?: return false
+        val scheme = u.scheme?.lowercase() ?: return false
+        val host = u.host?.lowercase()?.trim('[', ']') ?: return false
+        if (scheme != "http" && scheme != "https") return false
+        if (isPrivateHost(host) || host.endsWith(".local") || host.endsWith(".lan") || host.endsWith(".home.arpa")) return false
+        if (scheme == "http") return true
+        val ipv4 = host.split('.').let { p -> p.size == 4 && p.all { it.toIntOrNull() in 0..255 } }
+        return ipv4 || host.contains(':')
+    }
+
     fun youtubeUrl(q: String) = "https://m.youtube.com/results?search_query=" + enc(q.trim())
 
     private fun scheme(t: String): String? {

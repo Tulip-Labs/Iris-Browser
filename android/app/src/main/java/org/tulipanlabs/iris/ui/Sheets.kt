@@ -51,31 +51,6 @@ import org.tulipanlabs.iris.Store
 import org.tulipanlabs.iris.Updater
 import java.util.UUID
 
-/** the menu: the look, new tabs, downloads, updates */
-@Composable
-fun MenuSheet(model: BrowserModel, open: Boolean, onSheet: (Sheet) -> Unit) {
-    val scope = rememberCoroutineScope()
-    val close = { onSheet(Sheet.NONE) }
-    GlassSheet(open, close, "Iris") {
-        SectionTitle("Look")
-        val looks = listOf("auto", "light", "dark")
-        Segmented(listOf(Glyph.AUTO to "Auto", Glyph.SUN to "Light", Glyph.MOON to "Dark"), looks.indexOf(Look.appearance).coerceAtLeast(0),
-            { Look.set(looks[it]) }, Modifier.padding(horizontal = 18.dp, vertical = 6.dp))
-        Spacer(Modifier.height(6.dp))
-        GlassRow(Glyph.PLUS, "New tab", { close(); model.newTab() })
-        GlassRow(Glyph.EYE_OFF, "New private tab", { close(); model.newTab(container = Container.PRIVATE) })
-        GlassRow(Glyph.HISTORY, "Reopen closed tab", { close(); model.reopenClosed() })
-        Separator()
-        GlassRow(Glyph.DOWNLOAD, "Downloads", { onSheet(Sheet.DOWNLOADS) }, sub = if (Downloads.active > 0) "${Downloads.active} downloading" else null)
-        GlassRow(Glyph.LAYERS, "Containers", { onSheet(Sheet.CONTAINERS) })
-        GlassRow(Glyph.SHIELD_ON, "Shields", { onSheet(Sheet.SHIELDS) }, sub = Store.shieldLevel.title)
-        Separator()
-        GlassRow(Glyph.UPDATE, "Check for updates", { close(); scope.launch { Updater.check(force = true) } })
-        Txt("Iris ${BuildConfig.VERSION_NAME} · pages by ${Pages.engine()} · Tulip Labs · GPL-3.0",
-            Modifier.padding(horizontal = 24.dp, vertical = 8.dp), size = 12.sp, color = LocalPalette.current.ink2)
-    }
-}
-
 /** Iris Shields: for this site, everywhere, and how hard */
 @Composable
 fun ShieldsSheet(model: BrowserModel, open: Boolean, onClose: () -> Unit) {

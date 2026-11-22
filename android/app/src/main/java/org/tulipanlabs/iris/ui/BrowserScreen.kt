@@ -71,12 +71,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
 import org.tulipanlabs.iris.BrowserModel
+import org.tulipanlabs.iris.Downloads
 import org.tulipanlabs.iris.R
 import org.tulipanlabs.iris.Search
 import org.tulipanlabs.iris.Store
 import org.tulipanlabs.iris.Tab
 
-enum class Sheet { NONE, MENU, SHIELDS, CONTAINERS, DOWNLOADS }
+enum class Sheet { NONE, SHIELDS, CONTAINERS, DOWNLOADS }
 
 @Composable
 fun BrowserScreen(model: BrowserModel) {
@@ -116,7 +117,6 @@ fun BrowserScreen(model: BrowserModel) {
                 model.blocked?.let { b -> GlassPill("Open", { model.newTab(b.url, b.from.container, after = b.from); model.blocked = null; note = null }, strong = true) }
             }
         }
-        MenuSheet(model, sheet == Sheet.MENU, onSheet = { sheet = it })
         ShieldsSheet(model, sheet == Sheet.SHIELDS) { sheet = Sheet.NONE }
         ContainersSheet(model, sheet == Sheet.CONTAINERS) { sheet = Sheet.NONE }
         DownloadsSheet(sheet == Sheet.DOWNLOADS) { sheet = Sheet.NONE }
@@ -240,14 +240,17 @@ private fun AddressRow(model: BrowserModel) {
     }
 }
 
-/** the page itself (Chromium's surface), or the new-tab page */
+/** the page itself (its WebView), a video in full screen, or the new-tab page */
 @Composable
 private fun PageArea(model: BrowserModel) {
     val t = model.current
-    Box(Modifier.fillMaxSize().padding(horizontal = 6.dp).clip(RoundedCornerShape(20.dp))) {
-        val w = t?.web
+    val full = model.fullscreenView
+    val edge = if (full != null) Modifier.fillMaxSize() else Modifier.fillMaxSize().padding(horizontal = 6.dp).clip(RoundedCornerShape(20.dp))
+    Box(edge) {
+        val w = full ?: t?.web
         if (w == null) {
-            NewTabPage(model)
+            // a page on its way (Google AI Mode for a new tab): the dawn, nothing more
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(LocalPalette.current.back)))
         } else {
             AndroidView(
                 factory = { ctx -> FrameLayout(ctx) },
@@ -289,50 +292,17 @@ private fun BottomBar(model: BrowserModel, onSheet: (Sheet) -> Unit) {
             }
         }
         GlassButton(Glyph.LAYERS, "Containers", { onSheet(Sheet.CONTAINERS) }, clear = true)
-        GlassButton(Glyph.MORE, "Menu", { onSheet(Sheet.MENU) }, clear = true)
-    }
-}
-
-/** the new-tab page: Iris (Ember's wallpaper, light by day and dark by
- *  night), the name, and the sites you go to most */
-@Composable
-fun NewTabPage(model: BrowserModel) {
-    val p = LocalPalette.current
-    val sites = remember(model.current?.id) { Store.topSites(8) }
-    Box(Modifier.fillMaxSize()) {
-        Image(painterResource(if (p.dark) R.drawable.iris_dark else R.drawable.iris_light), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 36.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(24.dp))
-            Txt("Iris", size = 46.sp, weight = FontWeight.ExtraBold)
-            Spacer(Modifier.height(22.dp))
-            if (sites.isNotEmpty()) {
-                Row(Modifier.widthIn(max = 520.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    sites.take(4).forEach { v -> SiteTile(Search.display(v.url), Modifier.weight(1f)) { model.go(v.url) } }
-                }
-                if (sites.size > 4) {
-                    Spacer(Modifier.height(10.dp))
-                    Row(Modifier.widthIn(max = 520.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        sites.drop(4).take(4).forEach { v -> SiteTile(Search.display(v.url), Modifier.weight(1f)) { model.go(v.url) } }
-                        repeat(4 - sites.drop(4).take(4).size) { Spacer(Modifier.weight(1f)) }
-                    }
+        // downloads: there while a file comes, then with the number finished
+        val active = Downloads.active
+        val done = Downloads.unseen
+        if (active > 0 || done > 0) Box {
+            GlassButton(Glyph.DOWNLOAD, "Downloads", { Downloads.seen(); onSheet(Sheet.DOWNLOADS) }, clear = true, tint = p.accent)
+            if (done > 0) {
+                Box(Modifier.align(Alignment.TopEnd).padding(top = 2.dp).clip(RoundedCornerShape(50)).background(p.accent).padding(horizontal = 5.dp, vertical = 1.dp)) {
+                    Txt(if (done > 99) "99+" else "$done", size = 10.sp, weight = FontWeight.Bold, color = Color.White)
                 }
             }
         }
     }
 }
 
-@Composable
-private fun SiteTile(name: String, modifier: Modifier, onClick: () -> Unit) {
-    val p = LocalPalette.current
-    Column(
-        modifier.glass(p, RoundedCornerShape(22.dp)).combinedClickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
-            .padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(p.accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
-            Txt(name.take(1).uppercase(), size = 18.sp, weight = FontWeight.Bold, color = p.accent)
-        }
-        Spacer(Modifier.height(6.dp))
-        Txt(name.substringBefore('.').replaceFirstChar { it.uppercase() }, Modifier.padding(horizontal = 4.dp), size = 12.sp, maxLines = 1)
-    }
-}

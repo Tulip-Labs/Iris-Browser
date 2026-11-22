@@ -1,21 +1,19 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
-    // the page engine: Chromium (CEF) built for Android, carried in the app
-    id("com.cefrium") version "0.21.0"
 }
 
 android {
     namespace = "org.tulipanlabs.iris"
-    compileSdk = 37 // what Cefrium is built against
+    compileSdk = 36
 
     defaultConfig {
         // the id stays, so Iris installs over earlier versions
         applicationId = "org.tulipanlabs.lite"
-        minSdk = 29 // Cefrium's Chromium needs Android 10
+        minSdk = 29
         targetSdk = 36
-        versionCode = 210
-        versionName = "2.1.0"
+        versionCode = 220
+        versionName = "2.2.0"
     }
 
     signingConfigs {
@@ -35,15 +33,9 @@ android {
     }
 
     buildTypes {
-        debug {
-            // the emulator (screenshots) and phones
-            ndk { abiFilters += listOf("x86_64", "arm64-v8a") }
-        }
         release {
-            // phones: 64-bit ARM only, so the APK carries one Chromium
-            ndk { abiFilters += listOf("arm64-v8a") }
-            // no shrinking: the app is mostly Chromium, which R8 cannot
-            // shrink safely, and Iris's own code is small
+            // no shrinking: Iris's own code is small, and the pages are
+            // drawn by the phone's WebView, not by the app
             isMinifyEnabled = false
             val rel = signingConfigs.getByName("release")
             signingConfig = if (rel.storeFile != null) rel else signingConfigs.getByName("debug")
@@ -66,12 +58,9 @@ android {
 }
 
 dependencies {
-    // the page engine: Chromium (CEF) for Android, with H.264 and AAC, the
-    // same engine whatever the phone's WebView is
-    implementation("com.cefrium:cefrium-sdk:0.21.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.mediarouter:mediarouter:1.7.0")
-    implementation("androidx.browser:browser:1.8.0")
+    // the page engine is Android System WebView (Chromium, kept up to date
+    // by the phone); androidx.webkit adds profiles (containers) and more
+    implementation("androidx.webkit:webkit:1.13.0")
 
     // the interface: Compose's foundation only, drawn as Liquid Glass (no
     // Material components)

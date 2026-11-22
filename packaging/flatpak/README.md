@@ -1,7 +1,9 @@
 # Iris as a Flatpak
 
-`io.github.tulip_labs.Iris.yml` builds Iris from `linux/` (Swift, swift-adwaita
-and WebKitGTK) with the GNOME 50 SDK and Flathub's Swift 6 SDK extension.
+`io.github.tulip_labs.Iris.yml` builds WPE WebKit 2.54.3 (with WPEPlatform)
+and then Iris from `linux/` (Odin; Wayland, EGL and OpenGL ES, no GTK) with
+the GNOME 50 SDK, which gives WPE GLib, libsoup and GStreamer. No Flatpak
+runtime ships WPE WebKit, so it is built here. WPE takes a few hours the first time; CI keeps it in its cache.
 CI builds it on every push (`.github/workflows/linux.yml`, job `flatpak`), and
 each release carries the bundle, `Iris-x86_64.flatpak`:
 
@@ -13,19 +15,19 @@ flathub https://dl.flathub.org/repo/flathub.flatpakrepo`).
 
 To build it yourself:
 
-    flatpak install --user flathub org.gnome.Sdk//50 org.freedesktop.Sdk.Extension.swift6//25.08
+    flatpak install --user flathub org.gnome.Sdk//50
     flatpak-builder --user --install --force-clean build packaging/flatpak/io.github.tulip_labs.Iris.yml
 
 ## Flathub
 
-Flathub builds without network access, so a Flathub manifest lists every
-source (swift-adwaita and the packages it uses, at fixed revisions), and
+Every source in the manifest is fixed by checksum or commit (WPE WebKit,
+woff2, libseccomp, Odin), and
 Flathub asks that manifests and submissions be made by people, not AI tools.
 That submission is for a person on the team to prepare.
 
 ## The page sandbox
 
-Pages run inside Flatpak's sandbox, and WebKitGTK keeps its own sandbox for
+Pages run inside Flatpak's sandbox, and WPE WebKit keeps its own sandbox for
 its web processes inside it (through flatpak-spawn).
 
 ## Glass and the compositor

@@ -1,3 +1,40 @@
+Iris 2.2.0: Iris for Linux rebuilt in Odin on Wayland and WPE WebKit, with no GTK; Google AI Mode in every new tab, a light look in the colours of dawn, an automatic sandbox for sites Iris does not trust, a new icon, and Android on System WebView again.
+
+**Linux: Odin, Wayland and WPE WebKit, no GTK**
+- **No Swift, no Zig, no GTK.** Iris for Linux is Odin, talking to Wayland, EGL, OpenGL ES and WPE WebKit directly. Every C function, struct and Wayland table it declares is checked against the real headers in CI.
+- **The page in the glass, without a copy.** Iris brings its own WPEPlatform display and views: each frame WPE renders arrives as a DMA-BUF and Iris samples it in its own OpenGL ES renderer, so the Liquid Glass, now a shader, bends the live page.
+- **The chrome is Odin too.** Tabs, address bar, menus, panels and dialogs are drawn by Iris itself in the same frame as their glass: text shaped by HarfBuzz in the desktop's own font (fontconfig, with fallbacks for every script), glyphs and line icons rasterised by Iris at the screen's own pixels. No HTML, no second web view.
+- **A page's own pop-ups in glass**: `<select>` lists as glass menus, `alert()`, `confirm()` and `prompt()` as glass dialogs, file fields through the desktop's portal (never in the sandbox).
+- **Shields inside the engine.** About 100,000 ad and tracker domains are built into Iris; the lists become WPE content rules, compiled once and kept.
+- **Every tab stays awake.** Sleeping tabs are gone.
+- **Wayland only**, with fractional scaling, the compositor's cursor shapes and background blur where offered.
+- The Flatpak builds WPE WebKit 2.54.3 itself (no Flatpak runtime ships it); WebKit's process sandbox stays on (flatpak-spawn inside the Flatpak).
+
+**Both**
+- **Every new tab is Google AI Mode**, ready for a question, dressed in Iris's Liquid Glass: the dawn behind the page, its panels clear, and the question box made of glass. (Only AI Mode is restyled; no other page.) The Iris start page is gone. Your tabs still open where you left them.
+- **Faster.** The next new tab is already loaded in the background, so it opens at once; Google's names are looked up before your first question; and a result you open goes straight to the site, without Google's redirect. On Linux, a link's site is looked up while the pointer rests on it.
+- **The sandbox, automatic.** A site Iris does not trust (no encryption, a bare IP address, or a certificate that fails) opens in the sandbox without asking: web processes of its own, a world in memory that sees none of your cookies, storage or sign-ins and is wiped when you close it, and no downloads, camera, microphone, location, clipboard or pop-ups. Going on to a trusted site takes you out of it.
+- **Ads that open new tabs are stopped** (Android, see below; Linux already did).
+- **Light only**, and lighter: Iris's glass over a dawn of lilac, rose and peach, with a deep violet ink.
+- **A new icon**: a clear glass ring on a white tile, light entering and leaving as a rainbow.
+- **No more menu.** Find in page (Ctrl+F) and zoom (Ctrl+plus, minus and 0) stay as keys. The downloads button appears while a file comes in, then stays with the number finished until you open it.
+- Tabs no longer sleep in the background.
+
+**Android**
+- **Pages open again.** Iris uses the phone's Android System WebView instead of Cefrium, which left pages blank on some phones.
+- **Ads that open new tabs are stopped**: a page opens no tab by itself, a tapped ad link opens nothing, a script's window stays hidden until Iris knows where it goes, and a page cannot send its own tab to an ad.
+- The sandbox runs in a process of its own, with WebView data that is made fresh each time.
+- File fields, calls (camera and microphone) and full-screen video work again. The APK is small again.
+
+**Linux**
+- The sandbox is a WPE web context of its own, each page in WebKit's process sandbox, with a network session per sandboxed tab that lives in memory only. Its tabs have an orange rim.
+
+**Install**
+- Linux: `flatpak install --user Iris-x86_64.flatpak`
+- Android: `Iris-android.apk` (Android 10 and newer). It installs over 2.1.0.
+
+---
+
 Iris 2.1.0: Ember's Light and Dark looks, Shields with three levels, Iris for Android on its own Chromium again, and a new icon.
 
 **Both**

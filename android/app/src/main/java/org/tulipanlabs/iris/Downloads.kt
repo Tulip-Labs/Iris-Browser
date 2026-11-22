@@ -9,6 +9,7 @@ import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -94,7 +95,7 @@ object Downloads {
                 } else {
                     resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
                     val u = uri
-                    main.post { d.uri = u; d.done = true }
+                    main.post { d.uri = u; d.done = true; unseen++ }
                 }
             } catch (e: Exception) {
                 uri?.let { runCatching { resolver.delete(it, null, null) } }
@@ -119,4 +120,11 @@ object Downloads {
     fun clearFinished() { list.removeAll { it.done || it.failed } }
 
     val active: Int get() = list.count { !it.done && !it.failed }
+
+    /** finished since you last opened the downloads: the button's number */
+    var unseen by mutableIntStateOf(0)
+        private set
+
+    /** the downloads were looked at */
+    fun seen() { unseen = 0 }
 }
