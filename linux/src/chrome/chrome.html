@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Iris's chrome: nothing from the network, only this page's own code -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<title>Iris</title>
+<style>/*CSS*/</style>
+</head>
+<body>
+<div id="top">
+  <div id="tabs" role="tablist"></div>
+  <button id="plus" class="btn round" data-tip="New tab (Ctrl+T)" aria-label="New tab"></button>
+  <div id="drag"></div>
+  <div id="frame" hidden>
+    <button class="btn wbtn" data-act="minimize" aria-label="Minimise"></button>
+    <button class="btn wbtn" data-act="maximize" aria-label="Maximise"></button>
+    <button class="btn wbtn" data-act="close-window" aria-label="Close"></button>
+  </div>
+</div>
+<div id="bar">
+  <div id="nav" class="group" data-glass="0">
+    <button id="back" class="btn" aria-label="Back (Alt+Left)"></button>
+    <button id="forward" class="btn" aria-label="Forward (Alt+Right)"></button>
+    <button id="reload" class="btn" aria-label="Reload (Ctrl+R)"></button>
+  </div>
+  <div id="address" class="group" data-glass="0">
+    <span id="chip"></span>
+    <input id="addr" type="text" spellcheck="false" autocomplete="off" placeholder="Ask Google AI Mode or type an address">
+    <div id="progress"></div>
+  </div>
+  <div id="actions" class="group" data-glass="0">
+    <button id="shield" class="btn" aria-label="Iris Shields"></button>
+    <button id="downloads" class="btn" aria-label="Downloads (Ctrl+J)" hidden><span id="badge" hidden></span></button>
+    <button id="containers" class="btn" aria-label="Containers"></button>
+  </div>
+</div>
+<div id="card"></div>
+<div id="status" class="float quiet" data-glass="1" hidden></div>
+<div id="find" class="float group" data-glass="0" hidden>
+  <input id="findText" type="text" spellcheck="false" placeholder="Find in page">
+  <span id="findCount" class="dim"></span>
+  <button class="btn" data-act="findPrev" aria-label="Previous (Shift+Enter)"></button>
+  <button class="btn" data-act="findNext" aria-label="Next (Enter)"></button>
+  <button class="btn" data-act="findClose" aria-label="Close (Esc)"></button>
+</div>
+<div id="suggest" class="float panel" data-glass="1" hidden></div>
+<div id="menu" class="float panel" data-glass="1" hidden></div>
+<div id="toasts"></div>
+<div id="scrim" hidden></div>
+<div id="dialog" class="float panel" data-glass="1" hidden></div>
+<script>//JS</script>
+</body>
+</html>

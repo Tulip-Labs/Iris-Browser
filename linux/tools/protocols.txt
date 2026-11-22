@@ -1,0 +1,8 @@
+stable/xdg-shell/xdg-shell
+stable/viewporter/viewporter
+stable/tablet/tablet-v2
+staging/fractional-scale/fractional-scale-v1
+staging/cursor-shape/cursor-shape-v1
+unstable/xdg-decoration/xdg-decoration-unstable-v1
+staging/ext-background-effect/ext-background-effect-v1
+unstable/text-input/text-input-unstable-v3

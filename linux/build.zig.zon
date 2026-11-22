@@ -1,8 +1,0 @@
-.{
-    .name = .iris,
-    .version = "2.2.0",
-    .fingerprint = 0x4d2c2bc32e3f0b6c,
-    .minimum_zig_version = "0.15.2",
-    .dependencies = .{},
-    .paths = .{ "build.zig", "build.zig.zon", "src", "c", "resources" },
-}
