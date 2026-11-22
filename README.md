@@ -181,7 +181,7 @@ On niri, the blur behind the window comes on by itself on 26.04 and newer. No wi
 
 ## Build
 
-**Linux.** You need Zig 0.15.2 and the development files of libadwaita, GTK 4.14 or newer, WPE WebKit 2.54 or newer built with WPEPlatform (`wpe-webkit-2.0`, `wpe-platform-2.0`), libsoup 3, Wayland and libdrm. Arch Linux's `wpewebkit` package has them.
+**Linux.** You need Zig 0.15.2 and the development files of libadwaita, GTK 4.14 or newer, WPE WebKit 2.54 or newer built with WPEPlatform (`wpe-webkit-2.0`, `wpe-platform-2.0`), libsoup 3, Wayland and libdrm. Arch Linux's `wpewebkit` package has them. Keep a system C compiler (gcc) installed: with it, Zig uses the system's libc and its headers in /usr/include.
 
     cd linux
     zig build test

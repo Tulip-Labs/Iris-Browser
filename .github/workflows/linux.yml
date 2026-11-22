@@ -31,10 +31,12 @@ jobs:
       options: --shm-size=1g --privileged
     steps:
       - uses: actions/checkout@v4
+      # gcc too: with a system C compiler on PATH, Zig uses the system's libc
+      # and /usr/include (wayland-client.h lives there on Arch)
       - name: WPE WebKit, GTK and libadwaita development files
         run: |
           pacman -Syu --noconfirm --needed wpewebkit libadwaita gtk4 libsoup3 wayland libdrm pkgconf \
-            unzip diffutils python sway grim cantarell-fonts mesa > /dev/null
+            unzip diffutils gcc python sway grim cantarell-fonts mesa > /dev/null
           pkg-config --modversion wpe-webkit-2.0 wpe-platform-2.0 gtk4 libadwaita-1
       - name: Zig 0.15.2
         run: |
