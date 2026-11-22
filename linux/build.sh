@@ -18,7 +18,7 @@ odin_build() { odin build src -collection:iris=. -extra-linker-flags:"$LDIRS -Wl
 case "${1:-dev}" in
 dev) odin_build -o:none -debug -out:iris ;;
 release) odin_build -o:speed -out:iris ;;
-test) odin test src -collection:iris=. -extra-linker-flags:"$LDIRS" -o:none ;;
+test) odin test src -collection:iris=. -extra-linker-flags:"$LDIRS -Wl,--as-needed" -o:none ;;
 check) sh abi/check.sh ;;
 install)
 	odin_build -o:speed -out:iris
