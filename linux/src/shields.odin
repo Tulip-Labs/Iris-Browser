@@ -18,7 +18,9 @@ import "core:testing"
 import "core:thread"
 import "core:time"
 
-VERSION :: "2.2.0"
+VERSION :: "2.2.1"
+// the Flatpak's ID: the window's app_id, and the name WebKit gives its sandboxed processes
+APP_ID :: "io.github.tulip_labs.Iris"
 USER_AGENT :: "Iris/" + VERSION
 
 @(private="file") DOMAINS_GZ :: #load("shield-domains.txt.gz")

@@ -57,7 +57,7 @@ b: Browser
 
 browser_start :: proc() -> bool {
 	w := &b.win
-	if !plat.open(w, {app_id = "io.github.tulip_labs.Iris", title = "Iris", width = 1280, height = 820, min_width = 480, min_height = 360}) do return false
+	if !plat.open(w, {app_id = APP_ID, title = "Iris", width = 1280, height = 820, min_width = 480, min_height = 360}) do return false
 	renderer_init(w.egl_display)
 	text_init()
 	clipboard_init(w)
