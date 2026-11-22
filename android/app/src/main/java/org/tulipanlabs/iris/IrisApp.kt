@@ -10,6 +10,11 @@ class IrisApp : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        // the sandbox's own process: WebView data of its own, made fresh
+        if (Application.getProcessName().endsWith(":" + SandboxActivity.PROCESS_SUFFIX)) {
+            SandboxActivity.wipe(this)
+            android.webkit.WebView.setDataDirectorySuffix(SandboxActivity.PROCESS_SUFFIX)
+        }
         Store.init(this)
         Shields.init(filesDir) { Shields.gunzipAsset { assets.open("shield-domains.json.gz") } }
     }

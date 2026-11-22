@@ -1,151 +1,46 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Iris, goddess of the rainbow and messenger of the gods: her profile in
-       liquid glass before her rainbow, a wing of glass behind her. An
-       original drawing made for the Iris browser, in the style of Ember's day wallpaper. -->
+  <!-- Iris's icon: her profile, her hair in sheets of liquid glass. An original drawing for Iris (Tulip Labs), GPL-3.0. -->
   <defs>
-    <linearGradient id="sky" x1="0" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#fbf6f1"/><stop offset="0.42" stop-color="#f6e6f4"/><stop offset="0.78" stop-color="#e2ebff"/><stop offset="1" stop-color="#d6f0fb"/></linearGradient><radialGradient id="glowB" cx="0.1" cy="0.98" r="0.75"><stop offset="0" stop-color="#9fdcff" stop-opacity="0.6"/><stop offset="1" stop-color="#2fb4ff" stop-opacity="0"/></radialGradient><filter id="haze" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="46"/></filter>
-    <radialGradient id="glow" cx="0.82" cy="0.12" r="0.7"><stop offset="0" stop-color="#ffb3dc" stop-opacity="0.7"/><stop offset="1" stop-color="#ffb3dc" stop-opacity="0"/></radialGradient>
-    <linearGradient id="bow" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#ff3b6b"/>
-      <stop offset="0.18" stop-color="#ff9f0a"/>
-      <stop offset="0.36" stop-color="#ffe14d"/>
-      <stop offset="0.54" stop-color="#34d399"/>
-      <stop offset="0.7" stop-color="#38bdf8"/>
-      <stop offset="0.86" stop-color="#6366f1"/>
-      <stop offset="1" stop-color="#d08cff"/>
-    </linearGradient>
-    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="12"/></filter>
-    <filter id="lensblur"><feGaussianBlur stdDeviation="3"/></filter>
-    <linearGradient id="glassFill" x1="0.2" y1="0.05" x2="0.8" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.72"/>
-      <stop offset="0.42" stop-color="#ffffff" stop-opacity="0.10"/>
-      <stop offset="0.8" stop-color="#ffffff" stop-opacity="0.16"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0.42"/>
-    </linearGradient>
-    <linearGradient id="rim" x1="0.1" y1="0" x2="0.9" y2="1">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
-      <stop offset="0.35" stop-color="#ffffff" stop-opacity="0.3"/>
-      <stop offset="0.65" stop-color="#ffffff" stop-opacity="0.12"/>
-      <stop offset="1" stop-color="#ffffff" stop-opacity="0.9"/>
-    </linearGradient>
-    <filter id="inner" x="-10%" y="-10%" width="120%" height="120%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="16" result="b"/>
-      <feOffset dx="-12" dy="16" result="o"/>
-      <feComposite in="SourceAlpha" in2="o" operator="out" result="edge"/>
-      <feFlood flood-color="#ffffff" flood-opacity="0.9"/>
-      <feComposite in2="edge" operator="in"/>
-    </filter>
-    <filter id="innerDark" x="-10%" y="-10%" width="120%" height="120%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="b"/>
-      <feOffset dx="14" dy="-14" result="o"/>
-      <feComposite in="SourceAlpha" in2="o" operator="out" result="edge"/>
-      <feFlood flood-color="#8c7bd6" flood-opacity="0.35"/>
-      <feComposite in2="edge" operator="in"/>
-    </filter>
-    <filter id="shade" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="20"/>
-      <feOffset dx="12" dy="26"/>
-      <feComponentTransfer><feFuncA type="linear" slope="0.2"/></feComponentTransfer>
-    </filter>
-    <path id="squircle" d="M0 0h1024v1024H0z"/>
-    <clipPath id="sq"><use href="#squircle"/></clipPath>
-
-    <!-- her profile, facing right: brow and nose in one line, as in the old
-         Greek marbles; full lips, a firm small chin, a long neck; the hair
-         swept back into a knot -->
-    <path id="head" d="
-      M 548 214
-      C 612 210 664 246 680 300
-      C 688 328 686 352 690 374
-      C 696 404 712 432 728 462
-      C 736 476 734 486 720 490
-      C 712 492 704 494 700 500
-      C 702 508 704 512 712 518
-      C 718 524 714 532 706 534
-      C 712 540 714 548 708 554
-      C 700 560 696 566 698 576
-      C 702 594 696 612 680 620
-      C 664 628 644 628 628 624
-      C 626 660 630 694 640 726
-      C 650 760 668 792 694 820
-      L 696 862
-      L 446 862
-      C 470 820 482 778 480 736
-      C 478 708 470 688 456 672
-      C 414 680 372 668 346 640
-      C 318 646 284 632 270 604
-      C 254 572 266 532 300 520
-      C 286 494 286 462 302 440
-      C 284 396 300 340 344 300
-      C 400 248 470 218 548 214 Z"/>
-    <!-- a wing of glass behind her: Iris flies the messages of the gods -->
-    <path id="wing" d="
-      M 470 640
-      C 420 560 330 470 214 430
-      C 160 412 120 420 104 444
-      C 150 452 186 470 210 492
-      C 160 488 124 500 110 524
-      C 160 524 200 538 228 560
-      C 184 566 156 584 148 610
-      C 200 600 246 606 282 624
-      C 248 640 230 662 230 688
-      C 280 664 330 660 372 672
-      C 410 682 446 680 470 640 Z"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fdfcff"/><stop offset="1" stop-color="#eceefb"/></linearGradient>
+    <linearGradient id="g1" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="#cbbcff"/><stop offset="0.5" stop-color="#a9a9f6"/><stop offset="0.85" stop-color="#e7a6ea"/><stop offset="1" stop-color="#c69af5"/></linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c9cdfc"/><stop offset="0.5" stop-color="#9eaaf6"/><stop offset="1" stop-color="#7e8ff0"/></linearGradient>
+    <linearGradient id="g3" x1="0.2" y1="0" x2="0.5" y2="1"><stop offset="0" stop-color="#8e9ef3"/><stop offset="0.6" stop-color="#7286ee"/><stop offset="1" stop-color="#b29af6"/></linearGradient>
+    <linearGradient id="g4" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#a596f5"/><stop offset="0.55" stop-color="#7b8ef2"/><stop offset="1" stop-color="#4f9bff"/></linearGradient>
+    <linearGradient id="face" x1="0.3" y1="0" x2="0.7" y2="1"><stop offset="0" stop-color="#eef0ff"/><stop offset="0.55" stop-color="#cbd2fb"/><stop offset="1" stop-color="#a4b0f3"/></linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="0.5" stop-color="#fff" stop-opacity="0.55"/><stop offset="1" stop-color="#fff" stop-opacity="0.95"/></linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="22"/></filter>
+    <filter id="shade" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceAlpha" stdDeviation="14"/><feOffset dy="12" result="s"/><feFlood flood-color="#5b55c9" flood-opacity="0.18"/><feComposite in2="s" operator="in"/></filter>
   </defs>
-
-  <g clip-path="url(#sq)">
-    <rect width="1024" height="1024" fill="url(#sky)"/>
-    <rect width="1024" height="1024" fill="url(#glow)"/>
-    <rect width="1024" height="1024" fill="url(#glowB)"/><g id="bowg"><path d="M -320 1160 A 840 840 0 0 1 1340 1160" fill="none" stroke="url(#bow)" stroke-width="380" filter="url(#haze)" opacity="0.27"/><path d="M -320 1160 A 840 840 0 0 1 1340 1160" fill="none" stroke="url(#bow)" stroke-width="170" filter="url(#soft)" opacity="0.8500000000000001"/><path d="M -320 1160 A 840 840 0 0 1 1340 1160" fill="none" stroke="url(#bow)" stroke-width="74" opacity="0.6"/></g>
-
-    <g transform="translate(512 548) scale(0.74) translate(-512 -540)"><!-- the wing -->
-    <use href="#wing" filter="url(#shade)"/>
-    <clipPath id="wingClip"><use href="#wing"/></clipPath>
-    <g clip-path="url(#wingClip)">
-      <g filter="url(#lensblur)" transform="translate(330 470) scale(1.15) translate(-320 -480)">
-        <rect width="1024" height="1024" fill="url(#sky)"/>
-        <path d="M -320 1160 A 840 840 0 0 1 1340 1160" fill="none" stroke="url(#bow)" stroke-width="240" filter="url(#haze)" opacity="0.45"/>
-      </g>
-      <use href="#wing" fill="url(#glassFill)"/>
-      <use href="#wing" filter="url(#inner)"/>
-    </g>
-    <use href="#wing" fill="none" stroke="url(#rim)" stroke-width="5"/>
-
-    <!-- her shadow -->
-    <use href="#head" filter="url(#shade)"/>
-    <!-- through her: the sky and the rainbow, bent by the glass -->
-    <clipPath id="headClip"><use href="#head"/></clipPath>
-    <g clip-path="url(#headClip)">
-      <g filter="url(#lensblur)" transform="translate(520 520) scale(1.12) translate(-520 -540)">
-        <rect width="1024" height="1024" fill="url(#sky)"/>
-        <rect width="1024" height="1024" fill="url(#glow)"/>
-        <path d="M -320 1160 A 840 840 0 0 1 1340 1160" fill="none" stroke="url(#bow)" stroke-width="240" filter="url(#haze)" opacity="0.45"/>
-      </g>
-      <use href="#head" fill="url(#glassFill)"/>
-      <use href="#head" filter="url(#innerDark)"/>
-      <use href="#head" filter="url(#inner)"/>
-      <!-- the hair: waves swept back into the knot, a ribbon of rainbow -->
-      <g fill="none" stroke="#ffffff" stroke-linecap="round">
-        <path d="M 640 262 C 580 250 520 262 470 300 C 430 330 400 370 380 420" stroke-opacity="0.55" stroke-width="7"/>
-        <path d="M 664 300 C 600 290 540 304 492 340 C 452 372 428 410 414 452" stroke-opacity="0.4" stroke-width="6"/>
-        <path d="M 672 338 C 616 334 566 350 524 384 C 492 410 470 442 456 482" stroke-opacity="0.3" stroke-width="5"/>
-        <path d="M 352 560 C 312 556 292 520 310 490 C 330 458 380 462 394 496 C 406 526 386 550 358 546 C 336 542 330 516 346 504 C 360 494 376 504 372 518" stroke-opacity="0.6" stroke-width="6"/>
-      </g>
-      <!-- brow, eye and lips, cut into the glass -->
-      <path d="M 628 368 C 648 356 670 356 686 366" fill="none" stroke="#ffffff" stroke-opacity="0.75" stroke-width="6" stroke-linecap="round"/>
-      <path d="M 640 394 C 654 386 670 386 682 394 C 672 402 652 404 640 394 Z" fill="#ffffff" fill-opacity="0.8"/>
-      <path d="M 640 398 C 650 410 668 410 680 400" fill="none" stroke="#ffffff" stroke-opacity="0.35" stroke-width="3"/>
-      <path d="M 690 535 C 696 538 702 538 708 535" fill="none" stroke="#ffffff" stroke-opacity="0.7" stroke-width="4" stroke-linecap="round"/>
-    </g>
-    <!-- her rim of light -->
-    <use href="#head" fill="none" stroke="url(#rim)" stroke-width="6"/>
-    <!-- glints where the light falls: crown, brow, nose, chin -->
-    <g fill="none" stroke="#ffffff" stroke-linecap="round">
-      <path d="M 520 232 C 580 226 630 244 660 280" stroke-width="12" opacity="0.95"/>
-      <path d="M 696 400 C 704 424 714 444 724 460" stroke-width="7" opacity="0.85"/>
-      <path d="M 690 592 C 692 602 688 610 682 614" stroke-width="5" opacity="0.7"/>
-      <path d="M 150 436 C 220 440 300 480 380 560" stroke-width="6" opacity="0.75"/>
-    </g></g>
-    
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <circle cx="500" cy="500" r="300" fill="#b9bffa" opacity="0.22" filter="url(#soft)"/>
+  <g filter="url(#shade)">
+    <path d="M650 150 C420 92 172 252 176 492 C180 690 330 812 548 832 C384 790 272 680 270 500 C268 300 440 172 650 150 Z"/>
+    <path d="M418 540 C430 730 610 850 948 792 C640 812 520 736 470 590 Z"/>
   </g>
+  <!-- the hair's volume behind her -->
+  <ellipse cx="470" cy="470" rx="282" ry="300" fill="url(#g2)" opacity="0.22"/>
+  <!-- the face and neck, glass of the palest blue -->
+  <path d="M600 200 C668 214 712 276 714 352 C715 382 708 398 718 414 C728 432 750 452 754 466 C756 477 742 482 727 485 C723 495 731 503 727 511 C720 519 709 521 717 533 C723 543 717 557 705 563 C701 587 681 601 651 603 C637 642 642 692 676 742 C600 766 520 744 470 694 C520 640 540 560 520 470 C505 400 525 300 600 200 Z" fill="url(#face)" opacity="0.92"/>
+  <path d="M600 200 C668 214 712 276 714 352 C715 382 708 398 718 414 C728 432 750 452 754 466 C756 477 742 482 727 485 C723 495 731 503 727 511 C720 519 709 521 717 533 C723 543 717 557 705 563 C701 587 681 601 651 603 C637 642 642 692 676 742" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- the hair: sheets of glass round her head -->
+  <path d="M650 150 C420 92 172 252 176 492 C180 690 330 812 548 832 C384 790 272 680 270 500 C268 300 440 172 650 150 Z" fill="url(#g1)" opacity="0.6"/>
+  <path d="M712 214 C520 140 318 250 300 432 C290 556 352 648 452 704 C384 612 372 476 432 384 C504 278 606 226 712 214 Z" fill="url(#g2)" opacity="0.6"/>
+  <path d="M658 292 C528 322 420 420 384 560 C352 690 420 800 566 846 C472 764 452 652 494 556 C534 458 594 372 658 292 Z" fill="url(#g3)" opacity="0.62"/>
+  <path d="M330 262 C430 150 620 128 718 222 C744 250 742 300 724 340 C694 278 626 236 536 230 C460 226 392 240 330 262 Z" fill="url(#g1)" opacity="0.5"/>
+  <path d="M710 262 C640 236 560 250 500 300 C590 284 660 300 706 352 C716 320 716 288 710 262 Z" fill="url(#g2)" opacity="0.55"/>
+  <!-- the sweep under her chin, and its curl -->
+  <path d="M418 540 C430 730 610 850 948 792 C640 812 520 736 470 590 Z" fill="url(#g4)" opacity="0.78"/>
+  <path d="M706 650 C632 652 594 700 612 748 C630 790 712 806 820 792 C716 776 660 748 664 708 C667 680 686 660 724 656 Z" fill="url(#g3)" opacity="0.5"/>
+  <!-- rims of light -->
+  <g fill="none" stroke="url(#rim)" stroke-linejoin="round">
+    <path d="M650 150 C420 92 172 252 176 492 C180 690 330 812 548 832 C384 790 272 680 270 500 C268 300 440 172 650 150 Z" stroke-width="3.5"/>
+    <path d="M712 214 C520 140 318 250 300 432 C290 556 352 648 452 704 C384 612 372 476 432 384 C504 278 606 226 712 214 Z" stroke-width="3"/>
+    <path d="M658 292 C528 322 420 420 384 560 C352 690 420 800 566 846 C472 764 452 652 494 556 C534 458 594 372 658 292 Z" stroke-width="3"/>
+    <path d="M418 540 C430 730 610 850 948 792 C640 812 520 736 470 590 Z" stroke-width="3"/>
+    <path d="M330 262 C430 150 620 128 718 222 C744 250 742 300 724 340 C694 278 626 236 536 230 C460 226 392 240 330 262 Z" stroke-width="3"/>
+    <path d="M706 650 C632 652 594 700 612 748 C630 790 712 806 820 792 C716 776 660 748 664 708 C667 680 686 660 724 656 Z" stroke-width="2.5"/>
+  </g>
+  <!-- glints -->
+  <path d="M300 330 C340 250 420 196 520 178" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+  <path d="M560 806 C680 828 800 820 900 798" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0.8"/>
 </svg>

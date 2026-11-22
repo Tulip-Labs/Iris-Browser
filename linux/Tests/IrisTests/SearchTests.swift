@@ -22,6 +22,38 @@ final class SearchTests: XCTestCase {
         XCTAssertFalse(Search.isURLLike("note: milk"))
     }
 
+    func testHomeIsAIMode() {
+        XCTAssertTrue(Search.isAIMode(Search.home))
+        XCTAssertTrue(Search.isAIMode(Search.aiURL("cats")))
+        XCTAssertTrue(Search.isAIMode("https://www.google.com/aimode"))
+        XCTAssertFalse(Search.isAIMode("https://www.google.com/search?q=cats"))
+        XCTAssertFalse(Search.isAIMode("https://example.com/search?udm=50"))
+    }
+
+    func testRedirectsUnwrapped() {
+        XCTAssertEqual(Search.unwrapRedirect("https://www.google.com/url?q=https://example.com/a%3Fb%3D1&sa=U"), "https://example.com/a?b=1")
+        XCTAssertNil(Search.unwrapRedirect("https://www.google.com/url?q=javascript:alert(1)"))
+        XCTAssertNil(Search.unwrapRedirect("https://evil.com/url?q=https://example.com"))
+    }
+
+    func testUntrustedSitesGoToTheSandbox() {
+        XCTAssertTrue(Search.untrusted("http://example.com/"))
+        XCTAssertTrue(Search.untrusted("https://203.0.113.7/login"))
+        XCTAssertFalse(Search.untrusted("https://example.com/"))
+        XCTAssertFalse(Search.untrusted("http://localhost:8080/"))
+        XCTAssertFalse(Search.untrusted("http://192.168.1.1/"))
+        XCTAssertFalse(Search.untrusted("http://printer.local/"))
+        XCTAssertFalse(Search.untrusted("about:blank"))
+    }
+
+    func testAIModeGlassIsTheSameOnAndroid() throws {
+        let here = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        let linux = here.appendingPathComponent("../../Sources/Iris/Resources/js/aimode.js").standardized
+        let android = here.appendingPathComponent("../../../android/app/src/main/assets/js/aimode.js").standardized
+        guard FileManager.default.fileExists(atPath: android.path) else { return } // only the Linux part is here
+        XCTAssertEqual(try String(contentsOf: linux, encoding: .utf8), try String(contentsOf: android, encoding: .utf8))
+    }
+
     func testYouTube() {
         XCTAssertEqual(Search.resolve("yt cats"), "https://www.youtube.com/results?search_query=cats")
     }

@@ -180,6 +180,8 @@ enum UI {
     .iris-tab { padding: 0 6px 0 10px; }
     .iris-tab label { font-weight: 500; font-size: 13px; }
     .iris-tab.selected label { font-weight: 600; }
+    .iris-tab.iris-sandboxed { border-radius: 16px; box-shadow: inset 0 0 0 1.5px alpha(#ff9f0a, .85); }
+    .iris-tab.iris-sandboxed > image:first-child { color: #e8890a; }
     .iris-address { padding: 0 12px; }
     .iris-address text { font-size: 14.5px; background: none; caret-color: #0a84ff; }
     .iris-address text selection { background: alpha(#0a84ff, .24); color: inherit; }
@@ -195,6 +197,7 @@ enum UI {
     .iris-text-button { padding: 4px 12px; border-radius: 999px; font-weight: 600; color: #0a6bd6; }
     .iris-menu { padding: 6px; }
     .iris-dim { color: alpha(#1c1c21, .58); }
+    .iris-badge { min-width: 16px; padding: 0 5px; border-radius: 999px; background: #6a4cf5; color: white; font-size: 10.5px; font-weight: 700; }
     .iris-keys { font-size: 12px; }
     .iris-title { font-weight: 700; font-size: 15px; }
     .iris-sep { margin: 4px 10px; background: alpha(#1c1c21, .10); min-height: 1px; }

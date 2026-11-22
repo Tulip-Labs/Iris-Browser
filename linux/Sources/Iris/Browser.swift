@@ -30,8 +30,13 @@ final class Browser {
     private var chipLabel: GtkW!
     private var chipIcon: GtkW!
     private var actions: Item!
-    var shieldButton: GtkW!, downloadsButton: GtkW!, containerButton: GtkW!, menuButton: GtkW!
-    private(set) var ntp: NewTabPage!
+    var shieldButton: GtkW!, downloadsButton: GtkW!, containerButton: GtkW!
+    /// the number on the downloads button: files finished since you last looked
+    private var downloadsBadge: GtkW!
+    private var unseenDownloads = 0
+    /// a tab already open on Google AI Mode, waiting for the next new tab
+    /// (so a new tab is ready at once)
+    private var spare: Tab?
     private var editing = false
     private var progressShown = Spring(0, stiffness: 200)
     private var progressValue = Spring(0, stiffness: 160)
@@ -63,7 +68,8 @@ final class Browser {
         stage.layout = { [unowned self] w, h in self.layout(w, h) }
         stage.chromeLive = { [unowned self] in self.editing || self.suggestions != nil }
         buildChrome()
-        ntp = NewTabPage(self)
+        // Google's names are looked up before the first question
+        Engine.warm(Containers.shared.session(nil), Engine.googleHosts)
         buildStatus()
 
         // a click anywhere else closes a menu
@@ -81,31 +87,17 @@ final class Browser {
         on(Ptr(window), "realize") { [unowned self] in self.realized() }
         onBool0(Ptr(window), "close-request") { [unowned self] in
             self.saveSession()
+            self.spare?.destroy()
+            self.spare = nil
             self.app?.closed(self)
             return false
         }
         Downloads.shared.changed.append { [weak self] d in self?.downloadChanged(d) }
-        every(ms: 60_000) { [weak self] in self?.sleepIdleTabs(); return self != nil }
-    }
-
-    /// Tabs left alone give their memory back: a background tab sleeps after
-    /// 10 minutes, and beyond 3 awake background tabs the longest unseen
-    /// ones sleep at once. Tabs playing sound never sleep. A sleeping tab
-    /// opens its page again when you go to it.
-    func sleepIdleTabs() {
-        guard SettingsStore.shared.value.sleepTabs else { return }
-        let now = Date()
-        let awake = tabs.filter { $0 !== current && $0.web != nil && !$0.playingAudio }
-            .sorted { $0.lastShown > $1.lastShown }
-        for (i, t) in awake.enumerated() where i >= 3 || now.timeIntervalSince(t.lastShown) > 600 {
-            t.sleep()
-        }
     }
 
     /// Light and Dark: the glass takes its tint as it draws; the pictures
     /// made from it are made again
     func lookChanged() {
-        ntp.lookChanged()
         invalidateReach()
         stage.dirtyChrome()
         gtk_widget_queue_draw(stage.widget)
@@ -187,21 +179,28 @@ final class Browser {
         address.front = { [unowned self] s, r in self.drawProgress(s, r) }
         wireAddress(t)
 
-        // shields, downloads, containers, menu
+        // shields, containers, and downloads while there are any (no menu:
+        // find and zoom are Ctrl+F and Ctrl+plus, minus and 0)
         let actBox = UI.box(false, 2)
         gtk_widget_set_margin_start(actBox, 4); gtk_widget_set_margin_end(actBox, 4)
         shieldButton = UI.button("security-high-symbolic", "Shields") { [unowned self] in self.showShields() }
         downloadsButton = UI.button("folder-download-symbolic", "Downloads (Ctrl+Shift+Y)") { [unowned self] in self.showDownloads() }
+        let dl = UI.box(false, 3)
+        UI.append(dl, UI.icon("folder-download-symbolic", 16))
+        downloadsBadge = UI.label("", "iris-badge")
+        gtk_widget_set_visible(downloadsBadge, 0)
+        UI.append(dl, downloadsBadge)
+        gtk_button_set_child(UnsafeMutablePointer<GtkButton>(OpaquePointer(downloadsButton)), dl)
+        gtk_widget_set_visible(downloadsButton, 0)
         containerButton = UI.button("view-grid-symbolic", "Containers") { [unowned self] in
             self.showContainerMenu(anchor: self.stage.bounds(of: self.containerButton) ?? self.actions.frame.rect)
         }
-        menuButton = UI.button("open-menu-symbolic", "Menu") { [unowned self] in self.showAppMenu() }
-        for b in [shieldButton!, downloadsButton!, containerButton!, menuButton!] {
+        for b in [shieldButton!, containerButton!, downloadsButton!] {
             gtk_widget_set_valign(b, GTK_ALIGN_CENTER)
             UI.append(actBox, b)
         }
         actions = stage.add(actBox, .chrome, glass: Glass(radius: 19, level: 0.20))
-        for b in [shieldButton!, downloadsButton!, containerButton!, menuButton!] {
+        for b in [shieldButton!, containerButton!, downloadsButton!] {
             stage.part(actions, b, Glass(radius: 17, level: 0.30, bend: 3, rim: 8, dispersion: false))
         }
     }
@@ -266,7 +265,7 @@ final class Browser {
     }
 
     func focusPage() {
-        if let w = current?.web { gtk_widget_grab_focus(w) } else { gtk_widget_grab_focus(ntp.box) }
+        if let w = current?.web { gtk_widget_grab_focus(w) }
     }
 
     private func showAddress() {
@@ -302,13 +301,17 @@ final class Browser {
         gtk_snapshot_push_rounded_clip(s, &rr)
         // translucent where the compositor blurs what is behind; nearly
         // solid where it cannot (sharp windows behind would show through).
-        // Light: pearl with Iris's pink and sky; Dark: her night, indigo
+        // Iris's dawn: lilac above, rose and peach, her sky below
         let d = Look.dark
-        Draw.color(s, d ? RGBA(0.055, 0.045, 0.12, blur ? 0.66 : 0.97) : RGBA(0.955, 0.955, 0.975, blur ? 0.56 : 0.97), r)
-        Draw.radial(s, r, center: (w * 0.85, -40), radius: max(w, h) * 0.7,
-                    [(0, d ? RGBA(1, 0.37, 0.78, 0.14) : RGBA(1, 0.7, 0.86, 0.16)), (1, RGBA(1, 0.5, 0.8, 0))])
+        Draw.color(s, d ? RGBA(0.055, 0.045, 0.12, blur ? 0.66 : 0.97) : RGBA(0.95, 0.94, 0.99, blur ? 0.58 : 0.97), r)
+        Draw.radial(s, r, center: (w * 0.06, -60), radius: max(w, h) * 0.75,
+                    [(0, RGBA(0.68, 0.74, 1, d ? 0.10 : 0.30)), (1, RGBA(0.68, 0.74, 1, 0))])
+        Draw.radial(s, r, center: (w * 0.88, -40), radius: max(w, h) * 0.7,
+                    [(0, d ? RGBA(1, 0.37, 0.78, 0.14) : RGBA(1, 0.62, 0.84, 0.26)), (1, RGBA(1, 0.5, 0.8, 0))])
+        Draw.radial(s, r, center: (w * 0.5, h * 0.55), radius: max(w, h) * 0.55,
+                    [(0, RGBA(1, 0.92, 0.84, d ? 0 : 0.22)), (1, RGBA(1, 0.9, 0.85, 0))])
         Draw.radial(s, r, center: (w * 0.1, h + 40), radius: max(w, h) * 0.6,
-                    [(0, d ? RGBA(0.18, 0.7, 1, 0.12) : RGBA(0.62, 0.86, 1, 0.16)), (1, RGBA(0.3, 0.75, 1, 0))])
+                    [(0, d ? RGBA(0.18, 0.7, 1, 0.12) : RGBA(0.45, 0.76, 1, 0.24)), (1, RGBA(0.3, 0.75, 1, 0))])
         Draw.linear(s, Rect(x: 0, y: 0, w: w, h: card.y), from: (0, 0), to: (0, card.y),
                     [(0, RGBA.white.alpha(d ? 0.06 : 0.45)), (1, RGBA.white.alpha(0.0))])
         gtk_snapshot_pop(s)
@@ -456,14 +459,12 @@ final class Browser {
         stage.place(address, Rect(x: ax + inset, y: toolY, w: aW - 2 * inset, h: toolH))
 
         for t in tabs { if let p = t.page { stage.place(p, card, animate: false) } }
-        stage.place(ntp.item, card, animate: false)
         for it in [handle, indicator, plus, controls, nav, address, actions] {
             if it!.shown != showChrome { stage.show(it!, showChrome) }
         }
         for t in tabs where t.pillItem.shown != showChrome { stage.show(t.pillItem, showChrome) }
         let pr = showChrome ? 12.0 : 0
         for t in tabs { t.page?.clip = pr }
-        ntp.item.clip = pr
         placeOverlays()
         updateBlur(W, H)
     }
@@ -508,7 +509,11 @@ final class Browser {
 
     @discardableResult
     func newTab(_ url: String? = nil, container: String? = nil, after: Tab? = nil, select: Bool = true, related: UnsafeMutablePointer<WebKitWebView>? = nil, lazy: Bool = false) -> Tab {
-        let t = Tab(browser: self, container: container)
+        // a plain new tab is Google AI Mode: the spare one, already loaded, when there is one
+        let plain = (url ?? "").isEmpty && related == nil
+        let fromSpare = plain && container == nil && spare != nil
+        let t = fromSpare ? spare! : Tab(browser: self, container: container)
+        if fromSpare { spare = nil }
         let it = stage.add(t.pill, .chrome, glass: Glass(radius: 16, level: 0.22, bend: 4, rim: 9, dispersion: false), reactive: true)
         it.glassFollowsHover = true
         it.alpha.value = 0
@@ -526,10 +531,22 @@ final class Browser {
             t.ensureWeb(related: related)
         } else if let url, !url.isEmpty {
             if lazy { t.pending = url; t.title = Search.display(url); UI.setLabel(t.pillLabel, t.title) } else { t.load(url) }
+        } else if !fromSpare {
+            t.load(Search.home)
         }
         if select || current == nil { self.select(t) } else { layout(stage.width, stage.height) }
-        if select && (url ?? "").isEmpty && related == nil { idle { [weak self] in self?.focusAddress() } }
+        if plain && fromSpare || spare == nil { prepareSpare() }
         return t
+    }
+
+    /// the next new tab, loaded in the background a moment after this one
+    private func prepareSpare() {
+        after(ms: 1500) { [weak self] in
+            guard let self, self.spare == nil, !self.tabs.isEmpty else { return }
+            let s = Tab(browser: self, container: nil)
+            self.spare = s
+            s.load(Search.home)
+        }
     }
 
     private func wirePill(_ t: Tab) {
@@ -556,7 +573,6 @@ final class Browser {
             it.alpha.value = 0
             it.scale.value = 0.99
             stage.show(it, true)
-            stage.show(ntp.item, false)
         } else {
             stage.show(it, false, animated: false)
         }
@@ -569,15 +585,13 @@ final class Browser {
         t.lastShown = Date()
         current = t
         if let p = t.pending { t.pending = nil; t.load(p) }
-        sleepIdleTabs()
         if let op = old?.page { stage.show(op, false) }
         if let np = t.page {
             stage.raise(np)
             stage.show(np, true)
-            stage.show(ntp.item, false)
         } else {
-            ntp.refresh()
-            stage.show(ntp.item, true)
+            // a tab with nothing in it opens Google AI Mode
+            t.load(Search.home)
         }
         old.map { gtk_widget_remove_css_class($0.pill, "selected") }
         gtk_widget_add_css_class(t.pill, "selected")
@@ -663,7 +677,6 @@ final class Browser {
         gtk_button_set_icon_name(UnsafeMutablePointer<GtkButton>(OpaquePointer(shieldButton)),
                                  Shields.shared.onFor(host) ? "security-high-symbolic" : "security-low-symbolic")
         showAddress()
-        if t.page != nil { stage.show(ntp.item, false) }
         gtk_window_set_title(win, t.title.isEmpty ? "Iris" : t.title + " – Iris")
         stage.dirtyChrome()
     }
@@ -687,6 +700,11 @@ final class Browser {
             webkit_policy_decision_ignore(cp(d))
             let background = webkit_navigation_action_get_mouse_button(nav) == 2
             newTab(u, container: t.container, after: t, select: !background)
+            return true
+        }
+        // the sandbox opens no windows of its own
+        if t.sandboxed {
+            webkit_policy_decision_ignore(cp(d))
             return true
         }
         let gesture = webkit_navigation_action_is_user_gesture(nav) != 0
@@ -871,6 +889,10 @@ final class Browser {
     func hoverLink(_ t: Tab, _ link: String?) {
         guard t === current else { return }
         if let link, !link.hasPrefix("javascript:") {
+            // the link's site is looked up while the pointer rests on it
+            if let wv = t.webView, let s = webkit_web_view_get_network_session(wv), let h = Search.host(Search.unwrapRedirect(link) ?? link) {
+                Engine.warm(s, [h])
+            }
             UI.setLabel(statusLabel, link)
             placeStatus()
             stage.show(status, true)
@@ -881,7 +903,23 @@ final class Browser {
 
     // MARK: downloads
 
+    /// the downloads button: there while a file comes in, then with the
+    /// number finished until you open the downloads
+    private func updateDownloadsButton() {
+        let show = Downloads.shared.active > 0 || unseenDownloads > 0
+        let was = gtk_widget_get_visible(downloadsButton) != 0
+        gtk_widget_set_visible(downloadsButton, show ? 1 : 0)
+        UI.setLabel(downloadsBadge, unseenDownloads > 99 ? "99+" : "\(unseenDownloads)")
+        gtk_widget_set_visible(downloadsBadge, unseenDownloads > 0 ? 1 : 0)
+        if was != show { layout(stage.width, stage.height) }
+        stage.dirtyChrome()
+    }
+
+    private var countedDownloads: Set<ObjectIdentifier> = []
+
     private func downloadChanged(_ d: Download?) {
+        if let d, d.done, !d.failed, countedDownloads.insert(ObjectIdentifier(d)).inserted { unseenDownloads += 1 }
+        updateDownloadsButton()
         downloadsPanel?.update(d)
         if let d, d.done, d.received > 0, menu == nil || downloadsPanel == nil {
             if abs(d.started.timeIntervalSinceNow) < 3600, !d.failed, d.progress >= 1, !(d.name.isEmpty) {
@@ -898,6 +936,8 @@ final class Browser {
     private weak var lastToastedDownload: Download?
 
     func showDownloads() {
+        unseenDownloads = 0
+        updateDownloadsButton()
         let panel = DownloadsPanel(self)
         openMenu(panel.box, under: stage.bounds(of: downloadsButton) ?? actions.frame.rect, width: 380, alignRight: true)
         downloadsPanel = panel
@@ -906,6 +946,8 @@ final class Browser {
     // MARK: permissions
 
     func permission(_ t: Tab, _ req: OpaquePointer) {
+        // nothing of your computer for a site in the sandbox
+        if t.sandboxed { webkit_permission_request_deny(req); return }
         let name = String(cString: g_type_name(UnsafeMutablePointer<GTypeInstance>(req).pointee.g_class.pointee.g_type))
         let what: String
         switch name {

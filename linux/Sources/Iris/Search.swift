@@ -20,6 +20,38 @@ enum Search {
         google + "&udm=50&q=" + escape(q.trimmingCharacters(in: .whitespacesAndNewlines) + separator + instruction)
     }
 
+    /// the home of every new tab: Google AI Mode, ready for a question
+    static let home = google + "&udm=50"
+
+    /// whether an address is Google AI Mode (its page gets Iris's glass)
+    static func isAIMode(_ url: String) -> Bool {
+        guard let c = URLComponents(string: url), let h = c.host, h == "www.google.com" || h == "google.com" else { return false }
+        return c.path == "/aimode" || (c.path == "/search" && c.queryItems?.first(where: { $0.name == "udm" })?.value == "50")
+    }
+
+    /// Google's way out to a result (google.com/url?q=…): the result itself,
+    /// so a link opens without the extra stop
+    static func unwrapRedirect(_ url: String) -> String? {
+        guard let c = URLComponents(string: url), let h = c.host, h == "www.google.com" || h == "google.com", c.path == "/url",
+              let target = c.queryItems?.first(where: { $0.name == "q" || $0.name == "url" })?.value,
+              target.hasPrefix("https://") || target.hasPrefix("http://") else { return nil }
+        return target
+    }
+
+    /// Sites Iris does not trust, opened in the sandbox without asking: no
+    /// encryption (http), or an address that is a bare public IP. (A site
+    /// whose certificate fails joins them when it fails.) Your own network
+    /// and this computer are trusted.
+    static func untrusted(_ url: String) -> Bool {
+        guard let c = URLComponents(string: url), let scheme = c.scheme?.lowercased(), let host = c.host?.lowercased() else { return false }
+        if scheme != "http" && scheme != "https" { return false }
+        if isPrivateHost(host) || host.hasSuffix(".local") || host.hasSuffix(".lan") || host.hasSuffix(".home.arpa") { return false }
+        if scheme == "http" { return true }
+        let bare = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        let ipv4 = bare.split(separator: ".").count == 4 && bare.split(separator: ".").allSatisfy { UInt8($0) != nil }
+        return ipv4 || bare.contains(":")
+    }
+
     static func youtubeURL(_ q: String) -> String {
         "https://www.youtube.com/results?search_query=" + escape(q)
     }

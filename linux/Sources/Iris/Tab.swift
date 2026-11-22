@@ -24,6 +24,11 @@ final class Tab {
 
     private(set) var web: GtkW?
     private(set) var ucm: OpaquePointer?
+    /// in the sandbox (Sandbox): a site Iris does not trust
+    private(set) var sandboxed = false
+    private var sandboxSession: OpaquePointer?
+    /// hosts whose failing certificate the sandbox let through, once each
+    private var allowedCerts: Set<String> = []
     var page: Item?
 
     // the pill
@@ -63,7 +68,41 @@ final class Tab {
         if let w = webView { return w }
         let ucm = webkit_user_content_manager_new()!
         self.ucm = ucm
-        let settings = webkit_settings_new()!
+        Engine.addAIGlass(ucm)
+        let settings = sandboxed ? Sandbox.settings() : webkit_settings_new()!
+        if !sandboxed { normalSettings(settings) }
+        Engine.addLightVideo(ucm)
+        var props: [Prop] = [
+            .object("user-content-manager", Ptr(ucm), webkit_user_content_manager_get_type()),
+            .object("settings", Ptr(settings), webkit_settings_get_type()),
+        ]
+        if let related {
+            // a pop-up the page asked for: same world, and it may talk to
+            // the page that opened it
+            props.append(.object("related-view", Ptr(related), webkit_web_view_get_type()))
+        } else if sandboxed {
+            // the sandbox: web processes of its own, and a world in memory for this tab alone
+            let ss = Sandbox.session()
+            sandboxSession = ss
+            props.append(.object("network-session", Ptr(ss), webkit_network_session_get_type()))
+            props.append(.object("web-context", Ptr(Sandbox.context), webkit_web_context_get_type()))
+        } else {
+            props.append(.object("network-session", Ptr(Containers.shared.session(container)), webkit_network_session_get_type()))
+            // every tab in the one shared web context
+            props.append(.object("web-context", Ptr(Engine.context), webkit_web_context_get_type()))
+        }
+        let w = gnew(webkit_web_view_get_type(), props).assumingMemoryBound(to: GtkWidget.self)
+        g_object_unref(Ptr(settings))
+        g_object_ref_sink(Ptr(w))
+        web = w
+        Shields.shared.apply(ucm, host: nil)
+        connect(cp(w)!)
+        markSandbox()
+        browser?.attachPage(self)
+        return cp(w)!
+    }
+
+    private func normalSettings(_ settings: OpaquePointer) {
         webkit_settings_set_enable_developer_extras(settings, 1)
         webkit_settings_set_javascript_can_open_windows_automatically(settings, 0)
         webkit_settings_set_enable_back_forward_navigation_gestures(settings, 1)
@@ -77,32 +116,28 @@ final class Tab {
         webkit_settings_set_enable_media(settings, 1)
         webkit_settings_set_enable_mediasource(settings, 1)
         webkit_settings_set_enable_media_capabilities(settings, 1)
-        Engine.addLightVideo(ucm)
-        var props: [Prop] = [
-            .object("user-content-manager", Ptr(ucm), webkit_user_content_manager_get_type()),
-            .object("settings", Ptr(settings), webkit_settings_get_type()),
-        ]
-        if let related {
-            // a pop-up the page asked for: same world, and it may talk to
-            // the page that opened it
-            props.append(.object("related-view", Ptr(related), webkit_web_view_get_type()))
-        } else {
-            props.append(.object("network-session", Ptr(Containers.shared.session(container)), webkit_network_session_get_type()))
-            // every tab in the one shared web context
-            props.append(.object("web-context", Ptr(Engine.context), webkit_web_context_get_type()))
-        }
-        let w = gnew(webkit_web_view_get_type(), props).assumingMemoryBound(to: GtkWidget.self)
-        g_object_unref(Ptr(settings))
-        g_object_ref_sink(Ptr(w))
-        web = w
-        Shields.shared.apply(ucm, host: nil)
-        connect(cp(w)!)
-        browser?.attachPage(self)
-        return cp(w)!
+    }
+
+    /// a sandboxed tab looks it: its pill says so
+    private func markSandbox() {
+        if sandboxed { UI.cls(pill, "iris-sandboxed") } else { gtk_widget_remove_css_class(pill, "iris-sandboxed") }
+        gtk_image_set_from_icon_name(OpaquePointer(favicon), sandboxed ? "security-low-symbolic" : isPrivate ? "security-high-symbolic" : "web-browser-symbolic")
+    }
+
+    /// the tab's page made again, in or out of the sandbox
+    private func remake(sandboxed sb: Bool) {
+        if let p = page { browser?.stage.remove(p, animated: false) }
+        page = nil
+        destroy()
+        sandboxed = sb
+        allowedCerts = []
     }
 
     func load(_ u: String) {
         guard !u.isEmpty else { return }
+        // a site Iris does not trust opens in the sandbox, and a trusted one leaves it
+        let wantSandbox = Search.untrusted(u)
+        if web == nil { sandboxed = wantSandbox } else if wantSandbox != sandboxed { remake(sandboxed: wantSandbox) }
         let w = ensureWeb()
         url = u
         Shields.shared.apply(ucm!, host: Search.host(u))
@@ -157,6 +192,14 @@ final class Tab {
         }
         g_signal_connect_data(p, "create", unsafeBitCast(createCB, to: GCallback.self),
                               Unmanaged.passUnretained(self).toOpaque(), nil, GConnectFlags(rawValue: 0))
+        // a certificate that fails: the site opens in the sandbox, without asking
+        let tlsCB: @convention(c) (Ptr?, UnsafePointer<CChar>?, Ptr?, UInt32, Ptr?) -> Int32 = { _, uri, cert, _, d in
+            let tab = Unmanaged<Tab>.fromOpaque(d!).takeUnretainedValue()
+            guard let uri, let cert else { return 0 }
+            return tab.certificateFailed(String(cString: uri), OpaquePointer(cert)) ? 1 : 0
+        }
+        g_signal_connect_data(p, "load-failed-with-tls-errors", unsafeBitCast(tlsCB, to: GCallback.self),
+                              Unmanaged.passUnretained(self).toOpaque(), nil, GConnectFlags(rawValue: 0))
         on(p, "ready-to-show") { [weak self] in
             guard let self else { return }
             self.browser?.select(self)
@@ -190,13 +233,44 @@ final class Tab {
         }
     }
 
+    private func certificateFailed(_ uri: String, _ cert: OpaquePointer) -> Bool {
+        guard let host = Search.host(uri), !allowedCerts.contains(host) else { return false }
+        g_object_ref(Ptr(cert))
+        // after the signal: the page that failed may be the one let go
+        idle { [weak self] in
+            defer { g_object_unref(Ptr(cert)) }
+            guard let self else { return }
+            if !self.sandboxed { self.remake(sandboxed: true) }
+            let w = self.ensureWeb()
+            self.allowedCerts.insert(host)
+            if let s = self.sandboxSession { webkit_network_session_allow_tls_certificate_for_host(s, UnsafeMutablePointer(cert), host) }
+            self.url = uri
+            webkit_web_view_load_uri(w, uri)
+            self.browser?.toast("\(Search.display(uri)) has a certificate that fails: it is open in the sandbox")
+            self.browser?.tabChanged(self)
+        }
+        return true
+    }
+
     private func decide(_ d: OpaquePointer, _ type: UInt32) -> Bool {
         if type == WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION.rawValue {
             let nav = webkit_navigation_policy_decision_get_navigation_action(d)
             if let req = webkit_navigation_action_get_request(nav), let u = str(webkit_uri_request_get_uri(req)),
-               webkit_navigation_action_get_frame_name(nav) == nil, let ucm {
+               webkit_navigation_action_get_frame_name(nav) == nil {
+                // a Google result: straight to it, without Google's redirect
+                if let target = Search.unwrapRedirect(u) {
+                    webkit_policy_decision_ignore(cp(d))
+                    idle { [weak self] in self?.load(target) }
+                    return true
+                }
+                // into the sandbox, or out of it: the page is made again
+                if Search.untrusted(u) != sandboxed, u.hasPrefix("http") {
+                    webkit_policy_decision_ignore(cp(d))
+                    idle { [weak self] in self?.load(u) }
+                    return true
+                }
                 // the main frame is about to open u: the shield for its site
-                Shields.shared.apply(ucm, host: Search.host(u))
+                if let ucm { Shields.shared.apply(ucm, host: Search.host(u)) }
             }
             return false
         }
@@ -207,6 +281,12 @@ final class Tab {
             // what WebKit cannot show is a download
             if webkit_response_policy_decision_is_mime_type_supported(d) == 0,
                webkit_response_policy_decision_is_main_frame_main_resource(d) != 0 {
+                if sandboxed {
+                    // nothing from an untrusted site reaches your files
+                    webkit_policy_decision_ignore(cp(d))
+                    browser?.toast("Downloads are off for sites in the sandbox")
+                    return true
+                }
                 webkit_policy_decision_download(cp(d))
                 return true
             }
@@ -269,5 +349,7 @@ final class Tab {
         }
         web = nil
         ucm = nil
+        if let s = sandboxSession { g_object_unref(Ptr(s)) }
+        sandboxSession = nil
     }
 }

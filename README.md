@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="#whats-new-in-210">New</a> ·
+  <a href="#what-is-new-in-211">New</a> ·
   <a href="#what-it-does">Features</a> ·
   <a href="#install">Install</a> ·
   <a href="#shortcuts">Shortcuts</a> ·
@@ -30,15 +30,19 @@
 </p>
 
 <p align="center">
-  <img src="assets/screens/linux-menu.png" width="860" alt="Iris for Linux: the menu, with the look (Auto, Light, Dark), a sheet of liquid glass">
+  <img src="assets/icon/iris-256.png" width="160" alt="Iris's icon: her profile, her hair in sheets of liquid glass">
 </p>
 
 ---
 
 ## What is new in 2.1.1
 
-- **Android: pages open again** on System WebView (Cefrium left them blank on some phones).
-- **Ads that open new tabs are stopped**, not only those in the page.
+- **Every new tab is Google AI Mode**, in Iris's Liquid Glass; the start page is gone, and your tabs still open where you left them.
+- **Faster**: the next new tab is loaded ahead, Google's names are looked up early, and results open without Google's redirect.
+- **An automatic sandbox** for sites Iris does not trust (http, a bare IP, a failing certificate): processes and a throwaway world of their own, and none of your data.
+- **Light only**, in the colours of dawn, and **a new icon**.
+- **No menu**: Ctrl+F finds, Ctrl+plus and minus zoom; the downloads button shows only while it has something to show.
+- **Android on System WebView again**, with ads that open new tabs stopped.
 
 ## What was new in 2.1.0
 
@@ -91,14 +95,10 @@ Iris is made again from the start.
 
 ### Linux
 
-<p align="center">
-  <img src="assets/screens/linux-new-tab.png" width="420" alt="The new-tab page in Light: Iris, goddess of the rainbow, under a glass capsule">
-  <img src="assets/screens/linux-dark.png" width="420" alt="The new-tab page in Dark: Iris at night">
-</p>
-
 - **Liquid Glass chrome.** The tabs, the address bar and the button groups float as glass.
   - The page's own colour reaches up under the toolbar (as Safari's does), so the glass has something to bend.
   - Menus, suggestions, find, downloads and notices are glass over the page itself.
+- **Google AI Mode in every new tab**, in Iris's glass: the dawn behind it, its panels clear, the question box of glass. The next new tab is loaded ahead, so it opens at once.
 - **Search.** Type an address, or anything else to ask Google AI Mode. Iris asks it to answer from high-quality, current sources. `yt cats` searches YouTube.
 - **Containers.**
   - Personal, Work, Shopping and Banking to start with, and any you add.
@@ -106,6 +106,7 @@ Iris is made again from the start.
   - Open a new tab in a container, or open the current page in another one.
   - Removing a container deletes everything its sites kept.
 - **Private tabs.** One in-memory world, gone when the last private tab closes.
+- **The sandbox.** Sites Iris does not trust (http, a bare IP, a failing certificate) open in it without asking: a WebKit web context of its own (its own web processes, in WebKit's bubblewrap sandbox), a network session per tab in memory only, and no downloads, camera, microphone, location, clipboard, WebGL, WebRTC or pop-ups. Its tabs have an orange rim.
 - **Iris Shields.** About 100,000 ad and tracker domains become WebKit content rules. They are compiled once and blocked inside the engine before a request leaves. You can turn Shields off for one site or everywhere.
 - **Cookies stay home.** Third-party cookies are refused, and WebKit's tracking prevention is on.
 - **Pop-ups.**
@@ -117,9 +118,9 @@ Iris is made again from the start.
   - selected text: copy, or ask Google AI Mode about it;
   - text fields: cut, copy, paste, select all;
   - the page: back, forward, reload, inspect.
-- **Downloads.** Saved to your Downloads folder, shown in a glass panel with progress. Open a file or show it in its folder.
+- **Downloads.** Saved to your Downloads folder, shown in a glass panel with progress. The button appears while a file comes in and then shows how many finished, until you open it.
 - **The rest.**
-  - Find in page and zoom.
+  - No menu: find in page with Ctrl+F, zoom with Ctrl+plus, minus and 0.
   - Full screen for videos and with F11.
   - Your tabs come back next time.
   - A daily check for a newer Iris.
@@ -128,13 +129,13 @@ Iris is made again from the start.
 ### Android
 
 - **Engine.** Android System WebView (Chromium, kept up to date by the phone). The interface is Jetpack Compose drawn as Liquid Glass (no Material components). The tabs and their pages live in a ViewModel.
-- **Look.** Light, Dark or Auto (the phone's choice), from the menu.
+- **Look.** Light, in the colours of dawn. Every new tab is Google AI Mode in Iris's glass.
+- **The sandbox.** Sites Iris does not trust open in a process of their own with WebView data made fresh each time, and none of your data.
 - **Containers.** WebView profiles (System WebView 123 and newer): each container keeps its own cookies, cache, localStorage and IndexedDB.
 - **Shields.** WebView asks Iris before every request; ads and trackers never leave the phone. Ads that open new tabs are stopped too: a page opens no tab by itself, a tapped ad link opens nothing, and a script's window stays hidden until Iris knows it is not an ad. Moderate, Aggressive or Ultra aggressive, with uBlock Origin's lists, and the boxes ads leave are hidden.
 - **Tabs.**
   - A strip of tabs on top with one "+" (long-press it to pick a container).
-  - The bottom bar has back, forward, home, Shields, containers and downloads.
-  - Background tabs beyond 3 sleep and keep their history.
+  - The bottom bar has back, forward, home, Shields, containers, and downloads while there are any (with the number finished).
 - **Downloads manager.** Files go to the phone's Downloads folder (no storage permission needed), with progress, open and delete.
 - **Calls** in the browser (camera and microphone, asked once), file fields and full-screen video.
 - **Auto-update.** Iris checks GitHub once a day, downloads the new APK and has Android install it over itself.
@@ -164,6 +165,7 @@ On niri, the blur behind the window comes on by itself on 26.04 and newer. No wi
 | Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+1…9 | Change tab |
 | Ctrl+R, F5 / Ctrl+Shift+R | Reload / reload without the cache |
 | Alt+← / Alt+→ | Back / forward |
+| Alt+Home | Google AI Mode |
 | Ctrl+F | Find in page |
 | Ctrl+Plus / Ctrl+Minus / Ctrl+0 | Zoom |
 | Ctrl+Shift+Y, Ctrl+J | Downloads |
@@ -206,9 +208,10 @@ linux/                      Iris for Linux (Swift package)
     Engine.swift            the shared web context, memory limits, light video
     Shields.swift           the levels' lists, fetched and compiled as WebKit content rules
     ShieldRules.swift       filter lists turned into WebKit content rules
-    Look.swift              Light, Dark or Auto
+    Look.swift              the light look
+    Sandbox.swift           the sandbox for sites Iris does not trust
     Overlays.swift          menus, suggestions, find, downloads, the right-click menu
-    NewTab.swift, Keys.swift, Downloads.swift, History.swift, Updates.swift, Search.swift
+    Keys.swift, Downloads.swift, History.swift, Updates.swift, Search.swift
   Sources/CBlur/            ext-background-effect-v1: blur behind the window
 android/                    Iris for Android (Kotlin, Compose, System WebView)
   app/src/main/java/org/tulipanlabs/iris/

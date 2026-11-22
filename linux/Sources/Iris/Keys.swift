@@ -27,7 +27,6 @@ enum Keys {
             case GDK_KEY_f: b.openFind(); return true
             case GDK_KEY_y where shift: b.showDownloads(); return true
             case GDK_KEY_j: b.showDownloads(); return true
-            case GDK_KEY_h: b.showHistory(); return true
             case GDK_KEY_plus, GDK_KEY_equal, GDK_KEY_KP_Add: b.zoom(1); return true
             case GDK_KEY_minus, GDK_KEY_KP_Subtract: b.zoom(-1); return true
             case GDK_KEY_0, GDK_KEY_KP_0: b.zoom(0); return true
@@ -42,7 +41,7 @@ enum Keys {
             switch key {
             case GDK_KEY_Left: b.current?.back(); return true
             case GDK_KEY_Right: b.current?.forward(); return true
-            case GDK_KEY_Home: b.go("about:blank"); return true
+            case GDK_KEY_Home: b.go(Search.home); return true
             default: break
             }
         }

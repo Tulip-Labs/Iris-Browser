@@ -66,6 +66,34 @@ enum Engine {
         }
     }
 
+    /// Iris's Liquid Glass for Google AI Mode, the home of every tab (the
+    /// same script as on Android: Resources/js/aimode.js)
+    static let aiGlass: String = Resources.path("js/aimode.js").flatMap { try? String(contentsOfFile: $0, encoding: .utf8) } ?? ""
+
+    static func addAIGlass(_ ucm: OpaquePointer) {
+        guard !aiGlass.isEmpty else { return }
+        let hosts = ["https://www.google.com/*", "https://google.com/*"]
+        var cs = hosts.map { strdup($0) } + [nil]
+        let script = cs.withUnsafeMutableBufferPointer { b in
+            b.baseAddress!.withMemoryRebound(to: UnsafePointer<CChar>?.self, capacity: b.count) {
+                webkit_user_script_new(aiGlass, WEBKIT_USER_CONTENT_INJECT_TOP_FRAME, WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_START, $0, nil)
+            }
+        }
+        cs.forEach { free($0) }
+        if let script {
+            webkit_user_content_manager_add_script(ucm, script)
+            webkit_user_script_unref(script)
+        }
+    }
+
+    /// names looked up before they are needed: Google's, for AI Mode, at
+    /// start; a link's, when the pointer rests on it
+    static func warm(_ session: OpaquePointer, _ hosts: [String]) {
+        for h in hosts where !h.isEmpty { webkit_network_session_prefetch_dns(session, h) }
+    }
+
+    static let googleHosts = ["www.google.com", "www.gstatic.com", "ssl.gstatic.com", "fonts.gstatic.com", "encrypted-tbn0.gstatic.com", "lh3.googleusercontent.com"]
+
     /// Hardware video decoding off: GStreamer's decoders on the graphics
     /// chip are ranked out, so video is decoded by ffmpeg on the processor.
     /// Must run before GStreamer starts (the web processes inherit it).

@@ -1,9 +1,8 @@
 import CAdwaita
 import Foundation
 
-/// Iris's look, as in Ember: Light, Dark, or Auto (the system's choice,
-/// light when it has none). Ember sets the system's choice by the time of
-/// day, so on niri with Ember, Auto turns dark at night with the desktop.
+/// Iris's look, as in Ember: light, the colours of a dawn sky. (Dark and
+/// Auto were choices before 2.1.1; an old setting is read and set aside.)
 enum Appearance: String, Codable, CaseIterable {
     case auto, light, dark
 
@@ -16,7 +15,7 @@ enum Look {
     /// called when the look changes, to redraw every window
     nonisolated(unsafe) static var changed: [() -> Void] = []
 
-    static var ink: RGBA { dark ? RGBA(0.96, 0.96, 0.97) : RGBA(0.11, 0.11, 0.13) }
+    static var ink: RGBA { dark ? RGBA(0.96, 0.96, 0.97) : RGBA(0.14, 0.11, 0.25) }
 
     /// a glass tint by how much of the material shows (0.2 for bars, 0.7
     /// for panels): white over light, smoky over dark
@@ -31,9 +30,9 @@ enum Look {
     /// applies the setting: libadwaita (and so WebKit's
     /// prefers-color-scheme) follows it, and so does Iris's own drawing
     static func apply() {
-        let sm = adw_style_manager_get_default()
-        let a = SettingsStore.shared.value.appearance
-        adw_style_manager_set_color_scheme(sm, a == .dark ? .forceDark : a == .light ? .forceLight : .preferLight)
+        // Iris is light (the choice of Dark and Auto is gone): her own glass,
+        // and the pages' prefers-color-scheme
+        adw_style_manager_set_color_scheme(adw_style_manager_get_default(), .forceLight)
         refresh()
     }
 

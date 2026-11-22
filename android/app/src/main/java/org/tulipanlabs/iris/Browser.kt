@@ -105,9 +105,11 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
     private val closed = ArrayDeque<Pair<String, String?>>()
     /** pop-ups made but not shown: each waits for its first address */
     private val held = mutableListOf<Tab>()
+    /** a tab already open on Google AI Mode, waiting for the next new tab */
+    private var spare: Tab? = null
     private val ui = Handler(Looper.getMainLooper())
     private val ctx: Context get() = getApplication()
-    /** pages in dark colours (the look): new pages see prefers-color-scheme: dark */
+    /** Iris is light: pages see prefers-color-scheme: light */
     var dark = false
 
     val containersWork: Boolean = runCatching { WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE) }.getOrDefault(false)
@@ -122,32 +124,57 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun newTab(url: String? = null, container: String? = null, after: Tab? = null, select: Boolean = true): Tab {
-        val t = Tab(container)
+        // a plain new tab is Google AI Mode: the spare one, already loaded, when there is one
+        val plain = url.isNullOrEmpty()
+        val sp = spare?.takeIf { plain && container == null && it.web != null }
+        val t = sp ?: Tab(container)
+        if (sp != null) spare = null
         val i = after?.let { tabs.indexOf(it) } ?: -1
         if (i >= 0) tabs.add(i + 1, t) else tabs.add(t)
-        if (!url.isNullOrEmpty()) {
-            t.url = url
-            if (select) load(t, url) else t.pending = url
+        val u = if (plain) Search.HOME else url!!
+        if (sp == null) {
+            t.url = u
+            if (select) load(t, u) else t.pending = u
         }
         if (select || current == null) select(t)
         save()
+        prepareSpare()
         return t
     }
 
+    /** the next new tab, loaded in the background a moment after this one */
+    private fun prepareSpare() {
+        if (spare != null) return
+        ui.postDelayed({
+            if (spare != null || activity == null) return@postDelayed
+            val s = Tab(null, Search.HOME)
+            val w = web(s) ?: return@postDelayed
+            spare = s
+            w.loadUrl(Search.HOME)
+        }, 1500)
+    }
+
     fun select(t: Tab) {
-        current?.let { it.lastShown = System.currentTimeMillis(); it.web?.onPause() }
+        current?.let { it.lastShown = System.currentTimeMillis(); it.web?.onPause(); it.web?.settings?.offscreenPreRaster = false }
         current = t
         t.lastShown = System.currentTimeMillis()
         t.pending?.let { p -> if (activity != null) { t.pending = null; load(t, p) } }
+        // a tab with nothing in it opens Google AI Mode
+        if (t.web == null && t.pending == null && activity != null) load(t, t.url.ifEmpty { Search.HOME })
         t.web?.onResume()
+        // the shown page is drawn ahead of the scroll, so it moves without gaps
+        t.web?.settings?.offscreenPreRaster = true
         Store.selected = tabs.indexOf(t)
-        sleepIdle()
     }
 
     /** the activity is here: the shown tab opens what it was waiting for */
     fun attached(a: Activity) {
         activity = a
-        current?.let { t -> t.pending?.let { p -> t.pending = null; load(t, p) } }
+        current?.let { t ->
+            t.pending?.let { p -> t.pending = null; load(t, p) }
+            if (t.web == null) load(t, t.url.ifEmpty { Search.HOME })
+        }
+        prepareSpare()
     }
 
     /** Closing a tab never closes Iris: the one beside it takes its place,
@@ -179,6 +206,12 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun load(t: Tab, url: String) {
+        // a site Iris does not trust opens in the sandbox, and the tab stays as it was
+        if (Search.untrusted(url)) {
+            activity?.let { SandboxActivity.open(it, url) } ?: SandboxActivity.open(ctx, url)
+            if (t.web == null && t.url == url) { t.url = Search.HOME; load(t, Search.HOME) }
+            return
+        }
         t.url = url
         t.top = url
         t.crashed = false
@@ -194,29 +227,8 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         save()
     }
 
-    /** back to the new-tab page in this tab */
-    fun home(t: Tab) {
-        destroy(t)
-        t.url = ""
-        t.top = ""
-        t.title = ""
-        t.canBack = false
-        t.canForward = false
-        save()
-    }
-
-    /** Tabs left alone give their memory back: beyond 3 awake background
-     *  tabs, the longest unseen sleep (their history kept). */
-    private fun sleepIdle() {
-        val awake = tabs.filter { it !== current && it.web != null }.sortedByDescending { it.lastShown }
-        awake.drop(3).forEach { t ->
-            val b = Bundle()
-            runCatching { t.web?.saveState(b) }
-            t.saved = b
-            t.pending = t.url.ifEmpty { null }
-            destroy(t)
-        }
-    }
+    /** home: Google AI Mode, in this tab */
+    fun home(t: Tab) = load(t, Search.HOME)
 
     private fun destroy(t: Tab) {
         t.web?.let { w ->
@@ -272,6 +284,7 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
     // ---- the engine ----
 
     private val youtube by lazy { runCatching { ctx.assets.open("js/youtube.js").bufferedReader().use { it.readText() } }.getOrDefault("") }
+    private val aiGlass by lazy { runCatching { ctx.assets.open("js/aimode.js").bufferedReader().use { it.readText() } }.getOrDefault("") }
 
     /** the tab's WebView, made on first use (null until the activity is here) */
     @SuppressLint("SetJavaScriptEnabled", "RequiresFeature")
@@ -311,8 +324,10 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         s.allowContentAccess = false
         if (t.isPrivate) s.cacheMode = WebSettings.LOAD_NO_CACHE
         CookieManager.getInstance().setAcceptThirdPartyCookies(w, false)
-        if (youtube.isNotBlank() && WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) runCatching {
-            WebViewCompat.addDocumentStartJavaScript(w, youtube, setOf("https://*.youtube.com", "https://youtube.com"))
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            if (youtube.isNotBlank()) runCatching { WebViewCompat.addDocumentStartJavaScript(w, youtube, setOf("https://*.youtube.com", "https://youtube.com")) }
+            // Iris's glass on Google AI Mode, the home of every tab
+            if (aiGlass.isNotBlank()) runCatching { WebViewCompat.addDocumentStartJavaScript(w, aiGlass, setOf("https://www.google.com", "https://google.com")) }
         }
         w.webViewClient = Client(t)
         w.webChromeClient = Chrome(t)
@@ -427,6 +442,15 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
                 ui.post { approve(t, from) }
             }
             val scheme = u.scheme?.lowercase()
+            if (request.isForMainFrame) {
+                // a Google result: straight to it, without Google's redirect
+                Search.unwrapRedirect(us)?.let { target -> ui.post { view.loadUrl(target) }; return true }
+                // a site Iris does not trust: the sandbox, without asking
+                if ((scheme == "http" || scheme == "https") && Search.untrusted(us)) {
+                    activity?.let { SandboxActivity.open(it, us) }
+                    return true
+                }
+            }
             if (scheme == "http" || scheme == "https") {
                 // ads that take the page itself away: a redirect, or a script
                 // sending the tab to an ad without a tap on a link to it
@@ -488,7 +512,24 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
             t.canForward = view.canGoForward()
         }
 
-        override fun onPageCommitVisible(view: WebView, url: String) = hide(view, url)
+        override fun onPageCommitVisible(view: WebView, url: String) {
+            hide(view, url)
+            // where WebView cannot add the glass before the page, it comes now
+            if (Search.isAIMode(url) && !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT) && aiGlass.isNotBlank()) {
+                runCatching { view.evaluateJavascript(aiGlass, null) }
+            }
+        }
+
+        // a certificate that fails: that site opens in the sandbox, without asking
+        @SuppressLint("WebViewClientOnReceivedSslError")
+        override fun onReceivedSslError(view: WebView, handler: android.webkit.SslErrorHandler, error: android.net.http.SslError) {
+            handler.cancel()
+            val u = error.url ?: return
+            if (u == t.top || Search.host(u) == Search.host(t.top)) {
+                activity?.let { SandboxActivity.open(it, u, cert = true) }
+                ui.post { if (t.web?.canGoBack() == true) t.web?.goBack() else load(t, Search.HOME) }
+            }
+        }
 
         override fun onPageFinished(view: WebView, url: String) {
             t.loading = false
@@ -630,6 +671,7 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         save()
         tabs.forEach(::destroy)
         held.forEach(::destroy)
+        spare?.let(::destroy)
     }
 
     companion object {

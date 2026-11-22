@@ -31,23 +31,21 @@ object Look {
         Store.appearance = a
     }
 
-    fun isDark(system: Boolean) = when (appearance) {
-        "dark" -> true
-        "light" -> false
-        else -> system
-    }
+    /** Iris is light (Dark and Auto were choices before 2.1.1) */
+    @Suppress("UNUSED_PARAMETER")
+    fun isDark(system: Boolean) = false
 }
 
 /** the colours of one look: Iris's day (pearl, pink and sky) or night (indigo) */
 class Palette(val dark: Boolean) {
-    val ink = if (dark) Color(0xFFF5F5F7) else Color(0xFF1C1C21)
+    val ink = if (dark) Color(0xFFF5F5F7) else Color(0xFF241C40)
     val ink2 = ink.copy(alpha = 0.62f)
-    val accent = if (dark) Color(0xFF64B5FF) else Color(0xFF0A84FF)
+    val accent = if (dark) Color(0xFF64B5FF) else Color(0xFF6A4CF5)
     val green = Color(0xFF34C759)
     val danger = Color(0xFFFF453A)
     /** behind everything: the window's own wash */
     val back = if (dark) listOf(Color(0xFF0B0920), Color(0xFF17134A), Color(0xFF0A2440))
-        else listOf(Color(0xFFFBF3F8), Color(0xFFF1EEFA), Color(0xFFE6F1FC))
+        else listOf(Color(0xFFDCE0FF), Color(0xFFEDE3FF), Color(0xFFFFE3F0), Color(0xFFFFEEE2))
     /** the glass of bars and buttons, and of panels (more solid, for reading) */
     val glass = if (dark) Color(0xFF26233A).copy(alpha = 0.62f) else Color.White.copy(alpha = 0.66f)
     val panel = if (dark) Color(0xFF1C1A2C).copy(alpha = 0.92f) else Color(0xFFFBFBFE).copy(alpha = 0.92f)

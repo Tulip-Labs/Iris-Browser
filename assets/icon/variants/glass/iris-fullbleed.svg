@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Iris's icon: her profile, her hair in sheets of liquid glass. An original drawing for Iris (Tulip Labs), GPL-3.0. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fdfcff"/><stop offset="1" stop-color="#eceefb"/></linearGradient>
+    <linearGradient id="g1" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="#cbbcff"/><stop offset="0.5" stop-color="#a9a9f6"/><stop offset="0.85" stop-color="#e7a6ea"/><stop offset="1" stop-color="#c69af5"/></linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c9cdfc"/><stop offset="0.5" stop-color="#9eaaf6"/><stop offset="1" stop-color="#7e8ff0"/></linearGradient>
+    <linearGradient id="g3" x1="0.2" y1="0" x2="0.5" y2="1"><stop offset="0" stop-color="#8e9ef3"/><stop offset="0.6" stop-color="#7286ee"/><stop offset="1" stop-color="#b29af6"/></linearGradient>
+    <linearGradient id="g4" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#a596f5"/><stop offset="0.55" stop-color="#7b8ef2"/><stop offset="1" stop-color="#4f9bff"/></linearGradient>
+    <linearGradient id="face" x1="0.3" y1="0" x2="0.7" y2="1"><stop offset="0" stop-color="#eef0ff"/><stop offset="0.55" stop-color="#cbd2fb"/><stop offset="1" stop-color="#a4b0f3"/></linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="0.5" stop-color="#fff" stop-opacity="0.55"/><stop offset="1" stop-color="#fff" stop-opacity="0.95"/></linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="22"/></filter>
+    <filter id="shade" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur in="SourceAlpha" stdDeviation="14"/><feOffset dy="12" result="s"/><feFlood flood-color="#5b55c9" flood-opacity="0.18"/><feComposite in2="s" operator="in"/></filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <circle cx="500" cy="500" r="300" fill="#b9bffa" opacity="0.22" filter="url(#soft)"/>
+  <g filter="url(#shade)">
+    <path d="M650 150 C420 92 172 252 176 492 C180 690 330 812 548 832 C384 790 272 680 270 500 C268 300 440 172 650 150 Z"/>
+    <path d="M418 540 C430 730 610 850 948 792 C640 812 520 736 470 590 Z"/>
+  </g>
+  <!-- the hair's volume behind her -->
+  <ellipse cx="470" cy="470" rx="282" ry="300" fill="url(#g2)" opacity="0.22"/>
+  <!-- the face and neck, glass of the palest blue -->
+  <path d="M600 200 C668 214 712 276 714 352 C715 382 708 398 718 414 C728 432 750 452 754 466 C756 477 742 482 727 485 C723 495 731 503 727 511 C720 519 709 521 717 533 C723 543 717 557 705 563 C701 587 681 601 651 603 C637 642 642 692 676 742 C600 766 520 744 470 694 C520 640 540 560 520 470 C505 400 525 300 600 200 Z" fill="url(#face)" opacity="0.92"/>
+  <path d="M600 200 C668 214 712 276 714 352 C715 382 708 398 718 414 C728 432 750 452 754 466 C756 477 742 482 727 485 C723 495 731 503 727 511 C720 519 709 521 717 533 C723 543 717 557 705 563 C701 587 681 601 651 603 C637 642 642 692 676 742" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- the hair: sheets of glass round her head -->
+  <path d="M650 150 C420 92 172 252 176 492 C180 690 330 812 548 832 C384 790 272 680 270 500 C268 300 440 172 650 150 Z" fill="url(#g1)" opacity="0.6"/>
+  <path d="M712 214 C520 140 318 250 300 432 C290 556 352 648 452 704 C384 612 372 476 432 384 C504 278 606 226 712 214 Z" fill="url(#g2)" opacity="0.6"/>
+  <path d="M658 292 C528 322 420 420 384 560 C352 690 420 800 566 846 C472 764 452 652 494 556 C534 458 594 372 658 292 Z" fill="url(#g3)" opacity="0.62"/>
+  <path d="M330 262 C430 150 620 128 718 222 C744 250 742 300 724 340 C694 278 626 236 536 230 C460 226 392 240 330 262 Z" fill="url(#g1)" opacity="0.5"/>
+  <path d="M710 262 C640 236 560 250 500 300 C590 284 660 300 706 352 C716 320 716 288 710 262 Z" fill="url(#g2)" opacity="0.55"/>
+  <!-- the sweep under her chin, and its curl -->
+  <path d="M418 540 C430 730 610 850 948 792 C640 812 520 736 470 590 Z" fill="url(#g4)" opacity="0.78"/>
+  <path d="M706 650 C632 652 594 700 612 748 C630 790 712 806 820 792 C716 776 660 748 664 708 C667 680 686 660 724 656 Z" fill="url(#g3)" opacity="0.5"/>
+  <!-- rims of light -->
+  <g fill="none" stroke="url(#rim)" stroke-linejoin="round">
+    <path d="M650 150 C420 92 172 252 176 492 C180 690 330 812 548 832 C384 790 272 680 270 500 C268 300 440 172 650 150 Z" stroke-width="3.5"/>
+    <path d="M712 214 C520 140 318 250 300 432 C290 556 352 648 452 704 C384 612 372 476 432 384 C504 278 606 226 712 214 Z" stroke-width="3"/>
+    <path d="M658 292 C528 322 420 420 384 560 C352 690 420 800 566 846 C472 764 452 652 494 556 C534 458 594 372 658 292 Z" stroke-width="3"/>
+    <path d="M418 540 C430 730 610 850 948 792 C640 812 520 736 470 590 Z" stroke-width="3"/>
+    <path d="M330 262 C430 150 620 128 718 222 C744 250 742 300 724 340 C694 278 626 236 536 230 C460 226 392 240 330 262 Z" stroke-width="3"/>
+    <path d="M706 650 C632 652 594 700 612 748 C630 790 712 806 820 792 C716 776 660 748 664 708 C667 680 686 660 724 656 Z" stroke-width="2.5"/>
+  </g>
+  <!-- glints -->
+  <path d="M300 330 C340 250 420 196 520 178" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+  <path d="M560 806 C680 828 800 820 900 798" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0.8"/>
+</svg>

@@ -1,19 +1,23 @@
-Iris 2.1.1: Iris for Android on System WebView again, and ads that open new tabs stopped.
+Iris 2.1.1: Google AI Mode in every new tab, a light look in the colours of dawn, an automatic sandbox for sites Iris does not trust, a new icon, and Android on System WebView again.
+
+**Both**
+- **Every new tab is Google AI Mode**, ready for a question, dressed in Iris's Liquid Glass: the dawn behind the page, its panels clear, and the question box made of glass. (Only AI Mode is restyled; no other page.) The Iris start page is gone. Your tabs still open where you left them.
+- **Faster.** The next new tab is already loaded in the background, so it opens at once; Google's names are looked up before your first question; and a result you open goes straight to the site, without Google's redirect. On Linux, a link's site is looked up while the pointer rests on it.
+- **The sandbox, automatic.** A site Iris does not trust (no encryption, a bare IP address, or a certificate that fails) opens in the sandbox without asking: web processes of its own, a world in memory that sees none of your cookies, storage or sign-ins and is wiped when you close it, and no downloads, camera, microphone, location, clipboard or pop-ups. Going on to a trusted site takes you out of it.
+- **Ads that open new tabs are stopped** (Android, see below; Linux already did).
+- **Light only**, and lighter: Iris's glass over a dawn of lilac, rose and peach, with a deep violet ink.
+- **A new icon**: Iris's profile, her hair in sheets of liquid glass.
+- **No more menu.** Find in page (Ctrl+F) and zoom (Ctrl+plus, minus and 0) stay as keys. The downloads button appears while a file comes in, then stays with the number finished until you open it.
+- Tabs no longer sleep in the background.
 
 **Android**
-- **Pages open again.** Iris uses the phone's Android System WebView (Chromium, kept up to date by Google Play) instead of Cefrium, which left pages blank on some phones. Searching and going to sites work.
-- **Ads that open new tabs are stopped**, not only those in the page:
-  - A page cannot open a tab or window by itself, only when you tap.
-  - A tapped link to an ad or tracker opens nothing.
-  - A window a script opens stays hidden until Iris knows where it goes: the same site or a sign-in opens as a tab, an ad is closed unseen, and another site waits behind a "Pop-up stopped · Open" note.
-  - A page that tries to send its own tab to an ad (a redirect, or a script without a tap on that link) stays where it is.
-  - Every stopped pop-up counts in the Shields badge.
-- Shields keep their three levels (Moderate, Aggressive, Ultra aggressive) and decide every request WebView is about to make, before it leaves the phone; what ads leave behind is hidden.
-- Liquid Glass stays, with no Material Design. Pages follow the look (Light or Dark). Containers are WebView profiles (System WebView 123 and newer). File fields, calls (camera and microphone) and full-screen video work again.
-- The APK is small again (no Chromium inside).
+- **Pages open again.** Iris uses the phone's Android System WebView instead of Cefrium, which left pages blank on some phones.
+- **Ads that open new tabs are stopped**: a page opens no tab by itself, a tapped ad link opens nothing, a script's window stays hidden until Iris knows where it goes, and a page cannot send its own tab to an ad.
+- The sandbox runs in a process of its own, with WebView data that is made fresh each time.
+- File fields, calls (camera and microphone) and full-screen video work again. The APK is small again.
 
 **Linux**
-- No changes; the version follows Android's.
+- The sandbox is a WebKit web context of its own, each page in WebKit's bubblewrap sandbox, with a network session per sandboxed tab that lives in memory only. Its tabs have an orange rim.
 
 **Install**
 - Linux: `flatpak install --user Iris-x86_64.flatpak`
