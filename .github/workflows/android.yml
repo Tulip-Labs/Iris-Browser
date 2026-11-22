@@ -1,4 +1,4 @@
-# Builds Iris for Android (Kotlin, Jetpack Compose and GeckoView, in
+# Builds Iris for Android (Kotlin, Jetpack Compose and System WebView, in
 # android/) and keeps the APK as an artifact of the run. Runs by hand from
 # the Actions tab, and on pushes that touch the app.
 #
@@ -25,7 +25,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "25" # Cefrium (the page engine) needs JDK 25
+          java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
       - name: The release key
         env:

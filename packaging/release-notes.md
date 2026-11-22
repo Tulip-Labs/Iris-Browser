@@ -1,3 +1,26 @@
+Iris 2.1.1: Iris for Android on System WebView again, and ads that open new tabs stopped.
+
+**Android**
+- **Pages open again.** Iris uses the phone's Android System WebView (Chromium, kept up to date by Google Play) instead of Cefrium, which left pages blank on some phones. Searching and going to sites work.
+- **Ads that open new tabs are stopped**, not only those in the page:
+  - A page cannot open a tab or window by itself, only when you tap.
+  - A tapped link to an ad or tracker opens nothing.
+  - A window a script opens stays hidden until Iris knows where it goes: the same site or a sign-in opens as a tab, an ad is closed unseen, and another site waits behind a "Pop-up stopped · Open" note.
+  - A page that tries to send its own tab to an ad (a redirect, or a script without a tap on that link) stays where it is.
+  - Every stopped pop-up counts in the Shields badge.
+- Shields keep their three levels (Moderate, Aggressive, Ultra aggressive) and decide every request WebView is about to make, before it leaves the phone; what ads leave behind is hidden.
+- Liquid Glass stays, with no Material Design. Pages follow the look (Light or Dark). Containers are WebView profiles (System WebView 123 and newer). File fields, calls (camera and microphone) and full-screen video work again.
+- The APK is small again (no Chromium inside).
+
+**Linux**
+- No changes; the version follows Android's.
+
+**Install**
+- Linux: `flatpak install --user Iris-x86_64.flatpak`
+- Android: `Iris-android.apk` (Android 10 and newer). It installs over 2.1.0.
+
+---
+
 Iris 2.1.0: Ember's Light and Dark looks, Shields with three levels, Iris for Android on its own Chromium again, and a new icon.
 
 **Both**

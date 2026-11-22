@@ -3,7 +3,7 @@ import CAdwaita
 import Foundation
 
 final class IrisApp {
-    static let version = "2.1.0"
+    static let version = "2.1.1"
     static let id = "io.github.tulip_labs.Iris"
 
     let app: Application

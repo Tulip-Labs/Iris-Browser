@@ -240,12 +240,14 @@ private fun AddressRow(model: BrowserModel) {
     }
 }
 
-/** the page itself (Chromium's surface), or the new-tab page */
+/** the page itself (its WebView), a video in full screen, or the new-tab page */
 @Composable
 private fun PageArea(model: BrowserModel) {
     val t = model.current
-    Box(Modifier.fillMaxSize().padding(horizontal = 6.dp).clip(RoundedCornerShape(20.dp))) {
-        val w = t?.web
+    val full = model.fullscreenView
+    val edge = if (full != null) Modifier.fillMaxSize() else Modifier.fillMaxSize().padding(horizontal = 6.dp).clip(RoundedCornerShape(20.dp))
+    Box(edge) {
+        val w = full ?: t?.web
         if (w == null) {
             NewTabPage(model)
         } else {

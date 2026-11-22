@@ -9,7 +9,7 @@
 <p align="center">
   <b>A browser made of glass.</b><br>
   Linux: Swift, libadwaita and WebKitGTK, in real Liquid Glass.<br>
-  Android: Kotlin, Jetpack Compose and Chromium inside the app (Cefrium). Every search asks Google AI Mode.
+  Android: Kotlin, Jetpack Compose and Android System WebView. Every search asks Google AI Mode.
 </p>
 
 <p align="center">
@@ -35,7 +35,12 @@
 
 ---
 
-## What's new in 2.1.0
+## What is new in 2.1.1
+
+- **Android: pages open again** on System WebView (Cefrium left them blank on some phones).
+- **Ads that open new tabs are stopped**, not only those in the page.
+
+## What was new in 2.1.0
 
 - **Light, Dark or Auto**, as in [Ember](https://github.com/Tulip-Labs/Ember). Auto follows the system; with Ember on niri it turns dark at night. Pages follow the look.
 - **The new-tab page is Iris herself**, Ember's wallpaper: the goddess of the rainbow in liquid glass, light by day and dark by night.
@@ -78,7 +83,7 @@ Iris is made again from the start.
 - **Springs.** Tabs slide into place. The selected tab's glass slides from tab to tab and stretches on the way. Menus open and close as glass.
 - **Containers, worlds apart.** On both platforms, each container keeps its own cookies, storage, cache and sign-ins.
 - **Ads open no tabs.** A pop-up needs your click, and goes only to the same site or a sign-in page. Anything else is stopped, with an Open button if you meant it.
-- **Android in Kotlin with Jetpack Compose** (its engine since 2.1.0 is Chromium inside the app, through Cefrium).
+- **Android in Kotlin with Jetpack Compose** (its engine is Android System WebView).
 - **A new icon.** The goddess in liquid glass, rising out of her rainbow.
 - **Fewer packages.** Windows, Nix, the Snap and the container image are gone. Linux ships as a Flatpak.
 
@@ -122,16 +127,16 @@ Iris is made again from the start.
 
 ### Android
 
-- **Engine.** Chromium carried in the app (Cefrium, CEF for Android), the same on every phone, with H.264 and AAC. The interface is Jetpack Compose drawn as Liquid Glass (no Material components). The tabs and their pages live in a ViewModel.
+- **Engine.** Android System WebView (Chromium, kept up to date by the phone). The interface is Jetpack Compose drawn as Liquid Glass (no Material components). The tabs and their pages live in a ViewModel.
 - **Look.** Light, Dark or Auto (the phone's choice), from the menu.
-- **Containers.** Cefrium profiles: each container keeps its own cookies, cache, localStorage and IndexedDB.
-- **Shields.** Chromium asks Iris before every request; ads and trackers never leave the phone. Moderate, Aggressive or Ultra aggressive, with uBlock Origin's lists, and the boxes ads leave are hidden.
+- **Containers.** WebView profiles (System WebView 123 and newer): each container keeps its own cookies, cache, localStorage and IndexedDB.
+- **Shields.** WebView asks Iris before every request; ads and trackers never leave the phone. Ads that open new tabs are stopped too: a page opens no tab by itself, a tapped ad link opens nothing, and a script's window stays hidden until Iris knows it is not an ad. Moderate, Aggressive or Ultra aggressive, with uBlock Origin's lists, and the boxes ads leave are hidden.
 - **Tabs.**
   - A strip of tabs on top with one "+" (long-press it to pick a container).
   - The bottom bar has back, forward, home, Shields, containers and downloads.
   - Background tabs beyond 3 sleep and keep their history.
 - **Downloads manager.** Files go to the phone's Downloads folder (no storage permission needed), with progress, open and delete.
-- **Pull to reload** at the top of a page. **Calls** in the browser, through the engine's own prompts.
+- **Calls** in the browser (camera and microphone, asked once), file fields and full-screen video.
 - **Auto-update.** Iris checks GitHub once a day, downloads the new APK and has Android install it over itself.
 - **Closing tabs.** Closing the tab you are on opens the one beside it; closing the last tab leaves a fresh one.
 
@@ -205,7 +210,7 @@ linux/                      Iris for Linux (Swift package)
     Overlays.swift          menus, suggestions, find, downloads, the right-click menu
     NewTab.swift, Keys.swift, Downloads.swift, History.swift, Updates.swift, Search.swift
   Sources/CBlur/            ext-background-effect-v1: blur behind the window
-android/                    Iris for Android (Kotlin, Compose, Chromium through Cefrium)
+android/                    Iris for Android (Kotlin, Compose, System WebView)
   app/src/main/java/org/tulipanlabs/iris/
     Browser.kt              tabs and their Chromium pages in a ViewModel, profiles, pop-up rules
     Shields.kt, ShieldCore.kt  the levels, the lists, every request's answer
