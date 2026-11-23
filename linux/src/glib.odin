@@ -132,6 +132,7 @@ foreign gobject {
 	g_object_new_with_properties :: proc(type: GType, n: u32, names: [^]cstring, values: [^]GValue) -> rawptr ---
 	g_object_ref :: proc(o: rawptr) -> rawptr ---
 	g_object_ref_sink :: proc(o: rawptr) -> rawptr ---
+	g_object_is_floating :: proc(o: rawptr) -> gboolean ---
 	g_object_unref :: proc(o: rawptr) ---
 	g_object_get_data :: proc(o: rawptr, key: cstring) -> rawptr ---
 	g_object_set_data :: proc(o: rawptr, key: cstring, data: rawptr) ---

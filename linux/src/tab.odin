@@ -70,7 +70,11 @@ tab_ensure_web :: proc(t: ^Tab, related: ^WebKitWebView = nil) -> ^WebKitWebView
 			{name = "network-session", value = rawptr(container_session(t.container)), type = webkit_network_session_get_type()},
 			{name = "web-context", value = rawptr(web_context()), type = webkit_web_context_get_type()})
 	}
-	g_object_ref_sink(w)
+	// WPE's WebKitWebView is a plain GObject, born with the one reference
+	// Iris owns. (g_object_ref_sink on it added a second one, so the unref in
+	// tab_release_web never freed it: a closed tab's page lived on, playing
+	// its video and keeping its memory.)
+	if g_object_is_floating(w) != 0 do g_object_ref_sink(w)
 	t.web = w
 	shields_apply(t.ucm, "")
 	tab_connect(t, w)
