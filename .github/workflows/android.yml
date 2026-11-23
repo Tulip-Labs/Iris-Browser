@@ -1,11 +1,11 @@
-# Builds Iris for Android (Kotlin, Jetpack Compose and System WebView, in
-# android/) and keeps the APK as an artifact of the run. Runs by hand from
-# the Actions tab, and on pushes that touch the app.
+# Builds Iris for Android (Kotlin, Jetpack Compose, and two page engines in
+# android/: System WebView and Cefrium) and keeps both APKs as artifacts of
+# the run. Runs by hand from the Actions tab, and on pushes that touch the app.
 #
 # Signing: updates install over Iris only when every APK carries the same
 # key. Put the release keystore in the repository's secrets once
 # (IRIS_KEYSTORE as base64, IRIS_KEYSTORE_PASSWORD, IRIS_KEY_ALIAS); without
-# them the APK is signed with the runner's throwaway debug key.
+# them the APKs are signed with the runner's throwaway debug key.
 name: Android
 
 on:
@@ -25,7 +25,8 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "21"
+          # Cefrium 0.21.0 ships Java 25 bytecode: the build runs on JDK 25
+          java-version: "25"
       - uses: gradle/actions/setup-gradle@v4
       - name: The release key
         env:
@@ -45,13 +46,14 @@ jobs:
           IRIS_KEY_PASSWORD: ${{ secrets.IRIS_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleRelease
+          ./gradlew --no-daemon assembleWebviewRelease assembleCefriumRelease
       - name: Collect
         run: |
           mkdir out
-          cp android/app/build/outputs/apk/release/*.apk out/Iris-android.apk
+          cp android/app/build/outputs/apk/webview/release/app-webview-release.apk out/Iris-android.apk
+          cp android/app/build/outputs/apk/cefrium/release/app-cefrium-release.apk out/Iris-android-cefrium.apk
           ls -la out
       - uses: actions/upload-artifact@v4
         with:
           name: Iris-android
-          path: out/Iris-android.apk
+          path: out/
