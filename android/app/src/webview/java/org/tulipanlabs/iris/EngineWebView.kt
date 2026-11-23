@@ -222,14 +222,16 @@ object WebViewEngine : Engine {
         return link?.let { Search.host(it) }
     }
 
-    private inner class Client(val t: Tab, val model: BrowserModel) : WebViewClient() {
+    // nested, not inner: an object has no outer instance for inner to hold,
+    // so the outer members below are reached through WebViewEngine itself
+    private class Client(val t: Tab, val model: BrowserModel) : WebViewClient() {
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-            if (!model.shouldBlockRequest(t, request.url.toString(), kindOf(request), request.isForMainFrame)) return null
-            return empty()
+            if (!model.shouldBlockRequest(t, request.url.toString(), WebViewEngine.kindOf(request), request.isForMainFrame)) return null
+            return WebViewEngine.empty()
         }
 
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-            model.shouldOverrideNavigation(t, request.url.toString(), request.isForMainFrame, request.hasGesture(), request.isRedirect, tappedLinkHost(view))
+            model.shouldOverrideNavigation(t, request.url.toString(), request.isForMainFrame, request.hasGesture(), request.isRedirect, WebViewEngine.tappedLinkHost(view))
 
         override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
             model.onPageStarted(t, url)
@@ -261,7 +263,7 @@ object WebViewEngine : Engine {
         }
     }
 
-    private inner class Chrome(val t: Tab, val model: BrowserModel) : WebChromeClient() {
+    private class Chrome(val t: Tab, val model: BrowserModel) : WebChromeClient() {
         override fun onProgressChanged(view: WebView, newProgress: Int) {
             model.onProgress(t, newProgress)
         }
@@ -297,7 +299,7 @@ object WebViewEngine : Engine {
         }
 
         override fun onCloseWindow(window: WebView) {
-            pages[window]?.let { model.closeWindow(it) }
+            WebViewEngine.pages[window]?.let { model.closeWindow(it) }
         }
 
         override fun onShowCustomView(view: View, callback: CustomViewCallback) {
