@@ -1,7 +1,19 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    // Cefrium's plugin: it makes the Chromium resource classes the SDK
+    // needs. It is applied below, not here: it also refuses a build whose
+    // pages carry no libcef.so, so it belongs to the cefrium flavor alone.
+    id("com.cefrium") version "0.21.0" apply false
 }
+
+// The Cefrium plugin belongs to the cefrium flavor alone: a run that
+// builds only the webview flavor leaves it out; every other run (the
+// cefrium flavor, both flavors, IDE sync) keeps it, because the cefrium
+// flavor needs its R generation to compile.
+val webviewOnly = gradle.startParameter.taskNames.isNotEmpty() &&
+    gradle.startParameter.taskNames.all { it.contains("webview", ignoreCase = true) }
+if (!webviewOnly) apply(plugin = "com.cefrium")
 
 android {
     namespace = "org.tulipanlabs.iris"
@@ -12,8 +24,25 @@ android {
         applicationId = "org.tulipanlabs.lite"
         minSdk = 29
         targetSdk = 36
-        versionCode = 222
-        versionName = "2.2.2"
+        versionCode = 223
+        versionName = "2.2.3"
+    }
+
+    // Two builds of the same browser, apart from each other: the webview
+    // flavor draws pages with Android System WebView (Chromium, kept up to
+    // date by the phone); the cefrium flavor carries its own Chromium (CEF,
+    // through Cefrium), the same engine on every phone. The cefrium flavor
+    // has its own id, so both install side by side; it does not carry the
+    // webview build's tabs or sign-ins over.
+    flavorDimensions += "engine"
+    productFlavors {
+        create("webview") {
+            dimension = "engine"
+        }
+        create("cefrium") {
+            dimension = "engine"
+            applicationIdSuffix = ".cefrium"
+        }
     }
 
     signingConfigs {
@@ -33,10 +62,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            // the emulator runs x86_64; a phone runs arm64
+            ndk { abiFilters += listOf("x86_64", "arm64-v8a") }
+        }
         release {
             // no shrinking: Iris's own code is small, and the pages are
-            // drawn by the phone's WebView, not by the app
+            // drawn by an engine, not by the app
             isMinifyEnabled = false
+            // one architecture, as in 1.0.24: the release APK stays small
+            ndk { abiFilters += "arm64-v8a" }
             val rel = signingConfigs.getByName("release")
             signingConfig = if (rel.storeFile != null) rel else signingConfigs.getByName("debug")
         }
@@ -54,13 +89,22 @@ android {
 
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // Cefrium's Chromium reads its libraries from the disk, not from
+        // the APK's compressed entries
+        jniLibs { useLegacyPackaging = true }
     }
 }
 
 dependencies {
-    // the page engine is Android System WebView (Chromium, kept up to date
-    // by the phone); androidx.webkit adds profiles (containers) and more
+    // the webview flavor's page engine is Android System WebView (Chromium,
+    // kept up to date by the phone); androidx.webkit adds profiles
+    // (containers) and more
     implementation("androidx.webkit:webkit:1.13.0")
+
+    // the cefrium flavor's page engine: its own Chromium (CEF) through
+    // Cefrium 0.21.0 (Chromium 156.0.8078.96), the same engine on every
+    // phone. Only that flavor carries it.
+    "cefriumImplementation"("com.cefrium:cefrium-sdk:0.21.0")
 
     // the interface: Compose's foundation only, drawn as Liquid Glass (no
     // Material components)

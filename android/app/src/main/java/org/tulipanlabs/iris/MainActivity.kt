@@ -5,8 +5,6 @@ import android.app.SearchManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.webkit.PermissionRequest
-import android.webkit.WebChromeClient
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -28,7 +26,7 @@ class MainActivity : ComponentActivity() {
     private val pick = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         val req = model.fileRequest ?: return@registerForActivityResult
         model.fileRequest = null
-        req.first.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(r.resultCode, r.data))
+        req.answer(req.parseResult(r.resultCode, r.data))
     }
 
     // calls: Android asks for the camera and the microphone once
@@ -40,13 +38,12 @@ class MainActivity : ComponentActivity() {
         model.mediaRequest = null
         val granted = req.resources.filter {
             when (it) {
-                PermissionRequest.RESOURCE_VIDEO_CAPTURE -> has(Manifest.permission.CAMERA)
-                PermissionRequest.RESOURCE_AUDIO_CAPTURE -> has(Manifest.permission.RECORD_AUDIO)
-                PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID -> true
-                else -> false
+                PagePermission.CAMERA -> has(Manifest.permission.CAMERA)
+                PagePermission.MICROPHONE -> has(Manifest.permission.RECORD_AUDIO)
+                PagePermission.PROTECTED_MEDIA -> true
             }
         }
-        if (granted.isEmpty()) req.deny() else req.grant(granted.toTypedArray())
+        if (granted.isEmpty()) req.deny() else req.grant(granted)
     }
 
     private fun has(p: String) = checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED
@@ -67,15 +64,15 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(model.mediaRequest) {
                     val req = model.mediaRequest ?: return@LaunchedEffect
                     val need = buildList {
-                        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE in req.resources && !has(Manifest.permission.CAMERA)) add(Manifest.permission.CAMERA)
-                        if (PermissionRequest.RESOURCE_AUDIO_CAPTURE in req.resources && !has(Manifest.permission.RECORD_AUDIO)) add(Manifest.permission.RECORD_AUDIO)
+                        if (PagePermission.CAMERA in req.resources && !has(Manifest.permission.CAMERA)) add(Manifest.permission.CAMERA)
+                        if (PagePermission.MICROPHONE in req.resources && !has(Manifest.permission.RECORD_AUDIO)) add(Manifest.permission.RECORD_AUDIO)
                     }
                     if (need.isEmpty()) answer() else media.launch(need.toTypedArray())
                 }
                 LaunchedEffect(model.fileRequest) {
                     val req = model.fileRequest ?: return@LaunchedEffect
-                    val i = runCatching { req.second.createIntent() }.getOrNull()
-                    if (i == null) { req.first.onReceiveValue(null); model.fileRequest = null } else pick.launch(i)
+                    val i = runCatching { req.createIntent() }.getOrNull()
+                    if (i == null) { req.answer(null); model.fileRequest = null } else pick.launch(i)
                 }
                 // back: leave full screen, then go back in the page; at the
                 // start of a tab's history Iris goes to the background, its

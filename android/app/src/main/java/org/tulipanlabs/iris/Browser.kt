@@ -1,47 +1,26 @@
 package org.tulipanlabs.iris
 
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.content.Intent
-import android.content.MutableContextWrapper
-import android.graphics.Bitmap
-import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.Message
-import android.view.ContextThemeWrapper
 import android.view.View
-import android.view.ViewGroup
-import android.webkit.CookieManager
-import android.webkit.PermissionRequest
-import android.webkit.RenderProcessGoneDetail
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
-import androidx.webkit.ProfileStore
-import androidx.webkit.WebViewCompat
-import androidx.webkit.WebViewFeature
-import java.io.ByteArrayInputStream
 import java.util.UUID
 
 /**
- * One tab: a WebView (Android System WebView, Chromium kept up to date by
- * the phone) in its container's profile, made when the tab first opens
- * something, so a new or restored tab costs nothing until you go to it.
+ * One tab: a page (whichever engine draws it) in its container's profile,
+ * made when the tab first opens something, so a new or restored tab costs
+ * nothing until you go to it.
  */
 class Tab(val container: String?, url: String = "") {
     val id: String = UUID.randomUUID().toString()
@@ -51,7 +30,7 @@ class Tab(val container: String?, url: String = "") {
     var loading by mutableStateOf(false)
     var canBack by mutableStateOf(false)
     var canForward by mutableStateOf(false)
-    var web by mutableStateOf<WebView?>(null)
+    var web by mutableStateOf<PageView?>(null)
     /** ads, trackers and pop-ups stopped on this page */
     var blocked by mutableIntStateOf(0)
     /** an address to open when the tab is next shown */
@@ -80,28 +59,29 @@ data class Blocked(val url: String, val from: Tab)
 data class Pressed(val tab: Tab, val link: String?, val image: String?)
 
 /**
- * The tabs and their WebViews, kept here so they outlive Compose's
- * recompositions and the activity.
+ * The tabs and their pages, kept here so they outlive Compose's
+ * recompositions and the activity. The page engine (System WebView or
+ * Cefrium, by flavor) is behind Engine; the policy here (Shields, pop-ups,
+ * the sandbox, sign-ins) is the same for both.
  */
-class BrowserModel(app: Application) : AndroidViewModel(app) {
+class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents {
     val tabs = mutableStateListOf<Tab>()
     var current by mutableStateOf<Tab?>(null)
         private set
     var blocked by mutableStateOf<Blocked?>(null)
     var pressed by mutableStateOf<Pressed?>(null)
-    /** a video in full screen: WebView hands Iris its view, and the bars step aside */
+    /** a video in full screen: the engine hands Iris its view, and the bars step aside */
     var fullscreenView by mutableStateOf<View?>(null)
         private set
     val fullscreen get() = fullscreenView != null
-    private var fullscreenDone: WebChromeClient.CustomViewCallback? = null
+    private var fullscreenExit: (() -> Unit)? = null
     /** a page's file field, answered by the activity's picker */
-    var fileRequest by mutableStateOf<Pair<ValueCallback<Array<Uri>>, WebChromeClient.FileChooserParams>?>(null)
+    var fileRequest by mutableStateOf<FileRequest?>(null)
     /** a page asking for the camera or microphone, answered by the activity */
-    var mediaRequest by mutableStateOf<PermissionRequest?>(null)
+    var mediaRequest by mutableStateOf<MediaRequest?>(null)
     /** the activity: pages are made in its context (dialogs, pickers), swapped when it is remade */
     var activity: Activity? = null
-        set(v) { field = v; v?.let { a -> contexts.forEach { it.setBaseContext(a) } } }
-    private val contexts = mutableListOf<MutableContextWrapper>()
+        set(v) { field = v; engine.onActivityChanged(v) }
     private val closed = ArrayDeque<Pair<String, String?>>()
     /** pop-ups made but not shown: each waits for its first address */
     private val held = mutableListOf<Tab>()
@@ -112,7 +92,10 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
     /** Iris is light: pages see prefers-color-scheme: light */
     var dark = false
 
-    val containersWork: Boolean = runCatching { WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE) }.getOrDefault(false)
+    /** the page engine this build carries (WebView or Cefrium, by flavor) */
+    val engine: Engine = EngineFactory.create()
+
+    val containersWork: Boolean get() = engine.containersSupported
 
     init {
         Store.tabs.forEach { s ->
@@ -155,7 +138,7 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun select(t: Tab) {
-        current?.let { it.lastShown = System.currentTimeMillis(); it.web?.onPause(); it.web?.settings?.offscreenPreRaster = false }
+        current?.let { it.lastShown = System.currentTimeMillis(); it.web?.onPause(); it.web?.setPreraster(false) }
         current = t
         t.lastShown = System.currentTimeMillis()
         t.pending?.let { p -> if (activity != null) { t.pending = null; load(t, p) } }
@@ -163,7 +146,7 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         if (t.web == null && t.pending == null && activity != null) load(t, t.url.ifEmpty { Search.HOME })
         t.web?.onResume()
         // the shown page is drawn ahead of the scroll, so it moves without gaps
-        t.web?.settings?.offscreenPreRaster = true
+        t.web?.setPreraster(true)
         Store.selected = tabs.indexOf(t)
     }
 
@@ -219,8 +202,8 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         val s = t.saved
         if (s != null) {
             t.saved = null
-            val list = runCatching { w.restoreState(s) }.getOrNull()
-            if (list == null || list.size == 0) w.loadUrl(url)
+            val restored = runCatching { w.restoreState(s) }.getOrDefault(false)
+            if (!restored) w.loadUrl(url)
         } else {
             w.loadUrl(url)
         }
@@ -232,10 +215,8 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
 
     private fun destroy(t: Tab) {
         t.web?.let { w ->
-            (w.parent as? ViewGroup)?.removeView(w)
             runCatching { w.stopLoading() }
-            ((w.context as? ContextThemeWrapper)?.baseContext as? MutableContextWrapper)?.let { c -> contexts.remove(c) }
-            runCatching { w.destroy() }
+            w.destroy()
         }
         t.web = null
     }
@@ -244,24 +225,13 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
 
     /** the private tabs' profile is wiped when the last one closes */
     private fun clearPrivate() {
-        if (!containersWork) return
-        runCatching {
-            val p = ProfileStore.getInstance().getProfile(PRIVATE_PROFILE) ?: return
-            p.cookieManager.removeAllCookies(null)
-            p.webStorage.deleteAllData()
-        }
-    }
-
-    private fun profileName(t: Tab): String? = when {
-        t.container == null -> null
-        t.isPrivate -> PRIVATE_PROFILE
-        else -> "c-" + t.container
+        engine.clearPrivateData()
     }
 
     /** a container's tabs close, and its profile and everything its sites kept go */
     fun removeContainer(id: String) {
         tabs.filter { it.container == id }.forEach(::close)
-        if (containersWork) runCatching { ProfileStore.getInstance().deleteProfile("c-$id") }
+        engine.deleteProfile("c-$id")
     }
 
     fun shieldsFor(url: String) = Shields.onFor(url)
@@ -286,75 +256,202 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
     private val youtube by lazy { runCatching { ctx.assets.open("js/youtube.js").bufferedReader().use { it.readText() } }.getOrDefault("") }
     private val aiGlass by lazy { runCatching { ctx.assets.open("js/aimode.js").bufferedReader().use { it.readText() } }.getOrDefault("") }
 
-    /** the tab's WebView, made on first use (null until the activity is here) */
-    @SuppressLint("SetJavaScriptEnabled", "RequiresFeature")
-    fun web(t: Tab): WebView? {
+    /** scripts that run before a page's own: YouTube without ads, the glass on Google AI Mode */
+    val documentScripts: List<DocumentScript> by lazy {
+        buildList {
+            if (youtube.isNotBlank()) add(DocumentScript(youtube, setOf("https://*.youtube.com", "https://youtube.com")))
+            if (aiGlass.isNotBlank()) add(DocumentScript(aiGlass, setOf("https://www.google.com", "https://google.com")))
+        }
+    }
+
+    /** the tab's page, made on first use (null until the activity is here) */
+    fun web(t: Tab): PageView? {
         t.web?.let { return it }
-        val act = activity ?: return null
-        // the activity's context, so pickers and dialogs work, swapped for the
-        // new activity if Android remakes it; the look decides the page's
-        // prefers-color-scheme
-        val base = MutableContextWrapper(act).also { contexts.add(it) }
-        val themed = ContextThemeWrapper(base, if (dark) R.style.Iris_Dark else R.style.Iris)
-        val w = WebView(themed)
-        // a container keeps its cookies and site data in a profile of its own
-        // (Android System WebView 123 and newer)
-        profileName(t)?.let { name ->
-            if (containersWork) runCatching {
-                ProfileStore.getInstance().getOrCreateProfile(name)
-                WebViewCompat.setProfile(w, name)
+        val p = engine.createPage(t, this) ?: return null
+        t.web = p
+        if (t !== current && t.popupFrom == null) p.onPause()
+        return p
+    }
+
+    // ---- what the pages report (PageEvents) ----
+
+    override fun onPageStarted(t: Tab, url: String) {
+        // a pop-up that went straight to its address (no override asked):
+        // checked here instead
+        t.popupFrom?.let { from ->
+            if (url == "about:blank" || url.isEmpty()) return
+            t.popupFrom = null
+            if (!popupAllowed(from, url)) {
+                t.web?.stopLoading()
+                ui.post { denyPopup(t, from, url) }
+                return
+            }
+            ui.post { approvePopup(t, from) }
+        }
+        t.url = url
+        t.top = url
+        t.blocked = 0
+        t.loading = true
+        t.progress = 5
+        t.canBack = t.web?.canGoBack() == true
+        t.canForward = t.web?.canGoForward() == true
+    }
+
+    override fun onPageCommitVisible(t: Tab, url: String) {
+        t.web?.let { hide(it, url) }
+        // where the engine cannot add the glass before the page, it comes now
+        if (Search.isAIMode(url) && !engine.supportsDocumentStartScript && aiGlass.isNotBlank()) {
+            t.web?.let { runCatching { it.evaluateJavascript(aiGlass) } }
+        }
+    }
+
+    override fun onPageFinished(t: Tab, url: String) {
+        t.loading = false
+        t.progress = 100
+        t.url = url
+        t.top = url
+        t.canBack = t.web?.canGoBack() == true
+        t.canForward = t.web?.canGoForward() == true
+        t.web?.let { hide(it, url) }
+        if (!t.isPrivate && url.startsWith("http")) Store.visit(url, t.title)
+        save()
+    }
+
+    override fun onProgress(t: Tab, progress: Int) {
+        t.progress = progress
+        t.loading = progress < 100
+    }
+
+    override fun onTitle(t: Tab, title: String) {
+        t.title = title
+    }
+
+    override fun onUrlChanged(t: Tab, url: String) {
+        t.url = url
+        t.top = url
+        t.canBack = t.web?.canGoBack() == true
+        t.canForward = t.web?.canGoForward() == true
+    }
+
+    /** Iris Shields: the engine asks before every request, on its network
+     *  thread; what is stopped never leaves the phone */
+    override fun shouldBlockRequest(t: Tab, url: String, kind: Int, mainFrame: Boolean): Boolean {
+        if (mainFrame) return false
+        if (!Shields.core.blocks(url, t.top, kind, false)) return false
+        onBlocked(t)
+        return true
+    }
+
+    override fun onBlocked(t: Tab) {
+        ui.post { t.blocked++ }
+    }
+
+    override fun shouldOverrideNavigation(t: Tab, url: String, mainFrame: Boolean, hasGesture: Boolean, isRedirect: Boolean, tappedLinkHost: String?): Boolean {
+        val us = url
+        // a pop-up's first address decides whether it may stay, before it is shown
+        t.popupFrom?.let { from ->
+            // sign-in windows often open empty first, then get their address
+            if (!mainFrame || us == "about:blank") return false
+            t.popupFrom = null
+            if (!popupAllowed(from, us)) {
+                ui.post { denyPopup(t, from, us) }
+                return true
+            }
+            ui.post { approvePopup(t, from) }
+        }
+        val scheme = runCatching { Uri.parse(us).scheme?.lowercase() }.getOrNull()
+        if (mainFrame) {
+            // a Google result: straight to it, without Google's redirect
+            Search.unwrapRedirect(us)?.let { target -> ui.post { load(t, target) }; return true }
+            // a site Iris does not trust: the sandbox, without asking
+            if ((scheme == "http" || scheme == "https") && Search.untrusted(us)) {
+                activity?.let { SandboxActivity.open(it, us) }
+                return true
             }
         }
-        w.setBackgroundColor(if (dark) Color.rgb(18, 16, 28) else Color.WHITE)
-        val s = w.settings
-        s.javaScriptEnabled = true
-        s.domStorageEnabled = true
-        s.loadWithOverviewMode = true
-        s.useWideViewPort = true
-        s.setSupportZoom(true)
-        s.builtInZoomControls = true
-        s.displayZoomControls = false
-        s.mediaPlaybackRequiresUserGesture = false
-        // windows only through onCreateWindow, where Iris checks them; a
-        // script cannot open one by itself
-        s.setSupportMultipleWindows(true)
-        s.javaScriptCanOpenWindowsAutomatically = false
-        s.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-        s.allowFileAccess = false
-        s.allowContentAccess = false
-        if (t.isPrivate) s.cacheMode = WebSettings.LOAD_NO_CACHE
-        CookieManager.getInstance().setAcceptThirdPartyCookies(w, false)
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            if (youtube.isNotBlank()) runCatching { WebViewCompat.addDocumentStartJavaScript(w, youtube, setOf("https://*.youtube.com", "https://youtube.com")) }
-            // Iris's glass on Google AI Mode, the home of every tab
-            if (aiGlass.isNotBlank()) runCatching { WebViewCompat.addDocumentStartJavaScript(w, aiGlass, setOf("https://www.google.com", "https://google.com")) }
-        }
-        w.webViewClient = Client(t)
-        w.webChromeClient = Chrome(t)
-        w.setDownloadListener { u, agent, disposition, mime, length ->
-            val cookies = runCatching { CookieManager.getInstance().getCookie(u) }.getOrNull()
-            Downloads.fetch(ctx, u, agent, disposition, mime, length, cookies, t.url)
-        }
-        w.setOnLongClickListener {
-            val h = w.hitTestResult
-            when (h.type) {
-                WebView.HitTestResult.SRC_ANCHOR_TYPE -> { pressed = Pressed(t, h.extra, null); true }
-                WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
-                    val msg = w.handler.obtainMessage()
-                    w.requestFocusNodeHref(msg)
-                    pressed = Pressed(t, msg.data.getString("url"), h.extra); true
+        if (scheme == "http" || scheme == "https") {
+            // ads that take the page itself away: a redirect, or a script
+            // sending the tab to an ad without a tap on a link to it
+            if (mainFrame && t.url.isNotEmpty() && isAd(t, us)) {
+                val tapped = hasGesture && tappedLinkHost == Search.host(us)
+                if (!tapped || isRedirect) {
+                    ui.post { t.blocked++ }
+                    return true
                 }
-                WebView.HitTestResult.IMAGE_TYPE -> { pressed = Pressed(t, null, h.extra); true }
-                else -> false
+            }
+            return false
+        }
+        if (scheme == "about" || scheme == "data" || scheme == "blob") return false
+        // intent:, mailto:, tel: and other apps, only on a tap, so a page
+        // cannot open apps by itself
+        if (!hasGesture) return true
+        try {
+            val i = if (scheme == "intent") Intent.parseUri(us, Intent.URI_INTENT_SCHEME) else Intent(Intent.ACTION_VIEW, Uri.parse(us))
+            i.addCategory(Intent.CATEGORY_BROWSABLE)
+            i.component = null
+            i.selector = null
+            // an intent: link may not grant access to Iris's own files
+            i.flags = i.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION).inv()
+            i.clipData = null
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ctx.startActivity(i)
+        } catch (e: Exception) {
+            // an intent: link with a web fallback opens that instead
+            if (scheme == "intent") {
+                Regex("S\\.browser_fallback_url=([^;]+)").find(us)?.groupValues?.get(1)?.let { fb ->
+                    val f = Uri.decode(fb)
+                    if (f.startsWith("http")) ui.post { load(t, f) }
+                }
             }
         }
-        t.web = w
-        if (t !== current && t.popupFrom == null) w.onPause()
-        return w
+        return true
+    }
+
+    // a certificate that fails: that site opens in the sandbox, without asking
+    override fun onSslError(t: Tab, url: String) {
+        if (url == t.top || Search.host(url) == Search.host(t.top)) {
+            activity?.let { SandboxActivity.open(it, url, cert = true) }
+            ui.post { if (t.web?.canGoBack() == true) t.web?.goBack() else load(t, Search.HOME) }
+        }
+    }
+
+    override fun onRendererGone(t: Tab) {
+        // the page's process ended (memory or a crash): the tab gets a
+        // fresh page and opens its address again when shown
+        destroy(t)
+        t.pending = t.url.ifEmpty { null }
+        t.crashed = true
+        if (t === current) t.pending?.let { p -> t.pending = null; load(t, p) }
+    }
+
+    override fun onFileChooser(t: Tab, request: FileRequest) {
+        fileRequest?.answer(null)
+        fileRequest = request
+    }
+
+    override fun onMediaRequest(t: Tab, request: MediaRequest) {
+        mediaRequest = request
+    }
+
+    override fun onLongPress(t: Tab, link: String?, image: String?) {
+        pressed = Pressed(t, link, image)
+    }
+
+    override fun newHeldTab(from: Tab): Tab? {
+        val nt = Tab(from.container)
+        nt.popupFrom = from
+        held.add(nt)
+        return nt
+    }
+
+    /** a held pop-up that could not be made (no activity): it goes, quietly */
+    fun dropHeldTab(p: Tab) {
+        held.remove(p)
     }
 
     /** a held pop-up went somewhere allowed: it becomes a tab beside its page */
-    private fun approve(p: Tab, from: Tab) {
+    override fun approvePopup(p: Tab, from: Tab) {
         if (!held.remove(p)) return
         val i = tabs.indexOf(from)
         if (i >= 0) tabs.add(i + 1, p) else tabs.add(p)
@@ -363,7 +460,7 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** a held pop-up went to an ad, or elsewhere: it goes, never shown */
-    private fun deny(p: Tab, from: Tab, url: String?) {
+    override fun denyPopup(p: Tab, from: Tab, url: String?) {
         if (!held.remove(p)) return
         destroy(p)
         from.blocked++
@@ -371,43 +468,43 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         if (url != null && url.startsWith("http") && !isAd(from, url)) blocked = Blocked(url, from)
     }
 
-    /** what a request is, for the filter lists: the Accept header and the address say */
-    private fun kindOf(r: WebResourceRequest): Int {
-        val accept = (r.requestHeaders["Accept"] ?: r.requestHeaders["accept"] ?: "").lowercase()
-        val p = (r.url.path ?: "").lowercase()
-        return when {
-            accept.startsWith("text/css") || p.endsWith(".css") -> Kind.STYLESHEET
-            p.endsWith(".woff") || p.endsWith(".woff2") || p.endsWith(".ttf") || p.endsWith(".otf") -> Kind.FONT
-            accept.startsWith("image/") || listOf(".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".ico").any { p.endsWith(it) } -> Kind.IMAGE
-            accept.startsWith("text/html") -> Kind.SUBDOCUMENT
-            p.endsWith(".js") || p.endsWith(".mjs") -> Kind.SCRIPT
-            listOf(".mp4", ".webm", ".m3u8", ".mp3", ".m4s").any { p.endsWith(it) } -> Kind.MEDIA
-            accept.contains("json") || r.requestHeaders.keys.any { it.equals("X-Requested-With", true) } -> Kind.XHR
-            else -> Kind.OTHER
-        }
+    override fun schedulePopupTimeout(p: Tab, from: Tab) {
+        // it went nowhere: the pop-up goes
+        ui.postDelayed({ if (p.popupFrom != null) { p.popupFrom = null; denyPopup(p, from, null) } }, 8000)
     }
 
-    /** an answer with nothing in it: what a stopped request gets */
-    private fun empty() = WebResourceResponse("text/plain", "utf-8", 204, "No Content", mapOf("Access-Control-Allow-Origin" to "*"), ByteArrayInputStream(ByteArray(0)))
+    override fun closeWindow(page: PageView) {
+        held.firstOrNull { it.web === page }?.let { p -> held.remove(p); destroy(p); return }
+        tabs.firstOrNull { it.web === page }?.let(::close)
+    }
+
+    override fun onFullscreen(t: Tab, view: View?, exit: () -> Unit) {
+        fullscreenView = view
+        fullscreenExit = if (view != null) exit else null
+    }
+
+    override fun onDownload(t: Tab, url: String, agent: String?, disposition: String?, mime: String?, length: Long, cookies: String?, suggested: String?) {
+        Downloads.fetch(ctx, url, agent, disposition, mime, length, cookies, t.url, suggested)
+    }
 
     /** the style sheet hiding what ads leave on each site, kept for a few sites */
     private val css = object : LinkedHashMap<String, String>(32, 0.75f, true) {
         override fun removeEldestEntry(e: MutableMap.MutableEntry<String, String>?) = size > 24
     }
 
-    private fun hide(w: WebView, page: String) {
-        if (!page.startsWith("http")) return
-        val host = hostOf(page)
-        val sheet = synchronized(css) { css[host] ?: Shields.core.hidingCSS(page).also { css[host] = it } }
+    private fun hide(page: PageView, url: String) {
+        if (!url.startsWith("http")) return
+        val host = hostOf(url)
+        val sheet = synchronized(css) { css[host] ?: Shields.core.hidingCSS(url).also { css[host] = it } }
         if (sheet.isEmpty()) return
         val js = "(() => { const add = () => { let s = document.getElementById('iris-shields'); if (!s) { s = document.createElement('style'); " +
             "s.id = 'iris-shields'; (document.head || document.documentElement).appendChild(s); } if (!s.textContent) s.textContent = " +
             org.json.JSONObject.quote(sheet) + "; }; if (document.documentElement) add(); else document.addEventListener('DOMContentLoaded', add); })();"
-        runCatching { w.evaluateJavascript(js, null) }
+        runCatching { page.evaluateJavascript(js) }
     }
 
     /** whether going to `url` in the page `from` is an ad or tracker (the domain list, then the lists' rules) */
-    private fun isAd(from: Tab, url: String): Boolean {
+    internal fun isAd(from: Tab, url: String): Boolean {
         if (!url.startsWith("http") || !Shields.onFor(from.top)) return false
         val host = Search.host(url) ?: return false
         if (ShieldCore.never(host)) return false
@@ -415,240 +512,8 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         return Shields.core.blocks(url, from.top.ifEmpty { url }, Kind.SUBDOCUMENT, false)
     }
 
-    private inner class Client(val t: Tab) : WebViewClient() {
-        // Iris Shields: WebView asks before every request, on its network
-        // thread; what is stopped never leaves the phone
-        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-            if (request.isForMainFrame) return null
-            val u = request.url.toString()
-            val page = t.top
-            if (!Shields.core.blocks(u, page, kindOf(request), false)) return null
-            ui.post { t.blocked++ }
-            return empty()
-        }
-
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            val u = request.url
-            val us = u.toString()
-            // a pop-up's first address decides whether it may stay, before it is shown
-            t.popupFrom?.let { from ->
-                // sign-in windows often open empty first, then get their address
-                if (!request.isForMainFrame || us == "about:blank") return false
-                t.popupFrom = null
-                if (!popupAllowed(from, us)) {
-                    ui.post { deny(t, from, us) }
-                    return true
-                }
-                ui.post { approve(t, from) }
-            }
-            val scheme = u.scheme?.lowercase()
-            if (request.isForMainFrame) {
-                // a Google result: straight to it, without Google's redirect
-                Search.unwrapRedirect(us)?.let { target -> ui.post { view.loadUrl(target) }; return true }
-                // a site Iris does not trust: the sandbox, without asking
-                if ((scheme == "http" || scheme == "https") && Search.untrusted(us)) {
-                    activity?.let { SandboxActivity.open(it, us) }
-                    return true
-                }
-            }
-            if (scheme == "http" || scheme == "https") {
-                // ads that take the page itself away: a redirect, or a script
-                // sending the tab to an ad without a tap on a link to it
-                if (request.isForMainFrame && t.url.isNotEmpty() && isAd(t, us)) {
-                    val tapped = request.hasGesture() && tappedLinkHost(view) == u.host?.lowercase()
-                    if (!tapped || request.isRedirect) {
-                        ui.post { t.blocked++ }
-                        return true
-                    }
-                }
-                return false
-            }
-            if (scheme == "about" || scheme == "data" || scheme == "blob") return false
-            // intent:, mailto:, tel: and other apps, only on a tap, so a page
-            // cannot open apps by itself
-            if (!request.hasGesture()) return true
-            try {
-                val i = if (scheme == "intent") Intent.parseUri(us, Intent.URI_INTENT_SCHEME) else Intent(Intent.ACTION_VIEW, u)
-                i.addCategory(Intent.CATEGORY_BROWSABLE)
-                i.component = null
-                i.selector = null
-                // an intent: link may not grant access to Iris's own files
-                i.flags = i.flags and (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION).inv()
-                i.clipData = null
-                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                ctx.startActivity(i)
-            } catch (e: Exception) {
-                // an intent: link with a web fallback opens that instead
-                if (scheme == "intent") {
-                    Regex("S\\.browser_fallback_url=([^;]+)").find(us)?.groupValues?.get(1)?.let { fb ->
-                        val f = Uri.decode(fb)
-                        if (f.startsWith("http")) ui.post { view.loadUrl(f) }
-                    }
-                }
-            }
-            return true
-        }
-
-        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-            // a pop-up that went straight to its address (no override asked):
-            // checked here instead
-            t.popupFrom?.let { from ->
-                if (url == "about:blank" || url.isEmpty()) return
-                t.popupFrom = null
-                if (!popupAllowed(from, url)) {
-                    view.stopLoading()
-                    ui.post { deny(t, from, url) }
-                    return
-                }
-                ui.post { approve(t, from) }
-            }
-            t.url = url
-            t.top = url
-            t.blocked = 0
-            t.loading = true
-            t.progress = 5
-            t.canBack = view.canGoBack()
-            t.canForward = view.canGoForward()
-        }
-
-        override fun onPageCommitVisible(view: WebView, url: String) {
-            hide(view, url)
-            // where WebView cannot add the glass before the page, it comes now
-            if (Search.isAIMode(url) && !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT) && aiGlass.isNotBlank()) {
-                runCatching { view.evaluateJavascript(aiGlass, null) }
-            }
-        }
-
-        // a certificate that fails: that site opens in the sandbox, without asking
-        @SuppressLint("WebViewClientOnReceivedSslError")
-        override fun onReceivedSslError(view: WebView, handler: android.webkit.SslErrorHandler, error: android.net.http.SslError) {
-            handler.cancel()
-            val u = error.url ?: return
-            if (u == t.top || Search.host(u) == Search.host(t.top)) {
-                activity?.let { SandboxActivity.open(it, u, cert = true) }
-                ui.post { if (t.web?.canGoBack() == true) t.web?.goBack() else load(t, Search.HOME) }
-            }
-        }
-
-        override fun onPageFinished(view: WebView, url: String) {
-            t.loading = false
-            t.progress = 100
-            t.url = url
-            t.top = url
-            t.canBack = view.canGoBack()
-            t.canForward = view.canGoForward()
-            hide(view, url)
-            if (!t.isPrivate && url.startsWith("http")) Store.visit(url, t.title)
-            save()
-        }
-
-        override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
-            t.url = url
-            t.top = url
-            t.canBack = view.canGoBack()
-            t.canForward = view.canGoForward()
-        }
-
-        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-            // the page's process ended (memory or a crash): the tab gets a
-            // fresh WebView and opens its page again when shown
-            destroy(t)
-            t.pending = t.url.ifEmpty { null }
-            t.crashed = true
-            if (t === current) t.pending?.let { p -> t.pending = null; load(t, p) }
-            return true
-        }
-    }
-
-    /** the host of the link under the last tap, if it was a link */
-    private fun tappedLinkHost(w: WebView): String? {
-        val h = w.hitTestResult
-        val link = when (h.type) {
-            WebView.HitTestResult.SRC_ANCHOR_TYPE -> h.extra
-            WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
-                val msg = w.handler.obtainMessage()
-                w.requestFocusNodeHref(msg)
-                msg.data.getString("url")
-            }
-            else -> null
-        }
-        return link?.let { Search.host(it) }
-    }
-
-    private inner class Chrome(val t: Tab) : WebChromeClient() {
-        override fun onProgressChanged(view: WebView, newProgress: Int) {
-            t.progress = newProgress
-            t.loading = newProgress < 100
-        }
-
-        override fun onReceivedTitle(view: WebView, title: String?) { t.title = title ?: "" }
-
-        // New tabs and pop-ups. Only from a tap: a page cannot open one by
-        // itself. A tapped link to an ad opens nothing; another link opens as
-        // a tab. A script's window is made hidden and shown only once its
-        // first address is known to be the same site or a sign-in, so ads
-        // that open in a new tab never appear.
-        override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
-            if (!isUserGesture) { t.blocked++; return false }
-            val h = view.hitTestResult
-            val link = if (h.type == WebView.HitTestResult.SRC_ANCHOR_TYPE) h.extra else if (h.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
-                val msg = view.handler.obtainMessage()
-                view.requestFocusNodeHref(msg)
-                msg.data.getString("url")
-            } else null
-            if (link != null && link.startsWith("http")) {
-                if (isAd(t, link)) { t.blocked++; return false }
-                newTab(link, t.container, after = t)
-                return false
-            }
-            val nt = Tab(t.container)
-            nt.popupFrom = t
-            held.add(nt)
-            val w = web(nt) ?: run { held.remove(nt); return false }
-            (resultMsg.obj as WebView.WebViewTransport).webView = w
-            resultMsg.sendToTarget()
-            // it went nowhere: the pop-up goes
-            ui.postDelayed({ if (nt.popupFrom != null) { nt.popupFrom = null; deny(nt, t, null) } }, 8000)
-            return true
-        }
-
-        override fun onCloseWindow(window: WebView) {
-            held.firstOrNull { it.web === window }?.let { p -> held.remove(p); destroy(p); return }
-            tabs.firstOrNull { it.web === window }?.let(::close)
-        }
-
-        override fun onShowCustomView(view: View, callback: CustomViewCallback) {
-            if (t !== current) { callback.onCustomViewHidden(); return }
-            fullscreenView = view
-            fullscreenDone = callback
-        }
-
-        override fun onHideCustomView() {
-            fullscreenView = null
-            fullscreenDone = null
-        }
-
-        override fun onShowFileChooser(webView: WebView, filePathCallback: ValueCallback<Array<Uri>>, fileChooserParams: FileChooserParams): Boolean {
-            fileRequest?.first?.onReceiveValue(null)
-            fileRequest = filePathCallback to fileChooserParams
-            return true
-        }
-
-        override fun onPermissionRequest(request: PermissionRequest) {
-            // calls (WebRTC): the camera and microphone, which Android lets
-            // Iris use once you allow it (the activity asks); protected video
-            // (DRM) for streaming sites
-            val ok = request.resources.filter {
-                it == PermissionRequest.RESOURCE_AUDIO_CAPTURE || it == PermissionRequest.RESOURCE_VIDEO_CAPTURE ||
-                    it == PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID
-            }
-            if (ok.isEmpty()) request.deny() else mediaRequest = request
-        }
-    }
-
     /** a pop-up may open as a tab: the same site, or a sign-in, and never an ad */
-    fun popupAllowed(from: Tab, url: String): Boolean {
+    override fun popupAllowed(from: Tab, url: String): Boolean {
         val host = Search.host(url) ?: return false
         if (isAd(from, url)) return false
         val site = Search.host(from.url)?.let { Search.site(it) }
@@ -656,9 +521,9 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun exitFullscreen() {
-        fullscreenDone?.onCustomViewHidden()
+        fullscreenExit?.invoke()
         fullscreenView = null
-        fullscreenDone = null
+        fullscreenExit = null
     }
 
     fun save() {
@@ -673,18 +538,4 @@ class BrowserModel(app: Application) : AndroidViewModel(app) {
         held.forEach(::destroy)
         spare?.let(::destroy)
     }
-
-    companion object {
-        const val PRIVATE_PROFILE = "private"
-    }
-}
-
-/** the engine's names, for the about line and downloads */
-object Pages {
-    fun engine(): String = runCatching {
-        val p = WebViewCompat.getCurrentWebViewPackage(IrisApp.instance)
-        "Android System WebView ${p?.versionName ?: ""}".trim()
-    }.getOrDefault("Android System WebView")
-
-    fun mobileAgent(): String = runCatching { WebSettings.getDefaultUserAgent(IrisApp.instance) }.getOrDefault("")
 }

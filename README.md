@@ -36,7 +36,12 @@
 
 ---
 
-## What is new in 2.2.0
+## What is new in 2.2.3
+
+- **Cefrium is back, as a build of its own.** Iris for Android comes in two builds now: the usual one, on Android System WebView, and a second one, **Iris Cefrium**, carrying its own Chromium (CEF, through Cefrium 0.21.0, Chromium 156), the same engine on every phone. Both install side by side; the Cefrium build does not carry the other build's tabs or sign-ins over. Its blank pages are fixed with the maintainer's fix for the renderer processes (issue #24).
+- **Each build updates itself**: the Cefrium build takes the Cefrium APK, the WebView build the plain one.
+
+## What was new in 2.2.0
 
 - **Iris for Linux is now Odin and WPE WebKit, with no GTK.** Odin talks to Wayland, EGL, OpenGL ES, HarfBuzz, fontconfig and WPE directly, through foreign declarations checked against the real C headers.
   - Each page frame arrives from WPE as a DMA-BUF and Iris samples it in its own OpenGL ES renderer without a copy, so the Liquid Glass (now a shader) bends the live page.

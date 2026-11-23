@@ -240,14 +240,14 @@ private fun AddressRow(model: BrowserModel) {
     }
 }
 
-/** the page itself (its WebView), a video in full screen, or the new-tab page */
+/** the page itself (its page view), a video in full screen, or the new-tab page */
 @Composable
 private fun PageArea(model: BrowserModel) {
     val t = model.current
     val full = model.fullscreenView
     val edge = if (full != null) Modifier.fillMaxSize() else Modifier.fillMaxSize().padding(horizontal = 6.dp).clip(RoundedCornerShape(20.dp))
     Box(edge) {
-        val w = full ?: t?.web
+        val w = full ?: t?.web?.view
         if (w == null) {
             // a page on its way (Google AI Mode for a new tab): the dawn, nothing more
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(LocalPalette.current.back)))

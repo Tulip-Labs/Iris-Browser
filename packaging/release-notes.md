@@ -1,3 +1,15 @@
+Iris 2.2.3: Cefrium is back, as a build of its own.
+
+**Android**
+- **Iris Cefrium, a second Android build beside the WebView one.** It carries its own Chromium (CEF, through Cefrium 0.21.0, Chromium 156), the same engine on every phone, and installs side by side with the usual build (its own id, `org.tulipanlabs.lite.cefrium`, and its own name in the launcher). It does not carry the WebView build's tabs or sign-ins over. Its blank pages are fixed with the maintainer's fix for the renderer processes (issue #24): the Application now leaves those processes at once, and the next Cefrium release keeps it out of them by itself.
+- **Each build updates itself**: the Cefrium build takes the Cefrium APK, the WebView build the plain one.
+- The WebView build is unchanged: the same pages, the same Shields, the same sandbox.
+
+**Install**
+- Android: `Iris-android.apk` (Android 10 and newer). It installs over 2.2.2. `Iris-android-cefrium.apk` installs beside it.
+
+---
+
 Iris 2.2.2: YouTube with no ads, and a closed tab is really closed on Linux.
 
 **Both**
