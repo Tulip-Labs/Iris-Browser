@@ -174,16 +174,18 @@ object CefriumEngine : Engine {
 
     /** Iris Shields: the engine asks before every request, on its network
      *  thread; what is stopped never leaves the phone */
-    private inner class Shield(private val t: Tab, private val model: BrowserModel) : CefriumResourceInterceptor {
+    // nested, not inner: an object has no outer instance for inner to hold,
+    // so the outer members below are reached through CefriumEngine itself
+    private class Shield(private val t: Tab, private val model: BrowserModel) : CefriumResourceInterceptor {
         override fun shouldBlockRequest(r: CefriumBrowser.ResourceRequest): Boolean {
             if (r.isMainFrame) return false
             val u = r.url ?: return false
             if (!u.startsWith("http")) return false
-            return model.shouldBlockRequest(t, u, kindOf(r), false)
+            return model.shouldBlockRequest(t, u, CefriumEngine.kindOf(r), false)
         }
     }
 
-    private inner class Nav(private val t: Tab, private val model: BrowserModel) : CefriumNavigationClient {
+    private class Nav(private val t: Tab, private val model: BrowserModel) : CefriumNavigationClient {
         override fun onBeforeNavigate(browser: CefriumBrowser, request: CefriumNavigationRequest): Boolean {
             val u = request.url ?: return false
             // Cefrium cannot tell which link a tap landed on, so a tap on an
@@ -226,7 +228,7 @@ object CefriumEngine : Engine {
         }
     }
 
-    private inner class Chrome(private val t: Tab, private val model: BrowserModel, private val page: CefriumPage) : CefriumChromeClient {
+    private class Chrome(private val t: Tab, private val model: BrowserModel, private val page: CefriumPage) : CefriumChromeClient {
         override fun onTitleChanged(browser: CefriumBrowser, title: String?) {
             model.onTitle(t, title ?: "")
         }
@@ -254,14 +256,14 @@ object CefriumEngine : Engine {
                 return false
             }
             val nt = model.newHeldTab(t) ?: return false
-            val w = wrap(nt, model, popup)
+            val w = CefriumEngine.wrap(nt, model, popup)
             nt.web = w
             model.schedulePopupTimeout(nt, t)
             return true
         }
 
         override fun onCloseWindow(browser: CefriumBrowser, popup: CefriumBrowser) {
-            pages[popup]?.let { model.closeWindow(it) }
+            CefriumEngine.pages[popup]?.let { model.closeWindow(it) }
         }
 
         override fun onContextMenu(browser: CefriumBrowser, menu: CefriumContextMenu): Boolean {
@@ -311,7 +313,7 @@ object CefriumEngine : Engine {
     }
 
     /** downloads go to the phone's Downloads folder, through Iris's downloads manager */
-    private inner class Downloads(private val t: Tab, private val model: BrowserModel) : CefriumBrowser.CefriumDownloadHandler {
+    private class Downloads(private val t: Tab, private val model: BrowserModel) : CefriumBrowser.CefriumDownloadHandler {
         override fun onBeforeDownload(item: CefriumBrowser.DownloadItem, callback: CefriumBrowser.BeforeDownloadCallback) {
             val u = item.url ?: ""
             val name = (item.suggestedName ?: "").ifEmpty { "download" }
@@ -322,9 +324,9 @@ object CefriumEngine : Engine {
             }
             callback.cancel()
             // the tab's own profile's cookies go along, so downloads behind a sign-in work
-            val profile = profileOf(t)
+            val profile = CefriumEngine.profileOf(t)
             profile.cookieManager.getCookie(u) { c ->
-                ui.post {
+                CefriumEngine.ui.post {
                     model.onDownload(t, u, model.engine.mobileAgent(), null, item.mimeType, item.totalBytes, c, name)
                 }
             }
