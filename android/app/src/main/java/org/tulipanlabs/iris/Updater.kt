@@ -60,8 +60,14 @@ object Updater {
             val j = JSONObject(body)
             val v = j.getString("tag_name").removePrefix("v")
             val assets = j.getJSONArray("assets")
-            val apk = (0 until assets.length()).map { assets.getJSONObject(it) }
-                .firstOrNull { it.getString("name").endsWith(".apk") }?.getString("browser_download_url")
+            val list = (0 until assets.length()).map { assets.getJSONObject(it) }
+            // this build updates itself: the cefrium flavor takes its own
+            // APK, the webview flavor the plain one; an older release with
+            // one APK still works
+            val want = if (BuildConfig.FLAVOR == "cefrium") "Iris-android-cefrium.apk" else "Iris-android.apk"
+            val apk = (list.firstOrNull { it.getString("name") == want }
+                ?: list.firstOrNull { it.getString("name").endsWith(".apk") })
+                ?.getString("browser_download_url")
             if (apk != null && newer(v, BuildConfig.VERSION_NAME)) Release(v, apk, j.optString("html_url")) else null
         }.getOrNull().also { r -> withContext(Dispatchers.Main) { available = r } }
     }
