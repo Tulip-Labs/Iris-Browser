@@ -255,6 +255,10 @@ How the glass is drawn (Linux): each frame, Iris draws everything behind the gla
 
 The chrome's words and icons are drawn right after each piece of its glass, in the same frame, at the screen's own pixels.
 
+## Contributors
+
+- [vejeta](https://github.com/vejeta) — maintainer of Cefrium; diagnosed the blank-pages issue on Android and proposed the one-line fix in `IrisApp.onCreate`.
+
 ## License
 
 GPL 3.0. See [LICENSE](LICENSE), [NOTICE](NOTICE), [PRIVACY.md](PRIVACY.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
