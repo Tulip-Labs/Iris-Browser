@@ -52,7 +52,7 @@ jobs:
       - name: Bindings against the real headers
         run: |
           cd experiments/cef-smoke
-          ./gen.sh cef_gen.check.odin
+          sh gen.sh cef_gen.check.odin
           diff cef_gen.odin cef_gen.check.odin && rm cef_gen.check.odin
 
       - name: ABI check
@@ -65,11 +65,11 @@ jobs:
 
       - name: Build
         run: |
-          cd experiments/cef-smoke && ./build.sh
+          cd experiments/cef-smoke && sh build.sh
 
       - name: Run (tab close + one page, one frame)
         run: |
-          cd experiments/cef-smoke && timeout 180 ./run.sh
+          cd experiments/cef-smoke && timeout 180 sh run.sh
 
       - name: Frame as a PNG for people to look at
         if: always()
