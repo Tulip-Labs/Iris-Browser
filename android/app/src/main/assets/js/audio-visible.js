@@ -3,8 +3,8 @@
 // YouTube above all pauses on the Page Visibility API: when document.hidden
 // flips to true its player calls video.pause(). Chromium also suspends media
 // for pages it believes are hidden, which no script can reach — the native
-// side keeps the page visible too (the WebView subclass, the engine's pause
-// left out). Only installed while background audio is on.
+// side keeps the page visible too (Cefrium: the model never pauses the
+// playing page). Only installed while background audio is on.
 (() => {
   'use strict';
   if (window.__irisAudioVisible) return;
