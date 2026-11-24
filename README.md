@@ -9,7 +9,7 @@
 <p align="center">
   <b>A browser made of glass.</b><br>
   Linux: Odin, Wayland and WPE WebKit, in real Liquid Glass. No GTK.<br>
-  Android: Kotlin, Jetpack Compose and Android System WebView. Every search asks Google AI Mode.
+  Android: Kotlin, Jetpack Compose and Cefrium (its own Chromium). Every search asks Google AI Mode.
 </p>
 
 <p align="center">
@@ -35,6 +35,11 @@
 </p>
 
 ---
+
+## What is new in 2.2.6
+
+- **Cefrium is the only Android build now.** The WebView build is gone: in 2.2.5 nothing could be typed in it, while the Cefrium build worked. The one build carries its own Chromium (CEF, through Cefrium 0.21.0, Chromium 156), installs over 2.2.4's WebView build under the same name, Iris, and keeps its tabs and sign-ins. If you installed the separate "Iris Cefrium" build, uninstall it after installing this one.
+- **Background audio still works**: audio keeps playing with the screen off or when Iris leaves, with play, pause and stop in the notification and on the lock screen.
 
 ## What is new in 2.2.4
 
@@ -104,7 +109,7 @@ Iris is made again from the start.
 - **Springs.** Tabs slide into place. The selected tab's glass slides from tab to tab and stretches on the way. Menus open and close as glass.
 - **Containers, worlds apart.** On both platforms, each container keeps its own cookies, storage, cache and sign-ins.
 - **Ads open no tabs.** A pop-up needs your click, and goes only to the same site or a sign-in page. Anything else is stopped, with an Open button if you meant it.
-- **Android in Kotlin with Jetpack Compose** (its engine is Android System WebView).
+- **Android in Kotlin with Jetpack Compose** (its engine is Cefrium, its own Chromium).
 - **A new icon.** The goddess in liquid glass, rising out of her rainbow.
 - **Fewer packages.** Windows, Nix, the Snap and the container image are gone. Linux ships as a Flatpak.
 
@@ -146,11 +151,11 @@ Iris is made again from the start.
 
 ### Android
 
-- **Engine.** Android System WebView (Chromium, kept up to date by the phone). The interface is Jetpack Compose drawn as Liquid Glass (no Material components). The tabs and their pages live in a ViewModel.
+- **Engine.** Cefrium (its own Chromium, CEF, the same engine on every phone). The interface is Jetpack Compose drawn as Liquid Glass (no Material components). The tabs and their pages live in a ViewModel.
 - **Look.** Light, in the colours of dawn. Every new tab is Google AI Mode in Iris's glass.
 - **The sandbox.** Sites Iris does not trust open in a process of their own with WebView data made fresh each time, and none of your data.
-- **Containers.** WebView profiles (System WebView 123 and newer): each container keeps its own cookies, cache, localStorage and IndexedDB.
-- **Shields.** WebView asks Iris before every request; ads and trackers never leave the phone. Ads that open new tabs are stopped too: a page opens no tab by itself, a tapped ad link opens nothing, and a script's window stays hidden until Iris knows it is not an ad. Moderate, Aggressive or Ultra aggressive, with uBlock Origin's lists, and the boxes ads leave are hidden.
+- **Containers.** Cefrium profiles: each container keeps its own cookies, cache, localStorage and IndexedDB.
+- **Shields.** Cefrium asks Iris before every request; ads and trackers never leave the phone. Ads that open new tabs are stopped too: a page opens no tab by itself, a tapped ad link opens nothing, and a script's window stays hidden until Iris knows it is not an ad. Moderate, Aggressive or Ultra aggressive, with uBlock Origin's lists, and the boxes ads leave are hidden.
 - **Tabs.**
   - A strip of tabs on top with one "+" (long-press it to pick a container).
   - The bottom bar has back, forward, home, Shields, containers, and downloads while there are any (with the number finished).
@@ -244,7 +249,7 @@ linux/                      Iris for Linux (Odin; no GTK, no X11)
   abi/                      checks every foreign declaration, struct and protocol table
                             against the C headers (clang reads them)
   tools/                    makes the bindings and protocol tables from the headers
-android/                    Iris for Android (Kotlin, Compose, System WebView)
+android/                    Iris for Android (Kotlin, Compose, Cefrium)
   app/src/main/java/org/tulipanlabs/iris/
     Browser.kt              tabs and their Chromium pages in a ViewModel, profiles, pop-up rules
     Shields.kt, ShieldCore.kt  the levels, the lists, every request's answer
