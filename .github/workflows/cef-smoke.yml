@@ -1,0 +1,99 @@
+# CEF smoke test: the minimal Odin program that inits CEF (no sandbox,
+# windowless off-screen rendering, external message pump), opens
+# https://example.org and dumps one OnPaint frame. It downloads the pinned
+# CEF 156 minimal tarball; it does NOT build WPE WebKit or the Iris Flatpak.
+name: CEF smoke test
+
+on:
+  push:
+    branches: ["cef-smoke-test"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # Odin dev-2026-11a, pinned by checksum (the same Odin linux.yml pins)
+  ODIN_URL: https://github.com/odin-lang/Odin/releases/download/dev-2026-11a/odin-linux-amd64-dev-2026-11a.tar.gz
+  ODIN_SHA256: 65c9f6e97d6f8a30930e151f270ce5aeaa98fe8b2ba49fe067394e2af04f7618
+  # CEF 156.0.32, Chromium 156.0.8078.109, minimal distribution
+  CEF_TARBALL: cef_binary_156.0.32+g3d1f4ab+chromium-156.0.8078.109_linux64_minimal.tar.bz2
+  CEF_DIRNAME: cef_binary_156.0.32+g3d1f4ab+chromium-156.0.8078.109_linux64_minimal
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System libraries libcef.so links against
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang python3 libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libatspi2.0-0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libasound2t64
+
+      - name: Odin
+        run: |
+          curl -sSfL "$ODIN_URL" -o /tmp/odin.tar.gz
+          echo "$ODIN_SHA256  /tmp/odin.tar.gz" | sha256sum -c -
+          mkdir -p /opt/odin && tar -xzf /tmp/odin.tar.gz -C /opt/odin --strip-components=1
+          echo /opt/odin >> $GITHUB_PATH
+          echo ODIN_ROOT=/opt/odin >> $GITHUB_ENV
+
+      - name: CEF 156 minimal
+        run: |
+          curl -sSfL "https://cef-builds.spotifycdn.com/$CEF_TARBALL" -o /tmp/cef.tar.bz2
+          mkdir -p /tmp/cef && tar -xjf /tmp/cef.tar.bz2 -C /tmp/cef
+          echo "CEF_DIR=/tmp/cef/$CEF_DIRNAME" >> $GITHUB_ENV
+          ls -la "/tmp/cef/$CEF_DIRNAME/Release/libcef.so" "/tmp/cef/$CEF_DIRNAME/Resources"
+          # CEF resolves the ICU data file (icudtl.dat) from the libcef.so
+          # directory, not from resources_dir_path: copy the resource files
+          # next to libcef.so or CefInitialize dies with
+          # "Invalid file descriptor to ICU data received".
+          cp "/tmp/cef/$CEF_DIRNAME/Resources/icudtl.dat" "/tmp/cef/$CEF_DIRNAME/Resources/"*.pak "/tmp/cef/$CEF_DIRNAME/Release/"
+
+      - name: Bindings against the real headers
+        run: |
+          cd experiments/cef-smoke
+          sh gen.sh cef_gen.check.odin
+          diff cef_gen.odin cef_gen.check.odin && rm cef_gen.check.odin
+
+      - name: ABI check
+        run: |
+          python3 linux/abi/check.py \
+            --headers "include/capi/cef_app_capi.h include/capi/cef_base_capi.h include/capi/cef_browser_capi.h include/capi/cef_client_capi.h include/capi/cef_render_handler_capi.h include/capi/cef_life_span_handler_capi.h include/capi/cef_load_handler_capi.h include/internal/cef_string_types.h include/internal/cef_types.h include/internal/cef_types_linux.h include/internal/cef_types_geometry.h include/internal/cef_types_runtime.h include/cef_api_hash.h" \
+            --cflags="-I$CEF_DIR" \
+            --import main=experiments/cef-smoke \
+            experiments/cef-smoke/cef.odin experiments/cef-smoke/cef_gen.odin
+
+      - name: Build
+        run: |
+          cd experiments/cef-smoke && sh build.sh
+
+      - name: Run (tab close + one page, one frame)
+        run: |
+          cd experiments/cef-smoke && timeout 180 sh run.sh
+
+      - name: Frame as a PNG for people to look at
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import struct, zlib, os
+          p = 'experiments/cef-smoke/frame.ppm'
+          if not os.path.exists(p):
+              print("no frame.ppm (the run failed before painting)")
+              raise SystemExit(0)
+          magic, size, depth, px = open(p, 'rb').read().split(b'\n', 3)
+          w, h = map(int, size.split())
+          rows = b''.join(b'\0' + px[y * w * 3:(y + 1) * w * 3] for y in range(h))
+          chunk = lambda t, b: struct.pack('>I', len(b)) + t + b + struct.pack('>I', zlib.crc32(t + b))
+          png = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(rows, 6)) + chunk(b'IEND', b'')
+          open('experiments/cef-smoke/frame.png', 'wb').write(png)
+          print("frame.png:", w, "x", h)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cef-smoke-frame
+          path: |
+            experiments/cef-smoke/frame.ppm
+            experiments/cef-smoke/frame.png
+            experiments/cef-smoke/debug.log
