@@ -7,12 +7,9 @@ import android.os.Bundle
 import android.view.View
 
 /**
- * Iris draws its pages with one of two engines, and the rest of the app
- * does not know which: the webview flavor uses Android System WebView
- * (Chromium, kept up to date by the phone), the cefrium flavor carries its
- * own Chromium (CEF, through Cefrium), the same engine on every phone.
- * Each flavor brings the engine that fits it (src/webview, src/cefrium);
- * the model talks to the page only through this file.
+ * Iris draws its pages with one engine, and the rest of the app does not
+ * know its details: Cefrium, its own Chromium (CEF), the same engine on
+ * every phone. The model talks to the page only through this file.
  */
 
 /** what a page asks for: the camera, the microphone, or protected video */
@@ -77,9 +74,9 @@ interface PageEvents {
     /**
      * A navigation the page is about to make: true means Iris handled it (or
      * stopped it), so the engine must not. `tappedLinkHost` is the host of
-     * the link under the last tap, when the engine knows it (WebView); null
-     * when it cannot tell (Cefrium), so a tap on an ad is stopped rather
-     * than trusted.
+     * the link under the last tap, when the engine knows it; null when it
+     * cannot tell (Cefrium cannot tell which link a tap landed on), so a
+     * tap on an ad is stopped rather than trusted.
      */
     fun shouldOverrideNavigation(t: Tab, url: String, mainFrame: Boolean, hasGesture: Boolean, isRedirect: Boolean, tappedLinkHost: String?): Boolean
     /** a certificate that failed: the engine has already refused it */
@@ -124,8 +121,7 @@ interface Engine {
     fun onActivityChanged(activity: Activity?) {}
 
     /** whether a page of this engine is playing sound right now: Cefrium
-     *  asks its browser (its own audio state); System WebView has no such
-     *  query, so it answers from the page's report alone (false here) */
+     *  asks its browser (its own audio state) */
     fun isPlayingAudio(tab: Tab): Boolean = false
 
     /** the tab's page, made on first use (null until the activity is here) */

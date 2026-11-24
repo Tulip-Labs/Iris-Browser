@@ -27,7 +27,7 @@ import com.cefrium.CefriumRendererTerminationStatus
 import com.cefrium.CefriumResourceInterceptor
 
 /**
- * The engine this flavor carries: its own Chromium (CEF, through Cefrium
+ * The engine this build carries: its own Chromium (CEF, through Cefrium
  * 0.21.0, Chromium 156), the same engine on every phone. Adapted from the
  * 1.0.24 Cefrium line to the 2.2 model (tabs, Shields, Store, the sandbox).
  *
@@ -37,7 +37,7 @@ import com.cefrium.CefriumResourceInterceptor
  * This engine only runs in the main process.
  */
 
-/** the engine this flavor carries: Cefrium, its own Chromium */
+/** the engine this build carries: Cefrium, its own Chromium */
 object EngineFactory {
     fun create(): Engine = CefriumEngine
 }
@@ -219,7 +219,7 @@ object CefriumEngine : Engine {
         }
 
         override fun onLoadError(browser: CefriumBrowser, error: CefriumLoadError) {
-            // the WebView build shows the engine's own error page too; nothing to do here
+            // the engine shows its own error page; nothing to do here
         }
 
         override fun onRenderProcessTerminated(browser: CefriumBrowser, status: CefriumRendererTerminationStatus, errorCode: Int) {

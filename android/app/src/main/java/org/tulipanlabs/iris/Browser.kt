@@ -63,9 +63,9 @@ data class Pressed(val tab: Tab, val link: String?, val image: String?)
 
 /**
  * The tabs and their pages, kept here so they outlive Compose's
- * recompositions and the activity. The page engine (System WebView or
- * Cefrium, by flavor) is behind Engine; the policy here (Shields, pop-ups,
- * the sandbox, sign-ins) is the same for both.
+ * recompositions and the activity. The page engine (Cefrium) is behind
+ * Engine; the policy here (Shields, pop-ups, the sandbox, sign-ins) lives
+ * in the model alone.
  */
 class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents, AudioController {
     val tabs = mutableStateListOf<Tab>()
@@ -106,7 +106,7 @@ class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents, AudioC
     /** Iris is light: pages see prefers-color-scheme: light */
     var dark = false
 
-    /** the page engine this build carries (WebView or Cefrium, by flavor) */
+    /** the page engine this build carries (Cefrium) */
     val engine: Engine = EngineFactory.create()
 
     val containersWork: Boolean get() = engine.containersSupported

@@ -35,8 +35,8 @@ object Updater {
     var downloading by mutableStateOf(false)
     var progress by mutableFloatStateOf(0f)
 
-    /** the release file each build updates from */
-    fun apkName(flavor: String) = if (flavor == "cefrium") "Iris-android-cefrium.apk" else "Iris-android.apk"
+    /** the release file this build updates from: the one Android APK */
+    fun apkName() = "Iris-android.apk"
 
     /** an update comes from Iris's own releases on GitHub, over https, and nowhere else */
     fun fromGitHub(url: String): Boolean {
@@ -73,12 +73,10 @@ object Updater {
             val v = j.getString("tag_name").removePrefix("v")
             val assets = j.getJSONArray("assets")
             val list = (0 until assets.length()).map { assets.getJSONObject(it) }
-            // this build updates itself: the cefrium flavor takes its own
-            // APK, the webview flavor the plain one; an older release with
-            // one APK still works
-            val want = apkName(BuildConfig.FLAVOR)
-            // a release without this build's APK offers nothing: the other
-            // build's APK has another id and could never install over this one
+            // this build updates itself from the release's one APK; an
+            // older release with one APK still works
+            val want = apkName()
+            // a release without this build's APK offers nothing
             val apk = list.firstOrNull { it.optString("name") == want }
                 ?.optString("browser_download_url")
                 ?.takeIf { fromGitHub(it) }

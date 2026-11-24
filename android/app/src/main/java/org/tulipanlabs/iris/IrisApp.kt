@@ -3,8 +3,8 @@ package org.tulipanlabs.iris
 import android.app.Application
 
 /**
- * Iris for Android: pages by Android System WebView or Cefrium (by flavor),
- * the interface in Jetpack Compose drawn as Liquid Glass.
+ * Iris for Android: pages by Cefrium (its own Chromium), the interface in
+ * Jetpack Compose drawn as Liquid Glass.
  */
 class IrisApp : Application() {
     override fun onCreate() {

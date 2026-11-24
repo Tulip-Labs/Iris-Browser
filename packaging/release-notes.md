@@ -1,3 +1,19 @@
+Iris 2.2.6: the WebView build is gone — Cefrium is the only Android build.
+
+**Android**
+- **One Android build, on Cefrium.** The WebView build is removed: in 2.2.5 nothing could be typed in it, while the Cefrium build worked. Cefrium carries its own Chromium (CEF, through Cefrium 0.21.0, Chromium 156), the same engine on every phone.
+- **It installs over 2.2.4's WebView build** — the same app id (`org.tulipanlabs.lite`), the same name in the launcher (Iris), the same tabs and sign-ins. If you installed the separate "Iris Cefrium" build from 2.2.3–2.2.5, uninstall that one after installing this, so you do not keep two Irises.
+- **Background audio still works**: audio keeps playing with the screen off or when Iris leaves, with play, pause and stop in the notification and on the lock screen, on by default (turn it off in the Shields panel, under Background audio). Swiping Iris away from recents still stops the sound.
+
+**Linux**
+- The same version number as Android; nothing else changed.
+
+**Install**
+- Linux: `flatpak install --user Iris-x86_64.flatpak`
+- Android: `Iris-android.apk` (Android 10 and newer). It installs over 2.2.4.
+
+---
+
 Iris 2.2.5: audio keeps playing in the background, like Brave.
 
 **Android**

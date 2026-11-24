@@ -3,7 +3,7 @@ pluginManagement {
         google()
         mavenCentral()
         gradlePluginPortal()
-        // Cefrium: Chromium (CEF) for Android, the page engine of the cefrium flavor
+        // Cefrium: Chromium (CEF) for Android, the page engine
         maven("https://maven.cefrium.com") { content { includeGroupByRegex("com\\.cefrium.*") } }
     }
 }
