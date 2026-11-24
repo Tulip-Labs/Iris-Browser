@@ -13,6 +13,7 @@ import android.widget.Toast
 import com.cefrium.Cefrium
 import com.cefrium.CefriumBrowser
 import com.cefrium.CefriumChromeClient
+import com.cefrium.CefriumConsoleMessage
 import com.cefrium.CefriumContextMenu
 import com.cefrium.CefriumFileChooserCallback
 import com.cefrium.CefriumFileChooserParams
@@ -128,6 +129,10 @@ object CefriumEngine : Engine {
     override fun engineName(): String =
         "Cefrium ${Cefrium.getVersion()} (Chromium ${Cefrium.getChromiumVersion()})"
 
+    /** whether a page of this engine is playing sound: Cefrium asks its browser */
+    override fun isPlayingAudio(tab: Tab): Boolean =
+        (tab.web as? CefriumPage)?.b?.isPlayingAudio() == true
+
     /** the phone's own kind of user agent (Chrome on Android) */
     override fun mobileAgent(): String {
         val major = Cefrium.getChromiumVersion().substringBefore('.')
@@ -231,6 +236,15 @@ object CefriumEngine : Engine {
     private class Chrome(private val t: Tab, private val model: BrowserModel, private val page: CefriumPage) : CefriumChromeClient {
         override fun onTitleChanged(browser: CefriumBrowser, title: String?) {
             model.onTitle(t, title ?: "")
+        }
+
+        // the audio reporter (assets/js/audio.js): one line when the page
+        // starts or stops playing sound, so Iris can keep it playing
+        override fun onConsoleMessage(browser: CefriumBrowser, message: CefriumConsoleMessage) {
+            val text = message.message()
+            if (text.startsWith("[iris-audio] ")) {
+                model.onAudioState(t, text.removePrefix("[iris-audio] ").trim() == "playing")
+            }
         }
 
         override fun onFullscreenChanged(browser: CefriumBrowser, fullscreen: Boolean) {

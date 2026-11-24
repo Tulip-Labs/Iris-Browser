@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- the music note of the interface, white: the system tints the small icon of a notification -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M9 18V5.5l11-2V16M9 18a2.5 2.5 0 1 1-5 0a2.5 2.5 0 1 1 5 0M20 16a2.5 2.5 0 1 1-5 0a2.5 2.5 0 1 1 5 0" />
+</vector>

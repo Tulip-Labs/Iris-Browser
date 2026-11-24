@@ -37,6 +37,19 @@ object Store {
         get() = p.getBoolean("shields", true)
         set(v) = p.edit().putBoolean("shields", v).apply()
 
+    /** audio keeps playing when the screen goes off or Iris leaves the
+     *  screen: the page is not paused, and a foreground service keeps it
+     *  alive with the controls in the notification */
+    var backgroundAudio: Boolean
+        get() = p.getBoolean("backgroundAudio", true)
+        set(v) = p.edit().putBoolean("backgroundAudio", v).apply()
+
+    /** the notification permission was asked once, the first time audio
+     *  played (never at launch, and never again after an answer) */
+    var askedNotifications: Boolean
+        get() = p.getBoolean("askedNotifications", false)
+        set(v) = p.edit().putBoolean("askedNotifications", v).apply()
+
     /** how hard Shields block: Moderate, Aggressive or Ultra aggressive */
     var shieldLevel: ShieldLevel
         get() = ShieldLevel.of(p.getString("shieldLevel", null))

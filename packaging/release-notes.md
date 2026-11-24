@@ -1,3 +1,20 @@
+Iris 2.2.5: audio keeps playing in the background, like Brave.
+
+**Android**
+- **Audio keeps playing when the screen goes off or you leave Iris.** Play anything — a video, a song, a YouTube video — and it keeps playing in the background, with play, pause and stop in the notification and on the lock screen. Tapping the notification brings you back to the page.
+- **Background audio is on by default.** Turn it off in the Shields panel, under Background audio; the sound then stops when Iris leaves the screen, as before.
+- **Iris asks for the notification permission the first time audio plays**, so the playback controls can show. Saying no changes nothing about the sound: the audio still plays, and the controls still show from the lock screen.
+- **How it works:** the page that plays is not paused when Iris leaves the screen, a foreground service keeps it alive, and the page is kept visible to Chromium so YouTube does not pause it when it hides. The service stops when the sound stops, the tab closes, or you stop it from the notification. Swiping Iris away from recents still stops the sound — the page belongs to the app's window, so it goes with it.
+
+**Linux**
+- The same version number as Android; nothing else changed.
+
+**Install**
+- Linux: `flatpak install --user Iris-x86_64.flatpak`
+- Android: `Iris-android.apk` (Android 10 and newer). It installs over 2.2.4. `Iris-android-cefrium.apk` installs over the Cefrium build.
+
+---
+
 Iris 2.2.4: safer downloads, links and updates, and lighter on memory over a long day.
 
 **Linux**

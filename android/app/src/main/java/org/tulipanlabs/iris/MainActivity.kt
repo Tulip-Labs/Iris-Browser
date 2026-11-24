@@ -32,6 +32,11 @@ class MainActivity : ComponentActivity() {
     // calls: Android asks for the camera and the microphone once
     private val media = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { answer() }
 
+    // background audio: the notification permission, asked the first time
+    // audio plays (never at launch); the answer changes nothing about the
+    // sound — the service runs and the media notification shows either way
+    private val notify = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     /** gives the page what Android allows Iris */
     private fun answer() {
         val req = model.mediaRequest ?: return
@@ -74,6 +79,12 @@ class MainActivity : ComponentActivity() {
                     val i = runCatching { req.createIntent() }.getOrNull()
                     if (i == null) { req.answer(null); model.fileRequest = null } else pick.launch(i)
                 }
+                LaunchedEffect(model.notificationRequest) {
+                    if (model.notificationRequest) {
+                        model.notificationRequest = false
+                        notify.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
                 // back: leave full screen, then go back in the page; at the
                 // start of a tab's history Iris goes to the background, its
                 // tabs kept
@@ -108,12 +119,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
-        model.current?.web?.onPause()
+        // the page that plays is not paused, and the service that keeps it
+        // playing starts here, while Iris is still in front; every other
+        // shown page pauses as it always has
+        model.enterBackground()
         model.save()
     }
 
     override fun onResume() {
         super.onResume()
+        model.leaveBackground()
         model.current?.web?.onResume()
     }
 
