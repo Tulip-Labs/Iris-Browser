@@ -8,9 +8,11 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.os.Message
+import android.util.AttributeSet
 import android.view.ContextThemeWrapper
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
@@ -32,6 +34,30 @@ object EngineFactory {
 }
 
 private const val PRIVATE_PROFILE = "private"
+
+/**
+ * A WebView that never tells Chromium its page is hidden while background
+ * audio is on. Chromium suspends media for pages it believes are not
+ * visible — from the view's own visibility callbacks, which fire when the
+ * app is minimised or the screen goes off — and a MediaSession alone does
+ * not stop it: the suspension happens before the session is consulted. So
+ * the callbacks report the page visible, and the sound keeps running. The
+ * page is still paused by the model when it is not the one playing, so this
+ * changes nothing for a page with no sound.
+ */
+private class AudioWebView @JvmOverloads constructor(
+    context: Context, attrs: AttributeSet? = null, defStyleAttr: Int = 0,
+) : WebView(context, attrs, defStyleAttr) {
+    /** fired when the containing window is hidden (minimise, screen off) */
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(if (Store.backgroundAudio) View.VISIBLE else visibility)
+    }
+
+    /** fired when this view or an ancestor changes visibility */
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, if (Store.backgroundAudio) View.VISIBLE else visibility)
+    }
+}
 
 /** one page drawn by Android System WebView */
 private class WebPage(val web: WebView, private val base: MutableContextWrapper) : PageView {
@@ -101,7 +127,7 @@ object WebViewEngine : Engine {
         // prefers-color-scheme
         val base = MutableContextWrapper(act).also { contexts.add(it) }
         val themed = ContextThemeWrapper(base, if (model.dark) R.style.Iris_Dark else R.style.Iris)
-        val w = WebView(themed)
+        val w = AudioWebView(themed)
         // a container keeps its cookies and site data in a profile of its own
         // (Android System WebView 123 and newer)
         profileName(tab)?.let { name ->
@@ -266,6 +292,17 @@ object WebViewEngine : Engine {
     private class Chrome(val t: Tab, val model: BrowserModel) : WebChromeClient() {
         override fun onProgressChanged(view: WebView, newProgress: Int) {
             model.onProgress(t, newProgress)
+        }
+
+        // the audio reporter (assets/js/audio.js): one line when the page
+        // starts or stops playing sound, so Iris can keep it playing
+        override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+            val text = message.message()
+            if (text.startsWith("[iris-audio] ")) {
+                model.onAudioState(t, text.removePrefix("[iris-audio] ").trim() == "playing")
+                return true
+            }
+            return super.onConsoleMessage(message)
         }
 
         override fun onReceivedTitle(view: WebView, title: String?) {

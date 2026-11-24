@@ -89,6 +89,8 @@ interface PageEvents {
     fun onFileChooser(t: Tab, request: FileRequest)
     fun onMediaRequest(t: Tab, request: MediaRequest)
     fun onLongPress(t: Tab, link: String?, image: String?)
+    /** a page started or stopped playing sound (its own report, by console) */
+    fun onAudioState(t: Tab, playing: Boolean)
     /** a page opened a window: the held tab for it, or null when it may not open */
     fun newHeldTab(from: Tab): Tab?
     /** a held pop-up went somewhere allowed: it becomes a tab beside its page */
@@ -120,6 +122,11 @@ interface Engine {
     val supportsDocumentStartScript: Boolean
     /** the activity changed (remade): pages made in its context follow it */
     fun onActivityChanged(activity: Activity?) {}
+
+    /** whether a page of this engine is playing sound right now: Cefrium
+     *  asks its browser (its own audio state); System WebView has no such
+     *  query, so it answers from the page's report alone (false here) */
+    fun isPlayingAudio(tab: Tab): Boolean = false
 
     /** the tab's page, made on first use (null until the activity is here) */
     fun createPage(tab: Tab, model: BrowserModel): PageView?

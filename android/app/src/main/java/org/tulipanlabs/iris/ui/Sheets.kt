@@ -60,6 +60,7 @@ fun ShieldsSheet(model: BrowserModel, open: Boolean, onClose: () -> Unit) {
     var level by remember(open) { mutableStateOf(Store.shieldLevel) }
     val site = t?.url?.let { Search.host(it) }?.let { Search.site(it) }
     var here by remember(open, site) { mutableStateOf(t?.let { model.shieldsFor(it.url) } ?: true) }
+    var audio by remember(open) { mutableStateOf(Store.backgroundAudio) }
     GlassSheet(open, onClose, "Shields") {
         Txt("Ads and trackers are stopped inside Chromium, before a request leaves the phone, as in Brave. Cookies never go to other sites.",
             Modifier.padding(horizontal = 24.dp), size = 14.sp, color = p.ink2)
@@ -89,6 +90,13 @@ fun ShieldsSheet(model: BrowserModel, open: Boolean, onClose: () -> Unit) {
             Txt(level.about, Modifier.padding(horizontal = 24.dp, vertical = 6.dp), size = 13.sp, color = p.ink2)
             Txt("If a site looks wrong, turn Shields off for it above.", Modifier.padding(horizontal = 24.dp), size = 13.sp, color = p.ink2)
         }
+        Separator()
+        SectionTitle("Background audio")
+        GlassRow(Glyph.MUSIC, "Background audio", sub = if (audio) "Sound keeps playing with the screen off or Iris behind another app" else "Sound stops when Iris leaves the screen") {
+            GlassToggle(audio) { audio = it; model.applyBackgroundAudio(it) }
+        }
+        Txt("Iris asks for the notification permission the first time audio plays, so the playback controls can show. Saying no changes nothing about the sound.",
+            Modifier.padding(horizontal = 24.dp, vertical = 6.dp), size = 13.sp, color = p.ink2)
     }
 }
 

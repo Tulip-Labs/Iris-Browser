@@ -1,10 +1,13 @@
 package org.tulipanlabs.iris
 
+import android.Manifest
 import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -64,7 +67,7 @@ data class Pressed(val tab: Tab, val link: String?, val image: String?)
  * Cefrium, by flavor) is behind Engine; the policy here (Shields, pop-ups,
  * the sandbox, sign-ins) is the same for both.
  */
-class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents {
+class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents, AudioController {
     val tabs = mutableStateListOf<Tab>()
     var current by mutableStateOf<Tab?>(null)
         private set
@@ -79,6 +82,17 @@ class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents {
     var fileRequest by mutableStateOf<FileRequest?>(null)
     /** a page asking for the camera or microphone, answered by the activity */
     var mediaRequest by mutableStateOf<MediaRequest?>(null)
+    /** the notification permission, asked the first time audio plays */
+    var notificationRequest by mutableStateOf(false)
+    /** the tabs whose pages are playing sound, latest first to last: the
+     *  service keeps the latest one playing */
+    private val playingTabs = ArrayDeque<Tab>()
+    /** the tab whose page is playing sound, if any */
+    val audioTab: Tab? get() = playingTabs.lastOrNull()
+    /** sound is playing in a page right now */
+    val audioPlaying: Boolean get() = playingTabs.isNotEmpty()
+    /** the activity is behind Iris (its onPause ran, its onResume has not) */
+    private var backgrounded = false
     /** the activity: pages are made in its context (dialogs, pickers), swapped when it is remade */
     var activity: Activity? = null
         set(v) { field = v; engine.onActivityChanged(v) }
@@ -104,6 +118,7 @@ class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents {
         }
         if (tabs.isEmpty()) newTab() else select(tabs[Store.selected.coerceIn(0, tabs.size - 1)])
         Shields.changed = { synchronized(css) { css.clear() } }
+        AudioPlayback.controller = this
     }
 
     fun newTab(url: String? = null, container: String? = null, after: Tab? = null, select: Boolean = true): Tab {
@@ -138,7 +153,9 @@ class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents {
     }
 
     fun select(t: Tab) {
-        current?.let { it.lastShown = System.currentTimeMillis(); it.web?.onPause(); it.web?.setPreraster(false) }
+        // the page that plays sound is not paused when you leave it for
+        // another tab: that is how its sound survives the switch
+        current?.let { it.lastShown = System.currentTimeMillis(); if (it.web !== audioTab?.web) it.web?.onPause(); it.web?.setPreraster(false) }
         current = t
         t.lastShown = System.currentTimeMillis()
         t.pending?.let { p -> if (activity != null) { t.pending = null; load(t, p) } }
@@ -166,6 +183,8 @@ class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents {
         val i = tabs.indexOf(t)
         if (i < 0) return
         if (t.url.isNotEmpty() && !t.isPrivate) closed.addLast(t.url to t.container)
+        // the page that played is gone: nothing is left to keep playing
+        if (playingTabs.remove(t) && playingTabs.isEmpty()) AudioPlayback.stop(ctx)
         tabs.removeAt(i)
         destroy(t)
         if (current === t) {
@@ -264,6 +283,32 @@ class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents {
         }
     }
 
+    private val audioReport by lazy { runCatching { ctx.assets.open("js/audio.js").bufferedReader().use { it.readText() } }.getOrDefault("") }
+    private val audioVisible by lazy { runCatching { ctx.assets.open("js/audio-visible.js").bufferedReader().use { it.readText() } }.getOrDefault("") }
+
+    /** the audio scripts, in the page's own world: the reporter on every
+     *  page (it only listens), the visibility one only while background
+     *  audio is on (it is what stops YouTube pausing on the page hiding) */
+    private fun injectAudio(page: PageView) {
+        if (audioReport.isNotBlank()) runCatching { page.evaluateJavascript(audioReport) }
+        if (Store.backgroundAudio && audioVisible.isNotBlank()) runCatching { page.evaluateJavascript(audioVisible) }
+    }
+
+    /** the setting changed: pages opened from now on carry the visibility
+     *  script, and the shown page gets it at once, so no reload is needed.
+     *  Turning it off stops nothing that plays now; the next time Iris
+     *  leaves the screen the page pauses as it always has */
+    fun applyBackgroundAudio(on: Boolean) {
+        Store.backgroundAudio = on
+        // the shown page gets both scripts at once: the visibility one, and
+        // the reporter again, so a page already playing says so afresh
+        if (on) current?.web?.let { injectAudio(it) }
+        else {
+            playingTabs.clear()
+            AudioPlayback.stop(ctx)
+        }
+    }
+
     /** the tab's page, made on first use (null until the activity is here) */
     fun web(t: Tab): PageView? {
         t.web?.let { return it }
@@ -276,6 +321,8 @@ class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents {
     // ---- what the pages report (PageEvents) ----
 
     override fun onPageStarted(t: Tab, url: String) {
+        // the page that played went somewhere else: its sound is gone with it
+        if (playingTabs.remove(t) && playingTabs.isEmpty()) AudioPlayback.stop(ctx)
         // a pop-up that went straight to its address (no override asked):
         // checked here instead
         t.popupFrom?.let { from ->
@@ -298,7 +345,7 @@ class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents {
     }
 
     override fun onPageCommitVisible(t: Tab, url: String) {
-        t.web?.let { hide(it, url) }
+        t.web?.let { hide(it, url); injectAudio(it) }
         // where the engine cannot add the glass before the page, it comes now
         if (Search.isAIMode(url) && !engine.supportsDocumentStartScript && aiGlass.isNotBlank()) {
             t.web?.let { runCatching { it.evaluateJavascript(aiGlass) } }
@@ -312,7 +359,7 @@ class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents {
         t.top = url
         t.canBack = t.web?.canGoBack() == true
         t.canForward = t.web?.canGoForward() == true
-        t.web?.let { hide(it, url) }
+        t.web?.let { hide(it, url); injectAudio(it) }
         if (!t.isPrivate && url.startsWith("http")) Store.visit(url, t.title)
         save()
     }
@@ -438,6 +485,54 @@ class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents {
         pressed = Pressed(t, link, image)
     }
 
+    /** a page started or stopped playing sound (its own report, by console) */
+    override fun onAudioState(t: Tab, playing: Boolean) {
+        if (!Store.backgroundAudio) return
+        if (playing) {
+            playingTabs.remove(t)
+            playingTabs.addLast(t)
+            if (playingTabs.size == 1) {
+                requestNotificationPermission()
+                // already behind Iris (a page that started by itself): the
+                // service starts best-effort — Android 12 and newer may
+                // refuse a start from the background
+                if (backgrounded) AudioPlayback.start(ctx)
+            }
+        } else {
+            playingTabs.remove(t)
+            if (playingTabs.isEmpty()) AudioPlayback.stop(ctx)
+        }
+    }
+
+    /** the notification permission, asked once, the first time audio plays:
+     *  never at launch, and never again after an answer. The service starts
+     *  either way — a media notification shows even when it is off */
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33 || Store.askedNotifications) return
+        Store.askedNotifications = true
+        if (activity?.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
+        notificationRequest = true
+    }
+
+    /** the activity leaves the screen: the page that plays keeps going, and
+     *  every other shown page pauses as it always has */
+    fun enterBackground() {
+        backgrounded = true
+        // a page the console report missed still counts when its engine
+        // knows it is playing (Cefrium asks its browser)
+        if (audioTab == null) {
+            current?.takeIf { engine.isPlayingAudio(it) }?.let { playingTabs.addLast(it) }
+        }
+        if (Store.backgroundAudio && audioPlaying) AudioPlayback.start(ctx)
+        val playing = audioTab?.web
+        current?.web?.let { if (it !== playing) it.onPause() }
+    }
+
+    /** the activity is in front again */
+    fun leaveBackground() {
+        backgrounded = false
+    }
+
     override fun newHeldTab(from: Tab): Tab? {
         val nt = Tab(from.container)
         nt.popupFrom = from
@@ -532,7 +627,33 @@ class BrowserModel(app: Application) : AndroidViewModel(app), PageEvents {
         current?.let { Store.selected = tabs.indexOf(it) }
     }
 
+    // ---- the service's side: the page that plays, driven by its controls ----
+
+    override val playing: Boolean get() = audioPlaying
+    override val title: String get() = audioTab?.title ?: ""
+    override val host: String get() = audioTab?.url?.let { Search.host(it) } ?: ""
+
+    override fun play() {
+        audioTab?.web?.let {
+            runCatching { it.evaluateJavascript("document.querySelectorAll('audio,video').forEach(m=>{const p=m.play();if(p&&p.catch)p.catch(()=>{})})") }
+        }
+    }
+
+    override fun pause() {
+        audioTab?.web?.let {
+            runCatching { it.evaluateJavascript("document.querySelectorAll('audio,video').forEach(m=>m.pause())") }
+        }
+    }
+
+    override fun stop() {
+        pause()
+        playingTabs.clear()
+        AudioPlayback.stop(ctx)
+    }
+
     override fun onCleared() {
+        AudioPlayback.controller = null
+        AudioPlayback.stop(ctx)
         save()
         tabs.forEach(::destroy)
         held.forEach(::destroy)

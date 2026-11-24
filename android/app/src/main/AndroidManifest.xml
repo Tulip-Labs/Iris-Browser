@@ -6,6 +6,10 @@
     <!-- updates: Iris downloads its new version and asks Android to install it -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- background audio: a page keeps playing with the screen off -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- calls in the browser (WebRTC): asked the first time a page wants them -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -60,6 +64,12 @@
             android:theme="@style/Iris"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|fontScale"
             android:windowSoftInputMode="adjustResize" />
+
+        <!-- background audio: the page's sound, kept playing while Iris is not in front -->
+        <service
+            android:name=".AudioService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- told when an update has been installed (or failed to) -->
         <receiver android:name=".UpdateReceiver" android:exported="false" />

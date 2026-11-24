@@ -24,8 +24,8 @@ android {
         applicationId = "org.tulipanlabs.lite"
         minSdk = 29
         targetSdk = 36
-        versionCode = 224
-        versionName = "2.2.4"
+        versionCode = 225
+        versionName = "2.2.5"
     }
 
     // Two builds of the same browser, apart from each other: the webview
