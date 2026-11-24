@@ -597,7 +597,9 @@ WEBKIT_FIND_OPTIONS_WRAP_AROUND :: u32(1 << 4)
 	case .Ctx_In: browser_new_tab({url = a.s, container = a.s2, after = t, select = true})
 	case .Ctx_Copy: clipboard_offer(a.s)
 	case .Ctx_Save:
-		if t.web != nil {
+		if t.sandboxed {
+			browser_toast("Downloads are off for sites in the sandbox")
+		} else if t.web != nil {
 			d := webkit_web_view_download_uri(t.web, cstr(a.s))
 			if d != nil do unref(d)
 		}
@@ -1414,22 +1416,24 @@ Pill :: struct {
 		width = 250
 		c := b.context_info
 		ct := b.context_tab
+		// the sandbox downloads nothing, from the menu either
+		saves := ct == nil || !ct.sandboxed
 		if len(c.link) > 0 {
 			row(&items, .Tab, "Open Link in New Tab", {op = .Ctx_Tab, s = keep(c.link)})
 			for k in containers do if ct == nil || k.id != ct.container do row(&items, container_icon(k.icon), fmt.tprintf("Open Link in %s", k.name), {op = .Ctx_In, s = keep(c.link), s2 = keep(k.id)}, color = parse_color(k.color))
 			row(&items, .Link, "Copy Link", {op = .Ctx_Copy, s = keep(c.link)})
-			row(&items, .Download, "Download Link", {op = .Ctx_Save, s = keep(c.link)})
+			if saves do row(&items, .Download, "Download Link", {op = .Ctx_Save, s = keep(c.link)})
 		}
 		if len(c.image) > 0 {
 			if len(items) > 0 do append(&items, Item{kind = .Sep})
 			row(&items, .Image, "Open Image in New Tab", {op = .Ctx_Tab, s = keep(c.image)})
 			row(&items, .Copy, "Copy Image Address", {op = .Ctx_Copy, s = keep(c.image)})
-			row(&items, .Download, "Save Image", {op = .Ctx_Save, s = keep(c.image)})
+			if saves do row(&items, .Download, "Save Image", {op = .Ctx_Save, s = keep(c.image)})
 		}
 		if len(c.media) > 0 && len(c.image) == 0 {
 			if len(items) > 0 do append(&items, Item{kind = .Sep})
 			row(&items, .Copy, "Copy Video Address", {op = .Ctx_Copy, s = keep(c.media)})
-			row(&items, .Download, "Save Video", {op = .Ctx_Save, s = keep(c.media)})
+			if saves do row(&items, .Download, "Save Video", {op = .Ctx_Save, s = keep(c.media)})
 		}
 		if c.editable {
 			if len(items) > 0 do append(&items, Item{kind = .Sep})

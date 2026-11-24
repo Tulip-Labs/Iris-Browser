@@ -36,7 +36,13 @@
 
 ---
 
-## What is new in 2.2.3
+## What is new in 2.2.4
+
+- **Safer downloads, links and updates.** On Android, links from other apps open only when they are web addresses, downloads come only from the web, and updates only from Iris's own GitHub releases. On Linux, the sandbox downloads nothing from the right-click menu either, and downloaded files get safe names.
+- **Lighter over a long day on Linux**: changing page titles and trimmed history no longer hold on to memory, and history, session and settings are written safely and readable by you alone.
+- **No more update notice for the version you already have** on Linux.
+
+## What was new in 2.2.3
 
 - **Cefrium is back, as a build of its own.** Iris for Android comes in two builds now: the usual one, on Android System WebView, and a second one, **Iris Cefrium**, carrying its own Chromium (CEF, through Cefrium 0.21.0, Chromium 156), the same engine on every phone. Both install side by side; the Cefrium build does not carry the other build's tabs or sign-ins over. Its blank pages are fixed with the maintainer's fix for the renderer processes (issue #24).
 - **Each build updates itself**: the Cefrium build takes the Cefrium APK, the WebView build the plain one.

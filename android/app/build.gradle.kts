@@ -24,8 +24,8 @@ android {
         applicationId = "org.tulipanlabs.lite"
         minSdk = 29
         targetSdk = 36
-        versionCode = 223
-        versionName = "2.2.3"
+        versionCode = 224
+        versionName = "2.2.4"
     }
 
     // Two builds of the same browser, apart from each other: the webview
@@ -87,6 +87,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // the unit tests run on the computer, not a phone: Android's own
+    // classes answer with defaults there
+    testOptions { unitTests.isReturnDefaultValues = true }
+
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
         // Cefrium's Chromium reads its libraries from the disk, not from
@@ -117,4 +121,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.1")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+
+    testImplementation("junit:junit:4.13.2")
 }

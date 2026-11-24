@@ -116,9 +116,11 @@ main :: proc() {
 	}
 
 	browser_restore()
+	cwd, _ := os.get_working_directory(context.temp_allocator)
 	for a in args {
 		if strings.has_prefix(a, "-") do continue
-		browser_new_tab({url = a, select = true})
+		u := resolve_arg(a, cwd, context.temp_allocator)
+		if len(u) > 0 do browser_new_tab({url = u, select = true})
 	}
 	if len(b.tabs) == 0 do browser_new_tab({select = true})
 	after(3000, proc(_: rawptr) { updates_check() }, nil)

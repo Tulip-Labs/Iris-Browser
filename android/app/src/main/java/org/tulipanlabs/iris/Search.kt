@@ -109,12 +109,21 @@ object Search {
         val u = runCatching { URI(url) }.getOrNull() ?: return null
         val host = u.host ?: return null
         if (!(host == "www.google.com" || host == "google.com") || u.path != "/search") return null
+        // a malformed escape is no question (URLDecoder throws on one)
         val params = (u.rawQuery ?: return null).split('&').associate {
-            it.substringBefore('=') to URLDecoder.decode(it.substringAfter('=', ""), "UTF-8")
+            it.substringBefore('=') to (runCatching { URLDecoder.decode(it.substringAfter('=', ""), "UTF-8") }.getOrNull() ?: "")
         }
         if (params["udm"] != "50") return null
         val q = params["q"] ?: return null
         return q.substringBefore(SEP + AI_INSTRUCTION).removeSuffix(AI_INSTRUCTION).trim().ifEmpty { null }
+    }
+
+    /** a link another app hands Iris: a web address, or nothing */
+    fun external(url: String): String? {
+        val t = url.trim()
+        val s = scheme(t) ?: return null
+        if (s != "http" && s != "https") return null
+        return t.takeIf { host(it)?.isNotEmpty() == true }
     }
 
     fun host(url: String): String? = runCatching { URI(url).host?.lowercase() }.getOrNull()

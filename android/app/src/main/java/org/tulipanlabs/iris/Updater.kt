@@ -35,6 +35,18 @@ object Updater {
     var downloading by mutableStateOf(false)
     var progress by mutableFloatStateOf(0f)
 
+    /** the release file each build updates from */
+    fun apkName(flavor: String) = if (flavor == "cefrium") "Iris-android-cefrium.apk" else "Iris-android.apk"
+
+    /** an update comes from Iris's own releases on GitHub, over https, and nowhere else */
+    fun fromGitHub(url: String): Boolean {
+        val u = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+        return u.scheme == "https" && u.host == "github.com" && (u.path ?: "").startsWith("/Tulip-Labs/Iris-Browser/releases/download/")
+    }
+
+    /** the APK's download may only be redirected to GitHub's own file hosts */
+    private fun githubHost(h: String?) = h != null && (h == "github.com" || h == "objects.githubusercontent.com" || h == "release-assets.githubusercontent.com" || h.endsWith(".githubusercontent.com"))
+
     fun newer(a: String, b: String): Boolean {
         val x = a.split('.').map { it.toIntOrNull() ?: 0 }
         val y = b.split('.').map { it.toIntOrNull() ?: 0 }
@@ -64,10 +76,12 @@ object Updater {
             // this build updates itself: the cefrium flavor takes its own
             // APK, the webview flavor the plain one; an older release with
             // one APK still works
-            val want = if (BuildConfig.FLAVOR == "cefrium") "Iris-android-cefrium.apk" else "Iris-android.apk"
-            val apk = (list.firstOrNull { it.getString("name") == want }
-                ?: list.firstOrNull { it.getString("name").endsWith(".apk") })
-                ?.getString("browser_download_url")
+            val want = apkName(BuildConfig.FLAVOR)
+            // a release without this build's APK offers nothing: the other
+            // build's APK has another id and could never install over this one
+            val apk = list.firstOrNull { it.optString("name") == want }
+                ?.optString("browser_download_url")
+                ?.takeIf { fromGitHub(it) }
             if (apk != null && newer(v, BuildConfig.VERSION_NAME)) Release(v, apk, j.optString("html_url")) else null
         }.getOrNull().also { r -> withContext(Dispatchers.Main) { available = r } }
     }
@@ -89,28 +103,45 @@ object Updater {
                 params.setAppPackageName(c.packageName)
                 if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
                 val id = installer.createSession(params)
-                installer.openSession(id).use { s ->
+                // a download that fails part way leaves no session behind
+                try { installer.openSession(id).use { s ->
+                    if (!fromGitHub(r.apk)) throw IllegalStateException("not an Iris release")
                     val conn = URL(r.apk).openConnection() as HttpURLConnection
                     conn.instanceFollowRedirects = true
+                    conn.connectTimeout = 20000
+                    conn.readTimeout = 60000
                     conn.setRequestProperty("User-Agent", "Iris-Android/${BuildConfig.VERSION_NAME}")
+                    if (conn.responseCode != 200) throw IllegalStateException("HTTP ${conn.responseCode}")
+                    if (conn.url.protocol != "https" || !githubHost(conn.url.host)) throw IllegalStateException("not from GitHub")
                     val total = conn.contentLengthLong
+                    // an APK is never this large: a broken answer stops here
+                    if (total > 1_000_000_000L) throw IllegalStateException("too large")
                     conn.inputStream.use { input ->
                         s.openWrite("iris.apk", 0, total).use { out ->
                             val buf = ByteArray(128 * 1024)
                             var n = 0L
+                            var shown = 0L
                             while (true) {
                                 val k = input.read(buf)
                                 if (k < 0) break
                                 out.write(buf, 0, k)
                                 n += k
-                                if (total > 0) withContext(Dispatchers.Main) { progress = n.toFloat() / total }
+                                // the bar moves every megabyte, not every read
+                                if (total > 0 && n - shown >= 1_048_576) {
+                                    shown = n
+                                    withContext(Dispatchers.Main) { progress = n.toFloat() / total }
+                                }
                             }
+                            if (total > 0 && n != total) throw IllegalStateException("the download stopped part way")
                             s.fsync(out)
                         }
                     }
                     val pi = PendingIntent.getBroadcast(c, id, Intent(c, UpdateReceiver::class.java).setAction(ACTION),
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
                     s.commit(pi.intentSender)
+                } } catch (e: Exception) {
+                    runCatching { installer.abandonSession(id) }
+                    throw e
                 }
             }
         } catch (e: Exception) {

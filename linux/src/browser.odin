@@ -248,6 +248,12 @@ browser_close :: proc(t: ^Tab) {
 	for x, i in b.tabs do if x == t do idx = i
 	if idx < 0 do return
 	if !tab_is_private(t) && !t.sandboxed && len(t.url) > 0 {
+		// the last CLOSED_MAX are kept for Ctrl+Shift+T
+		if len(b.closed) >= CLOSED_MAX {
+			delete(b.closed[0].url)
+			delete(b.closed[0].container)
+			ordered_remove(&b.closed, 0)
+		}
 		append(&b.closed, Saved_Tab{url = strings.clone(t.url), container = strings.clone(t.container)})
 	}
 	ordered_remove(&b.tabs, idx)
@@ -276,8 +282,19 @@ browser_close_later :: proc(t: ^Tab) {
 browser_reopen :: proc() {
 	if len(b.closed) == 0 do return
 	s := pop(&b.closed)
-	browser_new_tab({url = s.url, container = s.container, select = true})
+	defer {
+		delete(s.url)
+		delete(s.container)
+	}
+	// a container removed since then: the tab opens without one
+	c := s.container
+	if c != "" {
+		if _, ok := container_get(c); !ok do c = ""
+	}
+	browser_new_tab({url = s.url, container = c, select = true})
 }
+
+CLOSED_MAX :: 25
 
 browser_cycle :: proc(d: int) {
 	if len(b.tabs) < 2 || b.current == nil do return

@@ -25,7 +25,10 @@ url_parse :: proc(u: string) -> (r: Url, ok: bool) {
 	rest := u[colon + 1:]
 	if strings.has_prefix(rest, "//") {
 		rest = rest[2:]
-		end := strings.index_any(rest, "/?#")
+		// for the web's own schemes a backslash ends the host too, as in
+		// every engine (https://evil.com\@www.google.com is evil.com)
+		stops := special_scheme(r.scheme) ? "/?#\\" : "/?#"
+		end := strings.index_any(rest, stops)
 		if end < 0 do end = len(rest)
 		auth := rest[:end]
 		rest = rest[end:]
@@ -45,29 +48,62 @@ url_parse :: proc(u: string) -> (r: Url, ok: bool) {
 	return r, true
 }
 
-/// a query parameter, decoded (allocated), or false
-url_param :: proc(u: Url, name: string, allocator := context.allocator) -> (string, bool) {
+@(private="file") special_scheme :: proc(s: string) -> bool {
+	for x in ([?]string{"http", "https", "ws", "wss", "ftp", "file"}) do if strings.equal_fold(s, x) do return true
+	return false
+}
+
+/// a query parameter, decoded (allocated), or false; plus_space reads a
+/// "+" as a space, as forms write them
+url_param :: proc(u: Url, name: string, allocator := context.allocator, plus_space := false) -> (string, bool) {
 	q := u.query
 	for kv in strings.split_iterator(&q, "&") {
 		eq := strings.index_byte(kv, '=')
 		if eq < 0 do eq = len(kv)
 		if kv[:eq] != name do continue
-		return decode(eq < len(kv) ? kv[eq + 1:] : "", allocator), true
+		return decode(eq < len(kv) ? kv[eq + 1:] : "", allocator, plus_space), true
 	}
 	return "", false
 }
 
-decode :: proc(s: string, allocator := context.allocator) -> string {
+@(private="file") hex_value :: proc(c: u8) -> (u8, bool) {
+	switch c {
+	case '0' ..= '9': return c - '0', true
+	case 'a' ..= 'f': return c - 'a' + 10, true
+	case 'A' ..= 'F': return c - 'A' + 10, true
+	}
+	return 0, false
+}
+
+/// %XX escapes undone (exactly two hex digits; anything else stays as it is)
+decode :: proc(s: string, allocator := context.allocator, plus_space := false) -> string {
 	b := strings.builder_make(allocator)
 	for i := 0; i < len(s); i += 1 {
-		if s[i] == '%' && i + 3 <= len(s) {
-			if v, ok := strconv.parse_uint(s[i + 1:i + 3], 16); ok {
-				strings.write_byte(&b, u8(v))
+		if s[i] == '%' && i + 2 < len(s) {
+			hi, ok1 := hex_value(s[i + 1])
+			lo, ok2 := hex_value(s[i + 2])
+			if ok1 && ok2 {
+				strings.write_byte(&b, hi << 4 | lo)
 				i += 2
 				continue
 			}
 		}
-		strings.write_byte(&b, s[i])
+		strings.write_byte(&b, plus_space && s[i] == '+' ? ' ' : s[i])
+	}
+	return strings.to_string(b)
+}
+
+/// a file:// address for a path on this computer (each part escaped)
+file_uri :: proc(path: string, allocator := context.allocator) -> string {
+	b := strings.builder_make(allocator)
+	strings.write_string(&b, "file://")
+	for c in transmute([]u8)path {
+		switch c {
+		case 'a' ..= 'z', 'A' ..= 'Z', '0' ..= '9', '-', '_', '.', '~', '/':
+			strings.write_byte(&b, c)
+		case:
+			fmt.sbprintf(&b, "%%%02X", c)
+		}
 	}
 	return strings.to_string(b)
 }
@@ -114,7 +150,8 @@ ai_query :: proc(url: string, allocator := context.allocator) -> (string, bool) 
 	if !ok || !is_google(u.host) || u.path != "/search" do return "", false
 	udm, h1 := url_param(u, "udm", context.temp_allocator)
 	if !h1 || udm != "50" do return "", false
-	q, h2 := url_param(u, "q", context.temp_allocator)
+	// Google's own search box writes the question with "+" for spaces
+	q, h2 := url_param(u, "q", context.temp_allocator, plus_space = true)
 	if !h2 do return "", false
 	words := q
 	if i := strings.index(q, SEPARATOR + INSTRUCTION); i >= 0 {
@@ -259,6 +296,20 @@ resolve :: proc(input: string, allocator := context.allocator) -> string {
 	return ai_url(t, allocator)
 }
 
+/// what an address given to Iris when it starts opens: an address as typed
+/// in the address bar, and a path a local file. Anything else (a
+/// javascript: link from another program, words) is a question, never run.
+resolve_arg :: proc(arg: string, cwd: string, allocator := context.allocator) -> string {
+	t := strings.trim_space(arg)
+	if len(t) == 0 do return ""
+	if t[0] == '/' do return file_uri(t, allocator)
+	if strings.has_prefix(t, "./") || strings.has_prefix(t, "../") || strings.has_prefix(t, "~/") {
+		if t[0] == '~' do return file_uri(strings.concatenate({home_dir(), t[1:]}, context.temp_allocator), allocator)
+		return file_uri(strings.concatenate({cwd, "/", t}, context.temp_allocator), allocator)
+	}
+	return resolve(t, allocator)
+}
+
 /// how an address shows in the address bar: the question, or the host
 display_url :: proc(url: string, allocator := context.allocator) -> string {
 	if len(url) == 0 || url == "about:blank" do return ""
@@ -320,6 +371,35 @@ is_sign_in :: proc(h: string) -> bool {
 	testing.expect(t, !ok2)
 	_, ok3 := unwrap_redirect("https://evil.com/url?q=https://example.com", context.temp_allocator)
 	testing.expect(t, !ok3)
+}
+
+@(test) test_url_edges :: proc(t: ^testing.T) {
+	// a backslash ends the host, as WebKit reads it: no spoofed AI Mode
+	u, _ := url_parse("https://evil.com\\@www.google.com/search?udm=50&q=hi")
+	testing.expect_value(t, u.host, "evil.com")
+	testing.expect(t, !is_ai_mode("https://evil.com\\@www.google.com/search?udm=50&q=hi"))
+	testing.expect_value(t, display_url("https://evil.com\\@www.google.com/search?udm=50&q=hi", context.temp_allocator), "evil.com")
+	// escapes: two hex digits exactly
+	testing.expect_value(t, decode("a%20b%zz%_1%4", context.temp_allocator), "a b%zz%_1%4")
+	testing.expect_value(t, decode("%E2%9C%93", context.temp_allocator), "\u2713")
+	testing.expect_value(t, decode("a+b", context.temp_allocator), "a+b")
+	testing.expect_value(t, decode("a+b", context.temp_allocator, true), "a b")
+	q, ok := ai_query("https://www.google.com/search?q=why+is+the+sky+blue&udm=50", context.temp_allocator)
+	testing.expect(t, ok)
+	testing.expect_value(t, q, "why is the sky blue")
+	// a redirect target keeps its plus signs
+	r, ok2 := unwrap_redirect("https://www.google.com/url?q=https://example.com/a+b", context.temp_allocator)
+	testing.expect(t, ok2)
+	testing.expect_value(t, r, "https://example.com/a+b")
+}
+
+@(test) test_start_arguments :: proc(t: ^testing.T) {
+	testing.expect_value(t, resolve_arg("example.com", "/home/a", context.temp_allocator), "https://example.com")
+	testing.expect_value(t, resolve_arg("https://example.com/x", "/home/a", context.temp_allocator), "https://example.com/x")
+	testing.expect_value(t, resolve_arg("/home/a/My Page#1.html", "/x", context.temp_allocator), "file:///home/a/My%20Page%231.html")
+	testing.expect_value(t, resolve_arg("./b.html", "/home/a", context.temp_allocator), "file:///home/a/./b.html")
+	testing.expect(t, strings.contains(resolve_arg("javascript:alert(1)", "/", context.temp_allocator), "udm=50"))
+	testing.expect_value(t, resolve_arg("   ", "/", context.temp_allocator), "")
 }
 
 @(test) test_untrusted :: proc(t: ^testing.T) {

@@ -157,10 +157,11 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 	if t.web == nil do return
 	Job :: struct {
 		t:    ^Tab,
+		id:   int,
 		done: proc(t: ^Tab, result: string),
 	}
 	j := new(Job)
-	j^ = {t, done}
+	j^ = {t, t.id, done}
 	webkit_web_view_evaluate_javascript(t.web, cstr(js), -1, nil, nil, nil, rawptr(proc "c" (o: ^GObject, res: ^GAsyncResult, d: rawptr) {
 		context = main_context
 		j := cast(^Job)d
@@ -168,6 +169,8 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 		v := webkit_web_view_evaluate_javascript_finish(cast(^WebKitWebView)o, res, nil)
 		if v == nil do return
 		defer unref(v)
+		// the tab may have closed while the page answered
+		if !browser_has_tab(j.t) || j.t.id != j.id do return
 		s := jsc_value_to_string(v)
 		j.done(j.t, string(s))
 		g_free(rawptr(s))

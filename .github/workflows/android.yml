@@ -55,7 +55,7 @@ jobs:
           IRIS_KEY_PASSWORD: ${{ secrets.IRIS_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleWebviewRelease
+          ./gradlew --no-daemon testWebviewReleaseUnitTest assembleWebviewRelease
       - name: Build cefrium APK
         working-directory: android
         env:

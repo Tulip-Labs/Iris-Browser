@@ -24,6 +24,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+      - name: The tag is the version Iris carries
+        run: sh packaging/check/versions.sh "$TAG"
       - name: The release
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then

@@ -1,3 +1,27 @@
+Iris 2.2.4: safer downloads, links and updates, and lighter on memory over a long day.
+
+**Linux**
+- **No more update notice for the version you already have.** Iris 2.2.3 for Linux still called itself 2.2.2, so it told you every day that 2.2.3 was out. Each part of Iris now carries the same version, and the release checks it.
+- **Lighter over a long day.** A page that keeps changing its title (a chat, a mail inbox, a timer) no longer leaves a copy of every title in memory, and the oldest history entries really let go of their memory when the history is trimmed. The list of closed tabs keeps the last 25.
+- **History, session and settings are written safely and privately**: each file reaches the disk before it replaces the old one, so a power cut leaves the old file or the new one, never an empty one; and they are readable by you alone.
+- **The sandbox downloads nothing, from the right-click menu either.** "Download Link", "Save Image" and "Save Video" are gone from pages in the sandbox, as downloads already were.
+- **Downloads get a safe file name**: no folders, no control characters, no hidden files, and a name too long for the disk is shortened with its extension kept. The folder button beside a download now finds files with spaces or symbols in their names.
+- **The address bar can no longer be fooled by a backslash** in an address, and Google questions typed in Google's own search box show with spaces, not plus signs.
+- **`iris example.com` and `iris ./page.html` open what you mean** from a terminal; anything that is not an address (a `javascript:` link from another program) becomes a question, and never runs.
+- A container removed since a tab was closed no longer stops that tab from reopening; and "Ask Google AI Mode" from the right-click menu no longer reads a tab you closed in the meantime.
+
+**Android**
+- **Links from other apps open only when they are web addresses.** Another app can no longer hand Iris a `javascript:`, `file:` or `intent:` address.
+- **Downloads come only from the web**, and a server's error page is no longer saved as your file.
+- **Updates come only from Iris's own releases on GitHub**, over https. The Cefrium build no longer tries to install the WebView build's APK when a release lacks its own, a download cut short is never handed to Android's installer, and a failed update leaves nothing behind.
+- The download bar moves every megabyte instead of on every read, which is lighter on the phone.
+
+**Install**
+- Linux: `flatpak install --user Iris-x86_64.flatpak`
+- Android: `Iris-android.apk` (Android 10 and newer). It installs over 2.2.3. `Iris-android-cefrium.apk` installs over the Cefrium build.
+
+---
+
 Iris 2.2.3: Cefrium is back, as a build of its own.
 
 **Android**

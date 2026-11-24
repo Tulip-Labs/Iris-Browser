@@ -46,7 +46,9 @@ object Downloads {
         var name = (suggested?.takeIf { it.isNotBlank() } ?: URLUtil.guessFileName(url, disposition, mimeType)).replace('/', '_').ifEmpty { "download" }
         val mime = mimeType?.substringBefore(';')?.trim()?.takeIf { it.isNotEmpty() && it != "application/octet-stream" }
             ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "")) ?: "application/octet-stream"
-        if (url.startsWith("data:") || url.startsWith("blob:")) {
+        // only from the web: a file: or content: address would copy Iris's
+        // own files (or another app's) into the public Downloads folder
+        if (!isWeb(url)) {
             android.widget.Toast.makeText(c, "This download can't be saved from here", android.widget.Toast.LENGTH_SHORT).show()
             return
         }
@@ -64,6 +66,9 @@ object Downloads {
                 conn.instanceFollowRedirects = true
                 conn.connectTimeout = 20000
                 conn.readTimeout = 60000
+                if (conn.responseCode !in 200..299) throw IllegalStateException("HTTP ${conn.responseCode}")
+                // a redirect may not leave the web either
+                if (!isWeb(conn.url.toString())) throw IllegalStateException("not a web address")
                 val total = if (length > 0) length else conn.contentLengthLong
                 val values = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, name)
@@ -102,6 +107,13 @@ object Downloads {
                 main.post { d.failed = true }
             }
         }
+    }
+
+    /** an address Iris downloads from: http or https, with a host */
+    fun isWeb(url: String): Boolean {
+        val u = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+        val s = u.scheme?.lowercase() ?: return false
+        return (s == "http" || s == "https") && !u.host.isNullOrEmpty()
     }
 
     fun open(c: Context, d: Download) {

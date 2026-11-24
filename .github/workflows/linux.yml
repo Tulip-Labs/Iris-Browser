@@ -44,6 +44,8 @@ jobs:
           mkdir -p /opt/odin && tar -xzf /tmp/odin.tar.gz -C /opt/odin --strip-components=1
           echo /opt/odin >> $GITHUB_PATH
           echo ODIN_ROOT=/opt/odin >> $GITHUB_ENV
+      - name: One version everywhere (Linux, Android, metainfo, release notes)
+        run: sh packaging/check/versions.sh
       - name: AI Mode's glass and the YouTube script are the same on Android and Linux
         run: |
           cmp linux/src/aimode.js android/app/src/main/assets/js/aimode.js

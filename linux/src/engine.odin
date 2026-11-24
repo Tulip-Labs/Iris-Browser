@@ -9,7 +9,9 @@ import "core:os"
 import "core:path/filepath"
 import "core:strings"
 import "core:sys/linux"
+import "core:testing"
 import "core:time"
+import "core:unicode/utf8"
 
 // ---------------------------------------------------------------- the engine
 
@@ -166,10 +168,13 @@ containers: [dynamic]Container
 /// every new network session (downloads listen to it)
 session_made: proc(s: ^WebKitNetworkSession)
 
-@(private="file") new_id :: proc() -> string {
+new_id :: proc() -> string {
 	b: [16]u8
 	linux.getrandom(b[:], {})
-	return fmt.aprintf("%x", b)
+	// 32 hex digits ("%x" on the array wrote "[1f, a, ...]")
+	sb := strings.builder_make()
+	for x in b do fmt.sbprintf(&sb, "%02x", x)
+	return strings.to_string(sb)
 }
 
 containers_ensure :: proc() {
@@ -201,12 +206,24 @@ container_get :: proc(id: string) -> (Container, bool) {
 	return {}, false
 }
 
+/// a container's id as Iris makes them (hex; before 2.2.4 the bytes were
+/// written as a list, "[1f, a, ...]"): anything else in containers.json
+/// never names a folder
+valid_container_id :: proc(id: string) -> bool {
+	if len(id) == 0 || len(id) > 128 do return false
+	for c in transmute([]u8)id {
+		ok := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || c == '[' || c == ']' || c == ',' || c == ' '
+		if !ok do return false
+	}
+	return true
+}
+
 /// the network session of a container ("" for none): cookies and storage
 /// of its own, on disk (private: in memory only)
 container_session :: proc(id: string) -> ^WebKitNetworkSession {
 	if s, ok := sessions[id]; ok do return s
 	s: ^WebKitNetworkSession
-	if id == PRIVATE_ID {
+	if id == PRIVATE_ID || (id != "" && !valid_container_id(id)) {
 		s = webkit_network_session_new_ephemeral()
 	} else {
 		sub := id == "" ? "default" : strings.concatenate({"containers/", id}, context.temp_allocator)
@@ -258,6 +275,7 @@ container_remove :: proc(id: string) {
 		webkit_website_data_manager_clear(webkit_network_session_get_website_data_manager(s), WEBKIT_WEBSITE_DATA_ALL, 0, nil, nil, nil)
 		unref(s)
 	}
+	if !valid_container_id(id) do return
 	for base in ([?]string{data_dir(), cache_dir()}) do os.remove_all(join({base, "web", "containers", id}, context.temp_allocator))
 }
 
@@ -317,12 +335,37 @@ downloads_listen :: proc(s: ^WebKitNetworkSession) {
 	return false
 }
 
+/// the name a site suggests, made safe for the Downloads folder: no folders,
+/// no control characters, not hidden, and short enough for the file system
+/// (255 bytes), its extension kept
+download_name :: proc(name: string, allocator := context.temp_allocator) -> string {
+	b := strings.builder_make(context.temp_allocator)
+	for r in name {
+		switch {
+		case r == '/' || r == '\\': strings.write_byte(&b, '_')
+		case r < 0x20 || r == 0x7f || r == 0xfffd: strings.write_byte(&b, '_')
+		case: strings.write_rune(&b, r)
+		}
+	}
+	clean := strings.trim(strings.to_string(b), " .")
+	if clean == "" do return strings.clone("download", allocator)
+	MAX :: 200 // room left for " (99)"
+	if len(clean) > MAX {
+		ext := filepath.ext(clean)
+		if len(ext) > 16 do ext = ""
+		keep := MAX - len(ext)
+		// never cut a character in half
+		for keep > 0 && (clean[keep] & 0xc0) == 0x80 do keep -= 1
+		clean = strings.concatenate({clean[:keep], ext}, context.temp_allocator)
+	}
+	return strings.clone(clean, allocator)
+}
+
 /// a free name in the Downloads folder ("a.pdf", "a (2).pdf", ...)
 unique_download :: proc(name: string) -> string {
 	dir := downloads_dir()
 	make_dirs(dir)
-	clean, _ := strings.replace_all(name, "/", "_", context.temp_allocator)
-	base := (clean == "" || clean == "." || clean == "..") ? "download" : clean
+	base := download_name(name)
 	ext := filepath.ext(base)
 	stem := base[:len(base) - len(ext)]
 	p := join({dir, base})
@@ -404,7 +447,7 @@ download_show :: proc(d: ^Download) {
 		spawn({"xdg-open", filepath.dir(d.path)})
 		return
 	}
-	uri := g_variant_new_string(cstr(strings.concatenate({"file://", d.path}, context.temp_allocator)))
+	uri := g_variant_new_string(cstr(file_uri(d.path, context.temp_allocator)))
 	t := g_variant_type_new("s")
 	arr := g_variant_new_array(t, &uri, 1)
 	g_variant_type_free(t)
@@ -422,3 +465,31 @@ spawn :: proc(argv: []string) {
 }
 
 @(private="file") _t :: time.Duration
+
+// ---------------------------------------------------------------- tests
+
+@(test) test_download_names :: proc(t: ^testing.T) {
+	testing.expect_value(t, download_name("report.pdf"), "report.pdf")
+	testing.expect_value(t, download_name("../../.bashrc"), "_.._.bashrc")
+	testing.expect_value(t, download_name(".hidden"), "hidden")
+	testing.expect_value(t, download_name("a\nb\x00c.txt"), "a_b_c.txt")
+	testing.expect_value(t, download_name("dir\\file.zip"), "dir_file.zip")
+	testing.expect_value(t, download_name(""), "download")
+	testing.expect_value(t, download_name(" .. "), "download")
+	long := strings.repeat("ñ", 150, context.temp_allocator) // 300 bytes
+	n := download_name(strings.concatenate({long, ".tar.gz"}, context.temp_allocator))
+	testing.expect(t, len(n) <= 200)
+	testing.expect(t, strings.has_suffix(n, ".gz"))
+	testing.expect(t, utf8.valid_string(n))
+}
+
+@(test) test_container_ids :: proc(t: ^testing.T) {
+	id := new_id()
+	defer delete(id)
+	testing.expect_value(t, len(id), 32)
+	testing.expect(t, valid_container_id(id))
+	testing.expect(t, valid_container_id("[1, 2, 3, fa, 5, 6, 7, 8, 9, a, b, c, d, e, f, 10]"))
+	testing.expect(t, !valid_container_id("../../.."))
+	testing.expect(t, !valid_container_id("a/b"))
+	testing.expect(t, !valid_container_id(""))
+}
