@@ -1,0 +1,11 @@
+cef.tar.bz2
+cef_binary_*/
+cef-smoke
+cef-cache/
+frame.ppm
+frame.png
+debug.log
+cef_gen.check.odin
+*.pak
+icudtl.dat
+extensions/
