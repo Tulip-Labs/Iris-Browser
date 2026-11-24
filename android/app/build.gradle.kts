@@ -2,18 +2,10 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     // Cefrium's plugin: it makes the Chromium resource classes the SDK
-    // needs. It is applied below, not here: it also refuses a build whose
-    // pages carry no libcef.so, so it belongs to the cefrium flavor alone.
-    id("com.cefrium") version "0.21.0" apply false
+    // needs. Iris carries its own Chromium (CEF) now, so the plugin
+    // applies to every build.
+    id("com.cefrium") version "0.21.0"
 }
-
-// The Cefrium plugin belongs to the cefrium flavor alone: a run that
-// builds only the webview flavor leaves it out; every other run (the
-// cefrium flavor, both flavors, IDE sync) keeps it, because the cefrium
-// flavor needs its R generation to compile.
-val webviewOnly = gradle.startParameter.taskNames.isNotEmpty() &&
-    gradle.startParameter.taskNames.all { it.contains("webview", ignoreCase = true) }
-if (!webviewOnly) apply(plugin = "com.cefrium")
 
 android {
     namespace = "org.tulipanlabs.iris"
@@ -24,26 +16,13 @@ android {
         applicationId = "org.tulipanlabs.lite"
         minSdk = 29
         targetSdk = 36
-        versionCode = 225
-        versionName = "2.2.5"
+        versionCode = 226
+        versionName = "2.2.6"
     }
 
-    // Two builds of the same browser, apart from each other: the webview
-    // flavor draws pages with Android System WebView (Chromium, kept up to
-    // date by the phone); the cefrium flavor carries its own Chromium (CEF,
-    // through Cefrium), the same engine on every phone. The cefrium flavor
-    // has its own id, so both install side by side; it does not carry the
-    // webview build's tabs or sign-ins over.
-    flavorDimensions += "engine"
-    productFlavors {
-        create("webview") {
-            dimension = "engine"
-        }
-        create("cefrium") {
-            dimension = "engine"
-            applicationIdSuffix = ".cefrium"
-        }
-    }
+    // One Android build, on Cefrium: its own Chromium (CEF), the same
+    // engine on every phone. The WebView build is gone (2.2.6): its typing
+    // broke in 2.2.5, and Cefrium is the engine that works.
 
     signingConfigs {
         // Updates install over the app only when every APK is signed with
@@ -100,15 +79,9 @@ android {
 }
 
 dependencies {
-    // the webview flavor's page engine is Android System WebView (Chromium,
-    // kept up to date by the phone); androidx.webkit adds profiles
-    // (containers) and more
-    implementation("androidx.webkit:webkit:1.13.0")
-
-    // the cefrium flavor's page engine: its own Chromium (CEF) through
-    // Cefrium 0.21.0 (Chromium 156.0.8078.96), the same engine on every
-    // phone. Only that flavor carries it.
-    "cefriumImplementation"("com.cefrium:cefrium-sdk:0.21.0")
+    // the page engine: its own Chromium (CEF) through Cefrium 0.21.0
+    // (Chromium 156.0.8078.96), the same engine on every phone
+    implementation("com.cefrium:cefrium-sdk:0.21.0")
 
     // the interface: Compose's foundation only, drawn as Liquid Glass (no
     // Material components)
