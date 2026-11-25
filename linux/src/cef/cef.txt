@@ -1,0 +1,20 @@
+# CEF C API functions the Iris CEF engine calls. Generated into cef_gen.odin
+# with: sh gen.sh
+#   (python3 ../../../linux/tools/bind.py cef_gen.odin cef cef.txt
+#   --package cef --have "<structs in cef.odin>"
+#   --headers "include/capi/cef_app_capi.h include/capi/cef_browser_capi.h include/capi/cef_request_context_capi.h include/internal/cef_string_types.h include/cef_api_hash.h"
+#   --cflags "-I<cef-binary-dir>")
+cef_execute_process
+cef_initialize
+cef_shutdown
+cef_api_hash
+cef_do_message_loop_work
+cef_run_message_loop
+cef_quit_message_loop
+cef_get_exit_code
+cef_browser_host_create_browser
+cef_request_context_create_context
+cef_string_utf8_to_utf16
+cef_string_utf16_to_utf8
+cef_string_utf16_clear
+cef_string_utf8_clear
