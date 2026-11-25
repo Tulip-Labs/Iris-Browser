@@ -736,7 +736,6 @@ cef_copy_intent :: proc(t: ^Tab) {
 	h, _ := host_of(u, context.temp_allocator)
 	top := f.is_main(f) != 0
 	yt := h == "youtube.com" || strings.has_suffix(h, ".youtube.com") || strings.has_suffix(h, ".youtube-nocookie.com")
-	if top && (h == "www.google.com" || h == "google.com") do run_in(f, AI_GLASS)
 	if yt {
 		run_in(f, YOUTUBE)
 		if settings().lightVideo do run_in(f, LIGHT_VIDEO)

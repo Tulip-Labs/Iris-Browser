@@ -85,7 +85,8 @@ palette_close :: proc() {
 		delete(it.sub)
 		delete(it.act.s)
 	}
-	clear(&ui.palette_items)
+	delete(ui.palette_items)
+	ui.palette_items = {}
 }
 
 @(private="file") cmd :: proc(c: Command, n2 := 0, s := "") -> Action { return {op = .Command, n = int(c), n2 = n2, s = s} }
@@ -195,12 +196,12 @@ palette_key :: proc(e: plat.Key_Event) {
 
 /// the palette: a card of glass at the top of the page, its field and rows
 draw_palette :: proc(W, H: f32, dt: f32) {
-	k, moving := motion(ui.palette_t0, ui.clock, 160)
+	k, moving := fade(ui.palette_t0, ui.clock)
 	if moving do ui.animating = true
 	w := min(640, W - 40)
 	n := len(ui.palette_items)
 	h := 60 + f32(n) * 40 + (n > 0 ? 8 : 0)
-	r := [4]f32{(W - w) / 2, max(60, H * 0.14) + motion_from(-8, 0, k), w, h}
+	r := [4]f32{(W - w) / 2, max(60, H * 0.14), w, h}
 	ui.palette_rect = r
 	draw_glass(r.x, r.y, r.z, r.w, glass_amount(glass_style({r = 22, kind = 1}), k))
 	hit(id(.Palette_Card), r)

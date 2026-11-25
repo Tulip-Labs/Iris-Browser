@@ -91,13 +91,12 @@ peek_page_rect :: proc() -> [4]f32 {
 /// the peek: the page behind dims, a card of glass rises, the page in it
 draw_peek :: proc(W, H: f32, dt: f32) {
 	t := b.peek
-	k, moving := motion(ui.peek_t0, ui.clock, 200)
+	k, moving := fade(ui.peek_t0, ui.clock)
 	if moving do ui.animating = true
 	draw_fill(0, 0, W, H, 0, {0, 0, 0, 0.22 * k})
 	hit(id(.Peek_Scrim), {0, 0, W, H}, {op = .Command, n = int(Command.Peek_Close)})
 	r := peek_card_rect()
-	sc := motion_from(0.96, 1, k)
-	rr := [4]f32{r.x + r.z * (1 - sc) / 2, r.y + r.w * (1 - sc) / 2 + motion_from(10, 0, k), r.z * sc, r.w * sc}
+	rr := r
 	draw_glass(rr.x, rr.y, rr.z, rr.w, glass_amount(glass_style({r = 22, kind = 1}), k))
 	hit(id(.Peek_Card), rr)
 	// the header: where it goes, and its two buttons
@@ -115,7 +114,6 @@ draw_peek :: proc(W, H: f32, dt: f32) {
 	if t.loading {
 		pw := (rr.z - 36) * f32(max(0.08, t.progress))
 		draw_fill(rr.x + 18, rr.y + 42, pw, 2, 1, ACCENT)
-		ui.animating = true
 	}
 	// the page itself, drawn over its glass (it is not behind it)
 	if t.cert_error != nil {
@@ -123,6 +121,6 @@ draw_peek :: proc(W, H: f32, dt: f32) {
 		draw_interstitial(t, peek_page_rect(), dt, opaque = true)
 	} else if t.page != nil && k > 0.02 {
 		p := peek_page_rect()
-		draw_texture(t.page.tex, p.x, p.y + motion_from(10, 0, k), p.z, p.w, 14, k)
+		draw_texture(t.page.tex, p.x, p.y, p.z, p.w, 14, k)
 	}
 }

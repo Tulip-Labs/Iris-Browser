@@ -34,7 +34,7 @@ wid_of :: proc(x: Id) -> Wid { return Wid(u64(x) >> 32) }
 Op :: enum u8 {
 	None, Select_Tab, Close_Tab, New_Tab, New_Tab_In, Back, Forward, Reload, Stop, Go, Toggle_Panel,
 	Shield_Site, Shield_All, Level, Dl_Cancel, Dl_Open, Dl_Show, Dl_Clear, Dl_Folder,
-	Open_In, Duplicate, Close_Others, Reload_Tab, New_Container, Add_Container, Remove_Container_Panel, Remove_Container, Pick_Icon,
+	Open_In, Duplicate, Close_Others, Reload_Tab, New_Container, Add_Container, Remove_Container_Panel, Remove_Container, Pick_Color,
 	Ctx_Tab, Ctx_In, Ctx_Copy, Ctx_Save, Ctx_Edit, Ctx_Back, Ctx_Forward, Ctx_Reload, Ctx_Ask_AI,
 	Option, Find_Prev, Find_Next, Find_Close, Toast_Action, Dialog_Ok, Dialog_Cancel,
 	Minimize, Maximize, Close_Window, Focus_Address,
@@ -83,14 +83,6 @@ Option_Item :: struct {
 
 Field :: enum u8 { None, Address, Find, Prompt, Name, Start, Palette }
 
-/// a tab going away: drawn a moment longer, narrowing and fading
-Ghost :: struct {
-	x, w:  f32,
-	title: string,
-	t0:    f64,
-	cur:   bool,
-}
-
 Ui :: struct {
 	hits, next_hits: [dynamic]Hit,
 	frame_strings:  [dynamic]string,
@@ -110,7 +102,7 @@ Ui :: struct {
 	rows:           [dynamic]Action, // the panel's rows that can be chosen, in order
 	option_id:      int,
 	options:        [dynamic]Option_Item,
-	new_icon:       string,
+	new_color:      string, // the colour of the container being made
 	suggestions:    [dynamic]Suggestion,
 	suggest_sel:    int,
 	find_open:      bool,
@@ -125,28 +117,27 @@ Ui :: struct {
 	drag_id:        int,
 	drag_x0, drag_dx: f32,
 	dragging:       bool,
-	hover:          map[Id]f32,
 	last_frame:     time.Tick,
 	animating:      bool,
 	was_animating:  bool,
+	/// something turns slowly (a spinner): a frame every 100 ms
+	ticking, tick_pending: bool,
+	/// the chrome must be drawn again (else its layer is copied)
+	dirty:          bool,
+	/// nothing of the chrome over the page: its layer may stand
+	cacheable:      bool,
 	/// the chrome's clock (seconds): it runs with the frames, so a motion
 	/// begins where it is first drawn
 	clock:          f64,
 	blink_pending:  bool,
 	start:          Line, // the start page's search
-	start_t0:       f64,
-	start_fresh:    bool,
-	start_focus:    Spring,
-	addr_focus:     Spring,
-	addr_slide:     Spring, // 1: the address centred, 0: at the left, for editing
-	ghosts:         [dynamic]Ghost,
 	panel_t0:       f64,
 	address_rect:   [4]f32,
 	icons_cache:    [Icon]bool,
 	// 2.3
 	/// compact mode: the pointer is where the bars show, and how far they are in
 	compact_hold:   bool,
-	compact_show:   Spring,
+	compact_show:   bool,
 	/// the split view's divider is being dragged
 	split_drag:     bool,
 	peek_t0:        f64,
@@ -196,7 +187,7 @@ chrome_start :: proc() {
 	ui.sel = -1
 	ui.suggest_sel = -1
 	ui.find_count = -1
-	ui.new_icon = "star"
+	ui.new_color = PALETTE[0]
 	downloads_changed = proc(d: ^Download) {
 		if d != nil && d.done && !d.failed do b.unseen_downloads += 1
 		chrome_push()
@@ -205,6 +196,7 @@ chrome_start :: proc() {
 
 /// something the chrome shows changed: it draws again
 chrome_push :: proc() {
+	ui.dirty = true
 	plat.invalidate(&b.win)
 }
 
@@ -375,6 +367,15 @@ chrome_dialog :: proc(id, kind: int, title, message, default_text: string) {
 	}
 	if ui.focus == .Name do ui.focus = .None
 	ui.panel = .None
+	// nothing of a closed menu is kept: its rows (built each frame it shows,
+	// from the frame's memory), a select's options, the scroll
+	delete(ui.rows)
+	ui.rows = {}
+	for o in ui.options do delete(o.label)
+	delete(ui.options)
+	ui.options = {}
+	ui.panel_scroll = 0
+	ui.sel = -1
 	if ui.focus == .None do chrome_set_focus(false)
 	chrome_push()
 }
@@ -558,14 +559,23 @@ chrome_dismiss_dialog :: proc() {
 	case .Reload_Tab:
 		close_panel()
 		if x := tab_by_id(a.n); x != nil do tab_reload(x)
-	case .New_Container: open_panel(.New_Container, ui.panel_anchor, true)
-	case .Pick_Icon:
-		names := CONTAINER_ICONS
-		ui.new_icon = names[a.n]
+	case .New_Container:
+		// the first colour no container has yet
+		pal := PALETTE
+		ui.new_color = pal[len(containers) % len(pal)]
+		outer: for c in pal {
+			for k in containers do if k.color == c do continue outer
+			ui.new_color = c
+			break
+		}
+		open_panel(.New_Container, ui.panel_anchor, true)
+	case .Pick_Color:
+		cols := PALETTE
+		ui.new_color = cols[clamp(a.n, 0, len(cols) - 1)]
 	case .Add_Container:
 		name := strings.trim_space(line_string(&ui.name))
 		if len(name) == 0 do break
-		k := container_add(name, ui.new_icon)
+		k := container_add(name, ui.new_color)
 		close_panel()
 		browser_new_tab({container = k.id, select = true})
 	case .Remove_Container_Panel: open_panel(.Remove_Container, ui.panel_anchor, true)
@@ -961,11 +971,9 @@ chrome_key :: proc(e: plat.Key_Event) -> bool {
 	return true
 }
 
+/// 1 while the pointer is on it (at once: no fades on hover)
 @(private) hover_of :: proc(i: Id, dt: f32) -> f32 {
-	h := ui.hover[i]
-	if ease(&h, ui.hot == i ? 1 : 0, dt, 18) do ui.animating = true
-	ui.hover[i] = h
-	return h
+	return ui.hot == i ? 1 : 0
 }
 
 /// glass, faded in by amount (a hovered button's glass comes and goes)
@@ -1016,6 +1024,8 @@ chrome_draw :: proc(W, H: f32) {
 	if !ui.was_animating do dt = min(dt, 1.0 / 60)
 	ui.clock += f64(dt)
 	ui.animating = false
+	ui.ticking = false
+	ui.dirty = false
 	if ui.focus == .Start && !tab_is_start(b.current) do chrome_leave_start()
 
 	full := b.page_fullscreen || b.fullscreen
@@ -1029,9 +1039,8 @@ chrome_draw :: proc(W, H: f32) {
 	bars := !full
 	if compact_on() {
 		want := ui.compact_hold || ui.focus == .Address || (ui.panel != .None && ui.panel != .Context && ui.panel != .Option) || ui.dragging
-		if spring_step(&ui.compact_show, want ? 1 : 0, dt) do ui.animating = true
-		dy = -(1 - ui.compact_show.x) * 104
-		if ui.compact_show.x < 0.01 {
+		ui.compact_show = want
+		if !want {
 			bars = false
 		} else {
 			// one pane of frosted glass behind them, so they read over any page
@@ -1039,7 +1048,7 @@ chrome_draw :: proc(W, H: f32) {
 			hit(id(.Panel, 104), {6, dy + 4, W - 12, 92})
 		}
 	} else {
-		ui.compact_show = {}
+		ui.compact_show = false
 	}
 	if bars {
 		draw_strip(W, dt, dy)
@@ -1056,28 +1065,48 @@ chrome_draw :: proc(W, H: f32) {
 
 	ui.hits, ui.next_hits = ui.next_hits, ui.hits
 	ui.was_animating = ui.animating
+	// the layer can stand while only the page changes when nothing of the
+	// chrome lies over the page (its glass would bend a page gone by)
+	ui.cacheable = ui.panel == .None && len(ui.toasts) == 0 && !ui.find_open && len(ui.status) == 0 && b.peek == nil &&
+		!(ui.focus == .Address && len(ui.suggestions) > 0) && !ui.palette_open && !ui.dialog_open && !compact_on() && !split_on() && !cert_on_screen()
 	if ui.animating {
-		after(16, proc(_: rawptr) { plat.invalidate(&b.win) }, nil)
-	} else if ui.focus != .None && !ui.blink_pending {
+		after(16, proc(_: rawptr) { chrome_push() }, nil)
+	} else if ui.ticking && !ui.tick_pending {
+		// a page loading: its spinner turns at a few frames a second
+		ui.tick_pending = true
+		after(100, proc(_: rawptr) {
+			ui.tick_pending = false
+			chrome_push()
+		}, nil)
+	}
+	if !ui.animating && ui.focus != .None && !ui.blink_pending {
 		// the cursor blinks: one frame when it turns on or off, no more
 		ui.blink_pending = true
 		m := math.mod(now_s(), 1.0)
 		next := m < 0.6 ? 0.6 - m : 1.0 - m
 		after(u32(next * 1000) + 2, proc(_: rawptr) {
 			ui.blink_pending = false
-			plat.invalidate(&b.win)
+			chrome_push()
 		}, nil)
 	}
 }
 
-/// a tab closing: a ghost of it narrows and fades where it was
+/// a tab closed: what pointed at it in the chrome lets go (the pointer's
+/// hover and press, a drag, its menu), so nothing acts on another tab
 chrome_tab_closed :: proc(t: ^Tab) {
-	x, ok := ui.tab_x[t.id]
-	if !ok || theme.reduce_motion do return
-	title := t.title
-	if len(title) == 0 do title = display_url(t.url, context.temp_allocator)
-	if len(title) == 0 do title = "New Tab"
-	append(&ui.ghosts, Ghost{x = x, w = ui.tab_w[t.id], title = strings.clone(title), t0 = ui.clock, cur = t == b.current})
+	n := t.id
+	for k in ([?]Wid{.Tab, .Tab_Close, .Tab_Audio}) {
+		if ui.hot == id(k, n) do ui.hot = 0
+		if ui.pressed == id(k, n) do ui.pressed = 0
+	}
+	if ui.drag_id == n {
+		ui.drag_id = 0
+		ui.dragging = false
+	}
+	if ui.panel == .Tab_Menu && ui.panel_tab == n do close_panel()
+	delete_key(&ui.tab_x, n)
+	delete_key(&ui.tab_w, n)
+	// the hit areas of the last frame still hold its place: drawn again now
 	chrome_push()
 }
 
@@ -1109,18 +1138,8 @@ chrome_tab_closed :: proc(t: ^Tab) {
 	x := x0
 	for t in tabs {
 		want := t.pinned ? PINNED_W : tw
-		if t.id not_in ui.tab_x {
-			ui.tab_x[t.id] = x
-			ui.tab_w[t.id] = 0
-		}
-		tx, tww := ui.tab_x[t.id], ui.tab_w[t.id]
-		if theme.reduce_motion {
-			tx, tww = x, want
-		} else {
-			if ease(&tx, x, dt, 16) do ui.animating = true
-			if ease(&tww, want, dt, 16) do ui.animating = true
-		}
-		ui.tab_x[t.id], ui.tab_w[t.id] = tx, tww
+		// at their places at once (no growing, no sliding)
+		ui.tab_x[t.id], ui.tab_w[t.id] = x, want
 		x += want + 2
 	}
 	// what closed, or is in another workspace, lets its place go
@@ -1131,28 +1150,6 @@ chrome_tab_closed :: proc(t: ^Tab) {
 			delete_key(&ui.tab_x, k)
 			delete_key(&ui.tab_w, k)
 		}
-	}
-	// tabs that closed, going
-	for i := 0; i < len(ui.ghosts); {
-		g := ui.ghosts[i]
-		k, moving := motion(g.t0, ui.clock, 160)
-		if !moving {
-			delete(g.title)
-			ordered_remove(&ui.ghosts, i)
-			continue
-		}
-		ui.animating = true
-		gw := g.w * (1 - k)
-		if gw >= 8 {
-			r := [4]f32{g.x, dy + 9, gw, 32}
-			if g.cur do draw_glass(r.x, r.y, r.z, r.w, glass_amount(glass_style({r = 16, kind = 2}), 1 - k))
-			c := DIM
-			c.a *= 1 - k
-			clip_push(r)
-			draw_text(g.title, r.x + 35, baseline(r.y, r.w, 13), 13, c, .Semibold, max(8, g.w - 70))
-			clip_pop()
-		}
-		i += 1
 	}
 	dragged: ^Tab
 	for t in tabs {
@@ -1185,7 +1182,17 @@ PINNED_W :: f32(40)
 	cur := t == b.current
 	// the other half of a split view: its glass shows, a little fainter
 	half := !cur && split_has(t)
-	hv := hover_of(i, dt)
+	// hovered: the tab, or its close or sound button (on those the tab
+	// stays hovered, so its close button stays where the pointer is: it
+	// went when the pointer reached it, and a tab in the background could
+	// not be closed)
+	hv: f32 = (ui.hot == i || ui.hot == id(.Tab_Close, t.id) || ui.hot == id(.Tab_Audio, t.id)) ? 1 : 0
+	k, has := container_get(t.container)
+	kc := has ? parse_color(k.color) : [4]f32{}
+	if has && t.container != PRIVATE_ID {
+		// a container's tabs in its colour: a tint and a line along the bottom
+		fill(r, 16, {kc.r, kc.g, kc.b, cur ? 0.24 : 0.14})
+	}
 	if cur {
 		draw_glass(r.x, r.y, r.z, r.w, glass_style({r = 16, kind = 2}))
 	} else if half {
@@ -1193,9 +1200,11 @@ PINNED_W :: f32(40)
 	} else if hv > 0.01 {
 		draw_glass(r.x, r.y, r.z, r.w, glass_amount(glass_style({r = 16, kind = 3}), hv))
 	}
-	if t.sandboxed do draw_fill(r.x + 10, r.y + r.w - 3, r.z - 20, 2, 1, WARN)
-	k, has := container_get(t.container)
-	if has do draw_fill(r.x + 6, r.y + 6, 6, 6, 3, parse_color(k.color))
+	if t.sandboxed {
+		draw_fill(r.x + 10, r.y + r.w - 3, r.z - 20, 2, 1, WARN)
+	} else if has {
+		draw_fill(r.x + 10, r.y + r.w - 3, r.z - 20, 2.5, 1.25, kc)
+	}
 	// the site's icon, or what stands for it (a pinned tab: in the middle)
 	ix := t.pinned ? r.x + (r.z - 16) / 2 : r.x + 11
 	iy := r.y + 8
@@ -1263,7 +1272,7 @@ PINNED_W :: f32(40)
 		c.a = 1 - f32(k) / 6
 		draw_fill(px - 1.4, py - 1.4, 2.8, 2.8, 1.4, c)
 	}
-	ui.animating = true
+	ui.ticking = true
 }
 
 @(private="file") parse_color :: proc(hex: string) -> [4]f32 {
@@ -1339,16 +1348,14 @@ PINNED_W :: f32(40)
 	ar := [4]f32{136, y, act_r.x - 10 - 136, h}
 	ui.address_rect = ar
 	// it lights up a little while it has the keys
-	if spring_step(&ui.addr_focus, ui.focus == .Address ? 1 : 0, dt) do ui.animating = true
 	ag := glass_style({r = 22, kind = 0})
-	ag.rim_light *= 1 + 0.6 * ui.addr_focus.x
+	if ui.focus == .Address do ag.rim_light *= 1.6
 	draw_glass(ar.x, ar.y, ar.z, ar.w, ag)
 	draw_address(ar, dt)
 	// the page loading: a line along the address's bottom
 	if loading {
 		pw := (ar.z - 36) * f32(max(0.08, t.progress))
 		draw_fill(ar.x + 18, ar.y + ar.w - 5.5, pw, 2.5, 1.25, ACCENT)
-		ui.animating = true
 	}
 }
 
@@ -1381,13 +1388,10 @@ PINNED_W :: f32(40)
 	side := max(x - (r.x + 14), 0)
 	tr := [4]f32{x, r.y, right - side - x, r.w}
 	if ui.focus == .Address {
-		// from the middle to the left, where it is edited
-		if spring_step(&ui.addr_slide, 0, dt) do ui.animating = true
+		// at the left, where it is edited
 		tr = {x, r.y, right - x, r.w}
-		off := max(0, (tr.z - text_width(line_string(&ui.address), 14.5)) / 2) * ui.addr_slide.x
-		draw_field(&ui.address, {tr.x + off, tr.y, tr.z - off, tr.w}, 14.5, START_PLACEHOLDER, dt)
+		draw_field(&ui.address, tr, 14.5, START_PLACEHOLDER, dt)
 	} else {
-		ui.addr_slide = {x = 1}
 		text := ""
 		words := false
 		if t != nil {
@@ -1580,7 +1584,7 @@ elide_middle :: proc(glyph_x: []f32, glyph_byte: []int, total, max_w, ellipsis: 
 	c := b.card
 	y := c.y + c.w - 22
 	#reverse for t, i in ui.toasts {
-		if ease(&t.show, t.gone ? 0 : 1, dt, 14) do ui.animating = true
+		t.show = t.gone ? 0 : 1
 		if t.show < 0.01 do continue
 		tw := text_width(t.text, 14, .Semibold)
 		aw: f32 = len(t.action) > 0 ? text_width(t.action, 13, .Bold) + 28 : 0
@@ -1628,7 +1632,7 @@ elide_middle :: proc(glyph_x: []f32, glyph_byte: []int, total, max_w, ellipsis: 
 
 // ---------------------------------------------------------------- panels and menus
 
-Item_Kind :: enum u8 { Row, Sep, Head, Note, Title, Field, Icons, Buttons, Download, Title_Buttons }
+Item_Kind :: enum u8 { Row, Sep, Head, Note, Title, Field, Colors, Buttons, Download, Title_Buttons }
 
 Item :: struct {
 	kind:      Item_Kind,
@@ -1740,7 +1744,7 @@ Pill :: struct {
 		append(&items, Item{kind = .Title, text = "New Container"})
 		append(&items, Item{kind = .Note, text = "A container keeps its own cookies, sign-ins and site data, apart from every other."})
 		append(&items, Item{kind = .Field, text = "Name"})
-		append(&items, Item{kind = .Icons})
+		append(&items, Item{kind = .Colors})
 		it := Item{kind = .Buttons}
 		it.buttons[0] = {text = "Add", act = {op = .Add_Container}, primary = true}
 		it.n_buttons = 1
@@ -1855,7 +1859,7 @@ Pill :: struct {
 	case .Title: return 32
 	case .Title_Buttons: return 40
 	case .Field: return 46
-	case .Icons: return 2 * 40 + 8
+	case .Colors: return 40
 	case .Buttons: return 46
 	case .Download: return 62
 	}
@@ -1886,12 +1890,11 @@ Pill :: struct {
 	r := [4]f32{x, y, width, h}
 	ui.panel_rect = r
 	ui.panel_scroll = clamp(ui.panel_scroll, 0, max(0, content - h))
-	// it opens: a quick fade and a few pixels' drop (a plain fade with
-	// reduced motion)
-	sh, moving := motion(ui.panel_t0, ui.clock, 180)
+	// it opens with a short fade (none with reduced motion)
+	sh, moving := fade(ui.panel_t0, ui.clock)
 	if moving do ui.animating = true
 	ui.panel_show = sh
-	draw_glass(r.x, r.y + motion_from(-6, 0, sh), r.z, r.w, glass_amount(glass_style({r = 18, kind = 1}), sh))
+	draw_glass(r.x, r.y, r.z, r.w, glass_amount(glass_style({r = 18, kind = 1}), sh))
 	hit(id(.Panel), r)
 	clip_push(r)
 	defer clip_pop()
@@ -1956,22 +1959,22 @@ Pill :: struct {
 				draw_text(len(text) > 0 ? text : it.text, inner.x, baseline(inner.y, inner.w, 14), 14, len(text) > 0 ? INK : DIM, max_w = inner.z)
 			}
 			hit(id(.Name), inner, {}, .Text)
-		case .Icons:
-			names := CONTAINER_ICONS
-			for name, k in names {
-				cx := ir.x + 8 + f32(k % 6) * 40
-				cyy := ir.y + 4 + f32(k / 6) * 40
-				cr := [4]f32{cx, cyy, 36, 36}
-				sel := name == ui.new_icon
+		case .Colors:
+			// the container's colour: eight swatches, the chosen one ringed
+			cols := PALETTE
+			for name, k in cols {
+				cr := [4]f32{ir.x + 8 + f32(k) * 32, ir.y + 7, 26, 26}
+				c := parse_color(name)
+				sel := name == ui.new_color
 				ci := id(.Icon_Choice, k)
-				hv := hover_of(ci, dt)
+				if sel do draw_fill(cr.x - 3, cr.y - 3, cr.z + 6, cr.w + 6, 16, {c.r, c.g, c.b, 0.35})
+				draw_fill(cr.x, cr.y, cr.z, cr.w, 13, c)
 				if sel {
-					fill(cr, 10, {ACCENT.r, ACCENT.g, ACCENT.b, 0.16})
-				} else if hv > 0.01 {
-					fill(cr, 10, {FAINT.r, FAINT.g, FAINT.b, FAINT.a * hv})
+					draw_icon(.Check, cr.x + 5, cr.y + 5, 16, WHITE)
+				} else if ui.hot == ci {
+					draw_fill(cr.x, cr.y, cr.z, cr.w, 13, {1, 1, 1, 0.25})
 				}
-				draw_icon(container_icon(name), cx + 9, cyy + 9, 18, sel ? ACCENT : INK)
-				hit(ci, cr, {op = .Pick_Icon, n = k})
+				hit(ci, cr, {op = .Pick_Color, n = k})
 			}
 		case .Buttons:
 			bx := ir.x + ir.z
