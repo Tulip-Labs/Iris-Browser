@@ -22,4 +22,6 @@ foreign cef_lib {
 	cef_string_list_alloc :: proc() -> rawptr ---
 	cef_string_list_append :: proc(list: rawptr, value: ^cef_string_t) ---
 	cef_string_list_free :: proc(list: rawptr) ---
+	cef_string_list_size :: proc(list: rawptr) -> uint ---
+	cef_string_list_value :: proc(list: rawptr, index: uint, value: ^cef_string_t) -> i32 ---
 }

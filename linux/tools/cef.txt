@@ -15,3 +15,5 @@ cef_string_userfree_utf16_free
 cef_string_list_alloc
 cef_string_list_append
 cef_string_list_free
+cef_string_list_size
+cef_string_list_value
