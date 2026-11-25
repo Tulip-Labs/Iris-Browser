@@ -68,16 +68,16 @@ main :: proc() {
 	if len(args) > 0 {
 		switch args[0] {
 		case "--version", "-v":
-			fmt.println("Iris", VERSION)
+			fmt.println("Iris", BUILD_VERSION)
 			return
 		case "--help", "-h":
-			fmt.printf(USAGE, VERSION)
+			fmt.printf(USAGE, BUILD_VERSION)
 			return
 		case "--render-check":
 			os.exit(render_check(len(args) > 1 ? args[1] : "iris-render.ppm"))
 		case "--shield-rules":
 			if len(args) != 4 {
-				fmt.eprintf(USAGE, VERSION)
+				fmt.eprintf(USAGE, BUILD_VERSION)
 				os.exit(2)
 			}
 			os.exit(shield_rules_cli(args[1], args[2], args[3]))

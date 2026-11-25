@@ -25,7 +25,7 @@ import "core:time"
 VERSION :: "2.3.0"
 // the Flatpak's ID: the window's app_id, and the name WebKit gives its sandboxed processes
 APP_ID :: "io.github.tulip_labs.Iris" + APP_ID_ENGINE // (".Cef": the CEF build installs beside the WPE one)
-USER_AGENT :: "Iris/" + VERSION
+USER_AGENT :: "Iris/" + BUILD_VERSION
 
 @(private="file") DOMAINS_GZ :: #load("shield-domains.txt.gz")
 @(private="file") builtin_once: sync.Once
