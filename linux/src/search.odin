@@ -1,5 +1,5 @@
 // Addresses and searches: what the address bar opens (an address, or a
-// question for Google AI Mode), how an address is shown, which sites go to
+// Google search; Google AI Mode when you ask for it), how an address is shown, which sites go to
 // the sandbox, and Google's redirects skipped.
 package iris
 
@@ -124,6 +124,24 @@ escape :: proc(s: string, allocator := context.allocator) -> string {
 	return strings.equal_fold(h, "www.google.com") || strings.equal_fold(h, "google.com")
 }
 
+/// a Google search, straight to the results: www (no redirect from the
+/// bare name), no client or source parameters
+search_url :: proc(q: string, allocator := context.allocator) -> string {
+	return strings.concatenate({GOOGLE, "&q=", escape(strings.trim_space(q), context.temp_allocator)}, allocator)
+}
+
+/// the words of a Google search's address (not AI Mode's: ai_query)
+search_query :: proc(url: string, allocator := context.allocator) -> (string, bool) {
+	u, ok := url_parse(url)
+	if !ok || !is_google(u.host) || u.path != "/search" do return "", false
+	if udm, has := url_param(u, "udm", context.temp_allocator); has && udm == "50" do return "", false
+	q, has := url_param(u, "q", context.temp_allocator, plus_space = true)
+	t := strings.trim_space(q)
+	if !has || len(t) == 0 do return "", false
+	return strings.clone(t, allocator), true
+}
+
+/// Google AI Mode, asked a question (only when you choose it)
 ai_url :: proc(q: string, allocator := context.allocator) -> string {
 	t := strings.trim_space(q)
 	full := strings.concatenate({t, SEPARATOR, INSTRUCTION}, context.temp_allocator)
@@ -173,6 +191,54 @@ unwrap_redirect :: proc(url: string, allocator := context.allocator) -> (string,
 	if strings.has_prefix(t, "https://") || strings.has_prefix(t, "http://") do return t, true
 	delete(t, allocator)
 	return "", false
+}
+
+/// the parameters sites add to links only to follow you from site to site
+/// (EasyList's and AdGuard's URL tracking lists agree on these); utm_
+/// anything goes too
+TRACKING_PARAMS :: [?]string{
+	"fbclid", "gclid", "gclsrc", "dclid", "gbraid", "wbraid", "gad_source", "gad_campaignid", "msclkid",
+	"mc_cid", "mc_eid", "_hsenc", "_hsmi", "__hssc", "__hstc", "__hsfp", "hsctatracking", "mkt_tok",
+	"yclid", "ysclid", "igshid", "twclid", "ttclid", "li_fat_id", "epik", "oly_anon_id", "oly_enc_id",
+	"rb_clickid", "_openstat", "vero_id", "vero_conv", "wickedid", "_gl", "srsltid", "s_kwcid", "ef_id",
+	"irclickid", "irgwc", "cjevent", "sccid", "scclid", "obclid", "dicbo", "spm_id_from", "ml_subscriber",
+	"ml_subscriber_hash", "trk_contact", "trk_msg", "trk_module", "trk_sid", "pk_campaign", "pk_kwd",
+	"piwik_campaign", "piwik_kwd", "mtm_campaign", "mtm_source", "mtm_medium", "mtm_cid", "matomo_campaign",
+}
+
+@(private="file") tracking_param :: proc(key: string) -> bool {
+	k := strings.to_lower(key, context.temp_allocator)
+	if strings.has_prefix(k, "utm_") do return true
+	for p in TRACKING_PARAMS do if k == p do return true
+	return false
+}
+
+/// the address without its tracking parameters (utm_*, fbclid, gclid...),
+/// and whether it had any; Google's own addresses are left as they are
+strip_tracking :: proc(url: string, allocator := context.allocator) -> (string, bool) {
+	u, ok := url_parse(url)
+	if !ok || len(u.query) == 0 || is_google(u.host) do return "", false
+	if !strings.equal_fold(u.scheme, "https") && !strings.equal_fold(u.scheme, "http") do return "", false
+	q := strings.index_byte(url, '?')
+	if q < 0 do return "", false
+	end := len(url)
+	if h := strings.index_byte(url[q:], '#'); h >= 0 do end = q + h
+	kept := strings.builder_make(context.temp_allocator)
+	dropped := false
+	rest := url[q + 1:end]
+	for kv in strings.split_iterator(&rest, "&") {
+		if len(kv) == 0 do continue
+		eq := strings.index_byte(kv, '=')
+		if tracking_param(eq < 0 ? kv : kv[:eq]) {
+			dropped = true
+			continue
+		}
+		if strings.builder_len(kept) > 0 do strings.write_byte(&kept, '&')
+		strings.write_string(&kept, kv)
+	}
+	if !dropped do return "", false
+	query := strings.to_string(kept)
+	return strings.concatenate({url[:q], len(query) > 0 ? "?" : "", query, url[end:]}, allocator), true
 }
 
 host_of :: proc(url: string, allocator := context.allocator) -> (string, bool) {
@@ -322,6 +388,10 @@ is_url_like :: proc(text: string) -> bool {
 	if len(h) > 0 && h[0] != '[' {
 		if i := strings.last_index_byte(h, ':'); i >= 0 do h = h[:i]
 	}
+	// Google and YouTube answer their bare names with a redirect to www.
+	for bare in ([?]string{"google.com", "youtube.com"}) do if strings.equal_fold(h, bare) {
+		return strings.concatenate({"https://www.", bare, t[len(h):]}, allocator)
+	}
 	return strings.concatenate({is_private_host(h) ? "http://" : "https://", t}, allocator)
 }
 
@@ -331,7 +401,8 @@ resolve :: proc(input: string, allocator := context.allocator) -> string {
 	if len(t) == 0 do return ""
 	if is_url_like(t) do return complete(t, allocator)
 	if len(t) > 3 && strings.has_prefix(strings.to_lower(t[:3], context.temp_allocator), "yt ") do return youtube_url(strings.trim_space(t[3:]), allocator)
-	return ai_url(t, allocator)
+	// words are a Google search (AI Mode is its own choice: ai_url)
+	return search_url(t, allocator)
 }
 
 /// what an address given to Iris when it starts opens: an address as typed
@@ -352,6 +423,7 @@ resolve_arg :: proc(arg: string, cwd: string, allocator := context.allocator) ->
 display_url :: proc(url: string, allocator := context.allocator) -> string {
 	if len(url) == 0 || url == "about:blank" do return ""
 	if q, ok := ai_query(url, allocator); ok do return q
+	if q, ok := search_query(url, allocator); ok do return q
 	u, ok := url_parse(url)
 	if !ok || len(u.host) == 0 do return strings.clone(url, allocator)
 	h := u.host
@@ -363,6 +435,7 @@ display_url :: proc(url: string, allocator := context.allocator) -> string {
 editable_url :: proc(url: string, allocator := context.allocator) -> string {
 	if url == "about:blank" do return ""
 	if q, ok := ai_query(url, allocator); ok do return q
+	if q, ok := search_query(url, allocator); ok do return q
 	return strings.clone(url, allocator)
 }
 
@@ -380,10 +453,21 @@ is_sign_in :: proc(h: string) -> bool {
 	testing.expect_value(t, resolve("https://example.com/a?b", context.temp_allocator), "https://example.com/a?b")
 	testing.expect_value(t, resolve("localhost:8080", context.temp_allocator), "http://localhost:8080")
 	testing.expect_value(t, resolve("192.168.1.4/admin", context.temp_allocator), "http://192.168.1.4/admin")
+	// no redirect from the bare name to www.
+	testing.expect_value(t, resolve("youtube.com/watch?v=x", context.temp_allocator), "https://www.youtube.com/watch?v=x")
+	testing.expect_value(t, resolve("Google.com", context.temp_allocator), "https://www.google.com")
 }
 
 @(test) test_ai_mode :: proc(t: ^testing.T) {
-	u := resolve("why is the sky blue", context.temp_allocator)
+	// words are a Google search; AI Mode only when chosen
+	s := resolve("why is the sky blue", context.temp_allocator)
+	testing.expect_value(t, s, "https://www.google.com/search?gl=us&hl=en&q=why%20is%20the%20sky%20blue")
+	testing.expect(t, !is_ai_mode(s))
+	sq, sok := search_query(s, context.temp_allocator)
+	testing.expect(t, sok)
+	testing.expect_value(t, sq, "why is the sky blue")
+	testing.expect_value(t, display_url(s, context.temp_allocator), "why is the sky blue")
+	u := ai_url("why is the sky blue", context.temp_allocator)
 	testing.expect(t, strings.has_prefix(u, "https://www.google.com/search?gl=us&hl=en&udm=50&q=why%20is%20the%20sky%20blue"))
 	q, ok := ai_query(u, context.temp_allocator)
 	testing.expect(t, ok)
@@ -397,7 +481,7 @@ is_sign_in :: proc(h: string) -> bool {
 
 @(test) test_scripts_never_run :: proc(t: ^testing.T) {
 	testing.expect(t, !is_url_like("javascript:alert(1)"))
-	testing.expect(t, strings.contains(resolve("javascript:alert(1)", context.temp_allocator), "udm=50"))
+	testing.expect(t, strings.has_prefix(resolve("javascript:alert(1)", context.temp_allocator), "https://www.google.com/search?"))
 	testing.expect(t, !is_url_like("note: milk"))
 }
 
@@ -409,6 +493,23 @@ is_sign_in :: proc(h: string) -> bool {
 	testing.expect(t, !ok2)
 	_, ok3 := unwrap_redirect("https://evil.com/url?q=https://example.com", context.temp_allocator)
 	testing.expect(t, !ok3)
+}
+
+@(test) test_tracking :: proc(t: ^testing.T) {
+	r, ok := strip_tracking("https://shop.example/p?id=7&utm_source=news&utm_medium=mail&fbclid=abc#top", context.temp_allocator)
+	testing.expect(t, ok)
+	testing.expect_value(t, r, "https://shop.example/p?id=7#top")
+	r, ok = strip_tracking("https://a.example/?gclid=1&UTM_Campaign=x", context.temp_allocator)
+	testing.expect(t, ok)
+	testing.expect_value(t, r, "https://a.example/")
+	_, ok = strip_tracking("https://a.example/?q=utm_source&page=2", context.temp_allocator)
+	testing.expect(t, !ok)
+	_, ok = strip_tracking("https://www.google.com/search?q=x&gclid=1", context.temp_allocator)
+	testing.expect(t, !ok)
+	_, ok = strip_tracking("https://a.example/#?utm_source=x", context.temp_allocator)
+	testing.expect(t, !ok)
+	_, ok = strip_tracking("mailto:a@b.c?utm_source=x", context.temp_allocator)
+	testing.expect(t, !ok)
 }
 
 @(test) test_url_edges :: proc(t: ^testing.T) {
@@ -436,7 +537,7 @@ is_sign_in :: proc(h: string) -> bool {
 	testing.expect_value(t, resolve_arg("https://example.com/x", "/home/a", context.temp_allocator), "https://example.com/x")
 	testing.expect_value(t, resolve_arg("/home/a/My Page#1.html", "/x", context.temp_allocator), "file:///home/a/My%20Page%231.html")
 	testing.expect_value(t, resolve_arg("./b.html", "/home/a", context.temp_allocator), "file:///home/a/./b.html")
-	testing.expect(t, strings.contains(resolve_arg("javascript:alert(1)", "/", context.temp_allocator), "udm=50"))
+	testing.expect(t, strings.has_prefix(resolve_arg("javascript:alert(1)", "/", context.temp_allocator), "https://www.google.com/search?"))
 	testing.expect_value(t, resolve_arg("   ", "/", context.temp_allocator), "")
 }
 

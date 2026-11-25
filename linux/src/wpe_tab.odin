@@ -81,8 +81,9 @@ tab_release_web :: proc(t: ^Tab) {
 
 /// opens an address; a site Iris does not trust goes to the sandbox, and
 /// a trusted one comes out of it
-tab_load :: proc(t: ^Tab, u: string) {
-	if len(u) == 0 do return
+tab_load :: proc(t: ^Tab, u0: string) {
+	if len(u0) == 0 do return
+	u := shields_clean_url(u0)
 	want := untrusted(u)
 	if t.web == nil {
 		t.sandboxed = want
@@ -288,6 +289,14 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 			webkit_policy_decision_ignore(d)
 			tab_load_later(t, target)
 			return true
+		}
+		// a link you click loses its tracking parameters (utm_*, fbclid...)
+		if webkit_navigation_action_get_navigation_type(nav) == WEBKIT_NAVIGATION_TYPE_LINK_CLICKED && webkit_navigation_action_is_user_gesture(nav) != 0 {
+			if clean := shields_clean_url(u); clean != u {
+				webkit_policy_decision_ignore(d)
+				tab_load_later(t, strings.clone(clean))
+				return true
+			}
 		}
 		// into or out of the sandbox: the tab is made again
 		if strings.has_prefix(u, "http") && untrusted(u) != t.sandboxed {

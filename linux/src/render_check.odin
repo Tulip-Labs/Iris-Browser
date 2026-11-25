@@ -142,7 +142,7 @@ render_check :: proc(out: string) -> int {
 	expect(line_has_selection(&ui.address), "the first click did not select the address", &problems)
 	type("what is odin")
 	expect(line_string(&ui.address) == "what is odin", fmt.tprintf("typing gave %q", line_string(&ui.address)), &problems)
-	expect(len(ui.suggestions) > 0 && ui.suggestions[0].icon == .Sparkle, "no Ask Google AI Mode suggestion", &problems)
+	expect(len(ui.suggestions) > 1 && ui.suggestions[0].icon == .Search && ui.suggestions[1].icon == .Sparkle, "no Search Google and Ask Google AI Mode suggestions", &problems)
 	chrome_key({sym = plat.KEY_Left, pressed = true, mods = {.Ctrl}})
 	chrome_key({sym = plat.KEY_Left, pressed = true, mods = {.Ctrl, .Shift}})
 	redraw(W, H, lw, lh)

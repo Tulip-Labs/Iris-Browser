@@ -38,6 +38,48 @@ AI_GLASS :: #load("aimode.js", string)
 /// for Android's)
 YOUTUBE :: #load("youtube.js", string)
 
+/// a page left unable to scroll by a cookie notice the shield hid (the
+/// notice set overflow: hidden on the page, and only its own button undoes
+/// it): scrolling comes back when the page is taller than the window and
+/// nothing fixed sits over its middle. Web apps that scroll inside
+/// themselves are exactly the window's height, and stay as they are.
+SCROLL_UNLOCK :: `(() => {
+  const fix = () => {
+    const x = innerWidth / 2, y = innerHeight / 2;
+    for (let n = document.elementFromPoint(x, y); n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      const p = getComputedStyle(n).position;
+      if (p === 'fixed' || p === 'sticky') return;
+    }
+    for (const e of [document.documentElement, document.body]) {
+      if (!e || getComputedStyle(e).overflowY !== 'hidden') continue;
+      if (document.documentElement.scrollHeight < innerHeight + 80) continue;
+      e.style.setProperty('overflow', 'auto', 'important');
+    }
+  };
+  const later = () => { setTimeout(fix, 1500); setTimeout(fix, 5000); };
+  if (document.readyState === 'complete') later(); else addEventListener('load', later, { once: true });
+})();`
+
+/// what Google search, AI Mode and YouTube load first: looked up (and the
+/// first few connected) before you need them. Only these: nothing else is
+/// looked up or loaded ahead.
+GOOGLE_HOSTS :: [?]string{
+	"www.google.com", "www.gstatic.com", "ssl.gstatic.com", "fonts.gstatic.com", "apis.google.com",
+	"encrypted-tbn0.gstatic.com", "lh3.googleusercontent.com", "play.google.com",
+	"www.youtube.com", "m.youtube.com", "i.ytimg.com", "yt3.ggpht.com", "redirector.googlevideo.com",
+}
+/// the hosts worth a whole connection (TCP and TLS) ahead: the page and its
+/// first scripts and images
+GOOGLE_PRECONNECT :: `(() => {
+  for (const h of ['https://www.google.com', 'https://www.gstatic.com', 'https://www.youtube.com', 'https://i.ytimg.com']) {
+    const l = document.createElement('link');
+    l.rel = 'preconnect';
+    l.href = h;
+    (document.head || document.documentElement).appendChild(l);
+    l.remove();
+  }
+})();`
+
 // ---------------------------------------------------------------- containers
 
 Container :: struct {

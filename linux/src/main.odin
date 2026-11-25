@@ -101,6 +101,8 @@ main :: proc() {
 		fmt.eprintln("Iris needs a Wayland session (WAYLAND_DISPLAY), with EGL and OpenGL ES 3.")
 		os.exit(1)
 	}
+	// Google and YouTube's names looked up while the first page loads
+	warm_for_search()
 	w := &b.win
 	display_fd, repeat_fd := plat.fds(w)
 	g_unix_fd_add_full(G_PRIORITY_DEFAULT, i32(display_fd), G_IO_IN | G_IO_HUP | G_IO_ERR, proc "c" (fd: i32, cond: u32, d: rawptr) -> gboolean {
