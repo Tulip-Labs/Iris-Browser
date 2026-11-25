@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Iris's ring in one colour, for Android's themed icons (the launcher tints it).
+     The ring is 52 of 108 dp, as in ic_launcher_foreground. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M28.00,54.00a26.00,26.00 0,1 0,52.00,0a26.00,26.00 0,1 0,-52.00,0ZM38.99,54.00a15.01,15.01 0,1 0,30.02,0a15.01,15.01 0,1 0,-30.02,0Z" />
+</vector>
