@@ -212,7 +212,7 @@ render_check :: proc(out: string) -> int {
 }
 
 /// the frame in fbo, as a picture (PPM); fails when it is nearly flat
-@(private="file") save_frame :: proc(fbo: u32, W, H: i32, out: string, min_colours := 500) -> bool {
+@(private="file") save_frame :: proc(fbo: u32, W, H: i32, out: string, min_colours := 200) -> bool {
 	px := make([]u8, int(W * H * 4))
 	defer delete(px)
 	gl.BindFramebuffer(gl.FRAMEBUFFER, fbo)

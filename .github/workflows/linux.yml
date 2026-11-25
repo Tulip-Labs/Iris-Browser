@@ -202,7 +202,7 @@ jobs:
         run: |
           pacman -Syu --noconfirm --needed libsoup3 harfbuzz fontconfig wayland wayland-protocols libxkbcommon mesa libdrm \
             nss alsa-lib at-spi2-core libcups libxcomposite libxdamage libxrandr libxfixes pango cairo dbus expat \
-            pkgconf clang gcc python diffutils > /dev/null
+            pkgconf clang gcc python diffutils git > /dev/null
       - name: Odin
         run: |
           curl -sSfL "$ODIN_URL" -o /tmp/odin.tar.gz
@@ -228,6 +228,7 @@ jobs:
       - name: The CEF bindings are what tools/bind_cef.sh makes
         run: |
           sh linux/tools/bind_cef.sh
+          git config --global --add safe.directory "$PWD"
           git diff --exit-code linux/src/cef_capi.odin linux/src/cef_gen.odin
       - name: Build (optimised, CEF engine)
         run: IRIS_ENGINE=cef CEF_RPATH=$CEF_DIR/Release sh linux/build.sh release
