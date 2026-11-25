@@ -695,7 +695,11 @@ converter_rules :: proc(c: ^Converter) -> Rules {
 }
 
 @(private="file") part_end :: proc(j: ^Json_Parts) {
-	if j.n == 0 && len(j.parts) > 0 do return
+	if j.n == 0 {
+		if len(j.parts) > 0 do return
+		j.b = strings.builder_make(0, 1024, j.alloc)
+		strings.write_byte(&j.b, '[')
+	}
 	for x in j.r.list[j.r.tail_at:] {
 		if j.n > 0 do strings.write_byte(&j.b, ',')
 		write_rule(&j.b, x)
@@ -728,7 +732,8 @@ converter_rules :: proc(c: ^Converter) -> Rules {
 /// an arena would leave every smaller copy of itself behind)
 rules_json :: proc(r: ^Rules, max_rules: int, allocator: runtime.Allocator) -> []string {
 	j := Json_Parts{r = r, room = max(1000, max_rules - (len(r.list) - r.tail_at)), alloc = allocator}
-	j.parts.allocator = context.allocator
+	// the parts' list too: the caller's arena may be gone before it reads them
+	j.parts.allocator = allocator
 	for x in r.list[:r.block_at] do part_add(&j, x)
 	// the whole-host blocks
 	any_t := Rule{types = ALL_TYPES, action = .block}

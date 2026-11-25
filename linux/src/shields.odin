@@ -360,6 +360,8 @@ when ENGINE_CEF {
 			}
 		}
 		log.debugf("shields: the %v rules made in %.0f ms", job.l, time.duration_milliseconds(time.since(start)))
+		// this thread's temporary memory (its own: init_context leaves it to us)
+		runtime.default_temp_allocator_destroy(&runtime.global_default_temp_allocator_data)
 		idle(proc(d: rawptr) {
 			job := cast(^Build)d
 			defer {
@@ -383,7 +385,7 @@ when ENGINE_CEF {
 				// WebKit copies the JSON: it goes as soon as it is handed over
 				shields_compile(job.parts, job.l)
 				for p in job.parts do delete(p, runtime.heap_allocator())
-				delete(job.parts)
+				delete(job.parts, runtime.heap_allocator())
 			}
 		}, job)
 	}, init_context = main_context, self_cleanup = true)
