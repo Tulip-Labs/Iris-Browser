@@ -194,6 +194,9 @@ engine_subprocess :: proc() -> (code: int, is_sub: bool) {
 	case "0": return false
 	case "1": return true
 	}
+	// GPU frames could not be imported on this machine before: software
+	// from the start (IRIS_CEF_GPU=1 tries again)
+	if os.exists(gpu_failed_mark()) do return false
 	if len(env("WAYLAND_DISPLAY")) == 0 && !os.exists(join({env("XDG_RUNTIME_DIR"), "wayland-0"}, context.temp_allocator)) do return false
 	return has_render_node()
 }
@@ -201,6 +204,20 @@ engine_subprocess :: proc() -> (code: int, is_sub: bool) {
 @(private="file") has_render_node :: proc() -> bool {
 	for i in 128 ..< 136 do if os.exists(fmt.tprintf("/dev/dri/renderD%d", i)) do return true
 	return false
+}
+
+@(private="file") gpu_failed_mark :: proc() -> string {
+	return join({data_dir(), "cef", "gpu-frames-failed"}, context.temp_allocator)
+}
+
+/// Chromium runs on the Wayland platform (GPU mode): its own clipboard is
+/// not usable (cef_view.odin pastes into pages directly)
+cef_chromium_wayland: bool
+
+/// GPU frames could not be imported here: remembered for the next starts
+cef_gpu_import_failed :: proc() {
+	make_dirs(join({data_dir(), "cef"}, context.temp_allocator))
+	write_file(gpu_failed_mark(), transmute([]u8)string("GPU frames (DMA-BUF) could not be imported into Iris's EGL on this machine; delete this file or start with IRIS_CEF_GPU=1 to try again\n"))
 }
 
 /// the switches: a renderer per site (a closed tab's renderer is its own,
@@ -231,7 +248,9 @@ cef_switches :: proc() -> []string {
 		// a copy; both the old and the new names of the switches (a name
 		// Chromium does not know is ignored)
 		append(&enable, "AcceleratedVideoDecodeLinuxGL", "AcceleratedVideoDecodeLinuxZeroCopyGL", "AcceleratedVideoEncoder",
-			"VaapiVideoDecodeLinuxGL", "VaapiVideoDecoder", "VaapiIgnoreDriverChecks", "CanvasOopRasterization")
+			"VaapiVideoDecodeLinuxGL", "VaapiVideoDecoder", "CanvasOopRasterization")
+		// (not VaapiIgnoreDriverChecks: Chromium's driver list keeps video
+		// off drivers known to give green frames or crash the GPU process)
 	}
 	append(&out,
 		"--site-per-process",
@@ -261,7 +280,9 @@ cef_switches :: proc() -> []string {
 	)
 	if ozone := env("IRIS_CEF_OZONE"); len(ozone) > 0 {
 		append(&out, strings.concatenate({"--ozone-platform=", ozone}, context.temp_allocator))
+		cef_chromium_wayland = ozone == "wayland"
 	} else if gpu {
+		cef_chromium_wayland = true
 		// the GPU's buffers (GBM, DMA-BUFs) need a real platform: Wayland,
 		// though no window of Chromium's is ever made (pages are drawn
 		// off-screen, into Iris's own)
@@ -331,9 +352,9 @@ engine_start :: proc() -> bool {
 	PR_SET_CHILD_SUBREAPER :: 36
 	linux.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0)
 	// a turn of CEF's work now and then even when it asks for none (CEF
-	// asks for every turn it needs: this is only a safety net, once a
-	// second, never a busy loop)
-	g_timeout_add_full(G_PRIORITY_DEFAULT_IDLE, 1000, proc "c" (d: rawptr) -> gboolean {
+	// asks for every turn it needs: this is only a safety net, four times a
+	// second at idle priority, never a busy loop)
+	g_timeout_add_full(G_PRIORITY_DEFAULT_IDLE, 250, proc "c" (d: rawptr) -> gboolean {
 		pump_now()
 		return 1
 	}, nil, nil)
@@ -358,37 +379,71 @@ engine_stop :: proc() {
 	end_children()
 }
 
-/// every process Iris still has under it (Chromium's GPU, utility and
-/// renderer processes, should CEF's shutdown have left one) ends with Iris:
-/// SIGTERM, a moment, then SIGKILL; only Iris's own descendants, at exit
+/// every process of Chromium's Iris still has under it (its GPU, utility
+/// and renderer processes, should CEF's shutdown have left one) ends with
+/// Iris: SIGTERM, a moment, then SIGKILL. Only Iris's own descendants that
+/// are Chromium's (a --type= switch, or a program from CEF's folder), never
+/// anything else Iris started (a file manager, the portal's helpers);
+/// zombies are reaped, not signalled.
 @(private="file") end_children :: proc() {
-	kids := descendants(context.temp_allocator)
+	reap_zombies()
+	kids := chromium_descendants(context.temp_allocator)
 	if len(kids) == 0 do return
-	for pid in kids do linux.kill(linux.Pid(pid), .SIGTERM)
+	for k in kids do linux.kill(linux.Pid(k.pid), .SIGTERM)
 	for _ in 0 ..< 20 {
+		reap_zombies()
 		alive := false
-		for pid in kids do if pid_alive(pid) && my_descendant(pid) do alive = true
+		for k in kids do if still_same(k) do alive = true
 		if !alive do return
 		ts := linux.Time_Spec{time_nsec = 25_000_000}
 		linux.nanosleep(&ts, nil)
 	}
-	for pid in kids do if pid_alive(pid) && my_descendant(pid) {
-		log.warnf("CEF: process %d did not end with Iris: killed", pid)
-		linux.kill(linux.Pid(pid), .SIGKILL)
+	for k in kids do if still_same(k) {
+		log.warnf("CEF: process %d did not end with Iris: killed", k.pid)
+		linux.kill(linux.Pid(k.pid), .SIGKILL)
+	}
+	reap_zombies()
+}
+
+/// the children that have ended, waited for (Iris is their subreaper)
+@(private="file") reap_zombies :: proc() {
+	for _ in 0 ..< 256 {
+		status: u32
+		pid, err := linux.waitpid(-1, &status, {.WNOHANG}, nil)
+		if err != .NONE || pid <= 0 do return
 	}
 }
 
-/// the pids under Iris (children and theirs), from /proc
-@(private="file") descendants :: proc(allocator := context.allocator) -> []i32 {
-	out := make([dynamic]i32, allocator)
+/// the process is still the one seen (same start time), alive, not a zombie
+@(private="file") still_same :: proc(k: Renderer_Proc) -> bool {
+	stat, err := os.read_entire_file(fmt.tprintf("/proc/%d/stat", k.pid), context.temp_allocator)
+	if err != nil do return false
+	state, ok0 := proc_stat_state(string(stat))
+	_, start, ok := parse_proc_stat(string(stat))
+	return ok && ok0 && start == k.start && state != 'Z' && state != 'X'
+}
+
+/// Chromium's processes under Iris (children and theirs), from /proc
+@(private="file") chromium_descendants :: proc(allocator := context.allocator) -> []Renderer_Proc {
+	out := make([dynamic]Renderer_Proc, allocator)
 	d, err := os.open("/proc")
 	if err != nil do return out[:]
 	defer os.close(d)
 	fis, _ := os.read_dir(d, -1, context.temp_allocator)
+	dir := cef_dir()
 	for fi in fis {
 		pid, ok := strconv.parse_int(fi.name)
 		if !ok || pid <= 1 || i32(pid) == i32(linux.getpid()) do continue
-		if my_descendant(i32(pid)) do append(&out, i32(pid))
+		stat, e := os.read_entire_file(fmt.tprintf("/proc/%d/stat", pid), context.temp_allocator)
+		if e != nil do continue
+		state, ok0 := proc_stat_state(string(stat))
+		_, start, ok1 := parse_proc_stat(string(stat))
+		if !ok0 || !ok1 || state == 'Z' || state == 'X' do continue
+		if !my_descendant(i32(pid)) do continue
+		cmd, _ := os.read_entire_file(fmt.tprintf("/proc/%d/cmdline", pid), context.temp_allocator)
+		exe, _ := os.read_link(fmt.tprintf("/proc/%d/exe", pid), context.temp_allocator)
+		if !is_chromium_process(cmd, exe, dir) do continue
+		append(&out, Renderer_Proc{i32(pid), start})
 	}
 	return out[:]
 }
@@ -738,12 +793,36 @@ cmdline_is_renderer :: proc(cmd: []u8) -> bool {
 	return false
 }
 
+/// the state letter of a /proc/pid/stat line (R, S, D, Z...)
+proc_stat_state :: proc(s: string) -> (u8, bool) {
+	close := strings.last_index_byte(s, ')')
+	if close < 0 || close + 2 >= len(s) do return 0, false
+	return s[close + 2], true
+}
+
+/// a process of Chromium's: one with a --type= switch (Iris's own binary,
+/// run again by CEF), or a program from CEF's folder
+is_chromium_process :: proc(cmd: []u8, exe, cef_dir: string) -> bool {
+	s := string(cmd)
+	for len(s) > 0 {
+		i := strings.index_byte(s, 0)
+		arg := i < 0 ? s : s[:i]
+		if strings.has_prefix(arg, "--type=") do return true
+		if i < 0 do break
+		s = s[i + 1:]
+	}
+	if len(cef_dir) > 0 && len(exe) > len(cef_dir) && strings.has_prefix(exe, cef_dir) && exe[len(cef_dir)] == '/' do return true
+	return false
+}
+
 // ---- END CEF_LOGIC_REAP
 
 // ---------------------------------------------------------------- downloads
 
 Download_Engine :: struct {
 	cef_id: u32,
+	/// the tab it came from (a tab downloading is never frozen or put to sleep)
+	tab_id: int,
 	/// the newest callback CEF gave for it (to cancel it)
 	cef_cb: ^cef_download_item_callback_t,
 }
@@ -765,8 +844,9 @@ download_cancel :: proc(d: ^Download) {
 
 /// CEF is about to download: the file goes to the Downloads folder under a
 /// free name (no dialog)
-cef_download_start :: proc(item: ^cef_download_item_t, suggested: string, cb: ^cef_before_download_callback_t) {
+cef_download_start :: proc(item: ^cef_download_item_t, suggested: string, cb: ^cef_before_download_callback_t, tab_id := 0) {
 	d := new(Download)
+	d.tab_id = tab_id
 	d.id = next_download
 	next_download += 1
 	d.cef_id = item.get_id(item)

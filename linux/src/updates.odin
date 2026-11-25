@@ -47,6 +47,7 @@ Gh_Release :: struct {
 	tag_name: string,
 	html_url: string,
 	draft:    bool,
+	prerelease: bool, // (CEF engine agent) a test build: never offered
 	assets:   []Gh_Release_Asset,
 }
 
@@ -62,7 +63,7 @@ release_pick :: proc(data: []u8, cef: bool) -> (version, link: string, ok: bool)
 		best: ^Gh_Release
 		best_v: string
 		for &r in list {
-			if r.draft || !strings.has_prefix(r.tag_name, CEF_TAG_PREFIX) do continue
+			if r.draft || r.prerelease || !strings.has_prefix(r.tag_name, CEF_TAG_PREFIX) do continue
 			v := strings.trim_prefix(r.tag_name, CEF_TAG_PREFIX)
 			if len(v) == 0 do continue
 			if best == nil || version_newer(v, best_v) {
@@ -130,6 +131,7 @@ updates_check :: proc() {
 test_release_pick :: proc(t: ^testing.T) {
 	list := `[
 		{"tag_name": "cef-v2.5.0", "draft": true, "html_url": "https://x/draft"},
+		{"tag_name": "cef-v2.6.0", "prerelease": true, "html_url": "https://x/pre"},
 		{"tag_name": "v2.4.1", "draft": false, "html_url": "https://x/v2.4.1"},
 		{"tag_name": "cef-v2.4.10", "draft": false, "html_url": "https://x/cef-v2.4.10",
 		 "assets": [{"name": "SHA256SUMS", "browser_download_url": "https://x/sums"},
@@ -141,6 +143,9 @@ test_release_pick :: proc(t: ^testing.T) {
 	testing.expect_value(t, v, "2.4.10")
 	testing.expect_value(t, link, "https://x/cef.flatpak")
 	_, _, ok = release_pick(transmute([]u8)string(`[{"tag_name": "v2.4.1"}]`), true)
+	testing.expect(t, !ok)
+	// a pre-release only is no update
+	_, _, ok = release_pick(transmute([]u8)string(`[{"tag_name": "cef-v9.0.0", "prerelease": true}]`), true)
 	testing.expect(t, !ok)
 	// the WPE build never takes a Chromium release, even if one is latest
 	_, _, ok = release_pick(transmute([]u8)string(`{"tag_name": "cef-v2.4.0"}`), false)

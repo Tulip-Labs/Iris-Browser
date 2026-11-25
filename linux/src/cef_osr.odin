@@ -178,6 +178,40 @@ cef_gpu_frames: bool
 	return ok
 }
 
+// the GPU must have read the frame's buffer before the callback returns
+// (CEF gives it back to its pool, and Chromium draws the next frame into
+// it): a fence, waited for here; glFinish where EGL has no fences
+@(private="file") Fences :: struct {
+	loaded:  bool,
+	create:  proc "c" (d: egl.Display, type: u32, attribs: [^]i32) -> rawptr,
+	wait:    proc "c" (d: egl.Display, sync: rawptr, flags: i32, timeout: u64) -> i32,
+	destroy: proc "c" (d: egl.Display, sync: rawptr) -> b32,
+}
+@(private="file") fences: Fences
+
+EGL_SYNC_FENCE_KHR :: 0x30F9
+EGL_SYNC_FLUSH_COMMANDS_BIT_KHR :: 0x0001
+/// at most this long for one frame's copy (nanoseconds): a frame late is
+/// better than a hang
+GPU_WAIT_NS :: 100_000_000
+
+@(private="file") wait_for_gpu :: proc() {
+	if !fences.loaded {
+		fences.loaded = true
+		fences.create = auto_cast egl.GetProcAddress("eglCreateSyncKHR")
+		fences.wait = auto_cast egl.GetProcAddress("eglClientWaitSyncKHR")
+		fences.destroy = auto_cast egl.GetProcAddress("eglDestroySyncKHR")
+	}
+	if fences.create != nil && fences.wait != nil && fences.destroy != nil {
+		if sync := fences.create(rnd.egl_display, EGL_SYNC_FENCE_KHR, nil); sync != nil {
+			fences.wait(rnd.egl_display, sync, EGL_SYNC_FLUSH_COMMANDS_BIT_KHR, GPU_WAIT_NS)
+			fences.destroy(rnd.egl_display, sync)
+			return
+		}
+	}
+	gl.Finish()
+}
+
 /// the popup (a <select>'s list) over the page, from its own texture
 @(private="file") lay_popup_gpu :: proc(p: ^Page) {
 	if !p.popup_on || p.popup_tex.id == 0 || p.tex.id == 0 do return
@@ -213,6 +247,8 @@ page_paint_gpu :: proc(p: ^Page, kind: i32, info: ^cef_accelerated_paint_info_t)
 	// rectangles are not always against the frame Iris copied last (and a
 	// GPU copy of a whole frame costs next to nothing)
 	if !gpu_copy(src, vis.x, vis.y, vis.width, vis.height, target, 0, 0) do return false
+	// read before CEF takes the buffer back (no tearing, no judder)
+	wait_for_gpu()
 	lay_popup_gpu(p)
 	if p.on_frame != nil do p.on_frame(p)
 	return true

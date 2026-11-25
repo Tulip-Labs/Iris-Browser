@@ -283,11 +283,14 @@ browser_select :: proc(t: ^Tab) {
 		set_str(&settings().space, t.space)
 	}
 	if split_on() && !split_has(t) do split_end()
+	// (CEF engine agent) the new tab is current before the old one is
+	// hidden: the engine may freeze or put to sleep the tab you left, and
+	// must not take it for the current one
+	b.current = t
 	if old != nil && old.page != nil {
 		page_set_visible(old.page, false)
 		page_focus(old.page, false)
 	}
-	b.current = t
 	if !tab_is_start(t) do chrome_leave_start()
 	if !tab_has_view(t) && len(t.url) > 0 {
 		u := strings.clone(t.url, context.temp_allocator)

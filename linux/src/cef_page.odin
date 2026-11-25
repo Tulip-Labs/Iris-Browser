@@ -48,6 +48,12 @@ Page :: struct {
 	/// where the page was scrolled when it went to sleep, for its address
 	restore_url:   string,
 	restore_scroll: [2]f64,
+	/// hidden: since when, and which time (a later show or hide makes a
+	/// timer of the time before do nothing); frozen by DevTools'
+	/// Page.setWebLifecycleState (cef_sleep.odin)
+	hidden_since:  f64,
+	hidden_seq:    int,
+	frozen:        bool,
 	/// a touchpad's last moves (time ms, dx, dy), for its fling
 	scroll_samples: [FLING_SAMPLES]Scroll_Sample,
 	scroll_n:      int,
@@ -86,7 +92,8 @@ page_view_rect :: proc(p: ^Page) -> cef_rect_t {
 /// the rectangles that changed, into the texture (all of it when its size
 /// changed); data is w*h BGRA
 @(private="file") upload_rects :: proc(t: ^Texture, data: rawptr, w, h: i32, rects: []cef_rect_t) {
-	if t.id == 0 || !t.owned || t.w != w || t.h != h {
+	// (a texture of GPU frames is RGBA: a software frame replaces it whole)
+	if t.id == 0 || !t.owned || t.w != w || t.h != h || !t.bgra {
 		texture_upload(t, data, w, h, w * 4)
 		return
 	}
@@ -185,8 +192,10 @@ page_set_visible :: proc(p: ^Page, on: bool) {
 	p.visible = on
 	page_apply_hidden(p)
 	if !on do fling_stop(p)
-	// a light page you left goes to sleep at once (cef_sleep.odin)
+	// a tab you left is frozen at once, and may sleep much later; one you
+	// come back to is alive at once (cef_sleep.odin)
 	if was && !on do cef_sleep_consider(cast(^Tab)p.user)
+	if on && !was do cef_sleep_shown(cast(^Tab)p.user)
 }
 
 page_set_active :: proc(p: ^Page, on: bool) {}
@@ -238,9 +247,15 @@ cursor_of_cef :: proc(t: i32) -> plat.Cursor_Shape {
 }
 
 /// a pointer event in window coordinates, for this page
+/// a woken tab still shows its last frame: what you do goes to nothing
+/// (not to a page you cannot see yet)
+@(private="file") holding :: proc(p: ^Page) -> bool {
+	return p.hold && now_s() < p.hold_until
+}
+
 page_pointer :: proc(p: ^Page, e: plat.Pointer_Event) {
 	host := page_host(p)
-	if host == nil do return
+	if host == nil || holding(p) do return
 	x, y := e.x - p.x, e.y - p.y
 	ev := cef_mouse_event_t{x = i32(math.round(x)), y = i32(math.round(y)), modifiers = flags(e.mods, p.buttons)}
 	switch e.kind {
@@ -296,7 +311,7 @@ page_pointer :: proc(p: ^Page, e: plat.Pointer_Event) {
 
 page_key :: proc(p: ^Page, e: plat.Key_Event) {
 	host := page_host(p)
-	if host == nil do return
+	if host == nil || holding(p) do return
 	ctrl := .Ctrl in e.mods
 	// Ctrl+V: Chromium's clipboard gets the desktop's text first (it has no
 	// desktop of its own), then the key goes to the page, whose paste event
@@ -396,6 +411,9 @@ fling_stop :: proc(p: ^Page) {
 }
 
 @(private="file") fling_start :: proc(p: ^Page, t: f64) {
+	// axis_stop comes once per axis: the first starts the fling, the next
+	// (with no moves left) changes nothing
+	if p.scroll_n == 0 do return
 	fling_stop(p)
 	vx, vy, ok := fling_velocity(p.scroll_samples[:p.scroll_n], t)
 	p.scroll_n = 0
