@@ -151,7 +151,7 @@ shields_ready :: proc() -> bool {
 
 /// what the converter makes changes with this: rules made by an older
 /// Iris are made again (and the old ones removed from WebKit's store)
-RULES_REV :: 3
+RULES_REV :: 4
 
 @(private="file") ids_path :: proc(l: Level, rev := RULES_REV) -> string {
 	if rev < 2 do return fmt.tprintf("%s/%v.ids", shields.dir, l)
@@ -338,7 +338,7 @@ when ENGINE_CEF {
 			any := false
 			for p, i in job.paths {
 				t := read_file(p) or_continue
-				converter_add_list(&conv, string(t), list_generic_ok(job.lists[i]))
+				converter_add_list(&conv, string(t), list_generic_ok(job.lists[i]), list_ultra_only(job.lists[i]))
 				any = true
 			}
 			// Iris's own domains: until the lists come, and at the ultra
