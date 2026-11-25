@@ -39,7 +39,7 @@ jobs:
       - name: WPE WebKit, Wayland, EGL and the tools
         run: |
           pacman -Syu --noconfirm --needed wpewebkit libsoup3 harfbuzz fontconfig wayland wayland-protocols libxkbcommon mesa libdrm \
-            pkgconf clang gcc python diffutils sway grim cantarell-fonts noto-fonts > /dev/null
+            pkgconf clang gcc python diffutils sway grim gdb cantarell-fonts noto-fonts > /dev/null
           pkg-config --modversion wpe-webkit-2.0 wpe-platform-2.0 wpe-platform-headless-2.0 wayland-client egl glesv2
       - name: Odin
         run: |
@@ -100,7 +100,13 @@ jobs:
           linux/iris > /tmp/iris.log 2>&1 &
           sleep 60
           grim /tmp/iris-1.25.png
-          pgrep -x iris > /dev/null || { echo "Iris did not stay open"; cat /tmp/iris.log; exit 1; }
+          if ! pgrep -x iris > /dev/null; then
+            echo "Iris did not stay open"; cat /tmp/iris.log
+            # where it died: the same start again, a debug build under gdb
+            (cd linux && sh build.sh dev) > /dev/null 2>&1 || true
+            timeout 120 gdb -q -batch -ex run -ex "thread apply all bt 25" --args linux/iris 2>&1 | grep -v "^\[New Thread\|^\[Thread .* exited" | tail -150
+            exit 1
+          fi
           cat /tmp/iris.log
           python3 - <<'PY'
           d = open('/tmp/iris-1.25.png', 'rb').read()
