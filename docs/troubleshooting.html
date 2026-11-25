@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Troubleshooting and FAQ — Iris docs</title>
+  <meta name="description" content="Fixes for common problems with Iris: sites that break, Flatpak install errors, the glass background, video and updates.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0B0C0E" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://tulip-labs.github.io/Iris-Browser/docs/troubleshooting.html">
+  <link rel="icon" type="image/svg+xml" href="../assets/iris.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="../assets/iris-64.png">
+  <link rel="apple-touch-icon" href="../assets/iris-256.png">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Iris">
+  <meta property="og:title" content="Troubleshooting and FAQ — Iris docs">
+  <meta property="og:description" content="Fixes for common problems with Iris: sites that break, Flatpak install errors, the glass background, video and updates.">
+  <meta property="og:url" content="https://tulip-labs.github.io/Iris-Browser/docs/troubleshooting.html">
+  <meta property="og:image" content="https://tulip-labs.github.io/Iris-Browser/assets/iris-512.png">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="../style.css">
+  <script src="../main.js" defer></script>
+</head>
+<body class="docs-page">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <nav class="topbar__inner glass" aria-label="Main">
+      <a class="brand" href="../index.html" aria-label="Iris, home">
+        <img src="../assets/iris-64.png" width="28" height="28" alt="">
+        <span>Iris</span>
+      </a>
+      <ul class="nav">
+        <li><a href="../index.html#features">Features</a></li>
+        <li><a href="../index.html#privacy">Privacy</a></li>
+        <li><a href="../index.html#engines">Engines</a></li>
+        <li><a href="../index.html#android">Android</a></li>
+        <li><a href="../index.html#install">Install</a></li>
+        <li><a href="index.html" aria-current="page">Docs</a></li>
+        <li><a href="../index.html#faq">FAQ</a></li>
+      </ul>
+      <div class="topbar__end">
+        <a class="btn btn--small topbar__docs" href="index.html" aria-current="page">Docs</a>
+        <a class="btn btn--small" href="https://github.com/Tulip-Labs/Iris-Browser">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <div class="docs">
+    <aside class="docs__side">
+      <nav class="sidenav glass" aria-label="Documentation">
+        <p class="sidenav__title">Documentation</p>
+        <ul>
+          <li><a href="index.html">Getting started</a></li>
+          <li><a href="using.html">Using Iris</a></li>
+          <li><a href="shields.html">Shields</a></li>
+          <li><a href="shortcuts.html">Keyboard shortcuts</a></li>
+          <li><a href="privacy.html">Privacy</a></li>
+          <li><a href="building.html">Building from source</a></li>
+          <li><a href="troubleshooting.html" aria-current="page">Troubleshooting and FAQ</a>
+            <ul>
+              <li><a href="#site">A site doesn't work</a></li>
+              <li><a href="#flatpak">The Flatpak won't install</a></li>
+              <li><a href="#blur">No blur behind the window</a></li>
+              <li><a href="#x11">Iris doesn't start</a></li>
+              <li><a href="#video">Video</a></li>
+              <li><a href="#faq">FAQ</a></li>
+            </ul>
+          </li>
+          <li><a href="contributing.html">Contributing and license</a></li>
+        </ul>
+      </nav>
+    </aside>
+
+    <main id="main" class="docs__main">
+      <article class="prose">
+
+        <p class="eyebrow">Documentation</p>
+        <h1>Troubleshooting and FAQ</h1>
+
+        <h2 id="site">A site doesn't work</h2>
+        <ul>
+          <li><strong>Shields:</strong> right-click the page and choose <em>Site broken? Reload without Shields</em> <span class="nowrap"><span class="from">From 2.3</span>.</span> Or turn Shields off for the site in the Shields panel. See <a href="shields.html#broken">Shields</a>.</li>
+          <li><strong>The sandbox:</strong> sites on plain http, a bare IP address or a failing certificate open in the sandbox (orange rim), where downloads, the camera, WebRTC and pop-ups are off. That is on purpose.</li>
+          <li><strong>A site that needs Chromium:</strong> try the Chromium (CEF) build <span class="nowrap"><span class="from">From 2.3</span>.</span> It installs beside the WPE build.</li>
+        </ul>
+
+        <h2 id="flatpak">The Flatpak won't install</h2>
+        <p>The bundle needs the GNOME 50 runtime from Flathub. Add the Flathub remote, then install again:</p>
+        <pre><code>flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user Iris-x86_64.flatpak</code></pre>
+
+        <h2 id="blur">No blur behind the window</h2>
+        <p>The glass shows the desktop blurred only where the compositor offers background blur through <code>ext-background-effect-v1</code> (niri 26.04 and newer, and others that adopt it). Elsewhere the window stays nearly solid. This is expected.</p>
+
+        <h2 id="x11">Iris doesn't start</h2>
+        <p>Iris for Linux is a Wayland app with no X11 code, so it needs a Wayland session. If it still won't start, run it from a terminal and <a href="https://github.com/Tulip-Labs/Iris-Browser/issues">open an issue</a> with what it prints:</p>
+        <pre><code>flatpak run io.github.tulip_labs.Iris</code></pre>
+
+        <h2 id="video">Video</h2>
+        <ul>
+          <li>On the WPE build, decoding on the graphics chip is off, because some drivers broke the picture into blocks.</li>
+          <li>The Chromium build doesn't play H.264, H.265 or AAC. VP9, AV1 and Opus play, and so does YouTube.</li>
+        </ul>
+
+        <h2 id="faq">FAQ</h2>
+        <dl class="qa">
+          <dt>Is Iris on Flathub?</dt>
+          <dd>Not yet. Flathub asks that submissions be made by people, not AI tools, so that submission is for a person on the team to prepare. Until then, install the bundle from GitHub Releases.</dd>
+          <dt>What happened to the apt, dnf and zypper repositories?</dt>
+          <dd>They are discontinued. Use the Flatpak.</dd>
+          <dt>Is there a Windows or macOS version?</dt>
+          <dd>No. Iris is made for Linux and Android.</dd>
+          <dt>Does Iris put tabs to sleep?</dt>
+          <dd>No. Every tab stays awake, and closing a tab frees its memory.</dd>
+          <dt>Do I need an account?</dt>
+          <dd>No. Iris has no accounts and collects nothing. See <a href="privacy.html">Privacy</a>.</dd>
+        </dl>
+
+      </article>
+      <nav class="pager" aria-label="Previous and next page"><a class="pager__prev glass" href="building.html"><span>Previous</span>Building from source</a><a class="pager__next glass" href="contributing.html"><span>Next</span>Contributing and license</a></nav>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <div class="footer__brand">
+        <img src="../assets/iris-64.png" width="32" height="32" alt="">
+        <div>
+          <p><strong>Iris</strong> by Tulip Labs</p>
+          <p class="muted">Cesar Jose Luis Torrecilla Gelvez</p>
+        </div>
+      </div>
+      <ul class="footer__links" role="list">
+        <li><a href="index.html">Docs</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser">GitHub</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/releases">Releases</a></li>
+        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/blob/main/LICENSE">License: GPL-3.0</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/issues">Report an issue</a></li>
+      </ul>
+      <p class="muted footer__small">This site has no trackers, no analytics and no outside fonts or scripts.</p>
+    </div>
+  </footer>
+</body>
+</html>

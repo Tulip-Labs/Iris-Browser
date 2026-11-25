@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shields — Iris docs</title>
+  <meta name="description" content="Iris Shields: the three levels, what is blocked, YouTube, tracking parameters, the privacy report and what to do when a site breaks.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0B0C0E" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://tulip-labs.github.io/Iris-Browser/docs/shields.html">
+  <link rel="icon" type="image/svg+xml" href="../assets/iris.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="../assets/iris-64.png">
+  <link rel="apple-touch-icon" href="../assets/iris-256.png">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Iris">
+  <meta property="og:title" content="Shields — Iris docs">
+  <meta property="og:description" content="Iris Shields: the three levels, what is blocked, YouTube, tracking parameters, the privacy report and what to do when a site breaks.">
+  <meta property="og:url" content="https://tulip-labs.github.io/Iris-Browser/docs/shields.html">
+  <meta property="og:image" content="https://tulip-labs.github.io/Iris-Browser/assets/iris-512.png">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="../style.css">
+  <script src="../main.js" defer></script>
+</head>
+<body class="docs-page">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <nav class="topbar__inner glass" aria-label="Main">
+      <a class="brand" href="../index.html" aria-label="Iris, home">
+        <img src="../assets/iris-64.png" width="28" height="28" alt="">
+        <span>Iris</span>
+      </a>
+      <ul class="nav">
+        <li><a href="../index.html#features">Features</a></li>
+        <li><a href="../index.html#privacy">Privacy</a></li>
+        <li><a href="../index.html#engines">Engines</a></li>
+        <li><a href="../index.html#android">Android</a></li>
+        <li><a href="../index.html#install">Install</a></li>
+        <li><a href="index.html" aria-current="page">Docs</a></li>
+        <li><a href="../index.html#faq">FAQ</a></li>
+      </ul>
+      <div class="topbar__end">
+        <a class="btn btn--small topbar__docs" href="index.html" aria-current="page">Docs</a>
+        <a class="btn btn--small" href="https://github.com/Tulip-Labs/Iris-Browser">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <div class="docs">
+    <aside class="docs__side">
+      <nav class="sidenav glass" aria-label="Documentation">
+        <p class="sidenav__title">Documentation</p>
+        <ul>
+          <li><a href="index.html">Getting started</a></li>
+          <li><a href="using.html">Using Iris</a></li>
+          <li><a href="shields.html" aria-current="page">Shields</a>
+            <ul>
+              <li><a href="#how">How Shields work</a></li>
+              <li><a href="#levels">Levels</a></li>
+              <li><a href="#blocked">What is blocked</a></li>
+              <li><a href="#youtube">YouTube</a></li>
+              <li><a href="#links">Tracking parameters</a></li>
+              <li><a href="#broken">When a site breaks</a></li>
+              <li><a href="#report">Privacy Report</a></li>
+            </ul>
+          </li>
+          <li><a href="shortcuts.html">Keyboard shortcuts</a></li>
+          <li><a href="privacy.html">Privacy</a></li>
+          <li><a href="building.html">Building from source</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting and FAQ</a></li>
+          <li><a href="contributing.html">Contributing and license</a></li>
+        </ul>
+      </nav>
+    </aside>
+
+    <main id="main" class="docs__main">
+      <article class="prose">
+
+        <p class="eyebrow">Documentation</p>
+        <h1>Shields</h1>
+        <p class="lead">Shields stop ads and trackers inside the engine, before a request leaves your computer or phone. They are on from the first start. Click the shield in the toolbar to open the Shields panel.</p>
+
+        <h2 id="how">How Shields work</h2>
+        <ul>
+          <li>Iris uses uBlock Origin's and EasyList's lists. It fetches them from uBlock Origin's mirrors every four days and turns them into rules the engine applies itself.</li>
+          <li>Until the lists arrive, a built-in list of ad, tracker, fingerprinting and mining domains stands in. On the first start the panel says the block list is being made ready.</li>
+          <li>Messaging and sign-in sites are never blocked, and neither is anything on them. This includes WhatsApp, Google accounts, Microsoft sign-in, Teams, Meet and the common captcha services.</li>
+          <li>Third-party cookies are refused, and WebKit's tracking prevention is on.</li>
+        </ul>
+
+        <h2 id="levels">Levels</h2>
+        <div class="table-wrap">
+        <table class="stack">
+          <thead><tr><th scope="col">Level</th><th scope="col">What it stops</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Moderate</th><td>Ads and trackers from other sites (EasyList, EasyPrivacy). A site's own requests always load.</td></tr>
+            <tr><th scope="row">Aggressive</th><td>Also a site's own ads and trackers, uBlock Origin's filters, and the empty boxes ads leave.</td></tr>
+            <tr><th scope="row">Ultra aggressive</th><td>Also cookie notices, newsletter and sign-up pop-ups and other annoyances. The built-in domain list blocks on top of the lists.</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p><strong>Ultra aggressive is the default</strong> <span class="nowrap"><span class="from">From 2.3</span>.</span> Iris 2.3 moves everyone to it once. A level you choose after that stays. Before 2.3, the default was Aggressive.</p>
+        <p>uBlock Origin's fixes for sites the lists would otherwise break stay on at every level.</p>
+
+        <h2 id="blocked">What is blocked</h2>
+        <ul>
+          <li>Ads and tracker requests, at the level you chose.</li>
+          <li>The empty boxes ads leave behind (Aggressive and up).</li>
+          <li>Cookie notices and annoyance pop-ups (Ultra aggressive).</li>
+          <li>Ads that open new tabs: a pop-up needs your click.</li>
+          <li>Tracking parameters in links <span class="nowrap"><span class="from">From 2.3</span>.</span></li>
+        </ul>
+
+        <h2 id="youtube">YouTube</h2>
+        <p>On YouTube, the player's answer loses its ads before the player reads it. No ad is ever scheduled, and no request is blocked for YouTube to notice. YouTube's ad blocker notice is removed the same way. A feed ad that still appears is hidden, and an ad that still plays is skipped, muted. Linux and Android run the same script.</p>
+
+        <h2 id="links">Tracking parameters <span class="from">From 2.3</span></h2>
+        <p>Where Shields are up for a site, Iris removes tracking parameters before an address loads: <code>utm_*</code>, <code>fbclid</code>, <code>gclid</code> and others. Google's own addresses are left as they are. <em>Copy Clean Link</em> in the right-click menu copies an address without them.</p>
+
+        <h2 id="broken">When a site breaks</h2>
+        <ol>
+          <li>Right-click the page and choose <strong>Site broken? Reload without Shields</strong> <span class="nowrap"><span class="from">From 2.3</span>.</span> Iris turns Shields off for that site and reloads. <em>Reload with Shields</em> turns them back on.</li>
+          <li>Or open the Shields panel and turn Shields off for that site, or everywhere.</li>
+          <li>Or pick a lower level. Moderate never blocks a site's own requests.</li>
+        </ol>
+        <p>If a site keeps breaking, <a href="https://github.com/Tulip-Labs/Iris-Browser/issues">open an issue</a> with its address and your Shields level.</p>
+
+        <h2 id="report">Privacy Report <span class="from">From 2.3</span></h2>
+        <p>In the Shields panel, <strong>Privacy Report</strong> shows the trackers Shields stopped on this page, and today. Iris checks once when a page has finished loading, and again when you open the report. It keeps only tracker names and numbers, never the sites you visit. Private and sandboxed tabs add nothing. Requests a script makes by itself may be missing from the count.</p>
+
+      </article>
+      <nav class="pager" aria-label="Previous and next page"><a class="pager__prev glass" href="using.html"><span>Previous</span>Using Iris</a><a class="pager__next glass" href="shortcuts.html"><span>Next</span>Keyboard shortcuts</a></nav>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <div class="footer__brand">
+        <img src="../assets/iris-64.png" width="32" height="32" alt="">
+        <div>
+          <p><strong>Iris</strong> by Tulip Labs</p>
+          <p class="muted">Cesar Jose Luis Torrecilla Gelvez</p>
+        </div>
+      </div>
+      <ul class="footer__links" role="list">
+        <li><a href="index.html">Docs</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser">GitHub</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/releases">Releases</a></li>
+        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/blob/main/LICENSE">License: GPL-3.0</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/issues">Report an issue</a></li>
+      </ul>
+      <p class="muted footer__small">This site has no trackers, no analytics and no outside fonts or scripts.</p>
+    </div>
+  </footer>
+</body>
+</html>
