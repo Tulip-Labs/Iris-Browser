@@ -87,7 +87,7 @@ shield_rules_cli :: proc(level_name, dir, out: string) -> int {
 	for li in level_lists(l) {
 		text, err := os.read_entire_file_from_path(fmt.tprintf("%s/%s.txt", dir, list_id(li)), context.allocator)
 		if err != nil do continue
-		converter_add_list(&c, string(text), list_generic_ok(li))
+		converter_add_list(&c, string(text), list_generic_ok(li), list_ultra_only(li))
 		lists += 1
 	}
 	// as Iris itself does: its own domains until the lists come, and at ultra

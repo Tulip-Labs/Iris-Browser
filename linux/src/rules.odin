@@ -100,6 +100,14 @@ list_path :: proc(l: List) -> string {
 	return ""
 }
 
+/// a list only the ultra level reads (cookie notices and annoyances): its
+/// rules, Iris's own domains and the pings rule never apply on the video
+/// sites (MEDIA_SITES), which get the aggressive level at most
+list_ultra_only :: proc(l: List) -> bool {
+	for x in level_lists(.aggressive) do if x == l do return false
+	return true
+}
+
 /// a list whose hiding rules for every site Iris takes (the others' are
 /// for named sites only: their generic ones hide real content too often)
 list_generic_ok :: proc(l: List) -> bool {
@@ -127,6 +135,19 @@ NEVER :: [?]string{"whatsapp.com", "whatsapp.net", "accounts.google.com", "conse
 CONSENT :: [?]string{"cookielaw.org", "onetrust.com", "consent.cookiebot.com", "consentcdn.cookiebot.com", "privacy-mgmt.com", "sourcepoint.com"}
 
 CONSENT_HIDE :: [?]string{"#onetrust-consent-sdk", "#onetrust-banner-sdk", ".onetrust-pc-dark-filter", "#CybotCookiebotDialog", "#CybotCookiebotDialogBodyUnderlay", "div[id^=\"sp_message_container_\"]", ".sp_veil"}
+
+/// sites whose pages play video: the ultra level's own rules (its lists,
+/// Iris's own domains, the pings rule) stop at them, as the aggressive
+/// level does, so a player never misses what it waits for (YouTube's
+/// "your browser can't play this video", LinkedIn's videos that never start)
+MEDIA_SITES :: [?]string{"youtube.com", "youtube-nocookie.com", "linkedin.com", "licdn.com", "vimeo.com", "twitch.tv", "dailymotion.com", "facebook.com", "instagram.com", "x.com", "twitter.com", "tiktok.com"}
+
+/// what video players need wherever they are, the lists notwithstanding:
+/// Google's BotGuard (attestation: without it YouTube's player refuses to
+/// play), and the ad-status probe YouTube's player and IMA read (blocked, it
+/// tells the page an ad blocker is there)
+PLAYER_HOSTS :: [?]string{"jnn-pa.googleapis.com"}
+PLAYER_URLS :: [?]string{"^https?://www\\.google\\.com/js/th/", "^https?://static\\.doubleclick\\.net/instream/ad_status\\.js"}
 
 /// delivery networks many sites share: a rule that names one whole would break them
 SHARED :: [?]string{"cloudfront.net", "amazonaws.com", "s3.amazonaws.com", "akamaihd.net", "akamaized.net", "akamai.net", "edgekey.net", "edgesuite.net", "fastly.net", "fastlylb.net", "azureedge.net", "azurefd.net", "azurewebsites.net", "windows.net", "blob.core.windows.net", "msecnd.net", "googleusercontent.com", "googleapis.com", "storage.googleapis.com", "gstatic.com", "cloudflare.com", "cloudflare.net", "jsdelivr.net", "unpkg.com", "github.io", "githubusercontent.com", "netlify.app", "vercel.app", "herokuapp.com", "firebaseapp.com", "web.app", "appspot.com", "b-cdn.net", "cdn77.org", "kxcdn.com", "digitaloceanspaces.com", "r2.dev", "pages.dev", "workers.dev", "wp.com", "cloudinary.com", "imgix.net", "ctfassets.net", "backblazeb2.com", "rackcdn.com", "llnwd.net", "hwcdn.net", "edgecastcdn.net", "wixstatic.com", "squarespace-cdn.com", "shopifycdn.com", "myshopify.com"}
@@ -239,13 +260,23 @@ Rule :: struct {
 /// the rules of a conversion, in WebKit's order
 Rules :: struct {
 	list:          [dynamic]Rule,
-	/// the whole-host blocks (the sets) stand before list[block_at]; the
-	/// rules every part ends with start at list[tail_at]
+	/// the whole-host blocks (the sets) stand before list[block_at] (the
+	/// lists the aggressive level reads too) and before list[ultra_at] (the
+	/// ultra-only lists' and Iris's own); the rules every part ends with
+	/// start at list[tail_at]
+	ultra_at:      int,
+	/// where the ultra-only lists' hiding begins (after the generic hiding)
+	uhides_at:     int,
+	/// the rule the video sites' pages stop the ultra level's at
+	media_at:      int,
 	block_at:      int,
 	tail_at:       int,
 	/// the lists' whole-host blocks: for any request, for other sites' only
 	hosts_any:     string,
 	hosts_third:   string,
+	/// the same from the ultra-only lists
+	uhosts_any:    string,
+	uhosts_third:  string,
 	/// Iris's own domains count too (builtin_hosts), for other sites'
 	/// requests only at the moderate level
 	builtin:       bool,
@@ -259,19 +290,26 @@ Converter :: struct {
 	hides:      [dynamic]Rule,
 	exceptions: [dynamic]Rule,
 	generic:    [dynamic]string,
+	/// what the ultra-only lists hide and block (list_ultra_only)
+	uhides:     [dynamic]Rule,
+	ublocks:    [dynamic]Rule,
 	seen:       map[string]bool,
 	/// hosts the lists block whole ("||host^"): 1 for any request, 2 for
-	/// other sites' requests only
+	/// other sites' requests only (and those of the ultra-only lists)
 	hosts:      map[string]u8,
+	uhosts:     map[string]u8,
+	/// the list being read is an ultra-only one
+	ultra_only: bool,
 	/// Iris's own domains count (until the lists come, and at ultra)
 	builtin:    bool,
 	/// the list being read gives hiding rules for every site
 	no_generic: bool,
 }
 
-converter_add_list :: proc(c: ^Converter, text: string, generic := true) {
+converter_add_list :: proc(c: ^Converter, text: string, generic := true, ultra_only := false) {
 	c.no_generic = !generic
-	defer c.no_generic = false
+	c.ultra_only = ultra_only
+	defer c.no_generic, c.ultra_only = false, false
 	t := text
 	for line in strings.split_lines_iterator(&t) do add_line(c, line)
 }
@@ -285,8 +323,9 @@ converter_add_domains :: proc(c: ^Converter, domains: []string) {
 @(private="file") add_host :: proc(c: ^Converter, h: string, third: bool) {
 	if !usable(h) do return
 	v: u8 = third ? 2 : 1
-	if old, ok := c.hosts[h]; ok && old <= v do return
-	c.hosts[h] = v
+	m := c.ultra_only ? &c.uhosts : &c.hosts
+	if old, ok := m[h]; ok && old <= v do return
+	m[h] = v
 }
 
 host_pattern :: proc(d: string) -> string {
@@ -330,7 +369,7 @@ UNSUPPORTED :: [?]string{":has-text(", ":-abp-", ":style(", ":remove(", ":matche
 	if len(yes) == 0 && len(no) == 0 do return
 	r := Rule{filter = ".*", action = .hide, selector = s}
 	if len(yes) > 0 { r.if_dom = yes[:] } else { r.unless_dom = no[:] }
-	append(&c.hides, r)
+	append(c.ultra_only ? &c.uhides : &c.hides, r)
 }
 
 @(private="file") domain :: proc(d: string) -> (string, bool) {
@@ -466,7 +505,7 @@ UNSUPPORTED :: [?]string{":has-text(", ":-abp-", ":style(", ":remove(", ":matche
 		return
 	}
 	if t != {} do emit_block(c, Rule{host = whole, filter = filter, types = t, party = party, if_dom = if_domains[:], unless_dom = unless_domains[:], action = .block})
-	if frames do append(&c.blocks, Rule{host = whole, filter = filter, types = {.document}, frames = true, party = party, if_dom = if_domains[:], unless_dom = unless_domains[:], action = .block})
+	if frames do append(c.ultra_only ? &c.ublocks : &c.blocks, Rule{host = whole, filter = filter, types = {.document}, frames = true, party = party, if_dom = if_domains[:], unless_dom = unless_domains[:], action = .block})
 }
 
 @(private="file") emit_block :: proc(c: ^Converter, r: Rule) {
@@ -484,7 +523,7 @@ UNSUPPORTED :: [?]string{":has-text(", ":-abp-", ":style(", ":remove(", ":matche
 	key := strings.to_string(b)
 	if key in c.seen do return
 	c.seen[key] = true
-	append(&c.blocks, r)
+	append(c.ultra_only ? &c.ublocks : &c.blocks, r)
 }
 
 /// a filter's pattern as WebKit's url-filter (a small regular expression)
@@ -530,9 +569,11 @@ url_filter :: proc(p0: string) -> (string, bool) {
 }
 
 /// the rules in WebKit's order: hiding first (WebKit takes the rules that
-/// hide everywhere only from before its other rules), then the blocks
-/// (the host sets among them), then the exceptions and what is always left
-/// alone, which every part of WebKit's ends with
+/// hide everywhere only from before its other rules); then what only the
+/// ultra level has (the ultra-only lists' rules, Iris's own domains, the
+/// pings rule), which the video sites skip; then the blocks every level
+/// above moderate has (the host sets among them); then the exceptions and
+/// what is always left alone, which every part of WebKit's ends with
 converter_rules :: proc(c: ^Converter) -> Rules {
 	r := Rules{level = c.level}
 	if c.level == .ultra do for s in CONSENT_HIDE do append(&c.generic, s)
@@ -540,20 +581,32 @@ converter_rules :: proc(c: ^Converter) -> Rules {
 	for i := 0; i < len(c.generic); i += 12 {
 		append(&r.list, Rule{filter = ".*", action = .hide, selector = strings.join(c.generic[i:min(i + 12, len(c.generic))], ", ")})
 	}
+	media := make([]string, len(MEDIA_SITES))
+	for d, i in MEDIA_SITES do media[i] = strings.concatenate({"*", d})
 	if len(c.generic) > 0 {
-		// Google's and YouTube's pages skip the thousands of selectors meant
-		// for other sites' ad boxes (their style is recomputed all the time;
-		// their own ads have rules of their own, after this one)
-		@(static) gy := [?]string{"*google.com", "*youtube.com"}
+		// Google's, YouTube's and the video sites' pages skip the thousands
+		// of selectors meant for other sites' ad boxes (their style is
+		// recomputed all the time, a player's among it; their own ads have
+		// rules of their own, after this one)
+		gy := make([dynamic]string)
+		append(&gy, "*google.com")
+		append(&gy, ..media)
 		append(&r.list, Rule{filter = ".*", if_dom = gy[:], action = .ignore})
 	}
-	append(&r.list, ..c.hides[:])
-	r.block_at = len(r.list)
-	append(&r.list, ..c.blocks[:])
+	r.uhides_at = len(r.list)
+	append(&r.list, ..c.uhides[:])
+	r.ultra_at = len(r.list)
+	append(&r.list, ..c.ublocks[:])
 	if c.level == .ultra {
 		// beacons and pings to other sites: tracking, nearly always
 		append(&r.list, Rule{filter = ".*", types = {.ping}, party = 2, action = .block})
 	}
+	// the video sites: everything above stops here for them
+	r.media_at = len(r.list)
+	append(&r.list, Rule{filter = ".*", if_dom = media, action = .ignore})
+	append(&r.list, ..c.hides[:])
+	r.block_at = len(r.list)
+	append(&r.list, ..c.blocks[:])
 	r.tail_at = len(r.list)
 	append(&r.list, ..c.exceptions[:])
 	// messaging and sign-in pages, and requests to them, are left alone
@@ -563,47 +616,62 @@ converter_rules :: proc(c: ^Converter) -> Rules {
 		on[0] = strings.concatenate({"*", d})
 		append(&r.list, Rule{filter = ".*", if_dom = on, action = .ignore})
 	}
-	// and requests to consent managers
+	// and requests to consent managers, and what players need
 	for d in CONSENT do append(&r.list, Rule{host = d, action = .ignore})
+	for d in PLAYER_HOSTS do append(&r.list, Rule{host = d, action = .ignore})
+	for p in PLAYER_URLS do append(&r.list, Rule{filter = p, action = .ignore})
 	// YouTube sees no ad blocker (it fights them): only its ad breaks go
-	@(static) yt := [?]string{"*youtube.com"}
+	// (youtube.js takes the ads out of what the player reads)
+	@(static) yt := [?]string{"*youtube.com", "*youtube-nocookie.com"}
 	append(&r.list, Rule{filter = ".*", if_dom = yt[:], action = .ignore})
 	for p in ([?]string{"^https?://(www\\.)?youtube\\.com/youtubei/v1/player/ad_break", "^https?://(www\\.)?youtube\\.com/pagead/", "^https?://(www\\.)?youtube\\.com/api/stats/ads"}) {
 		append(&r.list, Rule{filter = p, types = {.raw, .fetch, .script, .image}, action = .block})
 	}
-	// the host sets: the lists' hosts, less those a parent (or Iris's own
-	// list, where it counts the same) already covers
+	// the host sets: each less what a parent already covers; the ultra-only
+	// lists' less what the other lists' or Iris's own (beside them) cover
 	r.builtin = c.builtin
 	r.builtin_third = c.builtin && c.level == .moderate
 	builtin := c.builtin ? builtin_hosts() : ""
+	r.hosts_any, r.hosts_third = host_sets(c.hosts, "", "", "", false, false)
+	r.uhosts_any, r.uhosts_third = host_sets(c.uhosts, r.hosts_any, r.hosts_third, builtin, r.builtin, r.builtin_third)
+	return r
+}
+
+/// a converter's hosts as two sets (any request, other sites' requests),
+/// less those covered by a parent, by the sets given (any, third), or by
+/// Iris's own list
+@(private="file") host_sets :: proc(hosts: map[string]u8, any0, third0, builtin: string, use_builtin, builtin_third: bool) -> (any_set, third_set: string) {
 	keys: [dynamic]string
-	for h, v in c.hosts do if v == 1 do append(&keys, h)
+	for h, v in hosts do if v == 1 do append(&keys, h)
 	slice.sort(keys[:])
-	r.hosts_any = strings.join(keys[:], "\n")
-	any_kept: [dynamic]string
+	all_any := strings.join(keys[:], "\n")
+	kept: [dynamic]string
 	for h in keys {
-		if set_has_parent(r.hosts_any, h) do continue
-		if r.builtin && !r.builtin_third {
+		if set_has_parent(all_any, h) do continue
+		if _, ok := set_find(any0, h); ok do continue
+		if use_builtin && !builtin_third {
 			if e, ok := set_find(builtin, h); ok && usable(e) do continue
 		}
-		append(&any_kept, h)
+		append(&kept, h)
 	}
-	r.hosts_any = strings.join(any_kept[:], "\n")
+	any_set = strings.join(kept[:], "\n")
 	clear(&keys)
-	for h, v in c.hosts do if v == 2 do append(&keys, h)
+	clear(&kept)
+	for h, v in hosts do if v == 2 do append(&keys, h)
 	slice.sort(keys[:])
-	third_kept: [dynamic]string
 	all_third := strings.join(keys[:], "\n")
 	for h in keys {
-		if _, ok := set_find(r.hosts_any, h); ok do continue
+		if _, ok := set_find(all_any, h); ok do continue
+		if _, ok := set_find(any0, h); ok do continue
+		if _, ok := set_find(third0, h); ok do continue
 		if set_has_parent(all_third, h) do continue
-		if r.builtin {
+		if use_builtin {
 			if e, ok := set_find(builtin, h); ok && usable(e) do continue
 		}
-		append(&third_kept, h)
+		append(&kept, h)
 	}
-	r.hosts_third = strings.join(third_kept[:], "\n")
-	return r
+	third_set = strings.join(kept[:], "\n")
+	return
 }
 
 // ---------------------------------------------------------------- WebKit's JSON
@@ -692,6 +760,10 @@ converter_rules :: proc(c: ^Converter) -> Rules {
 	room:  int,
 	size:  int, // the bytes a full part took (the next one's builder starts there)
 	alloc: runtime.Allocator,
+	/// the ultra level's rules are being written: a part that ends among
+	/// them ends with the video sites' rule too (an ignore rule only reaches
+	/// the rules of its own part)
+	ultra_open: bool,
 }
 
 @(private="file") part_end :: proc(j: ^Json_Parts) {
@@ -699,6 +771,11 @@ converter_rules :: proc(c: ^Converter) -> Rules {
 		if len(j.parts) > 0 do return
 		j.b = strings.builder_make(0, 1024, j.alloc)
 		strings.write_byte(&j.b, '[')
+	}
+	if j.ultra_open {
+		if j.n > 0 do strings.write_byte(&j.b, ',')
+		write_rule(&j.b, j.r.list[j.r.media_at])
+		j.n += 1
 	}
 	for x in j.r.list[j.r.tail_at:] {
 		if j.n > 0 do strings.write_byte(&j.b, ',')
@@ -731,24 +808,37 @@ converter_rules :: proc(c: ^Converter) -> Rules {
 /// at a time from allocator (the heap, in Iris: a builder that grows in
 /// an arena would leave every smaller copy of itself behind)
 rules_json :: proc(r: ^Rules, max_rules: int, allocator: runtime.Allocator) -> []string {
-	j := Json_Parts{r = r, room = max(1000, max_rules - (len(r.list) - r.tail_at)), alloc = allocator}
+	j := Json_Parts{r = r, room = max(1000, max_rules - (len(r.list) - r.tail_at) - 1), alloc = allocator}
 	// the parts' list too: the caller's arena may be gone before it reads them
 	j.parts.allocator = allocator
-	for x in r.list[:r.block_at] do part_add(&j, x)
-	// the whole-host blocks
 	any_t := Rule{types = ALL_TYPES, action = .block}
 	third_t := Rule{types = ALL_TYPES, party = 2, action = .block}
-	add_set :: proc(j: ^Json_Parts, set: string, t: Rule, builtin: bool) {
+	add_set :: proc(j: ^Json_Parts, set: string, t: Rule, builtin: bool, covered := "") {
 		t := t
 		s := set
 		for h in strings.split_lines_iterator(&s) {
 			if len(h) == 0 do continue
 			if builtin && !usable(h) do continue
+			// blocked everywhere already, by the other lists
+			if _, ok := set_find(covered, h); ok do continue
 			t.host = h
 			part_add(j, t)
 		}
 	}
-	if r.builtin do add_set(&j, builtin_hosts(), r.builtin_third ? third_t : any_t, true)
+	for x, i in r.list[:r.ultra_at] {
+		if i == r.uhides_at do j.ultra_open = true
+		part_add(&j, x)
+	}
+	j.ultra_open = true
+	// the ultra level's whole-host blocks
+	if r.builtin do add_set(&j, builtin_hosts(), r.builtin_third ? third_t : any_t, true, r.hosts_any)
+	add_set(&j, r.uhosts_any, any_t, false)
+	add_set(&j, r.uhosts_third, third_t, false)
+	for x, i in r.list[r.ultra_at:r.block_at] {
+		if r.ultra_at + i == r.media_at do j.ultra_open = false
+		part_add(&j, x)
+	}
+	// the other lists'
 	add_set(&j, r.hosts_any, any_t, false)
 	add_set(&j, r.hosts_third, third_t, false)
 	for x in r.list[r.block_at:r.tail_at] do part_add(&j, x)
@@ -862,4 +952,22 @@ json_list :: proc(items: []string) -> string {
 	list := [?]string{"ads.example.com", "tracker.net"}
 	testing.expect(t, listed(list[:], "x.tracker.net"))
 	testing.expect(t, !listed(list[:], "example.com"))
+}
+
+/// every WebKit part with ultra-only rules in it stops them for the video
+/// sites itself (an ignore rule reaches only the rules of its own part)
+@(test) test_json_parts_media :: proc(t: ^testing.T) {
+	arena: virtual.Arena
+	_ = virtual.arena_init_growing(&arena)
+	defer virtual.arena_destroy(&arena)
+	context.allocator = virtual.arena_allocator(&arena)
+	c := Converter{level = .ultra, builtin = true}
+	converter_add_list(&c, "||ads.example.com^$script\n")
+	parts := converter_finish(&c, 50_000)
+	testing.expect(t, len(parts) >= 4)
+	// (the generic hiding's rule names the video sites too: part 0 has both)
+	for p, i in parts {
+		n := strings.count(p, `"*youtube-nocookie.com","*linkedin.com"`)
+		if i < len(parts) - 1 do testing.expectf(t, n >= (i == 0 ? 2 : 1), "part %d has no video sites' rule", i)
+	}
 }

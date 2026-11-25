@@ -59,10 +59,14 @@ Matcher :: struct {
 	/// hiding rules for every page (generic, or "unless-domain")
 	hides:         [dynamic]^Net_Rule,
 	rules:         int,
-	/// where the whole-host blocks stand among the rules (Rules.block_at)
+	/// where the whole-host blocks stand among the rules (Rules.ultra_at,
+	/// Rules.block_at)
+	ultra_at:      i32,
 	block_at:      i32,
 	hosts_any:     string,
 	hosts_third:   string,
+	uhosts_any:    string,
+	uhosts_third:  string,
 	builtin:       bool,
 	builtin_third: bool,
 	level:         Level,
@@ -72,7 +76,7 @@ Matcher :: struct {
 
 // ---------------------------------------------------------------- the file
 
-MATCHER_MAGIC :: "IRIS-SHIELD-MATCHER-1\n"
+MATCHER_MAGIC :: "IRIS-SHIELD-MATCHER-2\n"
 
 @(private="file") put_u32 :: proc(b: ^[dynamic]u8, v: u32) {
 	append(b, u8(v), u8(v >> 8), u8(v >> 16), u8(v >> 24))
@@ -114,15 +118,18 @@ matcher_bytes :: proc(r: ^Rules, key: string) -> []u8 {
 	}
 	defer delete(grams)
 	defer delete(has)
-	size := len(MATCHER_MAGIC) + len(key) + len(r.hosts_any) + len(r.hosts_third) + 64
+	size := len(MATCHER_MAGIC) + len(key) + len(r.hosts_any) + len(r.hosts_third) + len(r.uhosts_any) + len(r.uhosts_third) + 64
 	for x in r.list do size += 40 + len(x.host) + len(x.filter) + len(x.selector) + (len(x.if_dom) + len(x.unless_dom)) * 24
 	b := make([dynamic]u8, 0, size, runtime.heap_allocator())
 	append(&b, MATCHER_MAGIC)
 	put_str(&b, key)
 	append(&b, u8(r.builtin), u8(r.builtin_third), u8(r.level))
+	put_u32(&b, u32(r.ultra_at))
 	put_u32(&b, u32(r.block_at))
 	put_str(&b, r.hosts_any)
 	put_str(&b, r.hosts_third)
+	put_str(&b, r.uhosts_any)
+	put_str(&b, r.uhosts_third)
 	put_u32(&b, u32(len(r.list)))
 	for x, i in r.list {
 		types := transmute(u16)x.types
@@ -206,9 +213,12 @@ matcher_load :: proc(data: []u8, key: string) -> ^Matcher {
 	m.builtin = get_u8(&rd) != 0
 	m.builtin_third = get_u8(&rd) != 0
 	m.level = Level(clamp(int(get_u8(&rd)), 0, len(Level) - 1))
+	m.ultra_at = i32(get_u32(&rd))
 	m.block_at = i32(get_u32(&rd))
 	m.hosts_any = get_str(&rd)
 	m.hosts_third = get_str(&rd)
+	m.uhosts_any = get_str(&rd)
+	m.uhosts_third = get_str(&rd)
 	n := int(get_u32(&rd))
 	if !rd.ok || n > len(data) / 8 {
 		matcher_free(m)
@@ -426,18 +436,25 @@ matcher_free :: proc(m: ^Matcher) {
 }
 
 /// the host sets block this request: a whole host blocked, for any type a
-/// whole-host rule covers, and (unlike WebKit's rules) child frames too
-@(private="file") set_blocks :: proc(m: ^Matcher, host: string, t: Req_Type, third, child: bool) -> bool {
-	if t == .document && !child do return false
-	if t != .document && t not_in ALL_TYPES do return false
-	if _, ok := set_find(m.hosts_any, host); ok do return true
+/// whole-host rule covers, and (unlike WebKit's rules) child frames too;
+/// lists is the sets of the lists every level above moderate reads, ultra
+/// the ultra level's own (its lists', Iris's own domains)
+@(private="file") set_blocks :: proc(m: ^Matcher, host: string, t: Req_Type, third, child: bool) -> (lists, ultra: bool) {
+	if t == .document && !child do return
+	if t != .document && t not_in ALL_TYPES do return
+	if _, ok := set_find(m.hosts_any, host); ok do lists = true
+	else if third {
+		if _, ok := set_find(m.hosts_third, host); ok do lists = true
+	}
+	if lists do return
+	if _, ok := set_find(m.uhosts_any, host); ok do return false, true
 	if third {
-		if _, ok := set_find(m.hosts_third, host); ok do return true
+		if _, ok := set_find(m.uhosts_third, host); ok do return false, true
 	}
 	if m.builtin && (third || !m.builtin_third) {
-		if e, ok := set_find(builtin_hosts(), host); ok && usable(e) do return true
+		if e, ok := set_find(builtin_hosts(), host); ok && usable(e) do return false, true
 	}
-	return false
+	return
 }
 
 /// the page's own exception ("@@...$document": its document matches an
@@ -478,7 +495,13 @@ matcher_blocks :: proc(m: ^Matcher, url, host, page_host: string, page_ignore: i
 	block := h.block
 	// a whole host blocked stands where the blocks begin: every exception
 	// after it still lets the request through
-	if block < m.block_at && set_blocks(m, host, t, a.third, child) do block = m.block_at
+	// (the ultra level's where its own rules stand, which the video sites
+	// skip)
+	if lists, ultra := set_blocks(m, host, t, a.third, child); lists {
+		block = max(block, m.block_at)
+	} else if ultra {
+		block = max(block, m.ultra_at)
+	}
 	return block >= 0 && block > max(h.ignore, page_ignore)
 }
 
@@ -593,4 +616,119 @@ matcher_css :: proc(m: ^Matcher, page_url, page_host: string, allocator := conte
 	short := make([]u8, len(MATCHER_MAGIC) + 20, runtime.heap_allocator())
 	for i in 0 ..< len(short) do short[i] = m.data[i]
 	testing.expect(t, matcher_load(short, "key-1") == nil)
+}
+
+/// Ultra aggressive never stops a video player: on YouTube, LinkedIn and the
+/// other video sites the ultra level's own rules (its lists', Iris's own
+/// domains, the pings rule) stop, and what players need anywhere loads
+/// (users saw YouTube's "your browser can't play this video" and LinkedIn
+/// videos that never started at ultra, and both played at aggressive)
+@(test) test_media_sites_play :: proc(t: ^testing.T) {
+	arena: virtual.Arena
+	_ = virtual.arena_init_growing(&arena)
+	defer virtual.arena_destroy(&arena)
+	context.allocator = virtual.arena_allocator(&arena)
+	c := Converter{level = .ultra, builtin = true}
+	// the lists every level above moderate reads (lines as EasyList and
+	// EasyPrivacy have them)
+	converter_add_list(&c, "||static.doubleclick.net^\n/generate_204?$image\n||youtube-nocookie.com/api/stats/qoe?\n||linkedin.com/li/track\n||ads.linkedin.com^\n##.ad-slot\n")
+	// an ultra-only list that hides and blocks what players use
+	converter_add_list(&c, "||platform.linkedin.com^\n||licdn.com/sc/h/video-annoyance^\n||jnn-pa.googleapis.com^\n||www.google.com/js/th/\nlinkedin.com##.overlay\nyoutube.com##.ytp-pause-overlay\n##.cookie-banner\n", true, true)
+	rules := converter_rules(&c)
+	m := matcher_from(&rules)
+	defer matcher_free(m)
+	Case :: struct {
+		page, url: string,
+		t:         Req_Type,
+	}
+	allow := [?]Case{
+		// a YouTube watch page
+		{"www.youtube.com", "https://www.youtube.com/s/player/1f8ae8e5/player_ias.vflset/en_US/base.js", .script},
+		{"www.youtube.com", "https://www.youtube.com/youtubei/v1/player?prettyPrint=false", .fetch},
+		{"www.youtube.com", "https://www.youtube.com/youtubei/v1/att/get?prettyPrint=false", .fetch},
+		{"www.youtube.com", "https://rr3---sn-4g5e6nzz.googlevideo.com/videoplayback?expire=1764100000&itag=248&source=youtube&range=0-1000", .fetch},
+		{"www.youtube.com", "https://rr3---sn-4g5e6nzz.googlevideo.com/videoplayback?expire=1764100000&itag=18&source=youtube", .media},
+		{"www.youtube.com", "https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/Create", .fetch},
+		{"www.youtube.com", "https://www.google.com/js/th/Zk2Z7fNq3VrCiwb3vBtJeGXJ3X0k3v1aRWh2Xk2nH9E.js", .script},
+		{"www.youtube.com", "https://static.doubleclick.net/instream/ad_status.js", .script},
+		{"www.youtube.com", "https://i.ytimg.com/vi/abc/hqdefault.jpg", .image},
+		{"www.youtube.com", "https://yt3.ggpht.com/ytc/AIdro_abc=s88-c-k-c0x00ffffff-no-rj", .image},
+		{"www.youtube.com", "https://www.youtube.com/generate_204?cpn=abc", .image},
+		{"www.youtube.com", "https://www.youtube.com/api/stats/qoe?fmt=248&cpn=abc&el=detailpage&ns=yt", .fetch},
+		// YouTube in another site's page (CEF: a cross-site frame has no
+		// first party, so its requests count as their own host's page)
+		{"news.example.org", "https://www.youtube.com/s/player/1f8ae8e5/player_ias.vflset/en_US/base.js", .script},
+		{"news.example.org", "https://rr3---sn-4g5e6nzz.googlevideo.com/videoplayback?expire=1764100000&itag=248&source=youtube", .fetch},
+		{"news.example.org", "https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/Create", .fetch},
+		{"news.example.org", "https://www.google.com/js/th/abc.js", .script},
+		{"news.example.org", "https://static.doubleclick.net/instream/ad_status.js", .script},
+		{"static.doubleclick.net", "https://static.doubleclick.net/instream/ad_status.js", .fetch},
+		{"jnn-pa.googleapis.com", "https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/GenerateIT", .fetch},
+		{"www.youtube-nocookie.com", "https://www.youtube-nocookie.com/youtubei/v1/player?prettyPrint=false", .fetch},
+		{"www.youtube-nocookie.com", "https://www.youtube-nocookie.com/api/stats/qoe?fmt=248&cpn=abc&el=embedded", .fetch},
+		// a LinkedIn feed with a video
+		{"www.linkedin.com", "https://static.licdn.com/aero-v1/sc/h/def456/media-player.js", .script},
+		{"www.linkedin.com", "https://static.licdn.com/sc/h/video-annoyance/x.js", .script},
+		{"www.linkedin.com", "https://dms.licdn.com/playlist/vid/v2/D4E05AQabc/mp4-720p-30fp-crf28/0/1700000000000?e=1764100000&v=beta&t=abc", .fetch},
+		{"www.linkedin.com", "https://dms.licdn.com/playlist/vid/v2/D4E05AQabc/mp4-720p-30fp-crf28/0/1700000000000?e=1764100000&v=beta&t=abc", .media},
+		{"www.linkedin.com", "https://media.licdn.com/dms/image/v2/D4E05AQabc/feedshare-thumbnail_720_1280/0/1700?e=1&v=beta&t=x", .image},
+		{"www.linkedin.com", "https://platform.linkedin.com/litms/allowlist/voyager", .script},
+		{"www.linkedin.com", "https://www.linkedin.com/voyager/api/voyagerVideoDashPlaylists?q=urn", .fetch},
+		{"platform.linkedin.com", "https://platform.linkedin.com/litms/allowlist/voyager", .script},
+	}
+	no := i32(-1)
+	for x in allow {
+		h := url_host(x.url)
+		pi := matcher_page_ignore(m, strings.concatenate({"https://", x.page, "/"}), x.page)
+		testing.expectf(t, !matcher_blocks(m, x.url, h, x.page, pi, x.t), "blocked on %s: %s", x.page, x.url)
+	}
+	block := [?]Case{
+		// ads still go on those sites (the aggressive level's rules stay)
+		{"www.youtube.com", "https://www.youtube.com/pagead/viewthroughconversion/962985656/", .fetch},
+		{"www.youtube.com", "https://www.youtube.com/youtubei/v1/player/ad_break?prettyPrint=false", .fetch},
+		{"www.linkedin.com", "https://px.ads.linkedin.com/collect?pid=1&fmt=gif", .image},
+		{"www.linkedin.com", "https://www.linkedin.com/li/track", .fetch},
+		// and everywhere else the ultra level is whole
+		{"news.example.org", "https://platform.linkedin.com/in.js", .script},
+		{"news.example.org", "https://www.youtube.com/generate_204?cpn=abc", .ping},
+		{"news.example.org", "https://ad.doubleclick.net/ddm/x", .image},
+		{"news.example.org", "https://static.doubleclick.net/other.js", .script},
+	}
+	for x in block {
+		h := url_host(x.url)
+		testing.expectf(t, matcher_blocks(m, x.url, h, x.page, no, x.t), "not blocked on %s: %s", x.page, x.url)
+	}
+	// the ultra-only lists hide nothing on the video sites; elsewhere they do
+	li := matcher_css(m, "https://www.linkedin.com/feed/", "www.linkedin.com")
+	testing.expect(t, !strings.contains(li, ".overlay") && !strings.contains(li, ".cookie-banner") && !strings.contains(li, ".ad-slot"))
+	testing.expect_value(t, matcher_css(m, "https://www.youtube.com/watch?v=abc", "www.youtube.com"), "")
+	other := matcher_css(m, "https://news.example.org/", "news.example.org")
+	testing.expect(t, strings.contains(other, ".cookie-banner") && strings.contains(other, ".ad-slot"))
+}
+
+/// the CEF engine's request types as the rules name them: XHR and fetch are
+/// both "fetch" (the lists' $xhr), media is media, a frame is a document
+@(test) test_media_types :: proc(t: ^testing.T) {
+	arena: virtual.Arena
+	_ = virtual.arena_init_growing(&arena)
+	defer virtual.arena_destroy(&arena)
+	context.allocator = virtual.arena_allocator(&arena)
+	c := Converter{level = .aggressive}
+	converter_add_list(&c, "||ads.example.com/x$xmlhttprequest\n||ads.example.com/v$media\n||ads.example.com/f$subdocument\n")
+	rules := converter_rules(&c)
+	m := matcher_from(&rules)
+	defer matcher_free(m)
+	no := i32(-1)
+	testing.expect(t, matcher_blocks(m, "https://ads.example.com/x", "ads.example.com", "site.example", no, .fetch))
+	testing.expect(t, !matcher_blocks(m, "https://ads.example.com/x", "ads.example.com", "site.example", no, .media))
+	testing.expect(t, matcher_blocks(m, "https://ads.example.com/v", "ads.example.com", "site.example", no, .media))
+	testing.expect(t, !matcher_blocks(m, "https://ads.example.com/v", "ads.example.com", "site.example", no, .fetch))
+	testing.expect(t, matcher_blocks(m, "https://ads.example.com/f", "ads.example.com", "site.example", no, .document, true))
+	testing.expect(t, !matcher_blocks(m, "https://ads.example.com/f", "ads.example.com", "site.example", no, .document, false))
+}
+
+@(private="file") url_host :: proc(u: string) -> string {
+	s := u[strings.index(u, "//") + 2:]
+	if i := strings.index_any(s, "/?#"); i >= 0 do s = s[:i]
+	return s
 }
