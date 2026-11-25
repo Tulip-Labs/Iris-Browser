@@ -65,6 +65,28 @@ AI_GLASS :: #load("aimode.js", string)
 /// for Android's)
 YOUTUBE :: #load("youtube.js", string)
 
+/// a page left unable to scroll by a cookie notice the shield hid (the
+/// notice set overflow: hidden on the page, and only its own button undoes
+/// it): scrolling comes back when the page is taller than the window and
+/// nothing fixed sits over its middle. Web apps that scroll inside
+/// themselves are exactly the window's height, and stay as they are.
+SCROLL_UNLOCK :: `(() => {
+  const fix = () => {
+    const x = innerWidth / 2, y = innerHeight / 2;
+    for (let n = document.elementFromPoint(x, y); n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+      const p = getComputedStyle(n).position;
+      if (p === 'fixed' || p === 'sticky') return;
+    }
+    for (const e of [document.documentElement, document.body]) {
+      if (!e || getComputedStyle(e).overflowY !== 'hidden') continue;
+      if (document.documentElement.scrollHeight < innerHeight + 80) continue;
+      e.style.setProperty('overflow', 'auto', 'important');
+    }
+  };
+  const later = () => { setTimeout(fix, 1500); setTimeout(fix, 5000); };
+  if (document.readyState === 'complete') later(); else addEventListener('load', later, { once: true });
+})();`
+
 @(private="file") add_script :: proc(ucm: ^WebKitUserContentManager, source: string, all_frames: bool, hosts: []cstring) {
 	list: [8]cstring
 	for h, i in hosts[:min(len(hosts), 7)] do list[i] = h
@@ -80,13 +102,60 @@ add_page_scripts :: proc(ucm: ^WebKitUserContentManager) {
 	yt := [?]cstring{"https://*.youtube.com/*", "https://youtube.com/*", "https://*.youtube-nocookie.com/*"}
 	add_script(ucm, YOUTUBE, true, yt[:])
 	if settings().lightVideo do add_script(ucm, LIGHT_VIDEO, true, yt[:])
+	// every other site's top page (Google's and YouTube's lock nothing)
+	not_here := [?]cstring{"https://www.google.com/*", "https://*.youtube.com/*", "https://mail.google.com/*", "https://docs.google.com/*", nil}
+	if s := webkit_user_script_new(SCROLL_UNLOCK, WEBKIT_USER_CONTENT_INJECT_TOP_FRAME, WEBKIT_USER_SCRIPT_INJECT_AT_DOCUMENT_END, nil, &not_here[0]); s != nil {
+		webkit_user_content_manager_add_script(ucm, s)
+		webkit_user_script_unref(s)
+	}
 }
 
-GOOGLE_HOSTS :: [?]string{"www.google.com", "www.gstatic.com", "ssl.gstatic.com", "fonts.gstatic.com", "encrypted-tbn0.gstatic.com", "lh3.googleusercontent.com"}
+/// what Google search, AI Mode and YouTube load first: looked up (and the
+/// first few connected) before you need them. Only these: nothing else is
+/// looked up or loaded ahead.
+GOOGLE_HOSTS :: [?]string{
+	"www.google.com", "www.gstatic.com", "ssl.gstatic.com", "fonts.gstatic.com", "apis.google.com",
+	"encrypted-tbn0.gstatic.com", "lh3.googleusercontent.com", "play.google.com",
+	"www.youtube.com", "m.youtube.com", "i.ytimg.com", "yt3.ggpht.com", "redirector.googlevideo.com",
+}
+/// the hosts worth a whole connection (TCP and TLS) ahead: the page and its
+/// first scripts and images
+GOOGLE_PRECONNECT :: `(() => {
+  for (const h of ['https://www.google.com', 'https://www.gstatic.com', 'https://www.youtube.com', 'https://i.ytimg.com']) {
+    const l = document.createElement('link');
+    l.rel = 'preconnect';
+    l.href = h;
+    (document.head || document.documentElement).appendChild(l);
+    l.remove();
+  }
+})();`
 
 /// names looked up before they are needed (a link under the pointer, Google)
 warm_dns :: proc(session: ^WebKitNetworkSession, hosts: ..string) {
 	for h in hosts do if len(h) > 0 do webkit_network_session_prefetch_dns(session, cstr(h))
+}
+
+/// Google and YouTube made ready (their names looked up; from the page you
+/// are on, which WebKit lets ask for connections, their first connections
+/// opened): when Iris starts, when the address bar takes the keyboard and
+/// when you type in it. At most every 20 seconds: WebKit keeps both a while.
+warm_for_search :: proc() {
+	@(static) last: f64
+	now := now_s()
+	if now - last < 20 do return
+	last = now
+	hosts := GOOGLE_HOSTS
+	t := b.current
+	if t == nil || t.web == nil || t.sandboxed {
+		warm_dns(container_session(t != nil && !t.sandboxed ? t.container : ""), ..hosts[:])
+		return
+	}
+	warm_dns(webkit_web_view_get_network_session(t.web), ..hosts[:])
+	// <link rel=preconnect> in a world of Iris's own (WebKit has no call for
+	// it): a page you opened yourself over HTTPS, never a private tab
+	if !tab_is_private(t) && strings.has_prefix(t.url, "https://") {
+		webkit_web_view_evaluate_javascript(t.web, GOOGLE_PRECONNECT, -1, "iris", nil, nil, nil, nil)
+	}
 }
 
 /// video decoding on the graphics chip stays off: some drivers broke the

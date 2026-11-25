@@ -205,6 +205,7 @@ chrome_focus_address :: proc() {
 	line_set(&ui.address, text)
 	line_select_all(&ui.address)
 	focus_field(.Address)
+	warm_for_search()
 }
 
 chrome_open_find :: proc() {
@@ -416,11 +417,13 @@ chrome_dismiss_dialog :: proc() {
 	clear_suggestions()
 	text := strings.trim_space(text0)
 	if len(text) == 0 do return
+	warm_for_search()
 	first := resolve(text, context.temp_allocator)
 	if is_url_like(text) {
 		append(&ui.suggestions, Suggestion{.Open, strings.clone(display_url(first, context.temp_allocator)), strings.clone(""), strings.clone(first)})
 	} else {
-		append(&ui.suggestions, Suggestion{.Sparkle, strings.clone(text), strings.clone("Ask Google AI Mode"), strings.clone(first)})
+		append(&ui.suggestions, Suggestion{.Search, strings.clone(text), strings.clone("Search Google"), strings.clone(first)})
+		append(&ui.suggestions, Suggestion{.Sparkle, strings.clone(text), strings.clone("Ask Google AI Mode"), strings.clone(ai_url(text, context.temp_allocator))})
 	}
 	for v in history_suggest(text, 6) {
 		if v.url == first do continue
@@ -1462,6 +1465,12 @@ Pill :: struct {
 			row(&items, .Forward, "Forward", {op = .Ctx_Forward}, "Alt+→", disabled = ct == nil || !ct.can_forward)
 			row(&items, .Reload, "Reload", {op = .Ctx_Reload}, "Ctrl+R")
 			row(&items, .Select_All, "Select All", {op = .Ctx_Edit, s = WEBKIT_EDITING_COMMAND_SELECT_ALL}, "Ctrl+A")
+			// the way out when the shield breaks a site (and back in)
+			if ct != nil && ct == b.current && settings().shields && strings.has_prefix(ct.url, "http") {
+				h, _ := host_of(ct.url, context.temp_allocator)
+				off := shields_off_for(site_of(h))
+				row(&items, off ? .Shield_On : .Shield_Off, off ? "Reload with Shields" : "Site broken? Reload without Shields", {op = .Shield_Site})
+			}
 		}
 	case .Option:
 		width = max(ui.panel_anchor.z, 200)

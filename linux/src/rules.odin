@@ -24,17 +24,26 @@ level_hint :: proc(l: Level) -> string {
 	switch l {
 	case .moderate: return "Other sites' ads"
 	case .aggressive: return "All ads, trackers"
-	case .ultra: return "Also pop-ups, cookies"
+	case .ultra: return "Also cookie notices, pop-ups, annoyances"
 	}
 	return ""
 }
 
-List :: enum { easylist, easyprivacy, unbreak, ublock, ublock_privacy, quick_fixes, cookies, annoyances }
+/// the lists, as uBlock's mirrors keep them. uBlock's own come in their
+/// .min form: the plain filters.txt and privacy.txt only !#include the rest,
+/// which a converter reading one file never sees.
+List :: enum {
+	easylist, easyprivacy, unbreak, ublock, ublock_privacy, quick_fixes, badware,
+	cookies, ublock_cookies, annoyances, fanboy_annoyances, fanboy_social, fanboy_notifications, fanboy_newsletters,
+}
 
 level_lists :: proc(l: Level) -> []List {
 	@(static) m := [?]List{.easylist, .easyprivacy, .unbreak}
-	@(static) a := [?]List{.easylist, .easyprivacy, .unbreak, .ublock, .ublock_privacy, .quick_fixes}
-	@(static) u := [?]List{.easylist, .easyprivacy, .unbreak, .ublock, .ublock_privacy, .quick_fixes, .cookies, .annoyances}
+	@(static) a := [?]List{.easylist, .easyprivacy, .unbreak, .ublock, .ublock_privacy, .quick_fixes, .badware}
+	@(static) u := [?]List{
+		.easylist, .easyprivacy, .unbreak, .ublock, .ublock_privacy, .quick_fixes, .badware,
+		.cookies, .ublock_cookies, .annoyances, .fanboy_annoyances, .fanboy_social, .fanboy_notifications, .fanboy_newsletters,
+	}
 	switch l {
 	case .moderate: return m[:]
 	case .aggressive: return a[:]
@@ -43,16 +52,24 @@ level_lists :: proc(l: Level) -> []List {
 	return nil
 }
 
+/// the list's file name in the cache (a new name when its source changes,
+/// so the old copy is never read as the new one)
 list_id :: proc(l: List) -> string {
 	switch l {
-	case .ublock_privacy: return "ublock-privacy"
-	case .quick_fixes: return "quick-fixes"
 	case .easylist: return "easylist"
 	case .easyprivacy: return "easyprivacy"
-	case .unbreak: return "unbreak"
-	case .ublock: return "ublock"
+	case .unbreak: return "unbreak-min"
+	case .ublock: return "ublock-min"
+	case .ublock_privacy: return "ublock-privacy-min"
+	case .quick_fixes: return "quick-fixes-min"
+	case .badware: return "badware-min"
 	case .cookies: return "cookies"
+	case .ublock_cookies: return "ublock-cookies"
 	case .annoyances: return "annoyances"
+	case .fanboy_annoyances: return "fanboy-annoyances"
+	case .fanboy_social: return "fanboy-social"
+	case .fanboy_notifications: return "fanboy-notifications"
+	case .fanboy_newsletters: return "fanboy-newsletters"
 	}
 	return ""
 }
@@ -61,24 +78,43 @@ list_path :: proc(l: List) -> string {
 	switch l {
 	case .easylist: return "thirdparties/easylist.txt"
 	case .easyprivacy: return "thirdparties/easyprivacy.txt"
-	case .unbreak: return "filters/unbreak.txt"
-	case .ublock: return "filters/filters.txt"
-	case .ublock_privacy: return "filters/privacy.txt"
-	case .quick_fixes: return "filters/quick-fixes.txt"
+	case .unbreak: return "filters/unbreak.min.txt"
+	case .ublock: return "filters/filters.min.txt"
+	case .ublock_privacy: return "filters/privacy.min.txt" // with resource-abuse (in-page miners)
+	case .quick_fixes: return "filters/quick-fixes.min.txt"
+	case .badware: return "filters/badware.min.txt"
 	case .cookies: return "thirdparties/easylist-cookies.txt"
+	case .ublock_cookies: return "filters/annoyances-cookies.txt"
 	case .annoyances: return "filters/annoyances-others.txt"
+	// Fanboy's annoyance list, as EasyList now publishes it, in its parts
+	case .fanboy_annoyances: return "thirdparties/easylist-annoyances.txt"
+	case .fanboy_social: return "thirdparties/easylist-social.txt"
+	case .fanboy_notifications: return "thirdparties/easylist-notifications.txt"
+	case .fanboy_newsletters: return "thirdparties/easylist-newsletters.txt"
 	}
 	return ""
 }
 
+/// a list whose hiding rules for every site Iris takes (the others' are
+/// for named sites only: their generic ones hide real content too often)
+list_generic_ok :: proc(l: List) -> bool {
+	#partial switch l {
+	case .fanboy_annoyances, .fanboy_social, .fanboy_notifications, .fanboy_newsletters, .annoyances: return false
+	}
+	return true
+}
+
 LIST_MIRRORS :: [?]string{
 	"https://ublockorigin.github.io/uAssets/",
-	"https://raw.githubusercontent.com/uBlockOrigin/uAssets/gh-pages/",
-	"https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/",
+	"https://ublockorigin.github.io/uAssetsCDN/",
+	"https://ublockorigin.pages.dev/",
+	"https://cdn.jsdelivr.net/gh/uBlockOrigin/uAssetsCDN@main/",
 }
 
 /// messaging and sign-in sites: never blocked, nor anything on them
-NEVER :: [?]string{"whatsapp.com", "whatsapp.net", "accounts.google.com", "login.microsoftonline.com", "login.live.com", "teams.microsoft.com", "meet.google.com", "challenges.cloudflare.com", "hcaptcha.com", "recaptcha.net", "appleid.apple.com"}
+/// (and Google's and YouTube's consent pages: they gate the page behind them,
+/// and a hidden one leaves it locked)
+NEVER :: [?]string{"whatsapp.com", "whatsapp.net", "accounts.google.com", "consent.google.com", "consent.youtube.com", "login.microsoftonline.com", "login.live.com", "teams.microsoft.com", "meet.google.com", "challenges.cloudflare.com", "hcaptcha.com", "recaptcha.net", "appleid.apple.com"}
 
 /// delivery networks many sites share: a rule that names one whole would break them
 SHARED :: [?]string{"cloudfront.net", "amazonaws.com", "s3.amazonaws.com", "akamaihd.net", "akamaized.net", "akamai.net", "edgekey.net", "edgesuite.net", "fastly.net", "fastlylb.net", "azureedge.net", "azurefd.net", "azurewebsites.net", "windows.net", "blob.core.windows.net", "msecnd.net", "googleusercontent.com", "googleapis.com", "storage.googleapis.com", "gstatic.com", "cloudflare.com", "cloudflare.net", "jsdelivr.net", "unpkg.com", "github.io", "githubusercontent.com", "netlify.app", "vercel.app", "herokuapp.com", "firebaseapp.com", "web.app", "appspot.com", "b-cdn.net", "cdn77.org", "kxcdn.com", "digitaloceanspaces.com", "r2.dev", "pages.dev", "workers.dev", "wp.com", "cloudinary.com", "imgix.net", "ctfassets.net", "backblazeb2.com", "rackcdn.com", "llnwd.net", "hwcdn.net", "edgecastcdn.net", "wixstatic.com", "squarespace-cdn.com", "shopifycdn.com", "myshopify.com"}
@@ -128,9 +164,15 @@ Converter :: struct {
 	exceptions: [dynamic]string,
 	generic:    [dynamic]string,
 	seen:       map[string]bool,
+	/// hosts the lists block whole ("||host^"): Iris's own list skips them
+	hosts:      map[string]bool,
+	/// the list being read gives hiding rules for every site
+	no_generic: bool,
 }
 
-converter_add_list :: proc(c: ^Converter, text: string) {
+converter_add_list :: proc(c: ^Converter, text: string, generic := true) {
+	c.no_generic = !generic
+	defer c.no_generic = false
 	t := text
 	for line in strings.split_lines_iterator(&t) do add_line(c, line)
 }
@@ -138,8 +180,21 @@ converter_add_list :: proc(c: ^Converter, text: string) {
 converter_add_domains :: proc(c: ^Converter, domains: []string) {
 	types := ALL_TYPES
 	for d in domains {
-		if !usable(d) do continue
+		if !usable(d) || covered(c, d) do continue
 		emit_block(c, host_pattern(d), types[:], c.level == .moderate ? "third-party" : "", nil, nil)
+	}
+}
+
+/// a host, or a parent domain of it, the lists already block whole
+@(private="file") covered :: proc(c: ^Converter, host: string) -> bool {
+	if len(c.hosts) == 0 do return false
+	h := host
+	for {
+		if h in c.hosts do return true
+		dot := strings.index_byte(h, '.')
+		if dot < 0 do return false
+		h = h[dot + 1:]
+		if strings.index_byte(h, '.') < 0 do return false
 	}
 }
 
@@ -168,7 +223,7 @@ UNSUPPORTED :: [?]string{":has-text(", ":-abp-", ":style(", ":remove(", ":matche
 	for u in UNSUPPORTED do if strings.contains(s, u) do return
 	if len(domains) == 0 {
 		// the boxes ads leave, everywhere: aggressive and ultra only
-		if c.level != .moderate do append(&c.generic, s)
+		if c.level != .moderate && !c.no_generic do append(&c.generic, s)
 		return
 	}
 	yes, no: [dynamic]string
@@ -285,7 +340,19 @@ UNSUPPORTED :: [?]string{":has-text(", ":-abp-", ":style(", ":remove(", ":matche
 		if party == "first-party" do return
 		party = "third-party"
 	}
-	filter, fok := url_filter(pattern)
+	// "||host^", the commonest rule: the same short pattern as Iris's own
+	// domains (a host is always followed by ':' or '/'), and remembered
+	whole := ""
+	if len(pattern) > 3 && strings.has_prefix(pattern, "||") && strings.has_suffix(pattern, "^") {
+		h := pattern[2:len(pattern) - 1]
+		if strings.index_byte(h, '.') > 0 && host_chars(h) do whole = strings.to_lower(h)
+	}
+	filter, fok := "", false
+	if len(whole) > 0 {
+		filter, fok = host_pattern(whole), true
+	} else {
+		filter, fok = url_filter(pattern)
+	}
 	if !fok do return
 	if document_exception {
 		dom := len(if_domains) == 0 ? "" : strings.concatenate({",\"if-domain\":", json_list(if_domains[:])})
@@ -325,6 +392,9 @@ UNSUPPORTED :: [?]string{":has-text(", ":-abp-", ":style(", ":remove(", ":matche
 		if len(h) > 0 && in_list(shared[:], h) && len(rest) - len(h) <= 1 && len(if_domains) == 0 do return
 	}
 	if len(t) > 0 do emit_block(c, filter, t[:], party, if_domains[:], unless_domains[:])
+	if len(whole) > 0 && !has_types && len(not_types) == 0 && len(if_domains) == 0 && len(unless_domains) == 0 && party != "first-party" {
+		c.hosts[whole] = true
+	}
 	if frames {
 		doc := [?]string{"document"}
 		append(&c.blocks, rule(filter, doc[:], true, party, if_domains[:], unless_domains[:], "block"))
@@ -406,11 +476,22 @@ url_filter :: proc(p0: string) -> (string, bool) {
 /// the exceptions, so each part stands alone)
 converter_finish :: proc(c: ^Converter, max_rules: int) -> []string {
 	// generic hiding in batches of 12 (one bad selector loses only its batch)
+	generic: [dynamic]string
 	for i := 0; i < len(c.generic); i += 12 {
 		batch := strings.join(c.generic[i:min(i + 12, len(c.generic))], ", ")
-		append(&c.hides, strings.concatenate({"{\"trigger\":{\"url-filter\":\".*\"},\"action\":{\"type\":\"css-display-none\",\"selector\":", json_str(batch), "}}"}))
+		append(&generic, strings.concatenate({"{\"trigger\":{\"url-filter\":\".*\"},\"action\":{\"type\":\"css-display-none\",\"selector\":", json_str(batch), "}}"}))
 	}
 	clear(&c.generic)
+	if len(generic) > 0 {
+		// Google's and YouTube's pages skip the thousands of selectors meant
+		// for other sites' ad boxes (their style is recomputed all the time;
+		// their own ads have rules of their own, after this one)
+		append(&generic, `{"trigger":{"url-filter":".*","if-domain":["*google.com","*youtube.com"]},"action":{"type":"ignore-previous-rules"}}`)
+	}
+	if c.level == .ultra {
+		// beacons and pings to other sites: tracking, nearly always
+		append(&c.blocks, `{"trigger":{"url-filter":".*","resource-type":["ping"],"load-type":["third-party"]},"action":{"type":"block"}}`)
+	}
 	tail: [dynamic]string
 	append(&tail, ..c.exceptions[:])
 	// messaging and sign-in pages, and requests to them, are left alone
@@ -426,6 +507,7 @@ converter_finish :: proc(c: ^Converter, max_rules: int) -> []string {
 	// hiding first: WebKit takes the rules that hide everywhere only from
 	// before its other rules
 	body: [dynamic]string
+	append(&body, ..generic[:])
 	append(&body, ..c.hides[:])
 	append(&body, ..c.blocks[:])
 	room := max(1000, max_rules - len(tail))

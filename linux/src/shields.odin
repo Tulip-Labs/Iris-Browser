@@ -1,8 +1,9 @@
 // Iris Shields: ad and tracker blocking inside the engine. uBlock Origin's
 // and EasyList's lists (fetched every four days from uBlock's mirrors) are
 // turned into WebKit content rules on a thread, compiled by WebKit once and
-// kept; until then, about 100,000 ad and tracker domains built into Iris
-// stand in.
+// kept; until then, about 185,000 ad, tracker, fingerprinting and mining
+// domains built into Iris (tools/shield-domains.sh) stand in, and at the
+// ultra level, the default, they block on top of the lists.
 package iris
 
 import "base:runtime"
@@ -53,6 +54,15 @@ shields_on_for :: proc(host: string) -> bool {
 	return !shields_off_for(site_of(host))
 }
 
+/// an address without its tracking parameters, where the shield is up for
+/// its site (temporary; the address itself where there is nothing to take)
+shields_clean_url :: proc(u: string) -> string {
+	h, ok := host_of(u, context.temp_allocator)
+	if !ok || !shields_on_for(h) do return u
+	if clean, stripped := strip_tracking(u, context.temp_allocator); stripped do return clean
+	return u
+}
+
 shield_level :: proc() -> Level {
 	return settings().shieldLevel
 }
@@ -75,6 +85,7 @@ shields_start :: proc() {
 	shields.dir = join({cache_dir(), "shields"})
 	make_dirs(join({shields.dir, "lists"}, context.temp_allocator))
 	shields.store = webkit_user_content_filter_store_new(cstr(shields.dir))
+	forget_old_rules()
 	shields_load(shield_level())
 	after(8000, proc(_: rawptr) { refresh_lists() }, nil)
 }
@@ -87,8 +98,30 @@ shields_ready :: proc() -> bool {
 	return len(shields.filters) > 0
 }
 
-@(private="file") ids_path :: proc(l: Level) -> string {
-	return fmt.tprintf("%s/%v.ids", shields.dir, l)
+/// what the converter makes changes with this: rules compiled by an older
+/// Iris are made again (and the old ones removed from WebKit's store)
+RULES_REV :: 2
+
+@(private="file") ids_path :: proc(l: Level, rev := RULES_REV) -> string {
+	if rev < 2 do return fmt.tprintf("%s/%v.ids", shields.dir, l)
+	return fmt.tprintf("%s/%v.r%d.ids", shields.dir, l, rev)
+}
+
+/// the rules compiled before RULES_REV, and lists Iris no longer reads, go
+@(private="file") forget_old_rules :: proc() {
+	for l in Level do for rev in 1 ..< RULES_REV {
+		p := ids_path(l, rev)
+		text, ok := read_file(p, context.temp_allocator)
+		if !ok do continue
+		s := string(text)
+		for id in strings.split_lines_iterator(&s) do if len(id) > 0 {
+			webkit_user_content_filter_store_remove(shields.store, cstr(id), nil, nil, nil)
+		}
+		os.remove(p)
+	}
+	for name in ([?]string{"ublock", "ublock-privacy", "quick-fixes", "unbreak"}) {
+		os.remove(fmt.tprintf("%s/lists/%s.txt", shields.dir, name))
+	}
 }
 
 @(private="file") list_file :: proc(l: List, allocator := context.temp_allocator) -> string {
@@ -165,6 +198,7 @@ shields_ready :: proc() -> bool {
 @(private="file") Build :: struct {
 	l:     Level,
 	paths: [dynamic]string,
+	lists: [dynamic]List,
 	arena: virtual.Arena,
 	parts: []string,
 }
@@ -182,18 +216,23 @@ shields_ready :: proc() -> bool {
 	shields.building = l
 	job := new(Build)
 	job.l = l
-	for li in level_lists(l) do append(&job.paths, list_file(li, context.allocator))
+	for li in level_lists(l) {
+		append(&job.paths, list_file(li, context.allocator))
+		append(&job.lists, li)
+	}
 	thread.create_and_start_with_poly_data(job, proc(job: ^Build) {
 		_ = virtual.arena_init_growing(&job.arena)
 		context.allocator = virtual.arena_allocator(&job.arena)
 		conv := Converter{level = job.l}
 		any := false
-		for p in job.paths {
+		for p, i in job.paths {
 			t := read_file(p) or_continue
-			converter_add_list(&conv, string(t))
+			converter_add_list(&conv, string(t), list_generic_ok(job.lists[i]))
 			any = true
 		}
-		if !any do converter_add_domains(&conv, shield_domains())
+		// Iris's own domains: until the lists come, and at the ultra level
+		// with them (what the lists already block whole is skipped)
+		if !any || job.l == .ultra do converter_add_domains(&conv, shield_domains())
 		max_rules := 120_000
 		if v, ok := strconv.parse_int(os.get_env("IRIS_SHIELDS_PART", context.temp_allocator)); ok do max_rules = v
 		job.parts = converter_finish(&conv, max_rules)
@@ -204,6 +243,7 @@ shields_ready :: proc() -> bool {
 			shields_compile(job.parts, job.l)
 			for p in job.paths do delete(p)
 			delete(job.paths)
+			delete(job.lists)
 			virtual.arena_destroy(&job.arena)
 			free(job)
 		}, job)
@@ -396,7 +436,7 @@ shields_forget :: proc(ucm: ^WebKitUserContentManager) {
 }
 
 @(test) test_builtin_domains :: proc(t: ^testing.T) {
-	testing.expect(t, len(shield_domains()) > 50_000)
+	testing.expect(t, len(shield_domains()) > 150_000)
 	testing.expect(t, !host_blocked("example.com"))
 	testing.expect(t, host_blocked(shield_domains()[100]))
 }

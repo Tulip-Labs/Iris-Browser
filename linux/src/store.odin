@@ -135,6 +135,21 @@ Settings :: struct {
 	lightVideo:        bool,
 	/// how hard Shields block
 	shieldLevel:       Level,
+	/// which of Iris's changes to the settings this file has had (see
+	/// settings_migrate)
+	settingsRev:       int,
+}
+
+/// 1: Shields at the ultra level, the new default, once for everyone (a
+/// level chosen after that stays)
+SETTINGS_REV :: 1
+
+/// brings settings written by an older Iris up to date; true if anything changed
+settings_migrate :: proc(s: ^Settings) -> bool {
+	if s.settingsRev >= SETTINGS_REV do return false
+	if s.settingsRev < 1 do s.shieldLevel = .ultra
+	s.settingsRev = SETTINGS_REV
+	return true
 }
 
 @(private="file") settings_value: Settings
@@ -143,8 +158,11 @@ Settings :: struct {
 settings :: proc() -> ^Settings {
 	if !settings_loaded {
 		settings_loaded = true
-		settings_value = {shields = true, lightVideo = true, shieldLevel = .aggressive}
-		if s, ok := load_json(Settings, "settings.json"); ok do settings_value = s
+		settings_value = {shields = true, lightVideo = true, shieldLevel = .ultra, settingsRev = SETTINGS_REV}
+		if s, ok := load_json(Settings, "settings.json"); ok {
+			settings_value = s
+			if settings_migrate(&settings_value) do settings_save()
+		}
 	}
 	return &settings_value
 }
@@ -330,6 +348,26 @@ history_suggest :: proc(q0: string, n: int, allocator := context.temp_allocator)
 	testing.expect_value(t, len(h), HISTORY_KEEP)
 	testing.expect_value(t, h[0].url, fmt.tprintf("https://e.com/%d", HISTORY_MAX))
 	testing.expect_value(t, h[1].url, "https://e.com/0")
+}
+
+@(test) test_settings_migrate :: proc(t: ^testing.T) {
+	// a profile from before: aggressive (or anything) becomes ultra, once
+	old := Settings{shields = true, shieldLevel = .aggressive}
+	testing.expect(t, settings_migrate(&old))
+	testing.expect_value(t, old.shieldLevel, Level.ultra)
+	testing.expect_value(t, old.settingsRev, SETTINGS_REV)
+	// a level chosen afterwards stays
+	old.shieldLevel = .moderate
+	testing.expect(t, !settings_migrate(&old))
+	testing.expect_value(t, old.shieldLevel, Level.moderate)
+	// the file as an older Iris wrote it (the level by name or by number)
+	for text in ([?]string{`{"shields": true, "shieldLevel": "aggressive"}`, `{"shields": true, "shieldLevel": 1}`}) {
+		s: Settings
+		err := json.unmarshal(transmute([]u8)text, &s, allocator = context.temp_allocator)
+		testing.expect(t, err == nil)
+		settings_migrate(&s)
+		testing.expect_value(t, s.shieldLevel, Level.ultra)
+	}
 }
 
 @(test) test_history_limits :: proc(t: ^testing.T) {
