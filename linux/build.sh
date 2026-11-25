@@ -14,15 +14,43 @@ LIBS="harfbuzz fontconfig wpe-webkit-2.0 wpe-platform-2.0 wpe-platform-headless-
 # the folders the libraries are in, for the linker (WPE in /app/lib in the Flatpak)
 LDIRS=$(pkg-config --libs-only-L $LIBS | tr -s ' ')
 [ -n "${ODIN_CLANG_PATH:-}" ] || { command -v clang >/dev/null || export ODIN_CLANG_PATH=$(command -v gcc); }
-odin_build() { odin build src -collection:iris=. -extra-linker-flags:"$LDIRS -Wl,--as-needed" "$@"; }
+# The iris binary always imports the cef package, so it always links
+# libcef — even the WPE build. With CEF_DIR set, link the real libcef.so
+# (and an rpath so the CEF binary finds it at run time). Without it,
+# link a stub built from cef-stub.c, which exists only so the link
+# succeeds. NOTE: --as-needed does not save the WPE binary — the CEF
+# code paths reference libcef symbols even though WPE mode never calls
+# them, so the linker records DT_NEEDED and the loader needs the
+# library at run time too. The stub is therefore inert but REQUIRED:
+# the WPE binary never calls it, but it must be findable (an rpath to
+# .cef-stub/ for dev builds; the Flatpak install puts it in /app/lib,
+# which the Flatpak loader searches). The stub is built into .cef-stub/
+# (gitignored) and rebuilt when cef-stub.c changes.
+if [ -n "${CEF_DIR:-}" ]; then
+	CEF_LFLAGS="-L$CEF_DIR/Release -Wl,-rpath,$CEF_DIR/Release"
+else
+	mkdir -p .cef-stub
+	if [ ! -f .cef-stub/libcef.so ] || [ cef-stub.c -nt .cef-stub/libcef.so ]; then
+		${CC:-cc} -shared -fPIC -Wl,-soname,libcef.so -o .cef-stub/libcef.so cef-stub.c
+	fi
+	CEF_LFLAGS="-L$PWD/.cef-stub -Wl,-rpath,\$ORIGIN/.cef-stub"
+fi
+odin_build() { odin build src -collection:iris=. -extra-linker-flags:"$LDIRS $CEF_LFLAGS -Wl,--as-needed" "$@"; }
 case "${1:-dev}" in
 dev) odin_build -o:none -debug -out:iris ;;
 release) odin_build -o:speed -out:iris ;;
-test) odin test src -collection:iris=. -extra-linker-flags:"$LDIRS -Wl,--as-needed" -o:none ;;
+test) odin test src -collection:iris=. -extra-linker-flags:"$LDIRS $CEF_LFLAGS -Wl,--as-needed" -o:none ;;
 check) sh abi/check.sh ;;
 install)
 	odin_build -o:speed -out:iris
 	install -Dm755 iris "$2/libexec/iris"
+	# the stub libcef.so, when this is a WPE build: the binary links
+	# it and the loader needs it at run time (see the note above), so
+	# it goes in the standard lib dir, where the Flatpak loader
+	# finds it. A CEF build finds the real libcef.so via its rpath.
+	if [ -z "${CEF_DIR:-}" ]; then
+		install -Dm755 .cef-stub/libcef.so "$2/lib/libcef.so"
+	fi
 	;;
 *) echo "usage: $0 [dev|release|test|check|install DIR]" >&2; exit 2 ;;
 esac
