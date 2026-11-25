@@ -32,6 +32,10 @@ tab_connect_extra :: proc(t: ^Tab, w: ^WebKitWebView) {
 	if t.muted do tab_set_muted(t, true)
 }
 
+/// Iris went light or dark (theme.dark): WPE's pages follow the desktop's
+/// own setting (WPE has no per-view colour scheme to set): nothing to do
+engine_theme_changed :: proc() {}
+
 /// the tab's sound off or on
 tab_set_muted :: proc(t: ^Tab, on: bool) {
 	if t.web != nil do webkit_web_view_set_is_muted(t.web, on ? 1 : 0)

@@ -111,6 +111,26 @@ static_base :: proc(base: ^cef_base_ref_counted_t, size: int) {
 
 PID_MESSAGE :: "iris.pid"
 
+/// in a renderer: this process's id and start time (/proc/self/stat's 22nd
+/// field), told to the browser process for the frame (cef_engine.odin's
+/// reaper keeps, per view, which processes its frames are in)
+@(private="file") report_pid :: proc(frame: ^cef_frame_t) {
+	if frame == nil do return
+	name := cef_str(PID_MESSAGE)
+	msg := cef_process_message_create(&name)
+	if msg == nil do return
+	args := msg.get_argument_list(msg)
+	if args != nil {
+		pid := i32(linux.getpid())
+		start, _ := proc_start_time(pid)
+		args.set_int(args, 0, pid)
+		// clock ticks since boot: past an i32, well inside a double's 2^53
+		args.set_double(args, 1, f64(start))
+		rel(args)
+	}
+	frame.send_process_message(frame, PID_BROWSER, msg) // takes msg
+}
+
 @(private="file") app_init :: proc() {
 	static_base(&the_app.base, size_of(cef_app_t))
 	the_app.get_browser_process_handler = proc "c" (self: ^cef_app_t) -> ^cef_browser_process_handler_t { return &the_bph }
@@ -119,25 +139,32 @@ PID_MESSAGE :: "iris.pid"
 	the_bph.on_schedule_message_pump_work = proc "c" (self: ^cef_browser_process_handler_t, delay_ms: i64) {
 		pump_schedule(delay_ms)
 	}
+	// the request contexts can take settings now: light or dark as Iris is
+	the_bph.on_context_initialized = proc "c" (self: ^cef_browser_process_handler_t) {
+		context = main_context
+		contexts_ready = true
+		engine_theme_changed()
+	}
 	static_base(&the_rph.base, size_of(cef_render_process_handler_t))
-	// in a renderer: tell the browser process which process holds this
-	// browser (for every renderer it lands in: a cross-site navigation
-	// moves it), so a closed tab's renderer can be told apart (cef_reap)
+	// in a renderer: tell the browser process which process holds each
+	// frame of each browser, subframes too (with --site-per-process a
+	// cross-site iframe is in another site's renderer, maybe one another
+	// tab uses), so a closed tab's renderer is told apart from one still in
+	// use (cef_reap). A frame's script context is made once per document,
+	// in the process that document runs in: every frame, every navigation.
 	the_rph.on_browser_created = proc "c" (self: ^cef_render_process_handler_t, browser: ^cef_browser_t, extra: rawptr) {
 		context = runtime.default_context()
 		defer rel(browser)
 		frame := browser.get_main_frame(browser)
 		if frame == nil do return
 		defer rel(frame)
-		name := cef_str(PID_MESSAGE)
-		msg := cef_process_message_create(&name)
-		if msg == nil do return
-		args := msg.get_argument_list(msg)
-		if args != nil {
-			args.set_int(args, 0, i32(linux.getpid()))
-			rel(args)
-		}
-		frame.send_process_message(frame, PID_BROWSER, msg) // takes msg
+		report_pid(frame)
+		free_all(context.temp_allocator)
+	}
+	the_rph.on_context_created = proc "c" (self: ^cef_render_process_handler_t, browser: ^cef_browser_t, frame: ^cef_frame_t, ctx: rawptr) {
+		context = runtime.default_context()
+		defer { rel(browser); rel(frame); rel(ctx) }
+		report_pid(frame)
 		free_all(context.temp_allocator)
 	}
 }
@@ -235,7 +262,13 @@ engine_start :: proc() -> bool {
 /// every page closes (each renderer with it), then CEF stops
 engine_stop :: proc() {
 	if !started do return
-	views_close_all()
+	// CEF must never shut down with a browser still open (it aborts): if
+	// one would not close in time, Iris leaves without CEF's shutdown
+	if !views_close_all() {
+		log.warn("CEF: a page did not close in time; leaving without CEF's shutdown")
+		started = false
+		return
+	}
 	cef_shutdown()
 	started = false
 }
@@ -243,28 +276,49 @@ engine_stop :: proc() {
 // ---------------------------------------------------------------- the message pump
 
 @(private="file") pumping: bool
-@(private="file") pump_pending: i32 // an immediate pump is already queued (atomic)
+@(private="file") pump_queued: i32 // a reschedule is queued on the main loop (atomic)
+@(private="file") pump_delay: i64 // the soonest delay asked for since (atomic)
+@(private="file") pump_timer: u32 // the one pending timeout (main thread only)
 
 @(private="file") pump_now :: proc "contextless" () {
-	if pumping do return // CEF's work is never re-entered
+	if pumping || !started do return // CEF's work is never re-entered, nor run once it stopped
 	pumping = true
 	cef_do_message_loop_work()
 	pumping = false
 }
 
-/// CEF asks for a turn of its work (from any thread): GLib's loop gives it
+/// CEF asks for a turn of its work (from any thread): the request goes to
+/// the main loop, which keeps one timer at most, the newest request's (as
+/// CEF's external pump wants: each call replaces the one before, so timers
+/// never pile up and a later, sooner request is not held behind an older one)
 @(private="file") pump_schedule :: proc "contextless" (delay_ms: i64) {
-	if delay_ms <= 0 {
-		if intrinsics.atomic_exchange(&pump_pending, 1) == 1 do return
-		g_idle_add_full(G_PRIORITY_DEFAULT, proc "c" (d: rawptr) -> gboolean {
-			intrinsics.atomic_store(&pump_pending, 0)
+	d := max(delay_ms, 0)
+	if intrinsics.atomic_exchange(&pump_queued, 1) == 1 {
+		// one is queued: it takes the sooner of the two
+		for {
+			cur := intrinsics.atomic_load(&pump_delay)
+			if d >= cur do break
+			if _, ok := intrinsics.atomic_compare_exchange_strong(&pump_delay, cur, d); ok do break
+		}
+		return
+	}
+	intrinsics.atomic_store(&pump_delay, d)
+	g_idle_add_full(G_PRIORITY_DEFAULT, proc "c" (data: rawptr) -> gboolean {
+		intrinsics.atomic_store(&pump_queued, 0)
+		d := intrinsics.atomic_load(&pump_delay)
+		if pump_timer != 0 {
+			g_source_remove(pump_timer)
+			pump_timer = 0
+		}
+		if d <= 0 {
+			pump_now()
+			return 0
+		}
+		pump_timer = g_timeout_add_full(G_PRIORITY_DEFAULT, u32(min(d, 1000)), proc "c" (data: rawptr) -> gboolean {
+			pump_timer = 0
 			pump_now()
 			return 0
 		}, nil, nil)
-		return
-	}
-	g_timeout_add_full(G_PRIORITY_DEFAULT, u32(min(delay_ms, 1000)), proc "c" (d: rawptr) -> gboolean {
-		pump_now()
 		return 0
 	}, nil, nil)
 }
@@ -294,7 +348,9 @@ tab_context :: proc(t: ^Tab) -> ^cef_request_context_t {
 	c: ^cef_request_context_t
 	switch {
 	case t.sandboxed:
-		return new_context("")
+		c = new_context("")
+		color_scheme(c)
+		return c
 	case t.container == "":
 		if global_ctx == nil do global_ctx = cef_request_context_get_global_context()
 		c = global_ctx
@@ -310,7 +366,33 @@ tab_context :: proc(t: ^Tab) -> ^cef_request_context_t {
 		}
 	}
 	add_ref(c)
+	color_scheme(c)
 	return c
+}
+
+// ---------------------------------------------------------------- light or dark
+
+CEF_COLOR_VARIANT_LIGHT :: 1 // cef_color_variant_t (cef_types.h)
+CEF_COLOR_VARIANT_DARK :: 2
+
+/// a request context's pages light or dark as Iris is (theme.odin): what
+/// prefers-color-scheme says, and Chromium's own controls and scroll bars
+@(private="file") contexts_ready: bool
+
+@(private="file") color_scheme :: proc(c: ^cef_request_context_t) {
+	if c == nil || !contexts_ready do return
+	c.set_chrome_color_scheme(c, theme.dark ? CEF_COLOR_VARIANT_DARK : CEF_COLOR_VARIANT_LIGHT, 0)
+}
+
+/// Iris went light or dark: every page follows (each request context;
+/// a sandboxed tab's own one through its view)
+engine_theme_changed :: proc() {
+	if !contexts_ready do return
+	if global_ctx == nil do global_ctx = cef_request_context_get_global_context()
+	color_scheme(global_ctx)
+	color_scheme(private_ctx)
+	for _, c in container_ctx do color_scheme(c)
+	views_each_context(color_scheme)
 }
 
 /// the last private tab closed: its world goes
@@ -337,51 +419,152 @@ warm_for_search :: proc() {}
 
 // Why: a closed tab must give its memory back (the WPE bug of 2.2.0-2.2.2,
 // in CEF form, would be a renderer kept alive). How, without a request
-// context per tab (that would split cookies and sign-ins): every renderer
-// tells the browser process its pid (the render process handler above);
-// --site-per-process keeps different sites' tabs in different renderers;
-// and a few seconds after a tab's OnBeforeClose, each pid it reported that
-// is still alive, still Iris's own child, and used by no live tab is
-// killed. A renderer two tabs of one site share stays while either is open
-// (Chromium ends it with the last). Same-site tabs can share a renderer
-// even so (Chromium's choice past its process limit): those stay alive
-// until the last of them closes, which is correct, not a leak.
+// context per tab (that would split cookies and sign-ins): every frame of
+// every browser, subframes too, tells the browser process which renderer
+// it is in and when that process started (the render process handler
+// above); each view keeps that per frame, and forgets the frames of a
+// document it navigated away from (cef_view.odin). A few seconds after a
+// tab's OnBeforeClose (Chromium usually ends the renderer itself by then),
+// each process it reported is looked at again, and ended only if all of
+// this holds:
+//   - it is the same process (its start time is the one reported: a pid
+//     used again since is never touched),
+//   - it is Iris's own descendant, and a renderer by its command line
+//     (--type=renderer, or --type=zygote for one forked from the zygote,
+//     which keeps the zygote's; never the GPU or a utility process, whose
+//     pids are never reported anyway),
+//   - no live view (a tab's, the peek's, a pop-up's) has a frame in it, and
+//     none reported it within the last REAP_RECENT_S seconds,
+//   - every live view has reported (one not yet heard from could be in it).
+// It gets SIGTERM first, SIGKILL only if it is still there (and all of the
+// above still holds) a little later. When anything is unsure (the stat or
+// the command line cannot be read), it is logged, never ended.
+
+/// a renderer as reported: its pid and start time (clock ticks since boot)
+Renderer_Proc :: struct {
+	pid:   i32,
+	start: u64,
+}
 
 @(private="file") Reap :: struct {
-	pids:  []i32,
+	procs: []Reap_Item,
 	tries: int,
 }
 
-REAP_DELAY_MS :: 4000
+@(private="file") Reap_Item :: struct {
+	using r: Renderer_Proc,
+	/// SIGTERM sent: SIGKILL at the next look, if it is still there
+	termed:  bool,
+}
 
-/// a tab is gone: its renderers are checked a little later
-cef_reap_later :: proc(pids: []i32) {
-	if len(pids) == 0 do return
+REAP_DELAY_MS :: 4000
+REAP_KILL_DELAY_MS :: 2000
+REAP_TRIES :: 5
+/// a renderer some live view reported this lately is never ended
+REAP_RECENT_S :: 10.0
+
+/// when a live view last reported each renderer (pid -> now_s())
+@(private="file") last_seen: map[i32]f64
+
+/// a live view reported a frame in this renderer
+renderer_seen :: proc(pid: i32) {
+	last_seen[pid] = now_s()
+}
+
+/// a renderer as it is now, for a report: its start time, and whether it is
+/// the process the report says (the pid not used again since)
+renderer_check :: proc(pid: i32, start: u64) -> bool {
+	s, ok := proc_start_time(pid)
+	return ok && s == start
+}
+
+/// a tab is gone: the renderers its frames were in are looked at later
+cef_reap_later :: proc(procs: []Renderer_Proc) {
+	if len(procs) == 0 do return
 	r := new(Reap)
-	r.pids = make([]i32, len(pids))
-	copy(r.pids, pids)
+	r.procs = make([]Reap_Item, len(procs))
+	for p, i in procs do r.procs[i].r = p
 	after(REAP_DELAY_MS, reap, r)
+}
+
+@(private="file") Verdict :: enum u8 { Gone, Keep, Later, Unsure, End }
+
+/// whether a reported renderer may be ended now
+@(private="file") reap_verdict :: proc(p: Renderer_Proc) -> Verdict {
+	start, ok := proc_start_time(p.pid)
+	if !ok do return pid_alive(p.pid) ? .Unsure : .Gone
+	if start != p.start do return .Gone // another process has the pid now
+	if p.pid == i32(linux.getpid()) do return .Keep
+	if views_use_pid(p.pid) do return .Keep
+	if t, seen := last_seen[p.pid]; seen && now_s() - t < REAP_RECENT_S do return .Later
+	if !my_descendant(p.pid) do return .Keep
+	cmd, err := os.read_entire_file(fmt.tprintf("/proc/%d/cmdline", p.pid), context.temp_allocator)
+	if err != nil do return .Unsure
+	if !cmdline_is_renderer(cmd) do return .Unsure
+	return .End
 }
 
 @(private="file") reap :: proc(d: rawptr) {
 	r := cast(^Reap)d
-	// a live tab not yet heard from may be in any renderer: wait for it
-	if views_unreported() && r.tries < 5 {
+	// a live view not yet heard from may be in any renderer: wait for it
+	if views_unreported() && r.tries < REAP_TRIES {
 		r.tries += 1
 		after(REAP_DELAY_MS, reap, r)
 		return
 	}
-	for pid in r.pids {
-		if !pid_alive(pid) || views_use_pid(pid) || !my_descendant(pid) do continue
-		log.warnf("CEF: a closed tab's renderer (pid %d) was still running: ended", pid)
-		linux.kill(linux.Pid(pid), .SIGKILL)
+	pending, killing := false, false
+	for &p in r.procs {
+		if p.pid == 0 do continue
+		v := reap_verdict(p.r)
+		if v == .End && views_unreported() do v = .Later
+		switch v {
+		case .Gone:
+			if !pid_alive(p.pid) do delete_key(&last_seen, p.pid)
+			p.pid = 0
+		case .Keep:
+			p.pid = 0
+		case .Later:
+			if r.tries < REAP_TRIES {
+				pending = true
+			} else {
+				log.infof("CEF: a closed tab's renderer (pid %d) is still running; left to Chromium (a page may still use it)", p.pid)
+				p.pid = 0
+			}
+		case .Unsure:
+			log.infof("CEF: a closed tab's process %d is still running; left alone (not sure it is a renderer)", p.pid)
+			p.pid = 0
+		case .End:
+			if !p.termed {
+				log.warnf("CEF: a closed tab's renderer (pid %d) was still running: asked to end", p.pid)
+				linux.kill(linux.Pid(p.pid), .SIGTERM)
+				p.termed = true
+				pending, killing = true, true
+			} else {
+				log.warnf("CEF: a closed tab's renderer (pid %d) did not end: killed", p.pid)
+				linux.kill(linux.Pid(p.pid), .SIGKILL)
+				p.pid = 0
+			}
+		}
 	}
-	delete(r.pids)
+	if pending {
+		r.tries += 1
+		after(killing ? REAP_KILL_DELAY_MS : REAP_DELAY_MS, reap, r)
+		return
+	}
+	delete(r.procs)
 	free(r)
 }
 
 @(private="file") pid_alive :: proc(pid: i32) -> bool {
 	return os.exists(fmt.tprintf("/proc/%d", pid))
+}
+
+/// a process's start time (field 22 of /proc/pid/stat)
+proc_start_time :: proc(pid: i32) -> (u64, bool) {
+	stat, err := os.read_entire_file(fmt.tprintf("/proc/%d/stat", pid), context.temp_allocator)
+	if err != nil do return 0, false
+	_, start, ok := parse_proc_stat(string(stat))
+	return start, ok
 }
 
 /// the process descends from Iris (Chromium's renderers are forked from
@@ -392,13 +575,7 @@ cef_reap_later :: proc(pids: []i32) {
 	for _ in 0 ..< 8 {
 		stat, err := os.read_entire_file(fmt.tprintf("/proc/%d/stat", p), context.temp_allocator)
 		if err != nil do return false
-		// "pid (name) state ppid ...": the name may hold spaces, ')' ends it
-		s := string(stat)
-		close := strings.last_index_byte(s, ')')
-		if close < 0 do return false
-		f := strings.fields(s[close + 1:], context.temp_allocator)
-		if len(f) < 2 do return false
-		pp, ok := strconv.parse_int(f[1])
+		pp, _, ok := parse_proc_stat(string(stat))
 		if !ok do return false
 		if i32(pp) == me do return true
 		if pp <= 1 do return false
@@ -406,6 +583,42 @@ cef_reap_later :: proc(pids: []i32) {
 	}
 	return false
 }
+
+// ---- pure logic, no CEF in it (scratch tests copy it from between the
+// markers) ---- BEGIN CEF_LOGIC_REAP
+
+/// "pid (name) state ppid ... starttime ...": the parent's pid (field 4)
+/// and the start time (field 22); the name may hold spaces and ')', the
+/// last ')' ends it
+parse_proc_stat :: proc(s: string) -> (ppid: i64, start: u64, ok: bool) {
+	close := strings.last_index_byte(s, ')')
+	if close < 0 do return
+	f := strings.fields(s[close + 1:], context.temp_allocator)
+	// f[0] is field 3 (state): field n is f[n - 3]
+	if len(f) < 20 do return
+	pp, ok1 := strconv.parse_i64(f[1])
+	st, ok2 := strconv.parse_u64(f[19])
+	if !ok1 || !ok2 do return
+	return pp, st, true
+}
+
+/// a NUL-separated command line is a Chromium renderer's: --type=renderer,
+/// or --type=zygote (a renderer forked from the zygote keeps its command
+/// line); never --type=gpu-process, utility, broker, or the browser
+cmdline_is_renderer :: proc(cmd: []u8) -> bool {
+	s := string(cmd)
+	for len(s) > 0 {
+		i := strings.index_byte(s, 0)
+		arg := i < 0 ? s : s[:i]
+		if arg == "--type=renderer" || arg == "--type=zygote" do return true
+		if strings.has_prefix(arg, "--type=") do return false
+		if i < 0 do break
+		s = s[i + 1:]
+	}
+	return false
+}
+
+// ---- END CEF_LOGIC_REAP
 
 // ---------------------------------------------------------------- downloads
 

@@ -42,8 +42,18 @@ View :: struct {
 	closing:     bool,
 	/// what to open once the browser exists
 	pending:     string,
-	/// the renderer processes it reported (cef_engine.odin's reaper)
-	pids:        [dynamic]i32,
+	/// which renderer process each of its frames is in (frame id -> the
+	/// process), as the render process handler reports it for every frame
+	/// and document (cef_engine.odin's reaper)
+	frames:      map[string]Renderer_Proc,
+	/// a pop-up CEF makes for its opener (OnBeforePopup gave CEF this
+	/// View's client): its id there, until OnAfterCreated or the abort
+	popup_id:    i32,
+	popup_opener: i32,
+	popup_t0:    f64,
+	/// the reader's page, written into the fresh blank document the tab is
+	/// navigating to (cef_extra.odin's tab_show_html)
+	reader_html: string,
 	/// read on CEF's IO thread (atomic)
 	shield_on:   i32,
 	page_ignore: i32,
@@ -83,8 +93,10 @@ View :: struct {
 	if intrinsics.atomic_sub(&v.refs, 1) != 1 do return 0
 	context = runtime.default_context()
 	context.allocator = runtime.heap_allocator()
-	delete(v.pids)
+	for k in v.frames do delete(k)
+	delete(v.frames)
 	delete(v.pending)
+	delete(v.reader_html)
 	free(v)
 	return 1
 }
@@ -121,30 +133,58 @@ View :: struct {
 
 // ---------------------------------------------------------------- the views
 
+/// a live view (a tab's, the peek's, a pop-up's) has not said yet which
+/// renderer it is in
 views_unreported :: proc() -> bool {
-	for v in all_views do if v.tab != nil && len(v.pids) == 0 do return true
+	for v in all_views do if v.tab != nil && len(v.frames) == 0 do return true
 	return false
 }
 
+/// a frame of a live view is in this renderer
 views_use_pid :: proc(pid: i32) -> bool {
-	for v in all_views do if v.tab != nil do for p in v.pids do if p == pid do return true
+	for v in all_views do if v.tab != nil do for _, r in v.frames do if r.pid == pid do return true
 	return false
 }
 
-/// Iris quits: every browser closes (CEF must see them close before it
-/// shuts down)
-views_close_all :: proc() {
+/// each live browser's request context (a sandboxed tab has its own)
+views_each_context :: proc(f: proc(c: ^cef_request_context_t)) {
+	for v in all_views do if v.host != nil {
+		c := v.host.get_request_context(v.host)
+		if c == nil do continue
+		f(c)
+		rel(c)
+	}
+}
+
+/// Iris quits: every browser closes, the peek's and a pop-up's being made
+/// too (CEF must see them all close before it shuts down); false if one
+/// did not in time
+views_close_all :: proc() -> bool {
 	for t in b.tabs do tab_release_web(t)
-	for i := 0; i < 200 && len(all_views) > 0; i += 1 {
+	if b.peek != nil do tab_release_web(b.peek)
+	for len(all_views) > 0 {
+		rest: ^Tab
+		for v in all_views do if v.tab != nil do rest = v.tab
+		if rest == nil do break
+		tab_release_web(rest)
+	}
+	for i := 0; i < 300 && len(all_views) > 0; i += 1 {
 		cef_do_message_loop_work()
 		time.sleep(10 * time.Millisecond)
 	}
+	return len(all_views) == 0
 }
+
+/// a tab Iris still has (in the strip, or the peek)
+@(private="file") alive :: proc(t: ^Tab) -> bool { return browser_tab_alive(t) }
 
 tab_has_view :: proc(t: ^Tab) -> bool { return t.cv != nil }
 
 // ---------------------------------------------------------------- making one
 
+/// the tab's view; related (a pop-up's opener View, from OnBeforePopup):
+/// CEF makes the browser itself, with this View's client, so the pop-up
+/// keeps its window.opener
 tab_ensure_web :: proc(t: ^Tab, related: rawptr = nil) -> ^View {
 	if t.cv != nil do return t.cv
 	v := new(View, runtime.heap_allocator())
@@ -169,23 +209,16 @@ tab_ensure_web :: proc(t: ^Tab, related: rawptr = nil) -> ^View {
 	append(&all_views, v)
 	t.cv = v
 
-	wi := cef_window_info_t{size = size_of(cef_window_info_t)}
-	wi.windowless_rendering_enabled = 1
-	wi.shared_texture_enabled = 0 // frames come through OnPaint (no shared textures on Linux)
-	wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY
-	bs := cef_browser_settings_t{size = size_of(cef_browser_settings_t)}
-	bs.windowless_frame_rate = CEF_FPS
-	bs.background_color = 0xFFFFFFFF
-	if t.sandboxed {
-		// a site Iris does not trust: no clipboard, no WebGL
-		bs.javascript_access_clipboard = STATE_DISABLED
-		bs.javascript_dom_paste = STATE_DISABLED
-		bs.webgl = STATE_DISABLED
-	}
-	ctx := tab_context(t) // its reference goes to CEF
-	url := cef_str("")
-	if cef_browser_host_create_browser(&wi, give(&v.client), &url, &bs, nil, ctx) == 0 {
-		browser_toast("The page could not be made (CEF)")
+	if related == nil {
+		wi := cef_window_info_t{size = size_of(cef_window_info_t)}
+		windowless(&wi)
+		bs := cef_browser_settings_t{size = size_of(cef_browser_settings_t)}
+		browser_settings(&bs, t.sandboxed)
+		ctx := tab_context(t) // its reference goes to CEF
+		url := cef_str("")
+		if cef_browser_host_create_browser(&wi, give(&v.client), &url, &bs, nil, ctx) == 0 {
+			browser_toast("The page could not be made (CEF)")
+		}
 	}
 
 	t.page = page_new(v)
@@ -196,6 +229,27 @@ tab_ensure_web :: proc(t: ^Tab, related: rawptr = nil) -> ^View {
 	t.page.on_fullscreen = proc(p: ^Page, on: bool) { browser_fullscreen(on) }
 	browser_attach(t)
 	return v
+}
+
+/// a browser drawn off-screen, its frames through OnPaint (no shared
+/// textures on Linux)
+@(private="file") windowless :: proc(wi: ^cef_window_info_t) {
+	wi.windowless_rendering_enabled = 1
+	wi.shared_texture_enabled = 0
+	wi.external_begin_frame_enabled = 0
+	wi.parent_window = 0
+	wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY
+}
+
+@(private="file") browser_settings :: proc(bs: ^cef_browser_settings_t, sandboxed: bool) {
+	bs.windowless_frame_rate = CEF_FPS
+	bs.background_color = 0xFFFFFFFF
+	if sandboxed {
+		// a site Iris does not trust: no clipboard, no WebGL
+		bs.javascript_access_clipboard = STATE_DISABLED
+		bs.javascript_dom_paste = STATE_DISABLED
+		bs.webgl = STATE_DISABLED
+	}
 }
 
 /// the view goes (to be made again, in or out of the sandbox): the browser
@@ -234,6 +288,9 @@ tab_release_web :: proc(t: ^Tab) {
 	f.load_url(f, &s)
 	rel(f)
 }
+
+/// opens an address in the view as it is (no https-first, no sandbox turn)
+cef_load :: proc(v: ^View, u: string) { load_url(v, u) }
 
 /// opens an address; a site Iris does not trust goes to the sandbox, and
 /// a trusted one comes out of it
@@ -278,32 +335,129 @@ tab_download :: proc(t: ^Tab, url: string) {
 	}
 }
 
-/// the selected text, in a field too (getSelection() leaves fields out)
-@(private="file") SELECTION_JS :: `(() => { const e = document.activeElement; if (e && (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') && typeof e.selectionStart === 'number') return e.value.substring(e.selectionStart, e.selectionEnd); return window.getSelection().toString(); })()`
+// ---------------------------------------------------------------- editing, and the clipboard
+
+// Chromium's clipboard here is its own (the headless ozone platform has no
+// desktop behind it), so Iris keeps it in step with the desktop's
+// (clipboard.odin) both ways, and the page's own copy, cut and paste events
+// always fire: Ctrl+C / X / V / A / Z go to Chromium as keys, and the menu's
+// actions are the focused frame's own copy(), cut(), paste().
+//   page -> desktop: a watcher in every frame (COPY_WATCH) tells Iris the
+//   text a copy or cut put on Chromium's clipboard (what the page set in its
+//   copy event, or else the selection); Iris offers it to the desktop.
+//   desktop -> page: before a paste, if the desktop's text is not what
+//   Chromium's clipboard holds, it is written there first
+//   (navigator.clipboard.writeText in the focused frame), then the paste
+//   goes on; if that fails, the text is typed in as before.
+
+/// the text Chromium's clipboard is known to hold (a page copied it, or Iris
+/// wrote it there)
+@(private="file") chromium_clip: string
+
+@(private="file") Edit_Op :: enum u8 { Copy, Cut, Paste, Select_All, Undo, Redo }
+
+/// the frame editing goes to: the focused one (an iframe's field too)
+@(private="file") edit_frame :: proc(v: ^View) -> ^cef_frame_t {
+	if v == nil || v.browser == nil do return nil
+	if f := v.browser.get_focused_frame(v.browser); f != nil do return f
+	return v.browser.get_main_frame(v.browser)
+}
+
+@(private="file") frame_do :: proc(v: ^View, op: Edit_Op) {
+	f := edit_frame(v)
+	if f == nil do return
+	defer rel(f)
+	switch op {
+	case .Copy: f.copy(f)
+	case .Cut: f.cut(f)
+	case .Paste: f.paste(f)
+	case .Select_All: f.select_all(f)
+	case .Undo: f.undo(f)
+	case .Redo: f.redo(f)
+	}
+}
+
+/// Chromium's clipboard gets the desktop's text (if it does not hold it
+/// already), then then(t) runs; failed(t) if it could not (the text is
+/// then typed in)
+@(private="file") clipboard_to_chromium :: proc(t: ^Tab, then: proc(t: ^Tab)) {
+	text := clipboard_text
+	// the sandbox has no clipboard of its own: the text is typed in
+	if t.sandboxed {
+		if t.page != nil && len(text) > 0 do page_commit_text(t.page, text)
+		return
+	}
+	// in step already (or nothing from the desktop): Chromium's own
+	// clipboard is pasted, what the page copied there with all its formats
+	if text == chromium_clip || len(text) == 0 {
+		then(t)
+		return
+	}
+	Sync :: struct {
+		then: proc(t: ^Tab),
+		text: string,
+	}
+	js := fmt.tprintf("navigator.clipboard.writeText(%s).then(() => '1', () => '0')", json_str(text, context.temp_allocator))
+	run_job(t, edit_frame(t.cv), js, proc(t: ^Tab, result: string, data: rawptr) {
+		s := cast(^Sync)data
+		defer { delete(s.text); free(s) }
+		if result == "1" {
+			set_str(&chromium_clip, s.text)
+			s.then(t)
+		} else if t.page != nil {
+			page_commit_text(t.page, s.text)
+		}
+	}, boxed(Sync{then, strings.clone(text)}), PASTE_TIMEOUT_S, proc(t: ^Tab, data: rawptr) {
+		s := cast(^Sync)data
+		if t != nil && t.page != nil do page_commit_text(t.page, s.text)
+		delete(s.text)
+		free(s)
+	})
+}
+
+PASTE_TIMEOUT_S :: 1.0
+
+@(private="file") boxed :: proc(x: $T) -> ^T {
+	p := new(T)
+	p^ = x
+	return p
+}
+
+/// a key Iris presses in the page itself (after the clipboard is in step)
+@(private="file") press :: proc(t: ^Tab, vk: i32, native: i32, mods: u32) {
+	v := t.cv
+	if v == nil || v.host == nil do return
+	ev := cef_key_event_t{size = size_of(cef_key_event_t), modifiers = mods, windows_key_code = vk, native_key_code = native}
+	ev.type = KEYEVENT_RAWKEYDOWN
+	v.host.send_key_event(v.host, &ev)
+	ev.type = KEYEVENT_KEYUP
+	v.host.send_key_event(v.host, &ev)
+}
+
+/// Ctrl+V in the page: the clipboard in step first, then the key itself
+cef_paste_key :: proc(t: ^Tab, native: i32, mods: u32) {
+	if t.sandboxed {
+		clipboard_to_chromium(t, nil) // typed in
+		return
+	}
+	if clipboard_text == chromium_clip || len(clipboard_text) == 0 {
+		press(t, 'V', native, mods)
+		return
+	}
+	pending_key = {native, mods}
+	clipboard_to_chromium(t, proc(t: ^Tab) { press(t, 'V', pending_key.native, pending_key.mods) })
+}
+
+@(private="file") pending_key: struct { native: i32, mods: u32 }
 
 tab_edit :: proc(t: ^Tab, cmd: string) {
 	v := t.cv
 	if v == nil do return
 	switch cmd {
-	case EDIT_COPY, EDIT_CUT:
-		// the selection goes to the desktop's clipboard (CEF's has none)
-		cut := cmd == EDIT_CUT
-		tab_run(t, SELECTION_JS, cut ? proc(t: ^Tab, s: string) {
-			if len(s) > 0 do clipboard_offer(s)
-			if v := t.cv; v != nil do if f := main_frame(v); f != nil {
-				f.cut(f)
-				rel(f)
-			}
-		} : proc(t: ^Tab, s: string) {
-			if len(s) > 0 do clipboard_offer(s)
-		})
-	case EDIT_PASTE:
-		if t.page != nil do page_commit_text(t.page, clipboard_text)
-	case EDIT_SELECT_ALL:
-		if f := main_frame(v); f != nil {
-			f.select_all(f)
-			rel(f)
-		}
+	case EDIT_COPY: frame_do(v, .Copy) // the watcher tells Iris what it copied
+	case EDIT_CUT: frame_do(v, .Cut)
+	case EDIT_PASTE: clipboard_to_chromium(t, proc(t: ^Tab) { frame_do(t.cv, .Paste) })
+	case EDIT_SELECT_ALL: frame_do(v, .Select_All)
 	}
 }
 
@@ -321,18 +475,36 @@ tab_find_stop :: proc(t: ^Tab) {
 // ---------------------------------------------------------------- scripts, and what they say back
 
 // A script's answer comes back as a console message with a token only Iris
-// knows (one per answer): CEF's C API has no result for ExecuteJavaScript.
+// knows (one per answer), accepted only from a script of Iris's own (the
+// message's source is SCRIPT_URL: a page's script that learned a token
+// cannot answer for it). CEF's C API has no result for ExecuteJavaScript,
+// and a process message from the page would need V8 bindings (the render
+// process handler's V8 context, a native function): not in Iris's CEF
+// bindings yet. A job whose answer never comes (the page went, or broke
+// console.info) is dropped after its time (JOB_TIMEOUT_S), so jobs never
+// pile up.
 
 @(private="file") Job :: struct {
-	tab_id: int,
-	token:  string,
-	done:   proc(t: ^Tab, result: string),
+	tab_id:   int,
+	view:     ^View, // compared, never followed
+	token:    string,
+	done:     proc(t: ^Tab, result: string, data: rawptr),
+	plain:    proc(t: ^Tab, result: string),
+	data:     rawptr,
+	/// the answer did not come in time (the tab may be gone: nil)
+	failed:   proc(t: ^Tab, data: rawptr),
+	deadline: f64,
 }
 
 @(private="file") jobs: [dynamic]Job
+@(private="file") jobs_timer: bool
 @(private="file") ANSWER :: "\x01iris:"
 @(private="file") MEDIA :: "\x01iris-media:"
+@(private="file") COPY :: "\x01iris-copy:"
+@(private="file") SCRIPT_URL :: "iris://script"
 @(private="file") media_token: string
+@(private="file") copy_token: string
+JOB_TIMEOUT_S :: 30.0
 
 @(private="file") token :: proc() -> string {
 	id := new_id()
@@ -342,20 +514,58 @@ tab_find_stop :: proc(t: ^Tab) {
 @(private="file") run_in :: proc(f: ^cef_frame_t, js: string) {
 	if f == nil do return
 	s := cef_str(js)
-	url := cef_str("iris://script")
+	url := cef_str(SCRIPT_URL)
 	f.execute_java_script(f, &s, &url, 0)
+}
+
+/// the tab a job was for, if it is still there with the same view
+@(private="file") job_tab :: proc(j: Job) -> ^Tab {
+	for t in b.tabs do if t.id == j.tab_id && t.cv == j.view do return t
+	if p := b.peek; p != nil && p.id == j.tab_id && p.cv == j.view do return p
+	return nil
+}
+
+/// jobs past their time are dropped (their failed proc told)
+@(private="file") jobs_prune :: proc() {
+	now := now_s()
+	for i := 0; i < len(jobs); {
+		j := jobs[i]
+		if now < j.deadline {
+			i += 1
+			continue
+		}
+		ordered_remove(&jobs, i)
+		if j.failed != nil do j.failed(job_tab(j), j.data)
+		delete(j.token)
+	}
+	if len(jobs) > 0 && !jobs_timer {
+		jobs_timer = true
+		after(1000, proc(d: rawptr) {
+			jobs_timer = false
+			jobs_prune()
+		}, nil)
+	}
+}
+
+/// runs js (an expression; a promise is waited for) in frame f of t's page
+@(private="file") run_job :: proc(t: ^Tab, f: ^cef_frame_t, js: string, done: proc(t: ^Tab, result: string, data: rawptr), data: rawptr = nil, timeout := JOB_TIMEOUT_S, failed: proc(t: ^Tab, data: rawptr) = nil, plain: proc(t: ^Tab, result: string) = nil) {
+	if f == nil {
+		if failed != nil do failed(t, data)
+		return
+	}
+	defer rel(f)
+	tk := token()
+	append(&jobs, Job{t.id, t.cv, tk, done, plain, data, failed, now_s() + timeout})
+	tag := json_str(fmt.tprintf("%s%s:", ANSWER, tk), context.temp_allocator)
+	run_in(f, fmt.tprintf("(() => { const tell = console.info.bind(console); let p; try { p = Promise.resolve((() => (%s))()); } catch (e) { p = Promise.resolve(''); } p.then(r => tell(%s + String(r)), () => tell(%s)); })();", js, tag, tag))
+	jobs_prune()
 }
 
 /// runs a script (an expression) in the page; done gets its result as text
 tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 	v := t.cv
 	if v == nil do return
-	f := main_frame(v)
-	if f == nil do return
-	defer rel(f)
-	tk := token()
-	append(&jobs, Job{t.id, tk, done})
-	run_in(f, fmt.tprintf("(() => { let r; try { r = String((() => (%s))()); } catch (e) { r = ''; } console.info(%s + r); })();", js, json_str(fmt.tprintf("%s%s:", ANSWER, tk), context.temp_allocator)))
+	run_job(t, main_frame(v), js, nil, plain = done)
 }
 
 /// a page's sound and video, told to Iris (so a tab that plays is never
@@ -365,15 +575,40 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 	tag := json_str(fmt.tprintf("%s%s:", MEDIA, media_token), context.temp_allocator)
 	return fmt.tprintf(`(() => {
   if (window.__irisMedia) return; window.__irisMedia = true;
-  const tell = () => { const on = [...document.querySelectorAll('video,audio')].some(m => !m.paused && !m.ended && !m.muted); console.info(%s + (on ? '1' : '0')); };
+  const say = console.info.bind(console);
+  const tell = () => { const on = [...document.querySelectorAll('video,audio')].some(m => !m.paused && !m.ended && !m.muted); say(%s + (on ? '1' : '0')); };
   for (const e of ['play', 'playing', 'pause', 'ended', 'volumechange', 'emptied']) document.addEventListener(e, tell, true);
 })();`, tag)
 }
 
-@(private="file") console_message :: proc(v: ^View, msg: string) -> bool {
+/// what a copy or cut put on Chromium's clipboard, told to Iris: the text
+/// the page set in its copy event (read while the event is still being
+/// handled, after the page's own handlers), or else the selection (in a
+/// field too: getSelection() leaves fields out)
+@(private="file") copy_watch :: proc() -> string {
+	if copy_token == "" do copy_token = token()
+	tag := json_str(fmt.tprintf("%s%s:", COPY, copy_token), context.temp_allocator)
+	return fmt.tprintf(`(() => {
+  if (window.__irisCopy) return; window.__irisCopy = true;
+  const say = console.info.bind(console);
+  const sel = () => { const e = document.activeElement; if (e && (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') && typeof e.selectionStart === 'number') return e.value.substring(e.selectionStart, e.selectionEnd); const s = window.getSelection(); return s ? s.toString() : ''; };
+  const tell = t => { if (t) say(%s + t); };
+  const watch = ev => {
+    const text = sel(); let told = false;
+    const late = e => { if (e !== ev) return; told = true; window.removeEventListener(ev.type, late, false); tell(ev.defaultPrevented ? (ev.clipboardData ? ev.clipboardData.getData('text/plain') : '') : text); };
+    window.addEventListener(ev.type, late, false);
+    setTimeout(() => { window.removeEventListener(ev.type, late, false); if (!told && !ev.defaultPrevented) tell(text); }, 0);
+  };
+  window.addEventListener('copy', watch, true);
+  window.addEventListener('cut', watch, true);
+})();`, tag)
+}
+
+@(private="file") console_message :: proc(v: ^View, msg: string, source: string) -> bool {
+	ours := source == SCRIPT_URL
 	if strings.has_prefix(msg, MEDIA) {
 		rest := msg[len(MEDIA):]
-		if len(media_token) == 0 || !strings.has_prefix(rest, media_token) do return true
+		if !ours || len(media_token) == 0 || !strings.has_prefix(rest, media_token) do return true
 		p := v.page
 		if p == nil do return true
 		on := strings.has_suffix(rest, ":1")
@@ -384,18 +619,31 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 		if t := v.tab; t != nil do browser_page_audio(t, on)
 		return true
 	}
+	if strings.has_prefix(msg, COPY) {
+		rest := msg[len(COPY):]
+		if !ours || len(copy_token) == 0 || !strings.has_prefix(rest, copy_token) || len(rest) <= len(copy_token) || rest[len(copy_token)] != ':' do return true
+		text := rest[len(copy_token) + 1:]
+		if v.tab == nil || len(text) == 0 do return true
+		set_str(&chromium_clip, text)
+		clipboard_offer(text)
+		return true
+	}
 	if !strings.has_prefix(msg, ANSWER) do return false
+	if !ours do return true
 	rest := msg[len(ANSWER):]
 	for j, i in jobs {
 		if !strings.has_prefix(rest, j.token) || len(rest) <= len(j.token) || rest[len(j.token)] != ':' do continue
 		ordered_remove(&jobs, i)
 		defer delete(j.token)
-		// the tab may have closed while the page answered
-		for t in b.tabs do if t.id == j.tab_id && t.cv == v {
-			j.done(t, rest[len(j.token) + 1:])
-			break
+		// the tab may have closed while the page answered (the peek too)
+		t := job_tab(j)
+		if t == nil || t.cv != v {
+			if j.failed != nil do j.failed(nil, j.data)
+			return true
 		}
-		if p := b.peek; p != nil && p.id == j.tab_id && p.cv == v do j.done(p, rest[len(j.token) + 1:])
+		result := rest[len(j.token) + 1:]
+		if j.plain != nil do j.plain(t, result)
+		if j.done != nil do j.done(t, result, j.data)
 		return true
 	}
 	return true
@@ -416,13 +664,15 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 		run_in(f, SCROLL_UNLOCK)
 	}
 	run_in(f, media_watch())
+	run_in(f, copy_watch())
 }
 
-/// what Shields hides on this page, as a style sheet (early: at load start)
-@(private="file") page_hiding :: proc(t: ^Tab, v: ^View, f: ^cef_frame_t) {
+/// what Shields hides on this page, as a style sheet (early: at load start;
+/// u: the frame's own address, the one committing, not the tab's)
+@(private="file") page_hiding :: proc(t: ^Tab, v: ^View, f: ^cef_frame_t, u: string) {
 	if intrinsics.atomic_load(&v.shield_on) == 0 do return
-	h, _ := host_of(t.url, context.temp_allocator)
-	css := matcher_css(cef_matcher(), t.url, h, context.temp_allocator)
+	h, _ := host_of(u, context.temp_allocator)
+	css := matcher_css(cef_matcher(), u, h, context.temp_allocator)
 	if len(css) == 0 do return
 	run_in(f, fmt.tprintf(`(() => { const add = () => { const s = document.createElement('style'); s.textContent = %s; (document.head || document.documentElement).appendChild(s); }; if (document.documentElement) add(); else document.addEventListener('readystatechange', add, { once: true }); })();`, json_str(css, context.temp_allocator)))
 }
@@ -431,23 +681,34 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 
 /// a page asks for a new window (OnBeforePopup) or a link wants a tab of its
 /// own (OnOpenURLFromTab): the same choice as the WPE engine's
-/// (new_window_choice), and always a tab Iris makes itself with the address,
-/// never a window CEF fills (so never a blank tab)
-@(private="file") new_window :: proc(t: ^Tab, u: string, disposition: i32, gesture: bool, from_link: bool) {
+/// (new_window_choice). A link, or a page's own tab: a tab Iris makes
+/// itself with the address. A pop-up that talks to its opener (a sign-in,
+/// the same site's, a blank one the page writes into: Google, GitHub and
+/// Microsoft sign-in, 3-D Secure, print previews): Related, a tab whose
+/// browser CEF makes (OnBeforePopup gives it the tab's client), so
+/// window.opener and postMessage work; it shows once it has a real address
+/// or has painted (held until then).
+@(private="file") new_window :: proc(t: ^Tab, u: string, disposition: i32, gesture: bool, from_link: bool) -> Window_Choice {
 	page_host, _ := host_of(t.url, context.temp_allocator)
 	shield := shields_on_for(page_host)
 	tabby := disposition == CEF_WOD_NEW_FOREGROUND_TAB || disposition == CEF_WOD_NEW_BACKGROUND_TAB
 	link := from_link || (tabby && gesture)
 	background := disposition == CEF_WOD_NEW_BACKGROUND_TAB || !gesture
 	real := len(u) > 0 && u != "about:blank"
-	switch new_window_choice(u, t.url, link, gesture, t.sandboxed, shield) {
-	case .Own_Tab, .Related:
-		// (Related: the WPE engine gives the page a window it fills; here the
-		// address opens in a tab of its own: the opener link is lost)
+	choice := new_window_choice(u, t.url, link, gesture, t.sandboxed, shield)
+	switch choice {
+	case .Own_Tab:
 		if real do open_later(t, u, background)
+	case .Related:
+		// a link wants a tab, never a pop-up that CEF fills
+		if from_link {
+			if real do open_later(t, u, background)
+			return .Own_Tab
+		}
 	case .Block:
 		if !link && shield && !t.sandboxed do browser_toast("Pop-up blocked")
 	}
+	return choice
 }
 
 @(private="file") Open :: struct {
@@ -467,9 +728,38 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 			delete(o.url)
 			free(o)
 		}
-		if !browser_has_tab(o.t) || o.t.id != o.id do return
+		if !alive(o.t) || o.t.id != o.id do return
 		browser_open_link(o.t, o.url, o.background)
 	}, o)
+}
+
+/// the pop-up's tab (Related): made now, in OnBeforePopup (its View's client
+/// goes back to CEF, which makes the browser); held, not shown, until it
+/// has somewhere to be (popup_reveal)
+@(private="file") popup_tab :: proc(opener: ^Tab, ov: ^View, u: string, popup_id: i32) -> ^View {
+	p := browser_new_tab({container = opener.container, after = opener, related = rawptr(ov)})
+	if p == nil || p.cv == nil do return nil
+	p.sandboxed = opener.sandboxed // (never: Related is not given in the sandbox)
+	if strings.has_prefix(u, "http") do set_str(&p.url, u)
+	p.cv.popup_id = popup_id
+	p.cv.popup_opener = ov.id
+	p.cv.popup_t0 = now_s()
+	// a window the page only writes into, and that never paints: shown
+	// anyway after a while, as WebKit's would be
+	Check :: struct { t: ^Tab, id: int }
+	after(1200, proc(d: rawptr) {
+		c := cast(^Check)d
+		defer free(c)
+		if browser_has_tab(c.t) && c.t.id == c.id && c.t.held && c.t.page != nil && c.t.page.tex.id != 0 do popup_reveal(c.t)
+	}, boxed(Check{p, p.id}))
+	return p.cv
+}
+
+/// a held pop-up shows (a real address, or its first paint)
+popup_reveal :: proc(t: ^Tab) {
+	if t == nil || !t.held || !browser_has_tab(t) do return
+	t.held = false
+	browser_select(t)
 }
 
 // ---------------------------------------------------------------- what pages ask for
@@ -579,23 +869,63 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		if msg == nil || from_userfree(msg.get_name(msg)) != PID_MESSAGE do return 0
 		v := vw(self)
 		args := msg.get_argument_list(msg)
-		if args == nil do return 1
+		if args == nil || frame == nil do return 1
 		pid := args.get_int(args, 0)
+		start := u64(max(0, args.get_double(args, 1)))
 		rel(args)
-		if pid > 0 {
-			known := false
-			for p in v.pids do if p == pid do known = true
-			if !known do append(&v.pids, pid)
+		// a report Iris can hold the process to: its start time is still
+		// the one reported (the pid not used again since)
+		if pid <= 0 || !renderer_check(pid, start) do return 1
+		id := from_userfree(frame.get_identifier(frame))
+		if len(id) == 0 do return 1
+		if id in v.frames {
+			v.frames[id] = {pid, start}
+		} else {
+			v.frames[strings.clone(id)] = {pid, start}
 		}
+		if v.tab != nil do renderer_seen(pid)
 		return 1
 	}
 
 	l := &v.life.c
 	l.on_before_popup = proc "c" (self: ^cef_life_span_handler_t, browser: ^cef_browser_t, frame: ^cef_frame_t, popup_id: i32, target_url: ^cef_string_t, target_frame_name: ^cef_string_t, disposition: i32, user_gesture: i32, features: ^cef_popup_features_t, wi: ^cef_window_info_t, client: ^^cef_client_t, settings: ^cef_browser_settings_t, extra_info: ^rawptr, no_javascript_access: ^i32) -> i32 {
 		context = main_context
-		defer { rel(browser); rel(frame) }
-		if t := vw(self).tab; t != nil do new_window(t, from_cef(target_url), disposition, user_gesture != 0, false)
-		return 1 // CEF makes no window: Iris made a tab, or nothing
+		// *client comes with a reference to the opener's client that is
+		// Iris's to let go (CEF's C-to-C++ glue adds one when it hands a
+		// struct of Iris's back across); a pop-up's own goes to CEF instead
+		orig := client != nil ? client^ : nil
+		defer { rel(browser); rel(frame); rel(orig) }
+		v := vw(self)
+		t := v.tab
+		if t == nil || !alive(t) || v.host == nil || client == nil do return 1
+		u := from_cef(target_url)
+		if new_window(t, u, disposition, user_gesture != 0, false) != .Related do return 1 // CEF makes no window: Iris made a tab, or nothing
+		// a pop-up that talks to its opener: CEF makes it, windowless, for a
+		// tab of Iris's (its View's client); it shares the opener's request
+		// context (its container, its cookies)
+		pv := popup_tab(t, v, u, popup_id)
+		if pv == nil do return 1
+		windowless(wi)
+		if settings != nil do browser_settings(settings, t.sandboxed)
+		client^ = give(&pv.client)
+		return 0
+	}
+	l.on_before_popup_aborted = proc "c" (self: ^cef_life_span_handler_t, browser: ^cef_browser_t, popup_id: i32) {
+		context = main_context
+		defer rel(browser)
+		opener := browser.get_identifier(browser)
+		for x, i in all_views do if x.popup_id == popup_id && x.popup_opener == opener && x.browser == nil {
+			// CEF will not make the pop-up after all: its View goes (CEF never
+			// calls OnAfterCreated or OnBeforeClose for it), and its tab
+			x.popup_id = 0
+			if t := x.tab; t != nil {
+				if t.cv == x do tab_release_web(t)
+				browser_close_later(t)
+			}
+			unordered_remove(&all_views, i)
+			rel(&x.client.c) // Iris's own reference
+			break
+		}
 	}
 	l.on_after_created = proc "c" (self: ^cef_life_span_handler_t, browser: ^cef_browser_t) {
 		context = main_context
@@ -603,6 +933,7 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		v.browser = browser // the reference CEF gave is kept, until OnBeforeClose
 		v.host = browser.get_host(browser)
 		v.id = browser.get_identifier(browser)
+		v.popup_id = 0
 		by_id[v.id] = v
 		if v.closing || v.tab == nil {
 			v.host.close_browser(v.host, 1)
@@ -612,6 +943,9 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 			v.host.notify_screen_info_changed(v.host)
 			v.host.was_resized(v.host)
 			page_apply_hidden(p)
+			// a held pop-up paints while held (out of sight), so it can show
+			// once it has painted (popup_reveal)
+			if v.tab.held do v.host.was_hidden(v.host, 0)
 			if v.tab == b.current && !b.chrome_focus do page_focus(p, true)
 		}
 		if len(v.pending) > 0 {
@@ -621,7 +955,10 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		}
 	}
 	l.do_close = proc "c" (self: ^cef_life_span_handler_t, browser: ^cef_browser_t) -> i32 {
+		context = main_context
 		rel(browser)
+		// the page closed itself (window.close() in a pop-up): its tab goes
+		if t := vw(self).tab; t != nil && alive(t) do browser_close_later(t)
 		return 0 // windowless: the browser is destroyed now
 	}
 	l.on_before_close = proc "c" (self: ^cef_life_span_handler_t, browser: ^cef_browser_t) {
@@ -646,7 +983,13 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		rel(v.host)
 		rel(v.browser)
 		v.host, v.browser = nil, nil
-		cef_reap_later(v.pids[:])
+		procs := make([dynamic]Renderer_Proc, context.temp_allocator)
+		for _, r in v.frames {
+			known := false
+			for x in procs do if x == r do known = true
+			if !known do append(&procs, r)
+		}
+		cef_reap_later(procs[:])
 		rel(&v.client.c) // Iris's own reference
 	}
 
@@ -664,16 +1007,36 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		context = main_context
 		defer { rel(browser); rel(frame) }
 		v := vw(self)
+		if frame.is_main(frame) != 0 {
+			// a new document in the main frame: the frames of the one before
+			// are gone (the renderers they were in no longer this view's);
+			// the new main frame's report may have come first, so it stays
+			keep := from_userfree(frame.get_identifier(frame))
+			drop := make([dynamic]string, context.temp_allocator)
+			for k in v.frames do if k != keep do append(&drop, k)
+			for k in drop {
+				delete_key(&v.frames, k)
+				delete(k)
+			}
+		}
 		if t := v.tab; t != nil && frame.is_main(frame) != 0 {
-			page_hiding(t, v, frame)
-			browser_page_committed(t, from_userfree(frame.get_url(frame)))
+			u := from_userfree(frame.get_url(frame))
+			page_hiding(t, v, frame, u)
+			browser_page_committed(t, u)
 		}
 	}
 	ld.on_load_end = proc "c" (self: ^cef_load_handler_t, browser: ^cef_browser_t, frame: ^cef_frame_t, status: i32) {
 		context = main_context
 		defer { rel(browser); rel(frame) }
-		t := vw(self).tab
+		v := vw(self)
+		t := v.tab
 		if t == nil do return
+		// the reader's page into the fresh blank document (cef_extra.odin)
+		if frame.is_main(frame) != 0 && len(v.reader_html) > 0 && from_userfree(frame.get_url(frame)) == "about:blank" {
+			run_in(frame, fmt.tprintf("document.open(); document.write(%s); document.close();", json_str(v.reader_html, context.temp_allocator)))
+			delete(v.reader_html)
+			v.reader_html = ""
+		}
 		page_scripts(t, frame)
 		if frame.is_main(frame) != 0 && !tab_is_private(t) && !t.sandboxed do history_record(t.url, t.title)
 		if frame.is_main(frame) != 0 do browser_page_finished(t)
@@ -702,6 +1065,8 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		u := from_cef(url)
 		if u == "about:blank" && len(t.url) > 0 do return
 		set_str(&t.url, u)
+		// a pop-up's first real address: it shows now
+		if t.held && len(u) > 0 && u != "about:blank" do popup_reveal(t)
 		h, _ := host_of(u, context.temp_allocator)
 		tab_shields_apply(t, h)
 		browser_tab_changed(t)
@@ -745,7 +1110,7 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 	d.on_console_message = proc "c" (self: ^cef_display_handler_t, browser: ^cef_browser_t, level: i32, message: ^cef_string_t, source: ^cef_string_t, line: i32) -> i32 {
 		context = main_context
 		defer rel(browser)
-		return console_message(vw(self), from_cef(message)) ? 1 : 0
+		return console_message(vw(self), from_cef(message), from_cef(source)) ? 1 : 0
 	}
 	d.on_favicon_urlchange = proc "c" (self: ^cef_display_handler_t, browser: ^cef_browser_t, urls: rawptr) {
 		context = main_context
@@ -800,7 +1165,11 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 	r.on_paint = proc "c" (self: ^cef_render_handler_t, browser: ^cef_browser_t, kind: i32, n: uint, rects: ^cef_rect_t, buffer: rawptr, w, h: i32) {
 		context = main_context
 		defer rel(browser)
-		if p := vw(self).page; p != nil do page_paint(p, kind, ([^]cef_rect_t)(rects)[:n], buffer, w, h)
+		v := vw(self)
+		if p := v.page; p != nil do page_paint(p, kind, ([^]cef_rect_t)(rects)[:n], buffer, w, h)
+		// a pop-up the page writes into, with no address of its own: shown
+		// once it has painted and had its moment to navigate
+		if t := v.tab; t != nil && t.held && now_s() - v.popup_t0 > 1.2 do popup_reveal(t)
 	}
 	r.on_popup_show = proc "c" (self: ^cef_render_handler_t, browser: ^cef_browser_t, show: i32) {
 		context = main_context
@@ -820,6 +1189,13 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		t := vw(self).tab
 		if t == nil || frame.is_main(frame) == 0 do return 0
 		u := from_userfree(request.get_url(request))
+		// a form sent (POST): never turned into another address (its body
+		// would be lost, or sent twice); Shields' host only
+		if method := from_userfree(request.get_method(request)); method != "GET" && method != "" {
+			h, _ := host_of(u, context.temp_allocator)
+			tab_shields_apply(t, h)
+			return 0
+		}
 		// an http address goes over https first, where it can (features.odin)
 		if https_wanted(t, u) {
 			tab_load_later(t, strings.clone(u))
@@ -842,7 +1218,9 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 			tab_load_later(t, strings.clone(u))
 			return 1
 		}
-		set_str(&t.url, u)
+		// (the address shown changes when the page commits:
+		// OnAddressChange; a navigation not yet committed is not where the
+		// tab is)
 		h, _ := host_of(u, context.temp_allocator)
 		tab_shields_apply(t, h)
 		return 0

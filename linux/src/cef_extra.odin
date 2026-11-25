@@ -4,8 +4,6 @@
 // cef_engine.odin, so a peek leaves no process behind without more here.
 package iris
 
-import "core:fmt"
-
 // (not indented: the whole file is this engine's)
 when ENGINE_CEF {
 
@@ -19,20 +17,32 @@ tab_isolate :: proc(t: ^Tab) { t.isolated = true }
 tab_end_isolated :: proc(t: ^Tab) {}
 tab_view_free :: proc(t: ^Tab) {}
 
-/// the reader's page, written over the article's document (CEF has no
-/// load-with-base call through Iris's C API; the address stays the
-/// article's, and the page Iris writes carries a policy that runs no script)
+/// the reader's page, in a fresh document of its own: the tab goes to a
+/// blank page (a new history entry; the article's scripts and timers end
+/// with its document), and the reader's page is written into it when it
+/// has loaded (cef_view.odin's load handler). The address shown stays the
+/// article's (a blank page never replaces it), and the page carries a
+/// policy that runs no script. (CEF's C API has no load-with-base call, and
+/// a data: address would show in the address bar and history.)
 tab_show_html :: proc(t: ^Tab, html, base: string) {
-	if t.cv == nil do return
-	tab_run(t, fmt.tprintf("(document.open(), document.write(%s), document.close(), 1)", json_str(html, context.temp_allocator)), proc(t: ^Tab, result: string) {})
-	t.reader, t.reader_pending = true, false
+	v := t.cv
+	if v == nil do return
+	set_str(&v.reader_html, html)
+	t.reader_pending = true // the blank page's commit makes it the reader
+	cef_load(v, "about:blank")
 	browser_tab_changed(t)
 }
 
-/// out of the reader: the article's own page again
+/// out of the reader: the article's own page, as it was (back)
 tab_reader_exit :: proc(t: ^Tab) {
-	t.reader = false
-	tab_reload(t)
+	if v := t.cv; v != nil do set_str(&v.reader_html, "")
+	t.reader_pending = false
+	if t.can_back {
+		tab_back(t)
+	} else {
+		t.reader = false
+		tab_load(t, t.url)
+	}
 }
 
 /// CEF runs Iris's scripts in the page's own world (its frames have no
