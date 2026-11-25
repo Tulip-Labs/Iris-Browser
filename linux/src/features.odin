@@ -33,7 +33,7 @@ tab_set_pinned :: proc(t: ^Tab, on: bool) {
 		break
 	}
 	t.pinned = on
-	inject_at(&b.tabs, pinned_count() - (on ? 1 : 0), t)
+	inject_at(&b.tabs, pinned_count(), t) // t is out of the list here, so this is the end of the pinned ones
 	chrome_push()
 }
 

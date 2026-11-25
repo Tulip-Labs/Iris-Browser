@@ -227,9 +227,12 @@ jobs:
         run: IRIS_ENGINE=cef sh linux/build.sh check
       - name: The CEF bindings are what tools/bind_cef.sh makes
         run: |
+          # the checkout may have no .git here, so compare against copies
+          cp linux/src/cef_capi.odin /tmp/cef_capi.odin
+          cp linux/src/cef_gen.odin /tmp/cef_gen.odin
           sh linux/tools/bind_cef.sh
-          git config --global --add safe.directory "$PWD"
-          git diff --exit-code linux/src/cef_capi.odin linux/src/cef_gen.odin
+          diff -u /tmp/cef_capi.odin linux/src/cef_capi.odin
+          diff -u /tmp/cef_gen.odin linux/src/cef_gen.odin
       - name: Build (optimised, CEF engine)
         run: IRIS_ENGINE=cef CEF_RPATH=$CEF_DIR/Release sh linux/build.sh release
       - name: It starts (libcef loads, the API version is accepted)
