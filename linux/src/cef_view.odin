@@ -1052,6 +1052,8 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 			browser_load_failed(t, from_cef(failed), false)
 			return
 		}
+		// -200..-299 are certificate errors: the interstitial already says it
+		if code <= -200 && code >= -299 do return
 		host := display_url(from_cef(failed), context.temp_allocator)
 		browser_toast(fmt.tprintf("%s could not be opened (%s)", len(host) > 0 ? host : "The page", from_cef(text)))
 	}
