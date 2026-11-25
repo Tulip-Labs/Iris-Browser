@@ -265,6 +265,14 @@ page_key :: proc(p: ^Page, e: plat.Key_Event) {
 		cef_paste_key(cast(^Tab)p.user, i32(e.code), flags(e.mods, 0))
 		return
 	}
+	// a copy you asked for: what the page copies may reach the desktop
+	// (a page's own copy, without your key, never does: cef_view.odin)
+	if e.pressed && !(.Alt in e.mods) {
+		letter := keycode_us_letter(e.code, e.sym)
+		ctrl_insert := ctrl && (e.keysym == 0xff63 || e.keysym == 0xff9e) // Ctrl+Insert
+		shift_delete := .Shift in e.mods && !ctrl && (e.keysym == 0xffff || e.keysym == 0xff9f) // Shift+Delete
+		if (ctrl && (letter == 'C' || letter == 'X')) || ctrl_insert || shift_delete do cef_copy_intent(cast(^Tab)p.user)
+	}
 	ev := cef_key_event_t{size = size_of(cef_key_event_t)}
 	ev.modifiers = flags(e.mods, 0)
 	if e.repeat do ev.modifiers |= EVENTFLAG_IS_REPEAT

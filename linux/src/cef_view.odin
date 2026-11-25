@@ -54,6 +54,10 @@ View :: struct {
 	/// the reader's page, written into the fresh blank document the tab is
 	/// navigating to (cef_extra.odin's tab_show_html)
 	reader_html: string,
+	/// the tokens of the watchers in its frames (media, copy)
+	watch_tokens: [dynamic]string,
+	/// when Iris last saw a copy or cut asked for in it (a key, the menu)
+	copy_intent: f64,
 	/// read on CEF's IO thread (atomic)
 	shield_on:   i32,
 	page_ignore: i32,
@@ -97,6 +101,8 @@ View :: struct {
 	delete(v.frames)
 	delete(v.pending)
 	delete(v.reader_html)
+	for x in v.watch_tokens do delete(x)
+	delete(v.watch_tokens)
 	free(v)
 	return 1
 }
@@ -306,6 +312,7 @@ tab_load :: proc(t: ^Tab, u0: string) {
 		t.sandboxed = want
 	}
 	v := tab_ensure_web(t)
+	set_str(&v.reader_html, "") // a new address: no reader's page waits
 	set_str(&t.url, u)
 	t.dialogs_blocked, t.dialogs_n = false, 0
 	h, _ := host_of(u, context.temp_allocator)
@@ -454,8 +461,12 @@ tab_edit :: proc(t: ^Tab, cmd: string) {
 	v := t.cv
 	if v == nil do return
 	switch cmd {
-	case EDIT_COPY: frame_do(v, .Copy) // the watcher tells Iris what it copied
-	case EDIT_CUT: frame_do(v, .Cut)
+	case EDIT_COPY:
+		cef_copy_intent(t)
+		frame_do(v, .Copy) // the watcher tells Iris what it copied
+	case EDIT_CUT:
+		cef_copy_intent(t)
+		frame_do(v, .Cut)
 	case EDIT_PASTE: clipboard_to_chromium(t, proc(t: ^Tab) { frame_do(t.cv, .Paste) })
 	case EDIT_SELECT_ALL: frame_do(v, .Select_All)
 	}
@@ -474,15 +485,23 @@ tab_find_stop :: proc(t: ^Tab) {
 
 // ---------------------------------------------------------------- scripts, and what they say back
 
-// A script's answer comes back as a console message with a token only Iris
-// knows (one per answer), accepted only from a script of Iris's own (the
-// message's source is SCRIPT_URL: a page's script that learned a token
-// cannot answer for it). CEF's C API has no result for ExecuteJavaScript,
-// and a process message from the page would need V8 bindings (the render
-// process handler's V8 context, a native function): not in Iris's CEF
-// bindings yet. A job whose answer never comes (the page went, or broke
-// console.info) is dropped after its time (JOB_TIMEOUT_S), so jobs never
-// pile up.
+// A script's answer comes back as a console message (CEF's C API has no
+// result for ExecuteJavaScript, and a process message from the page would
+// need V8 bindings: the render process handler's V8 context and a native
+// function, not in Iris's CEF bindings yet). What makes it Iris's:
+//   - a token only Iris knows: fresh random for each job, used once, and
+//     one per installed watcher (media, copy), kept by its view; compared
+//     in constant time. Tokens live in the injected script's closure only,
+//     never on window.
+//   - the message goes through a console.info the page never touched: the
+//     injected script makes a hidden about:blank iframe of the page's own
+//     origin (IFRAME_NAME) and calls that realm's console.info, so a page
+//     that wraps its own console (Sentry, Datadog, LogRocket) neither sees
+//     the tokens nor drops the answers. If no such frame can be made (a
+//     policy, a broken DOM), the console.info captured at injection is used.
+// The message's source is not looked at (a page can name its own scripts
+// anything with //# sourceURL). A job whose answer never comes is dropped
+// after its time (JOB_TIMEOUT_S), so jobs never pile up.
 
 @(private="file") Job :: struct {
 	tab_id:   int,
@@ -502,14 +521,41 @@ tab_find_stop :: proc(t: ^Tab) {
 @(private="file") MEDIA :: "\x01iris-media:"
 @(private="file") COPY :: "\x01iris-copy:"
 @(private="file") SCRIPT_URL :: "iris://script"
-@(private="file") media_token: string
-@(private="file") copy_token: string
+/// the hidden frame Iris's scripts speak through (page_scripts skips it)
+@(private="file") IFRAME_NAME :: "__iris_console"
 JOB_TIMEOUT_S :: 30.0
+/// a view's watcher tokens kept at most (one per frame and document)
+WATCH_TOKENS_MAX :: 64
+/// a copy reaches the desktop only this soon after Iris saw you copy
+COPY_INTENT_S :: 1.0
 
 @(private="file") token :: proc() -> string {
 	id := new_id()
 	return id
 }
+
+/// two tokens, compared in time that does not depend on where they differ
+@(private="file") token_eq :: proc(a, b: string) -> bool {
+	if len(a) != len(b) || len(a) == 0 do return false
+	d: u8
+	for i in 0 ..< len(a) do d |= a[i] ~ b[i]
+	return d == 0
+}
+
+/// "TOKEN:payload" -> the token and the payload
+@(private="file") split_token :: proc(rest: string) -> (tok, payload: string, ok: bool) {
+	i := strings.index_byte(rest, ':')
+	if i <= 0 do return
+	return rest[:i], rest[i + 1:], true
+}
+
+/// JS: `say(message)` through a console.info the page never touched (see
+/// above); `say_done()` lets the frame go (a job's, once it answered)
+@(private="file") SAY_JS :: `const fallback = console.info.bind(console);
+  let pristine = null;
+  const fresh = () => { try { const i = document.createElement('iframe'); i.name = '` + IFRAME_NAME + `'; i.setAttribute('aria-hidden', 'true'); i.tabIndex = -1; i.style.cssText = 'display:none !important'; (document.documentElement || document.body).appendChild(i); const w = i.contentWindow; const f = w && w.console && w.console.info; if (typeof f === 'function') return { i, f }; i.remove(); } catch (e) {} return null; };
+  const say = m => { if (!pristine || !pristine.i.isConnected) pristine = fresh(); try { if (pristine) { pristine.f(m); return; } } catch (e) {} fallback(m); };
+  const say_done = () => { if (pristine) { try { pristine.i.remove(); } catch (e) {} pristine = null; } };`
 
 @(private="file") run_in :: proc(f: ^cef_frame_t, js: string) {
 	if f == nil do return
@@ -557,7 +603,7 @@ JOB_TIMEOUT_S :: 30.0
 	tk := token()
 	append(&jobs, Job{t.id, t.cv, tk, done, plain, data, failed, now_s() + timeout})
 	tag := json_str(fmt.tprintf("%s%s:", ANSWER, tk), context.temp_allocator)
-	run_in(f, fmt.tprintf("(() => { const tell = console.info.bind(console); let p; try { p = Promise.resolve((() => (%s))()); } catch (e) { p = Promise.resolve(''); } p.then(r => tell(%s + String(r)), () => tell(%s)); })();", js, tag, tag))
+	run_in(f, fmt.tprintf("(() => { %s\n  const tag = %s; let p; try { p = Promise.resolve((() => (%s))()); } catch (e) { p = Promise.resolve(''); } p.then(r => String(r), () => '').then(r => { say(tag + r); say_done(); }); })();", SAY_JS, tag, js))
 	jobs_prune()
 }
 
@@ -568,32 +614,59 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 	run_job(t, main_frame(v), js, nil, plain = done)
 }
 
+/// a fresh token for a watcher about to be installed in one of v's frames
+@(private="file") watch_token :: proc(v: ^View) -> string {
+	if len(v.watch_tokens) >= WATCH_TOKENS_MAX {
+		delete(v.watch_tokens[0])
+		ordered_remove(&v.watch_tokens, 0)
+	}
+	tk := token()
+	append(&v.watch_tokens, tk)
+	return tk
+}
+
+/// a watcher's token is one of the view's
+@(private="file") watch_known :: proc(v: ^View, tok: string) -> bool {
+	found := false
+	for x in v.watch_tokens do if token_eq(x, tok) do found = true
+	return found
+}
+
+/// the frames of the document before are gone: their watchers' tokens too
+@(private="file") watch_forget :: proc(v: ^View) {
+	for x in v.watch_tokens do delete(x)
+	clear(&v.watch_tokens)
+}
+
 /// a page's sound and video, told to Iris (so a tab that plays is never
 /// put to sleep)
-@(private="file") media_watch :: proc() -> string {
-	if media_token == "" do media_token = token()
-	tag := json_str(fmt.tprintf("%s%s:", MEDIA, media_token), context.temp_allocator)
+@(private="file") media_watch :: proc(v: ^View) -> string {
+	tag := json_str(fmt.tprintf("%s%s:", MEDIA, watch_token(v)), context.temp_allocator)
 	return fmt.tprintf(`(() => {
   if (window.__irisMedia) return; window.__irisMedia = true;
-  const say = console.info.bind(console);
-  const tell = () => { const on = [...document.querySelectorAll('video,audio')].some(m => !m.paused && !m.ended && !m.muted); say(%s + (on ? '1' : '0')); };
+  %s
+  const tag = %s;
+  const tell = () => { const on = [...document.querySelectorAll('video,audio')].some(m => !m.paused && !m.ended && !m.muted); say(tag + (on ? '1' : '0')); };
   for (const e of ['play', 'playing', 'pause', 'ended', 'volumechange', 'emptied']) document.addEventListener(e, tell, true);
-})();`, tag)
+})();`, SAY_JS, tag)
 }
 
 /// what a copy or cut put on Chromium's clipboard, told to Iris: the text
 /// the page set in its copy event (read while the event is still being
 /// handled, after the page's own handlers), or else the selection (in a
-/// field too: getSelection() leaves fields out)
-@(private="file") copy_watch :: proc() -> string {
-	if copy_token == "" do copy_token = token()
-	tag := json_str(fmt.tprintf("%s%s:", COPY, copy_token), context.temp_allocator)
+/// field too: getSelection() leaves fields out). Only a real copy (the
+/// event is trusted: a page's own `new Event('copy')` is not), and Iris
+/// takes it only right after it saw you copy (COPY_INTENT_S).
+@(private="file") copy_watch :: proc(v: ^View) -> string {
+	tag := json_str(fmt.tprintf("%s%s:", COPY, watch_token(v)), context.temp_allocator)
 	return fmt.tprintf(`(() => {
   if (window.__irisCopy) return; window.__irisCopy = true;
-  const say = console.info.bind(console);
+  %s
+  const tag = %s;
   const sel = () => { const e = document.activeElement; if (e && (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') && typeof e.selectionStart === 'number') return e.value.substring(e.selectionStart, e.selectionEnd); const s = window.getSelection(); return s ? s.toString() : ''; };
-  const tell = t => { if (t) say(%s + t); };
+  const tell = t => { if (t) say(tag + t); };
   const watch = ev => {
+    if (!ev.isTrusted) return;
     const text = sel(); let told = false;
     const late = e => { if (e !== ev) return; told = true; window.removeEventListener(ev.type, late, false); tell(ev.defaultPrevented ? (ev.clipboardData ? ev.clipboardData.getData('text/plain') : '') : text); };
     window.addEventListener(ev.type, late, false);
@@ -601,17 +674,22 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
   };
   window.addEventListener('copy', watch, true);
   window.addEventListener('cut', watch, true);
-})();`, tag)
+})();`, SAY_JS, tag)
 }
 
-@(private="file") console_message :: proc(v: ^View, msg: string, source: string) -> bool {
-	ours := source == SCRIPT_URL
+/// Iris saw you copy or cut in this tab's page (a key, or the menu): the
+/// page's copy may reach the desktop for a moment
+cef_copy_intent :: proc(t: ^Tab) {
+	if t != nil && t.cv != nil do t.cv.copy_intent = now_s()
+}
+
+@(private="file") console_message :: proc(v: ^View, msg: string) -> bool {
 	if strings.has_prefix(msg, MEDIA) {
-		rest := msg[len(MEDIA):]
-		if !ours || len(media_token) == 0 || !strings.has_prefix(rest, media_token) do return true
+		tok, payload, ok := split_token(msg[len(MEDIA):])
+		if !ok || !watch_known(v, tok) do return true
 		p := v.page
 		if p == nil do return true
-		on := strings.has_suffix(rest, ":1")
+		on := payload == "1"
 		if on != p.media {
 			p.media = on
 			page_apply_hidden(p)
@@ -620,19 +698,20 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 		return true
 	}
 	if strings.has_prefix(msg, COPY) {
-		rest := msg[len(COPY):]
-		if !ours || len(copy_token) == 0 || !strings.has_prefix(rest, copy_token) || len(rest) <= len(copy_token) || rest[len(copy_token)] != ':' do return true
-		text := rest[len(copy_token) + 1:]
-		if v.tab == nil || len(text) == 0 do return true
+		tok, text, ok := split_token(msg[len(COPY):])
+		if !ok || !watch_known(v, tok) || v.tab == nil || len(text) == 0 do return true
+		// set_str first: Chromium's clipboard holds it either way
 		set_str(&chromium_clip, text)
+		// a copy you did not ask for (a page's script) never reaches the desktop
+		if now := now_s(); now - v.copy_intent > COPY_INTENT_S || now < v.copy_intent do return true
 		clipboard_offer(text)
 		return true
 	}
 	if !strings.has_prefix(msg, ANSWER) do return false
-	if !ours do return true
-	rest := msg[len(ANSWER):]
+	tok, result, ok := split_token(msg[len(ANSWER):])
+	if !ok do return true
 	for j, i in jobs {
-		if !strings.has_prefix(rest, j.token) || len(rest) <= len(j.token) || rest[len(j.token)] != ':' do continue
+		if !token_eq(j.token, tok) do continue
 		ordered_remove(&jobs, i)
 		defer delete(j.token)
 		// the tab may have closed while the page answered (the peek too)
@@ -641,7 +720,6 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 			if j.failed != nil do j.failed(nil, j.data)
 			return true
 		}
-		result := rest[len(j.token) + 1:]
 		if j.plain != nil do j.plain(t, result)
 		if j.done != nil do j.done(t, result, j.data)
 		return true
@@ -651,6 +729,9 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 
 /// the scripts a page gets, once it has loaded (frame: the one that did)
 @(private="file") page_scripts :: proc(t: ^Tab, f: ^cef_frame_t) {
+	// the hidden frame Iris's own scripts speak through gets none (it
+	// would make one of its own, and so on)
+	if from_userfree(f.get_name(f)) == IFRAME_NAME do return
 	u := from_userfree(f.get_url(f))
 	h, _ := host_of(u, context.temp_allocator)
 	top := f.is_main(f) != 0
@@ -663,8 +744,10 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 	if top && strings.has_prefix(u, "http") && !(h == "www.google.com" || strings.has_suffix(h, ".youtube.com") || h == "mail.google.com" || h == "docs.google.com") {
 		run_in(f, SCROLL_UNLOCK)
 	}
-	run_in(f, media_watch())
-	run_in(f, copy_watch())
+	v := t.cv
+	if v == nil do return
+	run_in(f, media_watch(v))
+	run_in(f, copy_watch(v))
 }
 
 /// what Shields hides on this page, as a style sheet (early: at load start;
@@ -1018,6 +1101,9 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 				delete_key(&v.frames, k)
 				delete(k)
 			}
+			watch_forget(v)
+			// the reader's page waits only for the blank page it asked for
+			if from_userfree(frame.get_url(frame)) != "about:blank" do set_str(&v.reader_html, "")
 		}
 		if t := v.tab; t != nil && frame.is_main(frame) != 0 {
 			u := from_userfree(frame.get_url(frame))
@@ -1112,7 +1198,7 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 	d.on_console_message = proc "c" (self: ^cef_display_handler_t, browser: ^cef_browser_t, level: i32, message: ^cef_string_t, source: ^cef_string_t, line: i32) -> i32 {
 		context = main_context
 		defer rel(browser)
-		return console_message(vw(self), from_cef(message), from_cef(source)) ? 1 : 0
+		return console_message(vw(self), from_cef(message)) ? 1 : 0
 	}
 	d.on_favicon_urlchange = proc "c" (self: ^cef_display_handler_t, browser: ^cef_browser_t, urls: rawptr) {
 		context = main_context
@@ -1192,8 +1278,20 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		if t == nil || frame.is_main(frame) == 0 do return 0
 		u := from_userfree(request.get_url(request))
 		// a form sent (POST): never turned into another address (its body
-		// would be lost, or sent twice); Shields' host only
+		// would be lost, or sent twice); across the sandbox's edge only from
+		// inside the sandbox (sandbox_move_for): a normal tab never sends a
+		// form, with your cookies, to a site Iris does not trust
 		if method := from_userfree(request.get_method(request)); method != "GET" && method != "" {
+			if strings.has_prefix(u, "http") && untrusted(u) != t.sandboxed {
+				switch sandbox_move_for(t.sandboxed, true) {
+				case .Reload, .Stay:
+					// (Reload is never given for a body; Stay: a sandboxed
+					// page's form to a trusted site goes from the sandbox)
+				case .Refuse:
+					browser_toast(strings.concatenate({"Iris did not send this form to ", display_url(u, context.temp_allocator), ": the site is not secure"}, context.temp_allocator))
+					return 1
+				}
+			}
 			h, _ := host_of(u, context.temp_allocator)
 			tab_shields_apply(t, h)
 			return 0
