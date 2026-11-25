@@ -18,6 +18,7 @@ WPEDisplay :: struct {}
 WPEEvent :: struct {}
 WPEKeymap :: struct {}
 WPEKeymapXKB :: struct {}
+WPESettings :: struct {}
 WPEToplevel :: struct {}
 WPEView :: struct {}
 WebKitContextMenu :: struct {}
@@ -91,6 +92,7 @@ foreign wpewebkit_2_0_lib {
 	webkit_memory_pressure_settings_set_strict_threshold :: proc(settings: ^WebKitMemoryPressureSettings, value: f64) ---
 	webkit_navigation_action_get_frame_name :: proc(navigation: ^WebKitNavigationAction) -> cstring ---
 	webkit_navigation_action_get_mouse_button :: proc(navigation: ^WebKitNavigationAction) -> u32 ---
+	webkit_navigation_action_get_modifiers :: proc(navigation: ^WebKitNavigationAction) -> u32 ---
 	webkit_navigation_action_get_navigation_type :: proc(navigation: ^WebKitNavigationAction) -> i32 ---
 	webkit_navigation_action_get_request :: proc(navigation: ^WebKitNavigationAction) -> ^WebKitURIRequest ---
 	webkit_navigation_action_is_user_gesture :: proc(navigation: ^WebKitNavigationAction) -> gboolean ---
@@ -140,6 +142,7 @@ foreign wpewebkit_2_0_lib {
 	webkit_settings_set_javascript_can_access_clipboard :: proc(settings: ^WebKitSettings, enabled: gboolean) ---
 	webkit_settings_set_javascript_can_open_windows_automatically :: proc(settings: ^WebKitSettings, enabled: gboolean) ---
 	webkit_settings_set_media_playback_requires_user_gesture :: proc(settings: ^WebKitSettings, enabled: gboolean) ---
+	webkit_uri_request_get_http_method :: proc(request: ^WebKitURIRequest) -> cstring ---
 	webkit_uri_request_get_uri :: proc(request: ^WebKitURIRequest) -> cstring ---
 	webkit_user_content_filter_store_load :: proc(store: ^WebKitUserContentFilterStore, identifier: cstring, cancellable: ^GCancellable, callback: rawptr, user_data: rawptr) ---
 	webkit_user_content_filter_store_load_finish :: proc(store: ^WebKitUserContentFilterStore, result: ^GAsyncResult, error: rawptr) -> ^WebKitUserContentFilter ---
@@ -208,6 +211,7 @@ foreign wpewebkit_2_0_lib {
 	wpe_display_connect :: proc(display: ^WPEDisplay, error: rawptr) -> gboolean ---
 	wpe_display_get_drm_device :: proc(display: ^WPEDisplay) -> ^WPEDRMDevice ---
 	wpe_display_get_egl_display :: proc(display: ^WPEDisplay, error: rawptr) -> rawptr ---
+	wpe_display_get_settings :: proc(display: ^WPEDisplay) -> ^WPESettings ---
 	wpe_display_get_type :: proc() -> GType ---
 	wpe_display_headless_new :: proc() -> ^WPEDisplay ---
 	wpe_display_set_primary :: proc(display: ^WPEDisplay) ---
@@ -217,6 +221,7 @@ foreign wpewebkit_2_0_lib {
 	wpe_event_scroll_new :: proc(view: ^WPEView, source: i32, time: u32, modifiers: i32, delta_x: f64, delta_y: f64, precise_deltas: gboolean, is_stop: gboolean, x: f64, y: f64) -> ^WPEEvent ---
 	wpe_event_unref :: proc(event: ^WPEEvent) ---
 	wpe_keymap_xkb_new :: proc() -> ^WPEKeymap ---
+	wpe_settings_set_boolean :: proc(settings: ^WPESettings, key: cstring, value: gboolean, source: i32, error: rawptr) -> gboolean ---
 	wpe_toplevel_get_scale :: proc(toplevel: ^WPEToplevel) -> f64 ---
 	wpe_toplevel_get_state :: proc(toplevel: ^WPEToplevel) -> i32 ---
 	wpe_toplevel_get_type :: proc() -> GType ---
@@ -258,4 +263,6 @@ foreign wpewebkit_2_0_lib {
 	wpe_keymap_xkb_get_type :: proc() -> GType ---
 	wpe_view_buffers_changed :: proc(view: ^WPEView, buffers: rawptr, n_buffers: u32) ---
 	webkit_memory_pressure_settings_get_type :: proc() -> GType ---
+	webkit_web_view_set_is_muted :: proc(web_view: ^WebKitWebView, muted: gboolean) ---
+	webkit_web_view_terminate_web_process :: proc(web_view: ^WebKitWebView) ---
 }

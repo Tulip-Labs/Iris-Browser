@@ -87,6 +87,7 @@ webkit_settings_set_enable_webrtc
 webkit_settings_set_javascript_can_access_clipboard
 webkit_settings_set_javascript_can_open_windows_automatically
 webkit_settings_set_media_playback_requires_user_gesture
+webkit_uri_request_get_http_method
 webkit_uri_request_get_uri
 webkit_user_content_filter_store_load
 webkit_user_content_filter_store_load_finish
@@ -155,6 +156,7 @@ wpe_clipboard_set_content
 wpe_display_connect
 wpe_display_get_drm_device
 wpe_display_get_egl_display
+wpe_display_get_settings
 wpe_display_get_type
 wpe_display_headless_new
 wpe_display_set_primary
@@ -164,6 +166,7 @@ wpe_event_pointer_move_new
 wpe_event_scroll_new
 wpe_event_unref
 wpe_keymap_xkb_new
+wpe_settings_set_boolean
 wpe_toplevel_get_scale
 wpe_toplevel_get_state
 wpe_toplevel_get_type
@@ -205,3 +208,5 @@ wpe_keymap_xkb_update
 wpe_keymap_xkb_get_type
 wpe_view_buffers_changed
 webkit_memory_pressure_settings_get_type
+webkit_web_view_set_is_muted
+webkit_web_view_terminate_web_process

@@ -122,6 +122,16 @@ Saved_Tab :: struct {
 	url:       string,
 	title:     string,
 	container: string,
+	pinned:    bool,
+	/// its workspace's id ("" the first one)
+	space:     string,
+}
+
+/// a workspace (as in Zen): a named set of tabs. The first one, Home, is
+/// implicit (id "").
+Space :: struct {
+	id:   string,
+	name: string,
 }
 
 Settings :: struct {
@@ -135,6 +145,32 @@ Settings :: struct {
 	lightVideo:        bool,
 	/// how hard Shields block
 	shieldLevel:       Level,
+	/// which of Iris's changes to the settings this file has had (see
+	/// settings_migrate)
+	settingsRev:       int,
+	/// 2.3: the tab strip and bar hidden until the pointer reaches the top
+	compact:           bool,
+	/// http addresses are tried over https first
+	httpsOnly:         bool,
+	/// history, cookies, site data and the session go when Iris closes
+	clearOnExit:       bool,
+	/// the workspaces after the first (Home), and the one you are in
+	spaces:            [dynamic]Space,
+	space:             string,
+}
+
+/// 1: Shields at the ultra level, the new default, once for everyone (a
+/// level chosen after that stays)
+/// 2: https first, on for everyone (2.3.0)
+SETTINGS_REV :: 2
+
+/// brings settings written by an older Iris up to date; true if anything changed
+settings_migrate :: proc(s: ^Settings) -> bool {
+	if s.settingsRev >= SETTINGS_REV do return false
+	if s.settingsRev < 1 do s.shieldLevel = .ultra
+	if s.settingsRev < 2 do s.httpsOnly = true
+	s.settingsRev = SETTINGS_REV
+	return true
 }
 
 @(private="file") settings_value: Settings
@@ -143,14 +179,37 @@ Settings :: struct {
 settings :: proc() -> ^Settings {
 	if !settings_loaded {
 		settings_loaded = true
-		settings_value = {shields = true, lightVideo = true, shieldLevel = .aggressive}
-		if s, ok := load_json(Settings, "settings.json"); ok do settings_value = s
+		settings_value = {shields = true, lightVideo = true, shieldLevel = .ultra, settingsRev = SETTINGS_REV, httpsOnly = true}
+		if s, ok := load_json(Settings, "settings.json"); ok {
+			settings_value = s
+			if settings_migrate(&settings_value) do settings_save()
+		}
 	}
 	return &settings_value
 }
 
+/// the bytes last written to settings.json: the same again is not written
+/// (the session is saved often while you browse, mostly unchanged)
+@(private="file") settings_written: []u8
+
 settings_save :: proc() {
-	save_json("settings.json", settings()^)
+	data, err := json.marshal(settings()^, {pretty = true}, context.temp_allocator)
+	if err != nil do return
+	if settings_written != nil && string(data) == string(settings_written) do return
+	if !write_file(data_path("settings.json"), data) do return
+	delete(settings_written)
+	settings_written = slice.clone(data)
+}
+
+/// the saved tabs gone, their strings too
+session_clear :: proc(s: ^[dynamic]Saved_Tab) {
+	for x in s {
+		delete(x.url)
+		delete(x.title)
+		delete(x.container)
+		delete(x.space)
+	}
+	clear(s)
 }
 
 shields_off_for :: proc(site: string) -> bool {
@@ -278,6 +337,18 @@ history_flush :: proc() {
 	save_json("history.json", history[:])
 }
 
+/// every visit forgotten, on disk too (clear on exit)
+history_clear :: proc() {
+	history_ensure()
+	for v in history {
+		delete(v.url)
+		delete(v.title)
+	}
+	clear(&history)
+	history_dirty = false
+	os.remove(data_path("history.json"))
+}
+
 /// the visits that match what was typed, best first
 history_suggest :: proc(q0: string, n: int, allocator := context.temp_allocator) -> []Visit {
 	history_ensure()
@@ -330,6 +401,31 @@ history_suggest :: proc(q0: string, n: int, allocator := context.temp_allocator)
 	testing.expect_value(t, len(h), HISTORY_KEEP)
 	testing.expect_value(t, h[0].url, fmt.tprintf("https://e.com/%d", HISTORY_MAX))
 	testing.expect_value(t, h[1].url, "https://e.com/0")
+}
+
+@(test) test_settings_migrate :: proc(t: ^testing.T) {
+	// a profile from before: aggressive (or anything) becomes ultra, once
+	old := Settings{shields = true, shieldLevel = .aggressive}
+	testing.expect(t, settings_migrate(&old))
+	testing.expect_value(t, old.shieldLevel, Level.ultra)
+	testing.expect_value(t, old.settingsRev, SETTINGS_REV)
+	// 2.3: https first, on for everyone once (turning it off afterwards stays)
+	testing.expect(t, old.httpsOnly)
+	old.httpsOnly = false
+	testing.expect(t, !settings_migrate(&old))
+	testing.expect(t, !old.httpsOnly)
+	// a level chosen afterwards stays
+	old.shieldLevel = .moderate
+	testing.expect(t, !settings_migrate(&old))
+	testing.expect_value(t, old.shieldLevel, Level.moderate)
+	// the file as an older Iris wrote it (the level by name or by number)
+	for text in ([?]string{`{"shields": true, "shieldLevel": "aggressive"}`, `{"shields": true, "shieldLevel": 1}`}) {
+		s: Settings
+		err := json.unmarshal(transmute([]u8)text, &s, allocator = context.temp_allocator)
+		testing.expect(t, err == nil)
+		settings_migrate(&s)
+		testing.expect_value(t, s.shieldLevel, Level.ultra)
+	}
 }
 
 @(test) test_history_limits :: proc(t: ^testing.T) {

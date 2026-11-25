@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <a href="#what-is-new-in-220">New</a> ·
+  <a href="#what-is-new-in-230">New</a> ·
   <a href="#what-it-does">Features</a> ·
   <a href="#install">Install</a> ·
   <a href="#shortcuts">Shortcuts</a> ·
@@ -31,10 +31,23 @@
 </p>
 
 <p align="center">
-  <img src="assets/icon/iris-256.png" width="160" alt="Iris's icon: a clear glass ring on a white tile, light entering and leaving as a rainbow">
+  <img src="assets/icon/iris-256.png" width="160" alt="Iris's icon: a clear glass ring on a near-colourless tile, the spectrum gathered at its lower rim">
 </p>
 
 ---
+
+## What is new in 2.3.0
+
+- **Pinned tabs, sound and muting.** Pin a tab from its menu: it stays at the left as its icon. A tab playing sound shows a speaker; click it, or press Ctrl+M, to mute. Ctrl+Shift+T brings closed tabs back where they were, pinned or not; Ctrl+Shift+K duplicates a tab.
+- **Reader** (Ctrl+Alt+R, or the button that shows in the address only on articles): the article alone, in a calm page of glass, light or dark, that runs no script.
+- **Split View** (Ctrl+Shift+S): two tabs side by side, a divider to drag between them.
+- **Compact mode** (Ctrl+Shift+C): the tabs and bar hide; they slide down in glass when the pointer reaches the top.
+- **Peek** (Alt+click a link, or Peek Link in its menu): the link in a floating card of glass over the page. Esc or a click beside it closes it, and its view and process go with it; Enter, Ctrl+Enter or its expand button make it a tab.
+- **Workspaces** (Alt+1…9): named sets of tabs, from the Containers menu or the command palette; each tab and workspace comes back next time.
+- **Privacy Report** (in Shields): the trackers stopped on the page, and today. Only tracker names and numbers are kept, never the sites you visit.
+- **Command palette** (Ctrl+K): your tabs in every workspace, Iris's commands and your history, by a fuzzy match.
+- **HTTPS first**, on by default: http addresses are tried over https, with one click back to http (in the sandbox) when a site has none. **Forget everything on close**, if you want it: history, cookies, site data and tabs. **Copy Clean Link**: an address without its tracking.
+- **A new icon**, the ring from Iris's website: clear glass, the spectrum gathered at its lower rim, on a near-colourless tile. On Android 13 and newer it follows your themed icons too.
 
 ## What is new in 2.2.7
 
@@ -126,8 +139,8 @@ Iris is made again from the start.
 - **Liquid Glass chrome.** The tabs, the address bar and the button groups float as glass.
   - The page's own colour reaches up under the toolbar (as Safari's does), so the glass has something to bend.
   - Menus, suggestions, find, downloads and notices are glass over the page itself.
-- **Google AI Mode in every new tab**, in Iris's glass: the dawn behind it, its panels clear, the question box of glass. The next new tab is loaded ahead, so it opens at once.
-- **Search.** Type an address, or anything else to ask Google AI Mode. Iris asks it to answer from high-quality, current sources. `yt cats` searches YouTube.
+- **Iris's own start page in every new tab**, drawn by Iris itself: the Iris glass ring and a search field in the middle, nothing else. No page loads behind it, so a new tab opens at once and costs no web process. It follows your desktop's light or dark mode.
+- **Search.** Type an address, or anything else to search Google (with its AI Overview). "Ask Google AI Mode" is one suggestion away. `yt cats` searches YouTube.
 - **Containers.**
   - Personal, Work, Shopping and Banking to start with, and any you add.
   - Each is a WPE network session of its own on disk.
@@ -135,7 +148,7 @@ Iris is made again from the start.
   - Removing a container deletes everything its sites kept.
 - **Private tabs.** One in-memory world, gone when the last private tab closes.
 - **The sandbox.** Sites Iris does not trust (http, a bare IP, a failing certificate) open in it without asking: a WPE web context of its own (its own web processes, in WebKit's process sandbox), a network session per tab in memory only, and no downloads, camera, microphone, location, clipboard, WebGL, WebRTC or pop-ups. Its tabs have an orange rim.
-- **Iris Shields.** About 100,000 ad and tracker domains, built into Iris, become WPE content rules. They are compiled once and blocked inside the engine before a request leaves. You can turn Shields off for one site or everywhere.
+- **Iris Shields.** Ultra aggressive by default: uBlock Origin's and EasyList's lists plus about 185,000 ad, tracker, fingerprinting and mining domains built into Iris, blocked inside the engine before a request leaves; cookie banners hidden and tracking parameters stripped from links. Links you click always open, and cookie-consent tools are let through so pages never stay locked. A broken site? Right-click, "Reload without Shields".
 - **Cookies stay home.** Third-party cookies are refused, and WebKit's tracking prevention is on.
 - **Pop-ups.**
   - Links that open a new window open as a tab next to yours.
@@ -190,11 +203,19 @@ On niri, the blur behind the window comes on by itself on 26.04 and newer. No wi
 | Ctrl+Shift+N | New private tab |
 | Ctrl+N | New window |
 | Ctrl+W | Close tab |
-| Ctrl+L, Ctrl+K, F6 | Address bar |
-| Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+1…9 | Change tab |
+| Ctrl+Shift+K | Duplicate tab |
+| Ctrl+M | Mute or unmute the tab |
+| Ctrl+L, F6 | Address bar |
+| Ctrl+K | Command palette: tabs, commands, history |
+| Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+1…8, Ctrl+9 | Change tab (Ctrl+9: the last) |
+| Alt+1…9 | Change workspace |
+| Ctrl+Alt+R | Reader |
+| Ctrl+Shift+S | Split View |
+| Ctrl+Shift+C | Compact mode |
+| Alt+click a link | Peek; Enter or Ctrl+Enter makes it a tab, Esc closes it |
 | Ctrl+R, F5 / Ctrl+Shift+R | Reload / reload without the cache |
 | Alt+← / Alt+→ | Back / forward |
-| Alt+Home | Google AI Mode |
+| Alt+Home | The start page |
 | Ctrl+F | Find in page |
 | Ctrl+Plus / Ctrl+Minus / Ctrl+0 | Zoom |
 | Ctrl+Shift+Y, Ctrl+J | Downloads |
@@ -246,6 +267,12 @@ linux/                      Iris for Linux (Odin; no GTK, no X11)
                             line icons (SVG path data)
     line.odin               an editable line: cursor, selection, words, clipboard, undo
     browser.odin            the window's tabs, layout, input routing, pop-up rules
+    features.odin, spaces.odin, layout.odin  pinned tabs, sound, closed tabs, https first,
+                            clear on exit; workspaces; split view and compact mode
+    reader.odin, reader.js, peek.odin, privacy.odin, palette.odin  the reader, the peek,
+                            the privacy report, the command palette (engine-free)
+    page_events.odin, wpe_extra.odin, cef_extra.odin  what the engines tell those
+                            features, and their calls into each engine
     tab.odin                a WPE web view and its signals
     engine.odin             the web context, containers, downloads, the sandbox, light video
     shields.odin, rules.odin  the levels' lists, turned into WPE content rules and compiled
@@ -264,7 +291,7 @@ android/                    Iris for Android (Kotlin, Compose, Cefrium)
                             sheets, switches, line icons, the look
     Downloads.kt, Updater.kt, Store.kt, Search.kt
 packaging/                  the Flatpak manifest, desktop file and metainfo
-assets/icon/                the icon (SVG) and its renders
+assets/icon/                the icon (SVG) and its renders; use.sh picks a variant
 ```
 
 How the glass is drawn (Linux): each frame, Iris draws everything behind the glass (the dawn and the page) into one texture, and a blurred copy of it. Then each piece of glass is one shader pass over that texture:

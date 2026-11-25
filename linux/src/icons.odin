@@ -10,6 +10,8 @@ Icon :: enum u8 {
 	Back, Forward, Reload, Stop, Plus, Close, Shield, Shield_On, Shield_Off, Download,
 	Layers, Search, Sparkle, Globe, Warn, Mask, History, Link, Tab, Copy, Image, Cut,
 	Paste, Select_All, Check, Folder, Trash, Up, Down, Min, Max, Restore, Open,
+	// 2.3
+	Pin, Speaker, Speaker_Off, Reader, Split, Compact, Expand, Command, Eye, Grid, Lock,
 	// container icons (filled)
 	K_Person, K_Briefcase, K_Cart, K_Bank, K_Home, K_Heart, K_Game, K_Book, K_Plane, K_Code, K_Music, K_Star,
 }
@@ -48,6 +50,17 @@ Icon :: enum u8 {
 	.Max = "M6.5 6.5h11v11h-11z",
 	.Restore = "M8.5 8.5h9v9h-9zM6 15V6h9",
 	.Open = "M7 17L17 7M9 7h8v8",
+	.Pin = "M9 4h6M10 4v5.5L7 13h10l-3-3.5V4M12 13v7",
+	.Speaker = "M4 9.5h3.5L12 6v12l-4.5-3.5H4zM15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.5a7.6 7.6 0 0 1 0 11",
+	.Speaker_Off = "M4 9.5h3.5L12 6v12l-4.5-3.5H4zM16 9.5l5 5M21 9.5l-5 5",
+	.Reader = "M4.5 5.5h15M4.5 9.5h15M4.5 13.5h15M4.5 17.5h9",
+	.Split = "M3.5 5h17v14h-17zM12 5v14",
+	.Compact = "M4 9l8-5 8 5M4 15l8 5 8-5",
+	.Expand = "M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7",
+	.Command = "M9 9V6.5A2.5 2.5 0 1 0 6.5 9H9zm0 0h6m-6 0v6m6-6V6.5A2.5 2.5 0 1 1 17.5 9H15zm0 0v6m0 0h2.5A2.5 2.5 0 1 1 15 17.5V15zm0 0H9m0 0v2.5A2.5 2.5 0 1 1 6.5 15H9z",
+	.Eye = "M2.5 12c2.5-4.5 6-7 9.5-7s7 2.5 9.5 7c-2.5 4.5-6 7-9.5 7s-7-2.5-9.5-7zM12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6",
+	.Grid = "M4.5 4.5h6v6h-6zM13.5 4.5h6v6h-6zM4.5 13.5h6v6h-6zM13.5 13.5h6v6h-6z",
+	.Lock = "M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3",
 	.K_Person = "M8 1.5a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM2 15c0-3.6 2.7-6 6-6s6 2.4 6 6z",
 	.K_Briefcase = "M6 1.5h4a1.5 1.5 0 0 1 1.5 1.5V4H14a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 14 15H2a1.5 1.5 0 0 1-1.5-1.5v-8A1.5 1.5 0 0 1 2 4h2.5V3A1.5 1.5 0 0 1 6 1.5zM6 3v1h4V3z",
 	.K_Cart = "M0.5 1.5h2.3l.5 2H15l-1.6 6.5H4.6l.3 1.5H13v1.5H3.7L1.6 3H.5z",

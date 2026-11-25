@@ -1,6 +1,7 @@
 // iris --render-check OUT.ppm: one frame of Iris's renderer, drawn without
 // a window (Mesa's surfaceless EGL) and written as a picture: the dawn, a
-// stand-in page and Liquid Glass of every kind over it. CI runs it so a
+// stand-in page and Liquid Glass of every kind over it, then the start
+// page (its glass ring and search) in light and dark. CI runs it so a
 // shader that does not compile, or glass that draws nothing, fails the
 // build; people look at the picture.
 package iris
@@ -142,7 +143,7 @@ render_check :: proc(out: string) -> int {
 	expect(line_has_selection(&ui.address), "the first click did not select the address", &problems)
 	type("what is odin")
 	expect(line_string(&ui.address) == "what is odin", fmt.tprintf("typing gave %q", line_string(&ui.address)), &problems)
-	expect(len(ui.suggestions) > 0 && ui.suggestions[0].icon == .Sparkle, "no Ask Google AI Mode suggestion", &problems)
+	expect(len(ui.suggestions) > 1 && ui.suggestions[0].icon == .Search && ui.suggestions[1].icon == .Sparkle, "no Search Google and Ask Google AI Mode suggestions", &problems)
 	chrome_key({sym = plat.KEY_Left, pressed = true, mods = {.Ctrl}})
 	chrome_key({sym = plat.KEY_Left, pressed = true, mods = {.Ctrl, .Shift}})
 	redraw(W, H, lw, lh)
@@ -152,13 +153,66 @@ render_check :: proc(out: string) -> int {
 	expect(len(ui.suggestions) == 0, "Escape did not hide the suggestions", &problems)
 	chrome_key({sym = plat.KEY_Escape, pressed = true})
 	expect(ui.focus == .None, "a second Escape did not leave the address", &problems)
+	// the start page: a new tab draws Iris's own page (no web view), its
+	// search takes the keys, in light and in dark
+	st := browser_new_tab({select = true})
+	expect(tab_is_start(st) && !tab_has_view(st), "a new tab is not the start page", &problems)
+	expect(ui.focus == .Start, "the start page's search did not take the keys", &problems)
+	for dark in ([2]bool{false, true}) {
+		theme.dark = dark
+		palette_apply()
+		for _ in 0 ..< 30 {
+			frame_begin(W, H, f64(rnd.scale))
+			draw_dawn()
+			frame_scene_done()
+			chrome_draw(lw, lh)
+			free_all(context.temp_allocator)
+		}
+		expect(button_rect_for_check(.Start_Field).z > 0, "no search on the start page", &problems)
+		name := strings.concatenate({strings.trim_suffix(out, ".ppm"), dark ? "-start-dark.ppm" : "-start.ppm"}, context.temp_allocator)
+		// a calm page by design: fewer colours than a page under glass
+		if !save_frame(fbo, W, H, name, 120) do return 1
+	}
+	theme.dark = false
+	palette_apply()
+
+	// 2.3: the command palette (Ctrl+K) over a page, a pinned and a playing
+	// tab in the strip, then the privacy report and compact mode's bars
+	// (no engine runs here: the tab is put on screen by hand, never loaded)
+	b.current = cur
+	chrome_leave_start()
+	tab_set_pinned(b.tabs[0], true)
+	cur.audio = true
+	palette_open()
+	expect(ui.palette_open && ui.focus == .Palette, "Ctrl+K's palette did not open with the keys", &problems)
+	type("split")
+	expect(len(ui.palette_items) > 0 && ui.palette_items[0].act.op == .Command && Command(ui.palette_items[0].act.n) == .Split, "the palette's first answer to \"split\" is not Split View", &problems)
+	redraw(W, H, lw, lh)
+	if !save_frame(fbo, W, H, strings.concatenate({strings.trim_suffix(out, ".ppm"), "-palette.ppm"}, context.temp_allocator)) do return 1
+	chrome_key({sym = plat.KEY_Escape, pressed = true})
+	expect(!ui.palette_open, "Escape did not close the palette", &problems)
+	cur.trackers = make([dynamic]string)
+	append(&cur.trackers, "securepubads.g.doubleclick.net", "connect.facebook.net")
+	privacy_open(button_rect_for_check(.Shield))
+	redraw(W, H, lw, lh)
+	expect(ui.panel == .Report, "the privacy report did not open", &problems)
+	if !save_frame(fbo, W, H, strings.concatenate({strings.trim_suffix(out, ".ppm"), "-report.ppm"}, context.temp_allocator)) do return 1
+	chrome_close_all()
+	settings().compact = true
+	ui.compact_hold = true
+	b.card = chrome_card(lw, lh)
+	redraw(W, H, lw, lh)
+	expect(button_rect_for_check(.Address).z > 0, "compact mode's bars did not show at the top edge", &problems)
+	if !save_frame(fbo, W, H, strings.concatenate({strings.trim_suffix(out, ".ppm"), "-compact.ppm"}, context.temp_allocator)) do return 1
+	settings().compact = false
+	ui.compact_hold = false
 	if problems > 0 do return 1
 	fmt.println("render check: the chrome answers clicks and keys")
 	return 0
 }
 
 /// the frame in fbo, as a picture (PPM); fails when it is nearly flat
-@(private="file") save_frame :: proc(fbo: u32, W, H: i32, out: string) -> bool {
+@(private="file") save_frame :: proc(fbo: u32, W, H: i32, out: string, min_colours := 200) -> bool {
 	px := make([]u8, int(W * H * 4))
 	defer delete(px)
 	gl.BindFramebuffer(gl.FRAMEBUFFER, fbo)
@@ -181,7 +235,7 @@ render_check :: proc(out: string) -> int {
 		fmt.eprintln("render check: cannot write", out)
 		return false
 	}
-	if len(colours) < 500 {
+	if len(colours) < min_colours {
 		fmt.eprintfln("render check: the frame is nearly flat (%d colours)", len(colours))
 		return false
 	}
@@ -211,14 +265,14 @@ write_all :: proc(path: string, data: []u8) -> bool {
 
 /// a stand-in page: white, a heading, lines of text and coloured blocks
 @(private="file") draw_sample_page :: proc(card: [4]f32) {
-	draw_fill(card.x, card.y + 4, card.z, card.w, 14, {0.14, 0.11, 0.25, 0.16}, soft = 12)
+	draw_fill(card.x, card.y + 4, card.z, card.w, 14, {0, 0, 0, 0.12}, soft = 16)
 	draw_fill(card.x, card.y, card.z, card.w, 14, {1, 1, 1, 1})
-	draw_fill(card.x + 40, card.y + 30, 420, 28, 6, {0.14, 0.11, 0.25, 0.9})
+	draw_fill(card.x + 40, card.y + 30, 420, 28, 6, {0.10, 0.11, 0.13, 0.9})
 	for i in 0 ..< 14 {
 		y := card.y + 80 + f32(i) * 22
 		w := card.z * 0.55 - f32((i * 37) % 160)
-		draw_fill(card.x + 40, y, w, 9, 4, {0.14, 0.11, 0.25, 0.35})
+		draw_fill(card.x + 40, y, w, 9, 4, {0.10, 0.11, 0.13, 0.35})
 	}
-	colors := [4][4]f32{{0.42, 0.30, 0.96, 1}, {0.22, 0.74, 0.97, 1}, {0.98, 0.55, 0.36, 1}, {0.99, 0.80, 0.30, 1}}
+	colors := [4][4]f32{{0.20, 0.62, 0.42, 1}, {0.22, 0.74, 0.97, 1}, {0.98, 0.55, 0.36, 1}, {0.99, 0.80, 0.30, 1}}
 	for c, i in colors do draw_fill(card.x + card.z * 0.42 + f32(i % 2) * 190, card.y + 40 + f32(i / 2) * 150, 170, 130, 16, c)
 }

@@ -1,16 +1,17 @@
 // Addresses and searches: what the address bar opens (an address, or a
-// question for Google AI Mode), how an address is shown, which sites go to
+// Google search; Google AI Mode when you ask for it), how an address is shown, which sites go to
 // the sandbox, and Google's redirects skipped.
 package iris
 
 import "core:fmt"
+import "core:os"
 import "core:strings"
 import "core:testing"
 
 GOOGLE :: "https://www.google.com/search?gl=us&hl=en"
 INSTRUCTION :: "Use only high-quality, authoritative and up-to-date sources (official sites, documentation, peer-reviewed research, reputable news) and cite them. Answer clearly, precisely and concisely, with the most recent information."
 SEPARATOR :: "\n\n"
-/// every new tab: Google AI Mode, ready for a question
+/// Google AI Mode's own page (new tabs are Iris's start page: start.odin)
 HOME :: GOOGLE + "&udm=50"
 
 Url :: struct {
@@ -124,6 +125,24 @@ escape :: proc(s: string, allocator := context.allocator) -> string {
 	return strings.equal_fold(h, "www.google.com") || strings.equal_fold(h, "google.com")
 }
 
+/// a Google search, straight to the results: www (no redirect from the
+/// bare name), no client or source parameters
+search_url :: proc(q: string, allocator := context.allocator) -> string {
+	return strings.concatenate({GOOGLE, "&q=", escape(strings.trim_space(q), context.temp_allocator)}, allocator)
+}
+
+/// the words of a Google search's address (not AI Mode's: ai_query)
+search_query :: proc(url: string, allocator := context.allocator) -> (string, bool) {
+	u, ok := url_parse(url)
+	if !ok || !is_google(u.host) || u.path != "/search" do return "", false
+	if udm, has := url_param(u, "udm", context.temp_allocator); has && udm == "50" do return "", false
+	q, has := url_param(u, "q", context.temp_allocator, plus_space = true)
+	t := strings.trim_space(q)
+	if !has || len(t) == 0 do return "", false
+	return strings.clone(t, allocator), true
+}
+
+/// Google AI Mode, asked a question (only when you choose it)
 ai_url :: proc(q: string, allocator := context.allocator) -> string {
 	t := strings.trim_space(q)
 	full := strings.concatenate({t, SEPARATOR, INSTRUCTION}, context.temp_allocator)
@@ -173,6 +192,54 @@ unwrap_redirect :: proc(url: string, allocator := context.allocator) -> (string,
 	if strings.has_prefix(t, "https://") || strings.has_prefix(t, "http://") do return t, true
 	delete(t, allocator)
 	return "", false
+}
+
+/// the parameters sites add to links only to follow you from site to site
+/// (EasyList's and AdGuard's URL tracking lists agree on these); utm_
+/// anything goes too
+TRACKING_PARAMS :: [?]string{
+	"fbclid", "gclid", "gclsrc", "dclid", "gbraid", "wbraid", "gad_source", "gad_campaignid", "msclkid",
+	"mc_cid", "mc_eid", "_hsenc", "_hsmi", "__hssc", "__hstc", "__hsfp", "hsctatracking", "mkt_tok",
+	"yclid", "ysclid", "igshid", "twclid", "ttclid", "li_fat_id", "epik", "oly_anon_id", "oly_enc_id",
+	"rb_clickid", "_openstat", "vero_id", "vero_conv", "wickedid", "_gl", "srsltid", "s_kwcid", "ef_id",
+	"irclickid", "irgwc", "cjevent", "sccid", "scclid", "obclid", "dicbo", "spm_id_from", "ml_subscriber",
+	"ml_subscriber_hash", "trk_contact", "trk_msg", "trk_module", "trk_sid", "pk_campaign", "pk_kwd",
+	"piwik_campaign", "piwik_kwd", "mtm_campaign", "mtm_source", "mtm_medium", "mtm_cid", "matomo_campaign",
+}
+
+@(private="file") tracking_param :: proc(key: string) -> bool {
+	k := strings.to_lower(key, context.temp_allocator)
+	if strings.has_prefix(k, "utm_") do return true
+	for p in TRACKING_PARAMS do if k == p do return true
+	return false
+}
+
+/// the address without its tracking parameters (utm_*, fbclid, gclid...),
+/// and whether it had any; Google's own addresses are left as they are
+strip_tracking :: proc(url: string, allocator := context.allocator) -> (string, bool) {
+	u, ok := url_parse(url)
+	if !ok || len(u.query) == 0 || is_google(u.host) do return "", false
+	if !strings.equal_fold(u.scheme, "https") && !strings.equal_fold(u.scheme, "http") do return "", false
+	q := strings.index_byte(url, '?')
+	if q < 0 do return "", false
+	end := len(url)
+	if h := strings.index_byte(url[q:], '#'); h >= 0 do end = q + h
+	kept := strings.builder_make(context.temp_allocator)
+	dropped := false
+	rest := url[q + 1:end]
+	for kv in strings.split_iterator(&rest, "&") {
+		if len(kv) == 0 do continue
+		eq := strings.index_byte(kv, '=')
+		if tracking_param(eq < 0 ? kv : kv[:eq]) {
+			dropped = true
+			continue
+		}
+		if strings.builder_len(kept) > 0 do strings.write_byte(&kept, '&')
+		strings.write_string(&kept, kv)
+	}
+	if !dropped do return "", false
+	query := strings.to_string(kept)
+	return strings.concatenate({url[:q], len(query) > 0 ? "?" : "", query, url[end:]}, allocator), true
 }
 
 host_of :: proc(url: string, allocator := context.allocator) -> (string, bool) {
@@ -256,6 +323,8 @@ untrusted :: proc(url: string) -> bool {
 	http := strings.equal_fold(u.scheme, "http")
 	if !http && !strings.equal_fold(u.scheme, "https") do return false
 	lh := strings.to_lower(u.host, context.temp_allocator)
+	// a host whose failing certificate you chose to see (interstitial.odin)
+	if cert_host_sandboxed(lh) do return true
 	if is_private_host(lh) || strings.has_suffix(lh, ".local") || strings.has_suffix(lh, ".lan") || strings.has_suffix(lh, ".home.arpa") do return false
 	if http do return true
 	bare := strings.trim(lh, "[]")
@@ -278,7 +347,11 @@ page_may_open :: proc(url: string, from: string) -> bool {
 	return false
 }
 
-OPENABLE :: [?]string{"http", "https", "file", "about", "mailto", "tel"}
+OPENABLE :: [?]string{"http", "https", "file", "about", "mailto", "tel", "sip", "sms", "magnet"}
+
+/// schemes that are no web address: "tel:123" is a number to call, never
+/// the host "tel" on port 123
+@(rodata) NON_WEB_SCHEMES := [?]string{"mailto", "tel", "sip", "sms", "magnet"}
 
 @(private="file") scheme_part :: proc(t: string) -> (string, bool) {
 	colon := strings.index_byte(t, ':')
@@ -290,6 +363,8 @@ OPENABLE :: [?]string{"http", "https", "file", "about", "mailto", "tel"}
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '+' || c == '.' || c == '-') do return "", false
 	}
 	rest := t[colon + 1:]
+	low := strings.to_lower(s, context.temp_allocator)
+	for n in NON_WEB_SCHEMES do if low == n do return low, true
 	// "localhost:8080" is a host and a port, not a scheme
 	d := 0
 	for d < len(rest) && rest[d] >= '0' && rest[d] <= '9' do d += 1
@@ -305,33 +380,140 @@ has_scheme :: proc(t: string) -> bool {
 	return false
 }
 
+/// typed text that is an address (a path, a scheme, a host Iris can tell
+/// from words); anything else is a search
 is_url_like :: proc(text: string) -> bool {
-	t := strings.trim_space(text)
-	if len(t) == 0 do return false
-	if has_scheme(t) do return true
-	if _, ok := scheme_part(t); ok do return false // "note: milk", "javascript:"
-	if strings.index_byte(t, ' ') >= 0 do return false
-	return strings.index_byte(t, '.') >= 0 || strings.equal_fold(t, "localhost") || strings.has_prefix(strings.to_lower(t, context.temp_allocator), "localhost:")
+	_, ok := address_of(strings.trim_space(text), context.temp_allocator)
+	return ok
 }
 
-@(private="file") complete :: proc(t: string, allocator := context.allocator) -> string {
-	if has_scheme(t) do return strings.clone(t, allocator)
-	h := t
-	if i := strings.index_byte(h, '/'); i >= 0 do h = h[:i]
-	if i := strings.index_any(h, "?#"); i >= 0 do h = h[:i]
-	if len(h) > 0 && h[0] != '[' {
-		if i := strings.last_index_byte(h, ':'); i >= 0 do h = h[:i]
+/// what look like files, not sites: "node.js", "main.go", "notes.md" are
+/// words unless a scheme, a path or a port says they are addresses
+@(rodata) FILE_EXTENSIONS := [?]string{"js", "py", "md", "txt", "json", "ts", "go", "rs", "c", "h", "cpp", "java", "sh", "exe", "pdf", "png", "jpg", "zip"}
+
+/// names of your own network: never on the web, opened over http
+@(rodata) LOCAL_SUFFIXES := [?]string{".local", ".lan", ".home.arpa", ".internal", ".localhost"}
+
+Host_Kind :: enum u8 { None, Local, Public }
+
+/// whether a typed host is one: an address (all four parts, or [IPv6]),
+/// localhost or a name of your network, or a dotted name whose parts are
+/// all a name's and whose last is 2 to 63 letters (or xn--), not a file's
+/// extension unless a port or a path follows
+host_kind :: proc(host: string, has_port, has_path: bool) -> Host_Kind {
+	if len(host) == 0 do return .None
+	if host[0] == '[' {
+		if len(host) < 4 || host[len(host) - 1] != ']' do return .None
+		inner := host[1:len(host) - 1]
+		if strings.index_byte(inner, ':') < 0 do return .None
+		for c in transmute([]u8)inner {
+			if _, ok := hex_value(c); !ok && c != ':' && c != '.' do return .None
+		}
+		return inner == "::1" || strings.has_prefix(strings.to_lower(inner, context.temp_allocator), "fe80:") ? .Local : .Public
 	}
-	return strings.concatenate({is_private_host(h) ? "http://" : "https://", t}, allocator)
+	h := strings.to_lower(strings.trim_suffix(host, "."), context.temp_allocator)
+	if len(h) == 0 || h[0] == '.' || strings.contains(h, "..") do return .None
+	numeric := true
+	for c in transmute([]u8)h {
+		switch c {
+		case '0' ..= '9', '.':
+		case 'a' ..= 'z', '-', '_': numeric = false
+		case:
+			if c < 0x80 do return .None // no other signs in a name
+			numeric = false
+		}
+	}
+	if h == "localhost" || strings.has_suffix(h, ".localhost") do return .Local
+	if numeric {
+		// "3.14" is a number: an address is all four parts
+		if strings.count(h, ".") != 3 do return .None
+		rest := h
+		for p in strings.split_iterator(&rest, ".") {
+			if len(p) == 0 || len(p) > 3 || (len(p) > 1 && p[0] == '0') do return .None
+			v := 0
+			for c in transmute([]u8)p do v = v * 10 + int(c - '0')
+			if v > 255 do return .None
+		}
+		return is_private_host(h) ? .Local : .Public
+	}
+	dot := strings.last_index_byte(h, '.')
+	// a single name ("devbox:8080") is no address: localhost is one (above)
+	if dot < 0 do return .None
+	// every part a name's: letters, digits and hyphens (or another
+	// script's letters), 1 to 63 of them, no hyphen at either end
+	rest := h
+	for label in strings.split_iterator(&rest, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label) - 1] == '-' do return .None
+	}
+	for s in LOCAL_SUFFIXES do if strings.has_suffix(h, s) && len(h) > len(s) do return .Local
+	tld := h[dot + 1:]
+	if len(tld) < 2 || len(tld) > 63 do return .None
+	if strings.has_prefix(tld, "xn--") do return .Public // an internationalised one, as written in DNS
+	for c in transmute([]u8)tld {
+		if c >= 0x80 do return .Public // an internationalised one
+		if c < 'a' || c > 'z' do return .None // "v2.3.1", "a.b_c"
+	}
+	if has_port || has_path do return .Public
+	for x in FILE_EXTENSIONS do if x == tld do return .None
+	return .Public
+}
+
+/// what typed text opens as an address, or false (words: a search)
+address_of :: proc(t: string, allocator := context.allocator) -> (string, bool) {
+	if len(t) == 0 do return "", false
+	// a file of yours that is there ("/etc/hosts", "~/a.txt"); "/r/golang"
+	// is words
+	if t[0] == '/' || t == "~" || strings.has_prefix(t, "~/") {
+		path := t[0] == '~' ? strings.concatenate({home_dir(), t[1:]}, context.temp_allocator) : t
+		if !os.exists(path) do return "", false
+		return file_uri(path, allocator), true
+	}
+	if has_scheme(t) do return strings.clone(t, allocator), true
+	if _, ok := scheme_part(t); ok do return "", false // "note: milk", "javascript:"
+	if strings.index_any(t, " \t") >= 0 do return "", false
+	end := strings.index_any(t, "/?#")
+	if end < 0 do end = len(t)
+	hp := t[:end]
+	// a name with a user before it ("user@example.com") is an e-mail address
+	if strings.index_byte(hp, '@') >= 0 do return "", false
+	host, port := hp, ""
+	if len(hp) > 0 && hp[0] == '[' {
+		close := strings.index_byte(hp, ']')
+		if close < 0 do return "", false
+		host = hp[:close + 1]
+		after := hp[close + 1:]
+		if len(after) > 0 {
+			if after[0] != ':' do return "", false
+			port = after[1:]
+			if len(port) == 0 do return "", false
+		}
+	} else if c := strings.last_index_byte(hp, ':'); c >= 0 {
+		host, port = hp[:c], hp[c + 1:]
+		if len(port) == 0 do return "", false
+	}
+	if len(port) > 5 do return "", false
+	for c in transmute([]u8)port do if c < '0' || c > '9' do return "", false
+	kind := host_kind(host, len(port) > 0, end < len(t) && t[end] == '/')
+	switch kind {
+	case .None: return "", false
+	case .Local: return strings.concatenate({"http://", t}, allocator), true
+	case .Public:
+	}
+	// Google and YouTube answer their bare names with a redirect to www.
+	for bare in ([?]string{"google.com", "youtube.com"}) do if strings.equal_fold(host, bare) && len(port) == 0 {
+		return strings.concatenate({"https://www.", bare, t[len(host):]}, allocator), true
+	}
+	return strings.concatenate({"https://", t}, allocator), true
 }
 
 /// what the address bar opens for what was typed
 resolve :: proc(input: string, allocator := context.allocator) -> string {
 	t := strings.trim_space(input)
 	if len(t) == 0 do return ""
-	if is_url_like(t) do return complete(t, allocator)
+	if u, ok := address_of(t, allocator); ok do return u
 	if len(t) > 3 && strings.has_prefix(strings.to_lower(t[:3], context.temp_allocator), "yt ") do return youtube_url(strings.trim_space(t[3:]), allocator)
-	return ai_url(t, allocator)
+	// words are a Google search (AI Mode is its own choice: ai_url)
+	return search_url(t, allocator)
 }
 
 /// what an address given to Iris when it starts opens: an address as typed
@@ -340,9 +522,10 @@ resolve :: proc(input: string, allocator := context.allocator) -> string {
 resolve_arg :: proc(arg: string, cwd: string, allocator := context.allocator) -> string {
 	t := strings.trim_space(arg)
 	if len(t) == 0 do return ""
+	// a path: a file, there or not (a program gave it); "~/..." as typed in
+	// the address bar (address_of)
 	if t[0] == '/' do return file_uri(t, allocator)
-	if strings.has_prefix(t, "./") || strings.has_prefix(t, "../") || strings.has_prefix(t, "~/") {
-		if t[0] == '~' do return file_uri(strings.concatenate({home_dir(), t[1:]}, context.temp_allocator), allocator)
+	if strings.has_prefix(t, "./") || strings.has_prefix(t, "../") {
 		return file_uri(strings.concatenate({cwd, "/", t}, context.temp_allocator), allocator)
 	}
 	return resolve(t, allocator)
@@ -352,6 +535,7 @@ resolve_arg :: proc(arg: string, cwd: string, allocator := context.allocator) ->
 display_url :: proc(url: string, allocator := context.allocator) -> string {
 	if len(url) == 0 || url == "about:blank" do return ""
 	if q, ok := ai_query(url, allocator); ok do return q
+	if q, ok := search_query(url, allocator); ok do return q
 	u, ok := url_parse(url)
 	if !ok || len(u.host) == 0 do return strings.clone(url, allocator)
 	h := u.host
@@ -363,6 +547,7 @@ display_url :: proc(url: string, allocator := context.allocator) -> string {
 editable_url :: proc(url: string, allocator := context.allocator) -> string {
 	if url == "about:blank" do return ""
 	if q, ok := ai_query(url, allocator); ok do return q
+	if q, ok := search_query(url, allocator); ok do return q
 	return strings.clone(url, allocator)
 }
 
@@ -380,10 +565,21 @@ is_sign_in :: proc(h: string) -> bool {
 	testing.expect_value(t, resolve("https://example.com/a?b", context.temp_allocator), "https://example.com/a?b")
 	testing.expect_value(t, resolve("localhost:8080", context.temp_allocator), "http://localhost:8080")
 	testing.expect_value(t, resolve("192.168.1.4/admin", context.temp_allocator), "http://192.168.1.4/admin")
+	// no redirect from the bare name to www.
+	testing.expect_value(t, resolve("youtube.com/watch?v=x", context.temp_allocator), "https://www.youtube.com/watch?v=x")
+	testing.expect_value(t, resolve("Google.com", context.temp_allocator), "https://www.google.com")
 }
 
 @(test) test_ai_mode :: proc(t: ^testing.T) {
-	u := resolve("why is the sky blue", context.temp_allocator)
+	// words are a Google search; AI Mode only when chosen
+	s := resolve("why is the sky blue", context.temp_allocator)
+	testing.expect_value(t, s, "https://www.google.com/search?gl=us&hl=en&q=why%20is%20the%20sky%20blue")
+	testing.expect(t, !is_ai_mode(s))
+	sq, sok := search_query(s, context.temp_allocator)
+	testing.expect(t, sok)
+	testing.expect_value(t, sq, "why is the sky blue")
+	testing.expect_value(t, display_url(s, context.temp_allocator), "why is the sky blue")
+	u := ai_url("why is the sky blue", context.temp_allocator)
 	testing.expect(t, strings.has_prefix(u, "https://www.google.com/search?gl=us&hl=en&udm=50&q=why%20is%20the%20sky%20blue"))
 	q, ok := ai_query(u, context.temp_allocator)
 	testing.expect(t, ok)
@@ -397,7 +593,7 @@ is_sign_in :: proc(h: string) -> bool {
 
 @(test) test_scripts_never_run :: proc(t: ^testing.T) {
 	testing.expect(t, !is_url_like("javascript:alert(1)"))
-	testing.expect(t, strings.contains(resolve("javascript:alert(1)", context.temp_allocator), "udm=50"))
+	testing.expect(t, strings.has_prefix(resolve("javascript:alert(1)", context.temp_allocator), "https://www.google.com/search?"))
 	testing.expect(t, !is_url_like("note: milk"))
 }
 
@@ -409,6 +605,23 @@ is_sign_in :: proc(h: string) -> bool {
 	testing.expect(t, !ok2)
 	_, ok3 := unwrap_redirect("https://evil.com/url?q=https://example.com", context.temp_allocator)
 	testing.expect(t, !ok3)
+}
+
+@(test) test_tracking :: proc(t: ^testing.T) {
+	r, ok := strip_tracking("https://shop.example/p?id=7&utm_source=news&utm_medium=mail&fbclid=abc#top", context.temp_allocator)
+	testing.expect(t, ok)
+	testing.expect_value(t, r, "https://shop.example/p?id=7#top")
+	r, ok = strip_tracking("https://a.example/?gclid=1&UTM_Campaign=x", context.temp_allocator)
+	testing.expect(t, ok)
+	testing.expect_value(t, r, "https://a.example/")
+	_, ok = strip_tracking("https://a.example/?q=utm_source&page=2", context.temp_allocator)
+	testing.expect(t, !ok)
+	_, ok = strip_tracking("https://www.google.com/search?q=x&gclid=1", context.temp_allocator)
+	testing.expect(t, !ok)
+	_, ok = strip_tracking("https://a.example/#?utm_source=x", context.temp_allocator)
+	testing.expect(t, !ok)
+	_, ok = strip_tracking("mailto:a@b.c?utm_source=x", context.temp_allocator)
+	testing.expect(t, !ok)
 }
 
 @(test) test_url_edges :: proc(t: ^testing.T) {
@@ -436,7 +649,7 @@ is_sign_in :: proc(h: string) -> bool {
 	testing.expect_value(t, resolve_arg("https://example.com/x", "/home/a", context.temp_allocator), "https://example.com/x")
 	testing.expect_value(t, resolve_arg("/home/a/My Page#1.html", "/x", context.temp_allocator), "file:///home/a/My%20Page%231.html")
 	testing.expect_value(t, resolve_arg("./b.html", "/home/a", context.temp_allocator), "file:///home/a/./b.html")
-	testing.expect(t, strings.contains(resolve_arg("javascript:alert(1)", "/", context.temp_allocator), "udm=50"))
+	testing.expect(t, strings.has_prefix(resolve_arg("javascript:alert(1)", "/", context.temp_allocator), "https://www.google.com/search?"))
 	testing.expect_value(t, resolve_arg("   ", "/", context.temp_allocator), "")
 }
 
@@ -502,4 +715,92 @@ is_sign_in :: proc(h: string) -> bool {
 	testing.expect_value(t, site_of("news.bbc.co.uk"), "bbc.co.uk")
 	testing.expect_value(t, site_of("a.b.example.com"), "example.com")
 	testing.expect_value(t, display_url("https://www.example.com/x", context.temp_allocator), "example.com")
+}
+
+@(test) test_address_bar :: proc(t: ^testing.T) {
+	Case :: struct { typed, want: string }
+	SEARCH :: "?" // a Google search
+	cases := [?]Case{
+		// the everyday ones
+		{"google.com", "https://www.google.com"},
+		{"youtube.com/watch?v=x", "https://www.youtube.com/watch?v=x"},
+		{"example.com", "https://example.com"},
+		{"news.bbc.co.uk/sport", "https://news.bbc.co.uk/sport"},
+		{"localhost:3000", "http://localhost:3000"},
+		{"localhost", "http://localhost"},
+		{"192.168.1.1", "http://192.168.1.1"},
+		{"8.8.8.8", "https://8.8.8.8"},
+		{"https://x.y/z", "https://x.y/z"},
+		{"mailto:a@b.c", "mailto:a@b.c"},
+		{"why is the sky blue", SEARCH},
+		{"cats", SEARCH},
+		// files of yours, when they are there
+		{"/etc/hosts", "file:///etc/hosts"},
+		{"/home/nobody-here/file.pdf", SEARCH},
+		{"/r/golang", SEARCH},
+		// any top-level name, written as names are
+		{"deno.land", "https://deno.land"},
+		{"goo.gle", "https://goo.gle"},
+		{"home.cern", "https://home.cern"},
+		{"x.lol", "https://x.lol"},
+		{"foo.bar", "https://foo.bar"},
+		{"example.xn--p1ai", "https://example.xn--p1ai"},
+		{"-bad.example", SEARCH},
+		{"a.b_c", SEARCH},
+		// what looks like a file is words, unless a path or a port says otherwise
+		{"notes.md", SEARCH},
+		{"main.go", SEARCH},
+		{"setup.py", SEARCH},
+		{"docs.rs/serde", "https://docs.rs/serde"},
+		// other programs' schemes, as given
+		{"tel:123", "tel:123"},
+		{"TEL:+15551234", "TEL:+15551234"},
+		{"sip:a@b.example", "sip:a@b.example"},
+		{"magnet:?xt=urn:btih:abc", "magnet:?xt=urn:btih:abc"},
+		// numbers and words with dots are words
+		{"3.14", SEARCH},
+		{"127.1", SEARCH},
+		{"1.2.3.4.5", SEARCH},
+		{"256.1.1.1", SEARCH},
+		{"v2.3.1", SEARCH},
+		{"node.js", SEARCH},
+		{"e.g.", SEARCH},
+		{"i.e", SEARCH},
+		{"user@example.com", SEARCH},
+		{"note: milk", SEARCH},
+		{"javascript:alert(1)", SEARCH},
+		{"a..b.com", SEARCH},
+		// a top-level name Iris does not know, with a path or a port, is a site
+		{"node.js/docs", "https://node.js/docs"},
+		{"site.example:8443", "https://site.example:8443"},
+		// IPv6
+		{"[::1]:8080", "http://[::1]:8080"},
+		{"[::1]", "http://[::1]"},
+		{"[2001:db8::1]/x", "https://[2001:db8::1]/x"},
+		{"[zz::1]", SEARCH},
+		// your own network: http
+		{"router.local", "http://router.local"},
+		{"nas.lan/admin", "http://nas.lan/admin"},
+		{"printer.home.arpa", "http://printer.home.arpa"},
+		// a single name with a port: only localhost
+		{"devbox:8080", SEARCH},
+		{"devbox", SEARCH},
+		{"localhost:5173/app", "http://localhost:5173/app"},
+		{"devbox:abc", SEARCH},
+	}
+	for c in cases {
+		got := resolve(c.typed, context.temp_allocator)
+		if c.want == SEARCH {
+			testing.expectf(t, strings.has_prefix(got, GOOGLE), "%q: want a search, got %q", c.typed, got)
+			testing.expectf(t, !is_url_like(c.typed), "%q is not an address", c.typed)
+		} else {
+			testing.expectf(t, got == c.want, "%q: want %q, got %q", c.typed, c.want, got)
+			testing.expectf(t, is_url_like(c.typed), "%q is an address", c.typed)
+		}
+	}
+	// ~ is your home folder
+	home := resolve("~", context.temp_allocator)
+	testing.expect(t, strings.has_prefix(home, "file:///"))
+	testing.expect(t, strings.index_byte(home, '~') < 0)
+	testing.expect(t, strings.has_prefix(resolve("~/surely-no-such-file-here.txt", context.temp_allocator), GOOGLE))
 }

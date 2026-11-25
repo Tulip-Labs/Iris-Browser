@@ -18,6 +18,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # CEF 156.0.32 (Chromium 156.0.8078.109), minimal distribution, for the
+  # CEF build (IRIS_ENGINE=cef); its checksum is pinned in
+  # packaging/flatpak/io.github.tulip_labs.Iris.Cef.yml once known
+  CEF_TARBALL: cef_binary_156.0.32+g3d1f4ab+chromium-156.0.8078.109_linux64_minimal
   # Odin dev-2026-11a, pinned by checksum
   ODIN_URL: https://github.com/odin-lang/Odin/releases/download/dev-2026-11a/odin-linux-amd64-dev-2026-11a.tar.gz
   ODIN_SHA256: 65c9f6e97d6f8a30930e151f270ce5aeaa98fe8b2ba49fe067394e2af04f7618
@@ -35,7 +39,7 @@ jobs:
       - name: WPE WebKit, Wayland, EGL and the tools
         run: |
           pacman -Syu --noconfirm --needed wpewebkit libsoup3 harfbuzz fontconfig wayland wayland-protocols libxkbcommon mesa libdrm \
-            pkgconf clang gcc python diffutils sway grim cantarell-fonts noto-fonts > /dev/null
+            pkgconf clang gcc python diffutils sway grim gdb cantarell-fonts noto-fonts > /dev/null
           pkg-config --modversion wpe-webkit-2.0 wpe-platform-2.0 wpe-platform-headless-2.0 wayland-client egl glesv2
       - name: Odin
         run: |
@@ -52,6 +56,8 @@ jobs:
           cmp linux/src/youtube.js android/app/src/main/assets/js/youtube.js
       - name: Every C binding against the real headers
         run: sh linux/abi/check.sh
+      - name: Both page engines type-check (WPE, and CEF with -define:IRIS_ENGINE=cef)
+        run: sh linux/build.sh check-engines
       - name: Tests
         run: sh linux/build.sh test
       - name: Build (optimised, as the Flatpak ships it)
@@ -94,13 +100,43 @@ jobs:
           linux/iris > /tmp/iris.log 2>&1 &
           sleep 60
           grim /tmp/iris-1.25.png
-          pgrep -x iris > /dev/null || { echo "Iris did not stay open"; cat /tmp/iris.log; exit 1; }
+          if ! pgrep -x iris > /dev/null; then
+            echo "Iris did not stay open"; cat /tmp/iris.log
+            # where it died: the same start again, a debug build under gdb
+            (cd linux && sh build.sh dev) > /dev/null 2>&1 || true
+            timeout 120 gdb -q -batch -ex run -ex "thread apply all bt 25" --args linux/iris 2>&1 | grep -v "^\[New Thread\|^\[Thread .* exited" | tail -150
+            exit 1
+          fi
           cat /tmp/iris.log
           python3 - <<'PY'
           d = open('/tmp/iris-1.25.png', 'rb').read()
           assert len(set(d[1000:200000])) > 64, "the screen is empty"
           print("drawn")
           PY
+      # Closing a tab really frees it: its web process ends and its memory
+      # comes back (WebKit would keep it five minutes in its process cache)
+      - name: A closed tab gives its web process and memory back
+        timeout-minutes: 10
+        run: |
+          # the fractional-scale step's Iris and sway would share the CPU with the measure
+          pkill -x iris || true; pkill -x sway || true; sleep 2
+          export XDG_RUNTIME_DIR=$(mktemp -d) WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 WLR_HEADLESS_OUTPUTS=1
+          chmod 700 $XDG_RUNTIME_DIR
+          printf 'output HEADLESS-1 resolution 1280x800\ndefault_border none\n' > /tmp/sway-tabs.conf
+          sway -c /tmp/sway-tabs.conf > /tmp/sway-tabs.log 2>&1 &
+          for i in $(seq 1 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; sleep 0.2; done
+          export WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
+          export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+          python3 linux/tools/tab-close-check.py linux/iris /tmp/iris-tabs || { cat /tmp/iris-tabs/iris-tabs-*.log; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-tabs
+          path: |
+            /tmp/iris-tabs/*.log
+            /tmp/iris-tabs/*.png
+            /tmp/sway-tabs.log
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -180,3 +216,108 @@ jobs:
           flatpak kill io.github.tulip_labs.Iris 2>/dev/null || true
           [ $alive = 1 ] || { echo "Iris from the Flatpak exited before 40 seconds"; exit 1; }
           echo "Iris from the Flatpak ran for 40 seconds on Wayland."
+
+  # Iris with the CEF (Chromium) engine: the Odin app built and linked
+  # against the CEF distribution, its CEF bindings checked against CEF's
+  # own headers, and the binary started once (it loads libcef, registers
+  # the C API version and answers --version). No WPE is needed.
+  odin-cef:
+    runs-on: ubuntu-24.04
+    container:
+      image: archlinux:latest
+      options: --shm-size=1g --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wayland, EGL, the tools, and what libcef.so links to
+        run: |
+          pacman -Syu --noconfirm --needed libsoup3 harfbuzz fontconfig wayland wayland-protocols libxkbcommon mesa libdrm \
+            nss alsa-lib at-spi2-core libcups libxcomposite libxdamage libxrandr libxfixes pango cairo dbus expat \
+            pkgconf clang gcc python diffutils git > /dev/null
+      - name: Odin
+        run: |
+          curl -sSfL "$ODIN_URL" -o /tmp/odin.tar.gz
+          echo "$ODIN_SHA256  /tmp/odin.tar.gz" | sha256sum -c -
+          mkdir -p /opt/odin && tar -xzf /tmp/odin.tar.gz -C /opt/odin --strip-components=1
+          echo /opt/odin >> $GITHUB_PATH
+          echo ODIN_ROOT=/opt/odin >> $GITHUB_ENV
+      - uses: actions/cache@v4
+        with:
+          path: /opt/cef.tar.bz2
+          key: cef-${{ env.CEF_TARBALL }}
+      - name: CEF
+        run: |
+          [ -f /opt/cef.tar.bz2 ] || curl -sSfL "https://cef-builds.spotifycdn.com/$CEF_TARBALL.tar.bz2" -o /opt/cef.tar.bz2
+          sha256sum /opt/cef.tar.bz2
+          tar -xjf /opt/cef.tar.bz2 -C /opt --no-same-owner
+          # CEF reads its ICU data and resources from libcef.so's folder
+          cp /opt/$CEF_TARBALL/Resources/icudtl.dat /opt/$CEF_TARBALL/Resources/*.pak /opt/$CEF_TARBALL/Release/
+          cp -r /opt/$CEF_TARBALL/Resources/locales /opt/$CEF_TARBALL/Release/
+          echo CEF_DIR=/opt/$CEF_TARBALL >> $GITHUB_ENV
+      - name: The CEF bindings against CEF's headers
+        run: IRIS_ENGINE=cef sh linux/build.sh check
+      - name: The CEF bindings are what tools/bind_cef.sh makes
+        run: |
+          # the checkout may have no .git here, so compare against copies
+          cp linux/src/cef_capi.odin /tmp/cef_capi.odin
+          cp linux/src/cef_gen.odin /tmp/cef_gen.odin
+          sh linux/tools/bind_cef.sh
+          diff -u /tmp/cef_capi.odin linux/src/cef_capi.odin
+          diff -u /tmp/cef_gen.odin linux/src/cef_gen.odin
+      - name: Build (optimised, CEF engine)
+        run: IRIS_ENGINE=cef CEF_RPATH=$CEF_DIR/Release sh linux/build.sh release
+      - name: It starts (libcef loads, the API version is accepted)
+        run: |
+          IRIS_CEF_DIR=$CEF_DIR/Release linux/iris --version
+          ldd linux/iris | grep -E 'libcef|WPE' || true
+          ! ldd linux/iris | grep -q WPEWebKit
+
+  # The CEF build as its own Flatpak (io.github.tulip_labs.Iris.Cef): CEF is
+  # downloaded, not built, so this takes minutes, not hours.
+  flatpak-cef:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Flatpak, flatpak-builder and Weston
+        run: |
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 "$@" || { sleep 30; timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 "$@"; }; }
+          apt_get update
+          apt_get install -y --no-install-recommends -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold flatpak flatpak-builder elfutils librsvg2-common desktop-file-utils optipng weston dbus-user-session procps
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - name: The CEF tarball's checksum into the manifest (while it is a placeholder)
+        run: |
+          m=packaging/flatpak/io.github.tulip_labs.Iris.Cef.yml
+          if grep -q 'sha256: 0\{64\}' $m; then
+            curl -sSfL "https://cef-builds.spotifycdn.com/$CEF_TARBALL.tar.bz2" -o /tmp/cef.tar.bz2
+            sum=$(sha256sum /tmp/cef.tar.bz2 | cut -d' ' -f1)
+            echo "::warning::CEF tarball sha256 is $sum: pin it in $m"
+            sed -i "s/sha256: 0\{64\}/sha256: $sum/" $m
+          fi
+      - name: Build the bundle
+        run: |
+          flatpak-builder --user --install-deps-from=flathub --force-clean --repo=repo --default-branch=stable \
+            build packaging/flatpak/io.github.tulip_labs.Iris.Cef.yml
+          flatpak build-bundle --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            repo Iris-Cef-x86_64.flatpak io.github.tulip_labs.Iris.Cef stable
+          mkdir -p art && cp Iris-Cef-x86_64.flatpak art/ && ls -l art
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-cef
+          path: art/Iris-Cef-x86_64.flatpak
+      - name: Install the bundle and start Iris (CEF) on Wayland
+        run: |
+          flatpak install --user -y --noninteractive ./Iris-Cef-x86_64.flatpak
+          export XDG_RUNTIME_DIR=$(mktemp -d)
+          chmod 700 $XDG_RUNTIME_DIR
+          weston --backend=headless --socket=wayland-1 --width=1280 --height=800 > /tmp/weston.txt 2>&1 &
+          for i in $(seq 1 50); do [ -S $XDG_RUNTIME_DIR/wayland-1 ] && break; sleep 0.2; done
+          export WAYLAND_DISPLAY=wayland-1
+          dbus-run-session -- flatpak run --user --env=LIBGL_ALWAYS_SOFTWARE=1 io.github.tulip_labs.Iris.Cef https://example.org > /tmp/log.txt 2>&1 &
+          sleep 40
+          alive=0; pgrep -f /app/libexec/iris >/dev/null && alive=1
+          grep -v dbus /tmp/log.txt | tail -60
+          flatpak kill io.github.tulip_labs.Iris.Cef 2>/dev/null || true
+          [ $alive = 1 ] || { echo "Iris (CEF) from the Flatpak exited before 40 seconds"; exit 1; }
+          echo "Iris (CEF) from the Flatpak ran for 40 seconds on Wayland."

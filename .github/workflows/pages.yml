@@ -1,0 +1,53 @@
+# Publishes the website in site/ to the gh-pages branch, which GitHub Pages serves at
+# https://tulip-labs.github.io/Iris-Browser/
+#
+# The files already on gh-pages (the old package repositories) are kept: site/ is
+# copied over the branch without deleting anything, so only the site's own files change.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the site
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Check out gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: pages
+          fetch-depth: 1
+
+      - name: Copy site/ over gh-pages (no deletions)
+        run: rsync -a --exclude '.git' src/site/ pages/
+
+      - name: Commit and push
+        working-directory: pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The site on gh-pages is already up to date."
+            exit 0
+          fi
+          git commit -m "Website: publish site/ from ${GITHUB_SHA::7}"
+          git push origin HEAD:gh-pages

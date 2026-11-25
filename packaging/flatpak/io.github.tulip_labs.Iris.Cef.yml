@@ -1,0 +1,109 @@
+# Iris with Chromium (CEF) as its page engine, as a Flatpak of its own
+# (io.github.tulip_labs.Iris.Cef, beside the WPE build, for trying it):
+# the same Odin app from linux/, built with -define:IRIS_ENGINE=cef, and
+# CEF 156.0.32 (Chromium 156.0.8078.109) from its minimal binary
+# distribution, nothing built from source.
+#
+# What differs from the WPE Flatpak, plainly:
+# - Chromium's own renderer sandbox is off (no_sandbox: it needs a setuid
+#   helper or user namespaces, which a Flatpak gives neither); renderers
+#   run inside Flatpak's sandbox only.
+# - Codecs: CEF's binaries carry Chromium's own ffmpeg without the
+#   proprietary codecs: VP8/VP9/AV1/Opus/Vorbis play, H.264/H.265/AAC do
+#   not (YouTube is fine; some sites' video is not). The ffmpeg-full
+#   extension would not help (Chromium does not use GStreamer), so it is
+#   not here.
+# - Pages are drawn off-screen and copied (CEF has no shared textures on
+#   Linux): more CPU for video and scrolling than WPE's zero-copy frames.
+# - About 10 times the size: libcef.so alone is a few hundred MB.
+app-id: io.github.tulip_labs.Iris.Cef
+runtime: org.gnome.Platform
+runtime-version: "50"
+sdk: org.gnome.Sdk
+command: iris
+separate-locales: false
+rename-desktop-file: io.github.tulip_labs.Iris.desktop
+rename-icon: io.github.tulip_labs.Iris
+rename-appdata-file: io.github.tulip_labs.Iris.metainfo.xml
+
+finish-args:
+  - --share=ipc # Chromium's shared memory (/dev/shm)
+  - --share=network
+  - --socket=wayland # Iris is Wayland only (CEF draws off-screen: no X11)
+  - --socket=pulseaudio
+  - --device=dri # the GPU; cameras come through the portal and PipeWire
+  - --filesystem=xdg-run/pipewire-0
+  - --filesystem=xdg-download
+  - --talk-name=org.freedesktop.FileManager1 # "show in folder" for downloads
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /share/doc
+  - "*.a"
+
+modules:
+  # CEF: libcef.so with everything it reads at run time next to it (CEF
+  # takes the ICU data from libcef.so's folder, not resources_dir_path)
+  - name: cef
+    buildsystem: simple
+    build-options:
+      strip: false # already stripped; stripping 300 MB again only costs time
+      no-debuginfo: true
+    sources:
+      - type: archive
+        url: https://cef-builds.spotifycdn.com/cef_binary_156.0.32+g3d1f4ab+chromium-156.0.8078.109_linux64_minimal.tar.bz2
+        # PLACEHOLDER: the CEF CDN could not be reached where this was
+        # written. CI (linux.yml, job flatpak-cef) puts the real checksum in
+        # and prints it; pin that value here.
+        sha256: 0000000000000000000000000000000000000000000000000000000000000000
+        dest: cef
+    build-commands:
+      - install -d /app/lib/iris-cef/locales
+      - cp -a cef/Release/. /app/lib/iris-cef/
+      - cp -a cef/Resources/icudtl.dat cef/Resources/*.pak /app/lib/iris-cef/
+      - cp -a cef/Resources/locales/. /app/lib/iris-cef/locales/
+      # the setuid sandbox helper cannot work in a Flatpak (and Iris starts
+      # CEF with no_sandbox); nothing else here is setuid
+      - rm -f /app/lib/iris-cef/chrome-sandbox
+
+  - name: iris
+    buildsystem: simple
+    build-options:
+      env:
+        ODIN_ROOT: /run/build/iris/odin
+        # the SDK links with gcc (it has no clang)
+        ODIN_CLANG_PATH: /usr/bin/gcc
+        IRIS_ENGINE: cef
+        CEF_RPATH: /app/lib/iris-cef
+    sources:
+      - type: dir
+        path: ../../linux
+        dest: linux
+      - type: dir
+        path: ../linux
+        dest: desktop
+      # Odin dev-2026-11a, a build tool only: nothing of it is in the app
+      - type: archive
+        url: https://github.com/odin-lang/Odin/releases/download/dev-2026-11a/odin-linux-amd64-dev-2026-11a.tar.gz
+        sha256: 65c9f6e97d6f8a30930e151f270ce5aeaa98fe8b2ba49fe067394e2af04f7618
+        dest: odin
+        only-arches: [x86_64]
+      - type: script
+        dest-filename: iris.sh
+        commands:
+          - export TMPDIR="$XDG_RUNTIME_DIR/app/$FLATPAK_ID"
+          - exec /app/libexec/iris "$@"
+    build-commands:
+      # build.sh wants a CEF distribution's layout: Release/ is the installed libcef
+      - mkdir -p cefdist && ln -sfn /app/lib/iris-cef cefdist/Release
+      - PATH="$PWD/odin:$PATH" CEF_DIR="$PWD/cefdist" sh linux/build.sh install /app
+      - install -Dm755 iris.sh /app/bin/iris
+      - install -Dm644 linux/resources/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg /app/share/icons/hicolor/scalable/apps/io.github.tulip_labs.Iris.svg
+      - install -Dm644 linux/resources/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png /app/share/icons/hicolor/256x256/apps/io.github.tulip_labs.Iris.png
+      # the same desktop entry and metainfo, named for this app (the
+      # rename-* keys above move them to io.github.tulip_labs.Iris.Cef)
+      - sed -e 's/^Name=Iris$/Name=Iris (Chromium)/' -e 's/^StartupWMClass=.*/StartupWMClass=io.github.tulip_labs.Iris.Cef/' desktop/io.github.tulip_labs.Iris.desktop > iris.desktop
+      - install -Dm644 iris.desktop /app/share/applications/io.github.tulip_labs.Iris.desktop
+      - sed -e 's|<id>io.github.tulip_labs.Iris</id>|<id>io.github.tulip_labs.Iris.Cef</id>|' -e '0,/<name>Iris<\/name>/s||<name>Iris (Chromium)</name>|' -e 's|io.github.tulip_labs.Iris.desktop|io.github.tulip_labs.Iris.Cef.desktop|' desktop/io.github.tulip_labs.Iris.metainfo.xml > iris.metainfo.xml
+      - install -Dm644 iris.metainfo.xml /app/share/metainfo/io.github.tulip_labs.Iris.metainfo.xml

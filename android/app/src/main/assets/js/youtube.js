@@ -118,12 +118,19 @@
   }
 
   // ---------------------------------------------------------------- 3
+  // An ad that still plays is never seen: while the player says "ad", its
+  // video is see-through and muted (style, before the first frame), then
+  // skipped or run to its end at once.
   const css = 'ytd-ad-slot-renderer, ytd-in-feed-ad-layout-renderer, ytd-display-ad-renderer, ytd-promoted-sparkles-web-renderer,' +
     ' ytd-promoted-video-renderer, ytd-banner-promo-renderer, ytd-statement-banner-renderer, ytd-companion-slot-renderer,' +
     ' ytd-action-companion-ad-renderer, ytd-player-legacy-desktop-watch-ads-renderer, #player-ads, #masthead-ad,' +
     ' ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer), ytd-merch-shelf-renderer,' +
-    ' .ytp-ad-overlay-container, .ytp-ad-overlay-slot, ytm-promoted-sparkles-web-renderer,' +
-    ' ytm-companion-ad-renderer, ad-slot-renderer { display: none !important; }';
+    ' ytd-video-masthead-ad-v3-renderer, ytd-search-pyv-renderer, ytd-ads-engagement-panel-content-renderer,' +
+    ' ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"], ytd-rich-section-renderer:has(ytd-statement-banner-renderer),' +
+    ' .ytp-ad-overlay-container, .ytp-ad-overlay-slot, .ytp-ad-image-overlay, ytm-promoted-sparkles-web-renderer,' +
+    ' ytm-companion-ad-renderer, ytm-promoted-video-renderer, ad-slot-renderer { display: none !important; }' +
+    ' .iris-ad.ad-showing video, .iris-ad.ad-interrupting video, .iris-ad.ad-showing .ytp-ad-player-overlay,' +
+    ' .iris-ad.ad-showing .ytp-ad-player-overlay-layout { opacity: 0 !important; }';
   let styled = false;
   const style = () => {
     if (styled || !document.documentElement) return;
@@ -133,26 +140,48 @@
     styled = true;
   };
   let saved = null; // the video's own sound and speed, while an ad plays
-  const skipSel = '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-container button, button[id^="skip-button"]';
+  const skipSel = '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-container button,' +
+    ' .ytp-ad-skip-button-slot button, .ytp-skip-ad button, button[id^="skip-button"]';
+  const marked = (p) => p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting');
+  // YouTube's own ad parts in the player: a class left behind with none of
+  // them for STALE ms is no ad, and the video shows and sounds again
+  const adSel = '.ytp-ad-player-overlay, .ytp-ad-player-overlay-layout, .ytp-ad-text, .ytp-ad-preview-container,' +
+    ' .ytp-ad-module > *, .video-ads > *, .ytp-ad-persistent-progress-bar-container, .ytp-ad-simple-ad-badge';
+  const STALE = 3000;
+  let adSeen = 0, markedSince = 0;
+  const isAd = (p) => {
+    if (!marked(p)) {
+      markedSince = 0;
+      // only when set: remove() rewrites the attribute even when it is absent,
+      // and the observer that watches it would call tick again, forever
+      if (p.classList.contains('iris-ad')) p.classList.remove('iris-ad');
+      return false;
+    }
+    const now = Date.now();
+    if (!markedSince) markedSince = now;
+    if (p.querySelector(adSel)) adSeen = now;
+    const ad = now - Math.max(adSeen, markedSince) < STALE;
+    if (p.classList.contains('iris-ad') !== ad) p.classList.toggle('iris-ad', ad);
+    return ad;
+  };
   const tick = () => {
     style();
     const player = document.querySelector('#movie_player, .html5-video-player');
     const v = player && player.querySelector('video');
     if (!v) return;
-    const ad = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
-    if (ad) {
+    if (isAd(player)) {
       if (!saved) saved = { muted: v.muted, rate: v.playbackRate };
       v.muted = true;
-      try { v.playbackRate = 16; } catch (e) {}
-      if (isFinite(v.duration) && v.duration > 0.5 && v.currentTime < v.duration - 0.3) {
-        try { v.currentTime = v.duration - 0.1; } catch (e) {}
-      }
-      const b = document.querySelector(skipSel);
+      const b = player.querySelector(skipSel) || document.querySelector(skipSel);
       if (b) b.click();
-      if (v.paused) v.play().catch(() => {});
+      try { if (v.playbackRate < 16) v.playbackRate = 16; } catch (e) {}
+      if (isFinite(v.duration) && v.duration > 0.2 && v.currentTime < v.duration - 0.15) {
+        try { v.currentTime = v.duration - 0.05; } catch (e) {}
+      }
+      if (v.paused && v.readyState > 0) v.play().catch(() => {});
     } else if (saved) {
       v.muted = saved.muted;
-      v.playbackRate = saved.rate || 1;
+      v.playbackRate = saved.rate > 0 && saved.rate <= 4 ? saved.rate : 1;
       saved = null;
     }
     // YouTube's ad blocker notice, if one still comes: close it and play on
@@ -166,15 +195,12 @@
     }
   };
   // Watch only the player's own class (YouTube marks ads there), not every
-  // class change on the page: YouTube changes thousands a second. A slow
-  // check covers the rest.
-  let watched = null, queued = false;
-  const soon = () => {
-    if (queued) return;
-    queued = true;
-    requestAnimationFrame(() => { queued = false; tick(); });
-  };
-  const watch = new MutationObserver(soon);
+  // class change on the page: YouTube changes thousands a second. The check
+  // runs in the same task as the change (no frame later), and again when
+  // the video learns its length or plays (media events, caught on their way
+  // down); a slow check covers the rest.
+  let watched = null;
+  const watch = new MutationObserver(tick);
   const follow = () => {
     const p = document.querySelector('#movie_player, .html5-video-player');
     if (p && p !== watched) {
@@ -184,6 +210,12 @@
     }
     tick();
   };
+  const onMedia = (e) => {
+    if (!(e.target instanceof HTMLVideoElement)) return;
+    const p = e.target.closest('#movie_player, .html5-video-player');
+    if (p && (marked(p) || saved)) tick();
+  };
+  for (const ev of ['loadedmetadata', 'durationchange', 'playing', 'timeupdate']) document.addEventListener(ev, onMedia, true);
   style();
   document.addEventListener('DOMContentLoaded', follow, { once: true });
   setInterval(follow, 500);

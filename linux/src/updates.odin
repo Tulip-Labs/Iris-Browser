@@ -83,12 +83,15 @@ shield_rules_cli :: proc(level_name, dir, out: string) -> int {
 	}
 	start := time.now()
 	c := Converter{level = l}
+	lists := 0
 	for li in level_lists(l) {
 		text, err := os.read_entire_file_from_path(fmt.tprintf("%s/%s.txt", dir, list_id(li)), context.allocator)
 		if err != nil do continue
-		converter_add_list(&c, string(text))
+		converter_add_list(&c, string(text), list_generic_ok(li))
+		lists += 1
 	}
-	converter_add_domains(&c, shield_domains())
+	// as Iris itself does: its own domains until the lists come, and at ultra
+	c.builtin = lists == 0 || l == .ultra
 	blocks, hides, exceptions := len(c.blocks), len(c.hides), len(c.exceptions)
 	parts := converter_finish(&c, 120_000)
 	for p, i in parts {

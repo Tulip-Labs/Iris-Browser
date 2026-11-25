@@ -1,3 +1,5 @@
+// The WPE engine's page (IRIS_ENGINE=wpe, see engine_api.odin).
+//
 // Iris is its own WPEPlatform (WPE WebKit 2.54+): a WPEDisplay, WPEView,
 // WPEToplevel and WPEClipboard made here as GObject subclasses. WebKit's
 // web process renders each frame into a DMA-BUF and hands it to IrisView's
@@ -11,6 +13,9 @@ import "base:runtime"
 import "core:log"
 import "core:strings"
 import plat "../plat"
+
+// (not indented: the whole file is this engine's)
+when !ENGINE_CEF {
 
 @(private="file") display_type, view_type, toplevel_type, clipboard_type: GType
 @(private="file") shared_display, headless_display: ^WPEDisplay
@@ -190,8 +195,6 @@ cursor_for :: proc(css: string) -> plat.Cursor_Shape {
 }
 
 clipboard_mirroring: bool
-/// the text on the clipboard (the desktop's, or what Iris copied), for the chrome's fields
-clipboard_text: string
 
 /// the desktop copied something: pages can paste it
 clipboard_from_desktop :: proc(text: string) {
@@ -261,6 +264,7 @@ page_free :: proc(p: ^Page) {
 	}
 	delete(p.images)
 	delete(p.rendered_due)
+	texture_free(&p.tex) // a shared-memory page owns its texture; an imported one was freed above
 	free(p)
 }
 
@@ -411,3 +415,4 @@ page_key :: proc(p: ^Page, e: plat.Key_Event) {
 	send(p, wpe_event_keyboard_new(t, p.view, WPE_INPUT_SOURCE_KEYBOARD, e.time, wpe_mods(e.mods, 0), e.code, e.keysym))
 }
 
+} // when !ENGINE_CEF
