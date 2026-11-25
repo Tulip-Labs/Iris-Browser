@@ -264,6 +264,7 @@ page_free :: proc(p: ^Page) {
 	}
 	delete(p.images)
 	delete(p.rendered_due)
+	texture_free(&p.tex) // a shared-memory page owns its texture; an imported one was freed above
 	free(p)
 }
 

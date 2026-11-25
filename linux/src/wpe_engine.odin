@@ -105,7 +105,6 @@ video_environment :: proc() {
 sandbox_context :: proc() -> ^WebKitWebContext {
 	if sandbox_context_ != nil do return sandbox_context_
 	ctx := cast(^WebKitWebContext)gnew(webkit_web_context_get_type(), {name = "memory-pressure-settings", value = rawptr(pressure()), type = webkit_memory_pressure_settings_get_type(), boxed = true})
-	webkit_web_context_set_cache_model(ctx, 0) // document viewer
 	sandbox_context_ = ctx
 	return ctx
 }

@@ -43,7 +43,6 @@ tab_isolate :: proc(t: ^Tab) {
 	t.isolated = true
 	if t.own_context == nil {
 		ctx := cast(^WebKitWebContext)gnew(webkit_web_context_get_type(), {name = "memory-pressure-settings", value = rawptr(pressure()), type = webkit_memory_pressure_settings_get_type(), boxed = true})
-		webkit_web_context_set_cache_model(ctx, 0) // document viewer: no cache of its own to keep
 		t.own_context = ctx
 	}
 }
