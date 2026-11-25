@@ -47,8 +47,6 @@ web_context :: proc() -> ^WebKitWebContext {
 }
 
 add_page_scripts :: proc(ucm: ^WebKitUserContentManager) {
-	google := [?]cstring{"https://www.google.com/*", "https://google.com/*"}
-	add_script(ucm, AI_GLASS, false, google[:])
 	yt := [?]cstring{"https://*.youtube.com/*", "https://youtube.com/*", "https://*.youtube-nocookie.com/*"}
 	add_script(ucm, YOUTUBE, true, yt[:])
 	if settings().lightVideo do add_script(ucm, LIGHT_VIDEO, true, yt[:])

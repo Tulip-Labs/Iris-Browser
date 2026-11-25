@@ -40,8 +40,6 @@ Glass :: struct {
 	rim_light:  f32,
 	dispersion: bool,
 	ring:       f32, // > 0: a ring this thick, in the circle w × w
-	spectrum:   f32, // a ring's band of light (0 none)
-	spin:       f32, // where its colours start (turns)
 }
 
 Renderer :: struct {
@@ -52,7 +50,7 @@ Renderer :: struct {
 	query_formats:   proc "c" (d: egl.Display, max: i32, formats: ^i32, n: ^i32) -> b32,
 	query_modifiers: proc "c" (d: egl.Display, format: i32, max: i32, mods: ^u64, external_only: ^b32, n: ^i32) -> b32,
 	vao, vbo:        u32,
-	fill, tex, glass, dawn, down: Program,
+	fill, tex, glass, dawn, down, ring: Program,
 	scene_fbo:       [3]u32, // full, half, quarter
 	scene_tex:       [3]u32,
 	sizes:           [3][2]i32,
@@ -190,24 +188,7 @@ uniform float u_rimlight;
 uniform float u_dispersion;
 uniform vec2 u_pointer;   // pixels, or negative
 uniform float u_scale;
-uniform float u_spectrum; // a ring's band of light: its strength
-uniform float u_spin;     // and where its colours start (turns)
 ` + SDF + `
-vec3 hsv(float h, float s, float v) {
-	vec3 k = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
-	return v * mix(vec3(1.0), k, s);
-}
-// red, orange, yellow, green, cyan, blue (220 degrees), then back to red
-// through a short warm white: never through magenta or violet
-vec3 spectrum(float h) {
-	const float span = 0.84;
-	if (h < span) return hsv(h / span * (220.0 / 360.0), 0.55, 1.0);
-	float q = (h - span) / (1.0 - span);
-	vec3 blue = hsv(220.0 / 360.0, 0.55, 1.0);
-	vec3 warm = vec3(1.0, 0.97, 0.92);
-	vec3 red = hsv(0.0, 0.55, 1.0);
-	return q < 0.5 ? mix(blue, warm, q * 2.0) : mix(warm, red, q * 2.0 - 1.0);
-}
 vec3 behind(vec2 p) {
 	vec2 uv = vec2(p.x / u_screen.x, 1.0 - p.y / u_screen.y);
 	return mix(texture(u_scene, uv).rgb, texture(u_blurred, uv).rgb, u_frost);
@@ -238,14 +219,6 @@ void main() {
 		col = behind(p + n * pull);
 	}
 	col = mix(col, u_tint.rgb, u_tint.a);
-	if (u_ring > 0.0 && u_spectrum > 0.0) {
-		// light through the ring: a thin band of colour inside its rim
-		vec2 dd = v_px - c;
-		float h = fract(atan(dd.y, dd.x) / 6.2831853 + 0.5 + u_spin);
-		float off = (length(dd) - (u_box.z * 0.5 - u_ring * 0.5)) / (u_ring * 0.5);
-		float band = exp(-pow((off - 0.3) / 0.3, 2.0));
-		col = mix(col, spectrum(h), u_spectrum * band);
-	}
 	// light from above: a bright line inside the top rim, a soft glow, a
 	// faint shade along the bottom
 	float top = clamp(-n.y, 0.0, 1.0);
@@ -257,6 +230,63 @@ void main() {
 		col += vec3(1.0) * 0.10 * exp(-r * r);
 	}
 	o = vec4(col, 1.0) * inside;
+}`
+
+/// the start page's Iris ring, drawn once into a texture of its own (for
+/// its size and light or dark) and from then on only copied: clear glass,
+/// lit along its rims, with a band of light from red to blue inside it
+RING_FRAG :: `#version 300 es
+precision highp float;
+in vec2 v_px;
+out vec4 o;
+uniform float u_dark;
+uniform float u_scale;
+` + SDF + `
+vec3 hsv(float h, float s, float v) {
+	vec3 k = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+	return v * mix(vec3(1.0), k, s);
+}
+// red, orange, yellow, green, cyan, blue (220 degrees), then back to red
+// through a short warm white: never through magenta or violet
+vec3 spectrum(float h) {
+	const float span = 0.84;
+	if (h < span) return hsv(h / span * (220.0 / 360.0), 0.55, 1.0);
+	float q = (h - span) / (1.0 - span);
+	vec3 blue = hsv(220.0 / 360.0, 0.55, 1.0);
+	vec3 warm = vec3(1.0, 0.97, 0.92);
+	vec3 red = hsv(0.0, 0.55, 1.0);
+	return q < 0.5 ? mix(blue, warm, q * 2.0) : mix(warm, red, q * 2.0 - 1.0);
+}
+void main() {
+	float d = sdf(v_px);
+	float s = u_scale;
+	if (d > 0.5) {
+		float ds = max(sdf(v_px - vec2(0.0, 4.0 * s)), 0.0) / (13.0 * s);
+		float a = mix(0.07, 0.12, u_dark) * exp(-ds * ds) * smoothstep(0.0, 1.5, d);
+		o = vec4(vec3(0.0), a);
+		return;
+	}
+	float inside = clamp(0.5 - d, 0.0, 1.0);
+	vec2 c = u_box.xy + u_box.zw * 0.5;
+	vec2 n = outward(v_px);
+	float e = -d;
+	float t = 1.0 - clamp(e / max(u_ring * 0.5, 1.0), 0.0, 1.0);
+	// the glass: a veil of white (premultiplied)
+	float ga = mix(0.5, 0.07, u_dark);
+	vec4 col = vec4(vec3(ga), ga);
+	// the light through it
+	vec2 dd = v_px - c;
+	float h = fract(atan(dd.y, dd.x) / 6.2831853 + 0.5);
+	float off = (length(dd) - (u_box.z * 0.5 - u_ring * 0.5)) / (u_ring * 0.5);
+	float sa = mix(0.6, 0.75, u_dark) * exp(-pow((off - 0.3) / 0.3, 2.0));
+	col = vec4(spectrum(h) * sa, sa) + col * (1.0 - sa);
+	// lit from above along the rims, a faint shade below
+	float top = clamp(-n.y, 0.0, 1.0);
+	float line = exp(-e / (1.2 * s));
+	float l = mix(1.0, 0.5, u_dark) * (0.55 * line * (0.35 + 0.65 * top) + 0.10 * t * t);
+	col += vec4(vec3(l), l);
+	col.rgb -= vec3(0.05) * line * clamp(n.y, 0.0, 1.0) * col.a;
+	o = clamp(col, 0.0, 1.0) * inside;
 }`
 
 compile :: proc(frag: string, vert := VERT) -> Program {
@@ -304,6 +334,7 @@ renderer_init :: proc(d: egl.Display) {
 	rnd.tex = compile(TEX_FRAG)
 	rnd.glass = compile(GLASS_FRAG)
 	rnd.dawn = compile(DAWN_FRAG)
+	rnd.ring = compile(RING_FRAG)
 	rnd.down = compile(DOWN_FRAG)
 	quad := [8]f32{0, 0, 1, 0, 0, 1, 1, 1}
 	gl.GenVertexArrays(1, &rnd.vao)
@@ -346,17 +377,21 @@ frame_begin :: proc(sw, sh: i32, scale: f64) {
 }
 
 /// the scene is done: it is blurred, then drawn on screen
-frame_scene_done :: proc() {
-	for i in 1 ..< 3 {
-		gl.BindFramebuffer(gl.FRAMEBUFFER, rnd.scene_fbo[i])
-		w, h := rnd.sizes[i][0], rnd.sizes[i][1]
+/// the scene is done: one blurred copy at a quarter of its size (one pass,
+/// shared by every pane of frosted glass), then the scene on screen. A frame
+/// that draws no glass (the chrome copied from its layer) skips the blur.
+frame_scene_done :: proc(blur := true) {
+	if blur {
+		gl.BindFramebuffer(gl.FRAMEBUFFER, rnd.scene_fbo[2])
+		w, h := rnd.sizes[2][0], rnd.sizes[2][1]
 		gl.Viewport(0, 0, w, h)
 		p := &rnd.down
 		gl.UseProgram(p.id)
 		gl.ActiveTexture(gl.TEXTURE0)
-		gl.BindTexture(gl.TEXTURE_2D, rnd.scene_tex[i - 1])
+		gl.BindTexture(gl.TEXTURE_2D, rnd.scene_tex[0])
 		gl.Uniform1i(loc(p, "u_tex"), 0)
-		gl.Uniform2f(loc(p, "u_texel"), 1 / f32(rnd.sizes[i - 1][0]), 1 / f32(rnd.sizes[i - 1][1]))
+		// taps 1.5 source pixels out, each a bilinear 2 × 2: a 4 × 4 average
+		gl.Uniform2f(loc(p, "u_texel"), 1.5 / f32(rnd.sizes[0][0]), 1.5 / f32(rnd.sizes[0][1]))
 		gl.Uniform2f(loc(p, "u_screen"), f32(w), f32(h))
 		gl.Uniform4f(loc(p, "u_rect"), 0, 0, f32(w), f32(h))
 		gl.Disable(gl.BLEND)
@@ -442,8 +477,6 @@ draw_glass :: proc(x, y, w, h: f32, g: Glass) {
 	gl.Uniform1f(loc(p, "u_dispersion"), g.dispersion ? 1 : 0)
 	gl.Uniform1f(loc(p, "u_scale"), s)
 	gl.Uniform1f(loc(p, "u_ring"), g.ring * s)
-	gl.Uniform1f(loc(p, "u_spectrum"), g.spectrum)
-	gl.Uniform1f(loc(p, "u_spin"), g.spin)
 	px := rnd.pointer.x >= 0 ? rnd.pointer * s : [2]f32{-1, -1}
 	gl.Uniform2f(loc(p, "u_pointer"), px.x, px.y)
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
@@ -572,4 +605,110 @@ clip_pop :: proc() {
 	gl.Enable(gl.SCISSOR_TEST)
 	// GL counts rows from the bottom
 	gl.Scissor(c.x, rnd.sh - c.w, c.z - c.x, c.w - c.y)
+}
+
+// ---------------------------------------------------------------- the chrome's layer
+
+/// the chrome drawn once into a layer of its own and copied while only the
+/// page changes (a video playing redraws no glass, no text, no icons)
+@(private="file") Layer :: struct {
+	fbo, tex: u32,
+	w, h:     i32,
+	saved:    u32,
+}
+@(private="file") layer: Layer
+
+/// what follows (the chrome) goes into its layer, cleared
+layer_begin :: proc() {
+	if layer.fbo == 0 {
+		gl.GenFramebuffers(1, &layer.fbo)
+		gl.GenTextures(1, &layer.tex)
+	}
+	if layer.w != rnd.sw || layer.h != rnd.sh {
+		layer.w, layer.h = rnd.sw, rnd.sh
+		gl.BindTexture(gl.TEXTURE_2D, layer.tex)
+		gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, layer.w, layer.h, 0, gl.RGBA, gl.UNSIGNED_BYTE, nil)
+		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+		gl.BindFramebuffer(gl.FRAMEBUFFER, layer.fbo)
+		gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, layer.tex, 0)
+	}
+	layer.saved = rnd.target_fbo
+	rnd.target_fbo = layer.fbo
+	gl.BindFramebuffer(gl.FRAMEBUFFER, layer.fbo)
+	gl.Viewport(0, 0, rnd.sw, rnd.sh)
+	gl.ClearColor(0, 0, 0, 0)
+	gl.Clear(gl.COLOR_BUFFER_BIT)
+}
+
+/// the layer done: back to the frame, and the layer onto it
+layer_end :: proc() {
+	rnd.target_fbo = layer.saved
+	gl.BindFramebuffer(gl.FRAMEBUFFER, rnd.target_fbo)
+	gl.Viewport(0, 0, rnd.sw, rnd.sh)
+	layer_copy()
+}
+
+/// the layer as last drawn onto the frame; false when it does not fit it
+layer_copy :: proc() -> bool {
+	if layer.tex == 0 || layer.w != rnd.sw || layer.h != rnd.sh do return false
+	draw_texture({id = layer.tex, w = layer.w, h = layer.h, premultiplied = true}, 0, 0, f32(rnd.sw) / rnd.scale, f32(rnd.sh) / rnd.scale, flip = true)
+	return true
+}
+
+// ---------------------------------------------------------------- the ring
+
+@(private="file") Ring_Cache :: struct {
+	fbo, tex: u32,
+	px:       i32, // its diameter in device pixels
+	dark:     bool,
+	scale:    f32,
+}
+@(private="file") ring_cache: Ring_Cache
+
+RING_MARGIN :: f32(24) // room for its shadow
+
+/// the Iris ring of diameter d (logical) centred at (cx, cy): drawn into its
+/// texture only when its size or the theme changed, then copied
+draw_ring :: proc(cx, cy, d: f32) {
+	s := rnd.scale
+	px := i32(math.round(d * s))
+	if px < 8 do return
+	m := RING_MARGIN
+	full := i32(math.ceil((d + 2 * m) * s))
+	c := &ring_cache
+	if c.tex == 0 || c.px != px || c.dark != theme.dark || c.scale != s {
+		if c.fbo == 0 {
+			gl.GenFramebuffers(1, &c.fbo)
+			gl.GenTextures(1, &c.tex)
+		}
+		c.px, c.dark, c.scale = px, theme.dark, s
+		gl.BindTexture(gl.TEXTURE_2D, c.tex)
+		gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, full, full, 0, gl.RGBA, gl.UNSIGNED_BYTE, nil)
+		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+		gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+		gl.BindFramebuffer(gl.FRAMEBUFFER, c.fbo)
+		gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, c.tex, 0)
+		gl.Viewport(0, 0, full, full)
+		gl.ClearColor(0, 0, 0, 0)
+		gl.Clear(gl.COLOR_BUFFER_BIT)
+		gl.Disable(gl.SCISSOR_TEST)
+		p := &rnd.ring
+		gl.UseProgram(p.id)
+		gl.Uniform4f(loc(p, "u_rect"), 0, 0, f32(full), f32(full))
+		gl.Uniform4f(loc(p, "u_box"), m * s, m * s, f32(px), f32(px))
+		gl.Uniform2f(loc(p, "u_screen"), f32(full), f32(full))
+		gl.Uniform1f(loc(p, "u_radius"), f32(px) / 2)
+		gl.Uniform1f(loc(p, "u_ring"), f32(px) * 0.14)
+		gl.Uniform1f(loc(p, "u_dark"), theme.dark ? 1 : 0)
+		gl.Uniform1f(loc(p, "u_scale"), s)
+		gl.Disable(gl.BLEND)
+		gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+		gl.Enable(gl.BLEND)
+		gl.BindFramebuffer(gl.FRAMEBUFFER, rnd.target_fbo)
+		gl.Viewport(0, 0, rnd.sw, rnd.sh)
+		apply_clip()
+	}
+	side := f32(full) / s
+	draw_texture({id = c.tex, w = full, h = full, premultiplied = true}, cx - d / 2 - m, cy - d / 2 - m, side, side, flip = true)
 }

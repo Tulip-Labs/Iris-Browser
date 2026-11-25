@@ -52,10 +52,37 @@ test_path_parse :: proc(t: ^testing.T) {
 	testing.expect_value(t, len(p2.polys), 2)
 	testing.expect_value(t, p2.polys[1][0], [2]f32{3, 3})
 	// every icon parses into something
-	for d, ic in ICON_PATHS {
-		pp := path_parse(d, 1)
-		testing.expectf(t, len(pp.polys) > 0, "icon %v has no outline", ic)
+	for src, ic in ICON_SVG {
+		sv := svg_parse(src)
+		testing.expectf(t, sv.view == {0, 0, 24, 24}, "icon %v: viewBox %v", ic, sv.view)
+		testing.expectf(t, len(sv.shapes) > 0, "icon %v has no shapes", ic)
+		for sh in sv.shapes {
+			pp := path_parse(sh.d, 1)
+			testing.expectf(t, len(pp.polys) > 0, "icon %v has a shape with no outline", ic)
+			testing.expectf(t, sh.fill || sh.stroke, "icon %v has a shape that paints nothing", ic)
+		}
+		// rasterised at 18 px it covers something, and stays inside its box
+		n := 20
+		r := raster_make(n, n)
+		k := f32(18) / 24
+		for sh in sv.shapes {
+			pp := path_parse(sh.d, k)
+			if sh.fill do raster_fill(&r, pp, k, {1, 1})
+			if sh.stroke do raster_stroke(&r, pp, k, {1, 1}, max(sh.width * k, 1.1))
+		}
+		cov := make([]u8, n * n, context.temp_allocator)
+		raster_coverage(&r, cov)
+		sum := 0
+		for c in cov do sum += int(c)
+		testing.expectf(t, sum > 255 * 4, "icon %v draws (almost) nothing", ic)
 	}
+	// the SVG reader: shapes, paint inherited from <svg>, and rounded rects
+	sv := svg_parse(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="10" height="8" rx="2"/><circle cx="5" cy="5" r="2" fill="currentColor" stroke="none"/><path id="x" d="M1 1L5 5"/></svg>`)
+	testing.expect_value(t, len(sv.shapes), 3)
+	testing.expect(t, sv.shapes[0].stroke && !sv.shapes[0].fill)
+	testing.expect_value(t, sv.shapes[0].width, 2)
+	testing.expect(t, sv.shapes[1].fill && !sv.shapes[1].stroke)
+	testing.expect_value(t, sv.shapes[2].d, "M1 1L5 5")
 }
 
 @(test)
@@ -130,25 +157,14 @@ test_elide_middle :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_motion :: proc(t: ^testing.T) {
-	testing.expect_value(t, ease_out_cubic(0), 0)
-	testing.expect_value(t, ease_out_cubic(1), 1)
-	testing.expect(t, ease_out_cubic(0.5) > 0.5, "ease-out starts fast")
-	k, moving := motion(10, 10.1, 200)
-	testing.expect(t, moving && k > 0.5 && k < 1, "halfway through, more than half there")
-	k, moving = motion(10, 10.3, 200)
-	testing.expect(t, !moving && k == 1, "it ends")
-	k, moving = motion(10, 10.03, 200, 40)
-	testing.expect(t, moving && k == 0, "a delay holds it")
-	// the spring settles within about 200 ms and stops asking for frames
-	sp := Spring{}
-	steps := 0
-	for spring_step(&sp, 1, 1.0 / 60) do steps += 1
-	testing.expect(t, steps < 20, "the spring takes too long")
-	testing.expect_value(t, sp.x, 1)
+test_fade :: proc(t: ^testing.T) {
+	k, moving := fade(10, 10.06)
+	testing.expect(t, moving && k > 0.4 && k < 0.6, "halfway through a fade")
+	k, moving = fade(10, 10.2)
+	testing.expect(t, !moving && k == 1, "a fade ends (and stops asking for frames)")
 	theme.reduce_motion = true
-	k, moving = motion(10, 10.13, 400)
-	testing.expect(t, !moving && k == 1, "reduced motion is a short fade")
+	k, moving = fade(10, 10.0)
+	testing.expect(t, !moving && k == 1, "reduced motion: no fade at all")
 	theme.reduce_motion = false
 }
 

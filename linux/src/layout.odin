@@ -133,7 +133,7 @@ compact_toggle :: proc() {
 /// top edge, and stay while it is over them
 compact_pointer :: proc(y: f64, leave: bool) {
 	if !compact_on() do return
-	hold := !leave && (y <= 6 || (ui.compact_show.x > 0.3 && y < 100))
+	hold := !leave && (y <= 6 || (ui.compact_show && y < 100))
 	if hold != ui.compact_hold {
 		ui.compact_hold = hold
 		chrome_push()

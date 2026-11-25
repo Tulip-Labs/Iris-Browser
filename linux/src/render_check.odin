@@ -72,7 +72,9 @@ render_check :: proc(out: string) -> int {
 	cur.can_back = true
 	cur.loading = true
 	cur.progress = 0.62
-	mk("Pull requests · Tulip-Labs/Iris-Browser", "https://github.com/Tulip-Labs/Iris-Browser/pulls", containers[1].id)
+	// Iris starts with no containers: one made here, its tab in its colour
+	work := len(containers) > 0 ? containers[0] : container_add("Work", "")
+	mk("Pull requests · Tulip-Labs/Iris-Browser", "https://github.com/Tulip-Labs/Iris-Browser/pulls", work.id)
 	sb := mk("example.com", "http://example.com/", "")
 	sb.sandboxed = true
 	b.current = cur
