@@ -3,6 +3,7 @@
 package iris
 
 import "core:strings"
+import cef "cef"
 
 Tab :: struct {
 	id:             int,
@@ -15,6 +16,8 @@ Tab :: struct {
 	can_forward:    bool,
 	zoom:           f64,
 	web:            ^WebKitWebView,
+	/// which engine this tab runs (WPE by default, CEF with --engine=cef)
+	engine:         Engine_Kind,
 	ucm:            ^WebKitUserContentManager,
 	page:           ^Page,
 	/// a site Iris does not trust: its own processes and a throwaway world
@@ -36,7 +39,7 @@ Tab :: struct {
 
 tab_new :: proc(container: string) -> ^Tab {
 	t := new(Tab)
-	t^ = {id = next_tab_id, container = strings.clone(container), zoom = 1}
+	t^ = {id = next_tab_id, container = strings.clone(container), zoom = 1, engine = engine_kind}
 	next_tab_id += 1
 	return t
 }
@@ -45,9 +48,21 @@ tab_is_private :: proc(t: ^Tab) -> bool {
 	return t.container == PRIVATE_ID
 }
 
+/// whether the tab's page engine exists yet (a WPE web view, or a CEF
+/// page with a browser behind it). A CEF tab has no web view, so
+/// t.web == nil must never be read as "no engine".
+tab_has_engine :: proc(t: ^Tab) -> bool {
+	if t.engine == .CEF do return t.page != nil && t.page.cef != nil
+	return t.web != nil
+}
+
 /// the web view, made on first use (related: a pop-up shares its opener's
 /// web process, as the web requires)
 tab_ensure_web :: proc(t: ^Tab, related: ^WebKitWebView = nil) -> ^WebKitWebView {
+	if t.engine == .CEF {
+		tab_ensure_cef(t)
+		return nil
+	}
 	if t.web != nil do return t.web
 	t.ucm = webkit_user_content_manager_new()
 	add_page_scripts(t.ucm)
@@ -87,8 +102,74 @@ tab_ensure_web :: proc(t: ^Tab, related: ^WebKitWebView = nil) -> ^WebKitWebView
 	return w
 }
 
+/// a CEF tab, made on first use: the Page is made now and the engine
+/// creates the tab at the page's size (or a default the layout corrects
+/// with a resize). A CEF tab is already isolated by its own request
+/// context, so it never needs the sandbox rebuild a WPE tab gets when a
+/// site's trust changes. When creation is refused, the Page stays
+/// without an engine; a later load retries.
+tab_ensure_cef :: proc(t: ^Tab) {
+	if t.page != nil && t.page.cef != nil do return
+	if t.page == nil {
+		t.page = page_new_cef()
+		t.page.user = t
+		t.page.on_frame = proc(p: ^Page) { browser_page_frame(cast(^Tab)p.user) }
+		t.page.on_cursor = proc(p: ^Page) { browser_page_cursor(cast(^Tab)p.user) }
+		t.page.on_fullscreen = proc(p: ^Page, on: bool) { browser_fullscreen(on) }
+		t.page.on_title = proc(p: ^Page) {
+			t := cast(^Tab)p.user
+			set_str(&t.title, p.cef.title)
+			if !tab_is_private(t) && !t.sandboxed do history_title(t.url, t.title)
+			browser_tab_changed(t)
+		}
+		t.page.on_url = proc(p: ^Page) {
+			t := cast(^Tab)p.user
+			set_str(&t.url, p.cef.url)
+			browser_tab_changed(t)
+		}
+		t.page.on_loading = proc(p: ^Page) {
+			t := cast(^Tab)p.user
+			t.loading = p.cef.loading
+			t.progress = p.cef.progress
+			t.can_back = p.cef.can_back
+			t.can_forward = p.cef.can_forward
+			browser_tab_changed(t)
+		}
+		t.page.on_favicon = proc(p: ^Page) {
+			t := cast(^Tab)p.user
+			cef_favicon_fetch(t.id, p.cef.favicon_url)
+		}
+		t.page.on_close = proc(p: ^Page) {
+			t := cast(^Tab)p.user
+			if browser_has_tab(t) {
+				// the page closed itself: close it the normal way
+				browser_close_later(t)
+			} else {
+				// already out of b.tabs (the user closed it, and the
+				// free was deferred until now): free it directly
+				idle(proc(d: rawptr) {
+					t := cast(^Tab)d
+					tab_free(t)
+				}, t)
+			}
+		}
+	}
+	w, h := i32(800), i32(600)
+	if t.page.w > 0 && t.page.h > 0 {
+		w, h = i32(t.page.w * t.page.scale), i32(t.page.h * t.page.scale)
+	}
+	b := cef.new_browser(t.url, w, h)
+	if b == nil do return
+	page_cef_created(t.page, b)
+	browser_attach(t)
+}
+
 /// the web view goes (to be made again, in or out of the sandbox)
 tab_release_web :: proc(t: ^Tab) {
+	if t.engine == .CEF {
+		tab_release_cef(t)
+		return
+	}
 	if t.web == nil do return
 	browser_detach(t)
 	if t.ucm != nil do shields_forget(t.ucm)
@@ -106,10 +187,41 @@ tab_release_web :: proc(t: ^Tab) {
 	clear(&t.allowed_certs)
 }
 
+/// the CEF tab goes: the Page asks the engine to close it. The Page
+/// itself is freed only once the engine has destroyed the tab (its
+/// on_close), so a tab whose close is still in flight keeps its Page
+/// until then — tab_free defers the real free the same way.
+tab_release_cef :: proc(t: ^Tab) {
+	if t.page == nil do return
+	browser_detach(t)
+	page_free(t.page)
+	if t.page.cef_closed {
+		t.page = nil
+	}
+}
+
 /// opens an address; a site Iris does not trust goes to the sandbox, and
 /// a trusted one comes out of it
 tab_load :: proc(t: ^Tab, u: string) {
 	if len(u) == 0 do return
+	if t.engine == .CEF {
+		// A CEF tab is already isolated by its own request context,
+		// so a site's trust never rebuilds it; the sandbox flag is
+		// only the label the chrome shows. The URL is set before
+		// the tab is made, so the engine loads it at creation.
+		t.sandboxed = untrusted(u)
+		set_str(&t.url, u)
+		tab_ensure_cef(t)
+		if t.page != nil && t.page.cef != nil && t.page.cef.created {
+			cef.load(t.page.cef, u)
+		}
+		// not created yet: the initial URL is already loading (the
+		// engine was given it at creation); a second load that
+		// early is dropped — the user cannot type that fast, and
+		// the URL is stored in t.url for the next load
+		browser_tab_changed(t)
+		return
+	}
 	want := untrusted(u)
 	if t.web == nil {
 		t.sandboxed = want
@@ -126,6 +238,16 @@ tab_load :: proc(t: ^Tab, u: string) {
 }
 
 tab_free :: proc(t: ^Tab) {
+	if t.engine == .CEF && t.page != nil && t.page.cef != nil && !t.page.cef_closed {
+		// A live CEF tab: the engine destroys it asynchronously.
+		// Ask for the close now; the engine's on_close frees the
+		// Tab then (see the on_close callback in tab_ensure_cef).
+		// The Tab is already out of b.tabs by now (browser_close
+		// removed it before calling here), so nothing else may
+		// touch it after this returns.
+		tab_release_cef(t)
+		return
+	}
 	tab_release_web(t)
 	delete(t.container)
 	delete(t.url)
@@ -142,24 +264,75 @@ set_str :: proc(s: ^string, v: string) {
 	s^ = strings.clone(v)
 }
 
-tab_back :: proc(t: ^Tab) { if t.web != nil do webkit_web_view_go_back(t.web) }
-tab_forward :: proc(t: ^Tab) { if t.web != nil do webkit_web_view_go_forward(t.web) }
-tab_reload :: proc(t: ^Tab) { if t.web != nil do webkit_web_view_reload(t.web) }
-tab_stop :: proc(t: ^Tab) { if t.web != nil do webkit_web_view_stop_loading(t.web) }
+tab_back :: proc(t: ^Tab) {
+	if t.engine == .CEF {
+		if t.page != nil && t.page.cef != nil do cef.go_back(t.page.cef)
+		return
+	}
+	if t.web != nil do webkit_web_view_go_back(t.web)
+}
+tab_forward :: proc(t: ^Tab) {
+	if t.engine == .CEF {
+		if t.page != nil && t.page.cef != nil do cef.go_forward(t.page.cef)
+		return
+	}
+	if t.web != nil do webkit_web_view_go_forward(t.web)
+}
+tab_reload :: proc(t: ^Tab) {
+	if t.engine == .CEF {
+		if t.page != nil && t.page.cef != nil do cef.reload(t.page.cef)
+		return
+	}
+	if t.web != nil do webkit_web_view_reload(t.web)
+}
+tab_reload_bypass_cache :: proc(t: ^Tab) {
+	if t.engine == .CEF {
+		if t.page != nil && t.page.cef != nil do cef.reload_ignore_cache(t.page.cef)
+		return
+	}
+	if t.web != nil do webkit_web_view_reload_bypass_cache(t.web)
+}
+tab_stop :: proc(t: ^Tab) {
+	if t.engine == .CEF {
+		if t.page != nil && t.page.cef != nil do cef.stop_load(t.page.cef)
+		return
+	}
+	if t.web != nil do webkit_web_view_stop_loading(t.web)
+}
 
 tab_set_zoom :: proc(t: ^Tab, z: f64) {
 	t.zoom = z
+	if t.engine == .CEF {
+		if t.page != nil && t.page.cef != nil do cef.set_zoom_factor(t.page.cef, z)
+		return
+	}
 	if t.web != nil do webkit_web_view_set_zoom_level(t.web, z)
 }
 
 /// runs a script in the page; done gets its result as text
 tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
-	if t.web == nil do return
 	Job :: struct {
 		t:    ^Tab,
 		id:   int,
 		done: proc(t: ^Tab, result: string),
 	}
+	if t.engine == .CEF {
+		if t.page == nil || t.page.cef == nil do return
+		j := new(Job)
+		j^ = {t, t.id, done}
+		if cef.eval_js(t.page.cef, js, proc(result: string, user: rawptr) {
+			j := cast(^Job)user
+			defer free(j)
+			// the tab may have closed while the page answered
+			if !browser_has_tab(j.t) || j.t.id != j.id do return
+			j.done(j.t, result)
+		}, j) < 0 {
+			// the tab is not created yet: the eval never answers
+			free(j)
+		}
+		return
+	}
+	if t.web == nil do return
 	j := new(Job)
 	j^ = {t, t.id, done}
 	webkit_web_view_evaluate_javascript(t.web, cstr(js), -1, nil, nil, nil, rawptr(proc "c" (o: ^GObject, res: ^GAsyncResult, d: rawptr) {

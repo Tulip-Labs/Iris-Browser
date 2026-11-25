@@ -10,6 +10,8 @@ import "base:runtime"
 import "core:fmt"
 import "core:os"
 import "core:strings"
+import "core:time"
+import cef "cef"
 import plat "../plat"
 import wl "../wl"
 
@@ -52,6 +54,12 @@ foreign glib {
 USAGE :: `Iris %s: a browser made of glass.
 
   iris [ADDRESS...]                open Iris (with these pages)
+  iris --engine=cef [ADDRESS...]   open Iris with the CEF page engine
+                                   (WPE is the default; CEF is the
+                                   experiment beside it, slice 2)
+  iris --engine=cef --cef-check    headless: load one page with CEF and
+                                   check its title, one JS eval and one
+                                   frame (for CI)
   iris --shield-rules LEVEL DIR OUT
                                    the content rules a Shields level makes from
                                    the lists in DIR, written to OUT (for checks)
@@ -61,6 +69,24 @@ USAGE :: `Iris %s: a browser made of glass.
 main :: proc() {
 	main_context = context
 	args := os.args[1:]
+	// --engine=cef picks the CEF page engine; WPE is the default.
+	// The flag is scanned from all arguments (it may come after a
+	// URL), and an unknown engine is a usage error.
+	cef_check := false
+	for a in args {
+		if strings.has_prefix(a, "--engine=") {
+			switch a[len("--engine="):] {
+			case "cef":
+				engine_kind = .CEF
+			case "wpe":
+				engine_kind = .WPE
+			case:
+				fmt.eprintf("iris: unknown engine %q (wpe or cef)\n", a[len("--engine="):])
+				os.exit(2)
+			}
+		}
+		if a == "--cef-check" do cef_check = true
+	}
 	if len(args) > 0 {
 		switch args[0] {
 		case "--version", "-v":
@@ -78,6 +104,38 @@ main :: proc() {
 			}
 			os.exit(shield_rules_cli(args[1], args[2], args[3]))
 		}
+	}
+	// CEF's subprocesses re-enter main here: this call must come
+	// before anything that opens a window, and it must run in both
+	// modes — only cef_execute_process can tell a subprocess from
+	// the browser process (a subprocess's argv carries no --engine
+	// flag of its own). A subprocess exits with the code CEF gives.
+	cef_args := cef_browser_args()
+	if code, is_sub := cef.startup(cef_args); is_sub {
+		os.exit(code)
+	}
+	if engine_kind == .CEF {
+		// The cache lives under the browser's cache dir, beside
+		// WPE's. Resources and locales default to next to libcef.so.
+		if !cef.init(cef.Init_Options{cache_dir = join({cache_dir(), "cef"})}) {
+			fmt.eprintln("Iris: CEF failed to start (missing ICU data next to libcef.so?)")
+			os.exit(1)
+		}
+		// The external message pump: CEF's work runs on a timer,
+		// on this thread, like everything else in the browser.
+		every(16, proc(_: rawptr) -> bool {
+			cef.pump()
+			return true
+		}, nil)
+	}
+	if cef_check {
+		if engine_kind != .CEF {
+			fmt.eprintln("iris: --cef-check needs --engine=cef")
+			os.exit(2)
+		}
+		code := cef_check_run()
+		cef.shutdown()
+		os.exit(code)
 	}
 	video_environment()
 	// WebKit names its sandboxed web processes after this (WTF::applicationID),
@@ -129,6 +187,29 @@ main :: proc() {
 	browser_save_session()
 	history_flush()
 	plat.close_window(w)
+	if engine_kind == .CEF {
+		// The process is exiting; the smoke test proves shutdown
+		// with live browsers exits cleanly.
+		cef.shutdown()
+	}
+}
+
+// cef_browser_args is the argv CEF's subprocess check sees: the real
+// argv, plus the headless flags when there is no display (CI, or a
+// machine without a compositor) and the certificate override only
+// when the environment explicitly asks for it (the egress proxy
+// MITMs TLS; a real user never sets this).
+@(private="file") cef_browser_args :: proc() -> []string {
+	if engine_kind != .CEF do return os.args
+	args := make([dynamic]string, 0, len(os.args) + 8)
+	append(&args, ..os.args)
+	if os.get_env("DISPLAY", context.temp_allocator) == "" {
+		append(&args, "--headless=new", "--ozone-platform=headless", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader")
+	}
+	if os.get_env("IRIS_CEF_IGNORE_CERT_ERRORS", context.temp_allocator) == "1" {
+		append(&args, "--ignore-certificate-errors")
+	}
+	return args[:]
 }
 
 G_IO_HUP :: u32(16)

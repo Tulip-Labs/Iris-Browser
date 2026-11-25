@@ -178,7 +178,7 @@ browser_new_tab :: proc(o: New_Tab) -> ^Tab {
 		tab_ensure_web(t, o.related)
 		t.held = true
 	} else if plain {
-		if t.web == nil do tab_load(t, HOME)
+		if !tab_has_engine(t) do tab_load(t, HOME)
 	} else if o.lazy {
 		set_str(&t.url, o.url)
 	} else {
@@ -228,10 +228,10 @@ browser_select :: proc(t: ^Tab) {
 		page_focus(old.page, false)
 	}
 	b.current = t
-	if t.web == nil && len(t.url) > 0 {
+	if !tab_has_engine(t) && len(t.url) > 0 {
 		u := strings.clone(t.url, context.temp_allocator)
 		tab_load(t, u)
-	} else if t.web == nil {
+	} else if !tab_has_engine(t) {
 		tab_load(t, HOME)
 	}
 	if t.page != nil {
@@ -378,6 +378,7 @@ browser_new_window_action :: proc(t: ^Tab, d: ^WebKitPolicyDecision) -> bool {
 }
 
 browser_popup :: proc(t: ^Tab, nav: ^WebKitNavigationAction) -> ^WebKitWebView {
+	if t.engine == .CEF do return nil // pop-ups are blocked until slice 2b
 	if t.web == nil do return nil
 	p := browser_new_tab({container = t.container, after = t, related = t.web})
 	return p.web
@@ -460,8 +461,8 @@ browser_key :: proc(e: plat.Key_Event) {
 		case 'q': browser_quit()
 		case 'l', 'k': chrome_focus_address()
 		case 'r':
-			if b.current != nil && b.current.web != nil {
-				if shift { webkit_web_view_reload_bypass_cache(b.current.web) } else { tab_reload(b.current) }
+			if b.current != nil && tab_has_engine(b.current) {
+				if shift { tab_reload_bypass_cache(b.current) } else { tab_reload(b.current) }
 			}
 		case 'f': chrome_open_find()
 		case 'j': chrome_open_downloads()
