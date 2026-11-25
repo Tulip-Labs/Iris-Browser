@@ -91,6 +91,8 @@ main :: proc() {
 	main_loop = g_main_loop_new(nil, 0)
 	g_main_context_set_poll_func(g_main_context_default(), poll_with_wayland)
 
+	// "forget everything on close": what sites kept last time goes first
+	clear_on_start()
 	containers_ensure()
 	if !engine_start() {
 		fmt.eprintln("Iris could not start its page engine (", IRIS_ENGINE, ")")

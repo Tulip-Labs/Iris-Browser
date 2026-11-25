@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <a href="#what-is-new-in-220">New</a> ·
+  <a href="#what-is-new-in-230">New</a> ·
   <a href="#what-it-does">Features</a> ·
   <a href="#install">Install</a> ·
   <a href="#shortcuts">Shortcuts</a> ·
@@ -35,6 +35,18 @@
 </p>
 
 ---
+
+## What is new in 2.3.0
+
+- **Pinned tabs, sound and muting.** Pin a tab from its menu: it stays at the left as its icon. A tab playing sound shows a speaker; click it, or press Ctrl+M, to mute. Ctrl+Shift+T brings closed tabs back where they were, pinned or not; Ctrl+Shift+K duplicates a tab.
+- **Reader** (Ctrl+Alt+R, or the button that shows in the address only on articles): the article alone, in a calm page of glass, light or dark, that runs no script.
+- **Split View** (Ctrl+Shift+S): two tabs side by side, a divider to drag between them.
+- **Compact mode** (Ctrl+Shift+C): the tabs and bar hide; they slide down in glass when the pointer reaches the top.
+- **Peek** (Alt+click a link, or Peek Link in its menu): the link in a floating card of glass over the page. Esc or a click beside it closes it, and its view and process go with it; Enter, Ctrl+Enter or its expand button make it a tab.
+- **Workspaces** (Alt+1…9): named sets of tabs, from the Containers menu or the command palette; each tab and workspace comes back next time.
+- **Privacy Report** (in Shields): the trackers stopped on the page, and today. Only tracker names and numbers are kept, never the sites you visit.
+- **Command palette** (Ctrl+K): your tabs in every workspace, Iris's commands and your history, by a fuzzy match.
+- **HTTPS first**, on by default: http addresses are tried over https, with one click back to http (in the sandbox) when a site has none. **Forget everything on close**, if you want it: history, cookies, site data and tabs. **Copy Clean Link**: an address without its tracking.
 
 ## What is new in 2.2.7
 
@@ -190,8 +202,16 @@ On niri, the blur behind the window comes on by itself on 26.04 and newer. No wi
 | Ctrl+Shift+N | New private tab |
 | Ctrl+N | New window |
 | Ctrl+W | Close tab |
-| Ctrl+L, Ctrl+K, F6 | Address bar |
-| Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+1…9 | Change tab |
+| Ctrl+Shift+K | Duplicate tab |
+| Ctrl+M | Mute or unmute the tab |
+| Ctrl+L, F6 | Address bar |
+| Ctrl+K | Command palette: tabs, commands, history |
+| Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+1…8, Ctrl+9 | Change tab (Ctrl+9: the last) |
+| Alt+1…9 | Change workspace |
+| Ctrl+Alt+R | Reader |
+| Ctrl+Shift+S | Split View |
+| Ctrl+Shift+C | Compact mode |
+| Alt+click a link | Peek; Enter or Ctrl+Enter makes it a tab, Esc closes it |
 | Ctrl+R, F5 / Ctrl+Shift+R | Reload / reload without the cache |
 | Alt+← / Alt+→ | Back / forward |
 | Alt+Home | Google AI Mode |
@@ -246,6 +266,12 @@ linux/                      Iris for Linux (Odin; no GTK, no X11)
                             line icons (SVG path data)
     line.odin               an editable line: cursor, selection, words, clipboard, undo
     browser.odin            the window's tabs, layout, input routing, pop-up rules
+    features.odin, spaces.odin, layout.odin  pinned tabs, sound, closed tabs, https first,
+                            clear on exit; workspaces; split view and compact mode
+    reader.odin, reader.js, peek.odin, privacy.odin, palette.odin  the reader, the peek,
+                            the privacy report, the command palette (engine-free)
+    page_events.odin, wpe_extra.odin, cef_extra.odin  what the engines tell those
+                            features, and their calls into each engine
     tab.odin                a WPE web view and its signals
     engine.odin             the web context, containers, downloads, the sandbox, light video
     shields.odin, rules.odin  the levels' lists, turned into WPE content rules and compiled

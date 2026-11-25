@@ -389,6 +389,11 @@ history_suggest :: proc(q0: string, n: int, allocator := context.temp_allocator)
 	testing.expect(t, settings_migrate(&old))
 	testing.expect_value(t, old.shieldLevel, Level.ultra)
 	testing.expect_value(t, old.settingsRev, SETTINGS_REV)
+	// 2.3: https first, on for everyone once (turning it off afterwards stays)
+	testing.expect(t, old.httpsOnly)
+	old.httpsOnly = false
+	testing.expect(t, !settings_migrate(&old))
+	testing.expect(t, !old.httpsOnly)
 	// a level chosen afterwards stays
 	old.shieldLevel = .moderate
 	testing.expect(t, !settings_migrate(&old))

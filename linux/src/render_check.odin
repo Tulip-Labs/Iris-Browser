@@ -175,6 +175,37 @@ render_check :: proc(out: string) -> int {
 	}
 	theme.dark = false
 	palette_apply()
+
+	// 2.3: the command palette (Ctrl+K) over a page, a pinned and a playing
+	// tab in the strip, then the privacy report and compact mode's bars
+	// (no engine runs here: the tab is put on screen by hand, never loaded)
+	b.current = cur
+	chrome_leave_start()
+	tab_set_pinned(b.tabs[0], true)
+	cur.audio = true
+	palette_open()
+	expect(ui.palette_open && ui.focus == .Palette, "Ctrl+K's palette did not open with the keys", &problems)
+	type("split")
+	expect(len(ui.palette_items) > 0 && ui.palette_items[0].act.op == .Command && Command(ui.palette_items[0].act.n) == .Split, "the palette's first answer to \"split\" is not Split View", &problems)
+	redraw(W, H, lw, lh)
+	if !save_frame(fbo, W, H, strings.concatenate({strings.trim_suffix(out, ".ppm"), "-palette.ppm"}, context.temp_allocator)) do return 1
+	chrome_key({sym = plat.KEY_Escape, pressed = true})
+	expect(!ui.palette_open, "Escape did not close the palette", &problems)
+	cur.trackers = make([dynamic]string)
+	append(&cur.trackers, "securepubads.g.doubleclick.net", "connect.facebook.net")
+	privacy_open(button_rect_for_check(.Shield))
+	redraw(W, H, lw, lh)
+	expect(ui.panel == .Report, "the privacy report did not open", &problems)
+	if !save_frame(fbo, W, H, strings.concatenate({strings.trim_suffix(out, ".ppm"), "-report.ppm"}, context.temp_allocator)) do return 1
+	chrome_close_all()
+	settings().compact = true
+	ui.compact_hold = true
+	b.card = chrome_card(lw, lh)
+	redraw(W, H, lw, lh)
+	expect(button_rect_for_check(.Address).z > 0, "compact mode's bars did not show at the top edge", &problems)
+	if !save_frame(fbo, W, H, strings.concatenate({strings.trim_suffix(out, ".ppm"), "-compact.ppm"}, context.temp_allocator)) do return 1
+	settings().compact = false
+	ui.compact_hold = false
 	if problems > 0 do return 1
 	fmt.println("render check: the chrome answers clicks and keys")
 	return 0

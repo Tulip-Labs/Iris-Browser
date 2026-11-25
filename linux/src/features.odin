@@ -218,7 +218,8 @@ clear_on_exit :: proc() {
 /// at start, before any network session: what sites kept last time goes
 clear_on_start :: proc() {
 	if !settings().clearOnExit do return
-	for base in ([?]string{data_dir(), cache_dir()}) do os.remove_all(join({base, "web"}, context.temp_allocator))
+	// WPE's sessions (web/) and CEF's profiles (cef/), on disk and in the cache
+	for base in ([?]string{data_dir(), cache_dir()}) do for sub in ([?]string{"web", "cef"}) do os.remove_all(join({base, sub}, context.temp_allocator))
 	history_clear()
 	privacy_forget()
 }
