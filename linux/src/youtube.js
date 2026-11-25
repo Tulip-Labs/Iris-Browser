@@ -152,14 +152,16 @@
   const isAd = (p) => {
     if (!marked(p)) {
       markedSince = 0;
-      p.classList.remove('iris-ad');
+      // only when set: remove() rewrites the attribute even when it is absent,
+      // and the observer that watches it would call tick again, forever
+      if (p.classList.contains('iris-ad')) p.classList.remove('iris-ad');
       return false;
     }
     const now = Date.now();
     if (!markedSince) markedSince = now;
     if (p.querySelector(adSel)) adSeen = now;
     const ad = now - Math.max(adSeen, markedSince) < STALE;
-    p.classList.toggle('iris-ad', ad);
+    if (p.classList.contains('iris-ad') !== ad) p.classList.toggle('iris-ad', ad);
     return ad;
   };
   const tick = () => {

@@ -3,7 +3,7 @@
 # linux.yml under a headless Wayland compositor). Three tabs on three local
 # sites, each page holding 150 MB; then two close (IRIS_TEST_CLOSE_TABS, the
 # hook in wpe_engine.odin, closes every tab but the first). Passes when
-# Iris's process tree then has fewer WebKitWebProcess processes and at most
+# Iris's process tree then has fewer web processes (WPEWebProcess) and at most
 # 75% of the memory it had (WebKit would otherwise keep the closed pages'
 # processes five minutes in its process cache).
 #   python3 linux/tools/tab-close-check.py linux/iris OUT_DIR
@@ -71,7 +71,7 @@ def tree(root):
     return out
 
 def web(t):
-    return {p: v for p, v in t.items() if v[0].startswith("WebKitWebProc")}
+    return {p: v for p, v in t.items() if v[0].startswith(("WPEWebProcess", "WebKitWebProc"))}  # WPE names its own WPEWebProcess
 
 def show(t, label):
     print("%s: %d processes, %d MB" % (label, len(t), sum(v[1] for v in t.values()) // 1024))

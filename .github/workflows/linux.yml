@@ -118,6 +118,8 @@ jobs:
       - name: A closed tab gives its web process and memory back
         timeout-minutes: 10
         run: |
+          # the fractional-scale step's Iris and sway would share the CPU with the measure
+          pkill -x iris || true; pkill -x sway || true; sleep 2
           export XDG_RUNTIME_DIR=$(mktemp -d) WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 WLR_HEADLESS_OUTPUTS=1
           chmod 700 $XDG_RUNTIME_DIR
           printf 'output HEADLESS-1 resolution 1280x800\ndefault_border none\n' > /tmp/sway-tabs.conf
