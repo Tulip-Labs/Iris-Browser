@@ -1,3 +1,29 @@
+Iris 2.3.0: a start page of glass, Shields at their strictest, a Chromium build, and the everyday tools.
+
+**Linux**
+- **New tabs never open blank.** Links that open a new window (target=_blank, `window.open`, sign-in pop-ups) now always load their page; middle-click and Ctrl+click open a link in a background tab, Shift brings it to the front.
+- **Iris's own start page.** Every new tab is the Iris glass ring and a search field in the middle, drawn by Iris itself: it opens at once and costs no web process. No purple anywhere; light or dark follows your desktop, live.
+- **The full address, centred**, the site in full ink and the rest dimmer. Light animations for tabs, menus and the start page, only while something moves.
+- **Shields at Ultra aggressive by default**: the complete uBlock lists (Iris read only part of them before), cookie banners and annoyances hidden, tracking parameters stripped from links, about 185,000 built-in ad, tracker, fingerprinting and mining domains. Links you click always open, and cookie-consent tools are let through so pages never stay locked. A broken site: right-click, "Reload without Shields".
+- **Faster Google and YouTube**: their names are looked up early and searches go straight to Google. YouTube ads are hidden and skipped from their first frame, with no network blocking.
+- **Closing a tab gives its memory back**: its web process ends (WebKit used to keep it five minutes).
+- **This connection isn't private**: a failing certificate now stops at a glass warning; Iris never opens such a page on its own.
+- **Pinned tabs, mute, Reader, Split View, Compact mode, Peek (Alt+click), Workspaces, a Privacy Report, the Ctrl+K palette, HTTPS first, Forget everything on close, Copy Clean Link.**
+- **The address bar** understands file paths, `.local` names, IPv6 and any real domain ending.
+- **Your tabs survive a crash**: the session is saved as you browse.
+- **Iris (Chromium)**, new and experimental: the same Iris on Chromium (CEF 156), as a second Flatpak beside the WPE one. It has no H.264/AAC and no input methods yet, and Chromium's own sandbox is off inside the Flatpak.
+- **A new icon**, the ring from Iris's website.
+
+**Android**
+- **The new icon**, themed icons included on Android 13 and newer.
+- **YouTube**: ads hidden and skipped faster, and a watch page can no longer freeze.
+
+**Install**
+- Linux: `flatpak install --user Iris-x86_64.flatpak`. For the Chromium build: `flatpak install --user Iris-Cef-x86_64.flatpak` (a separate app, Iris (Chromium)).
+- Android: `Iris-android.apk` (Android 10 and newer). It installs over 2.2.7.
+
+---
+
 Iris 2.2.7: no page can trap you in its dialogs, and the sandbox catches every form of an address.
 
 **Linux**

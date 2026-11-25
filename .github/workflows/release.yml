@@ -59,6 +59,10 @@ jobs:
         run: |
           ls -l art
           files="art/Iris-x86_64.flatpak"
+          # the Chromium (CEF) build, a second app beside it
+          if [ -f art/Iris-Cef-x86_64.flatpak ]; then
+            files="$files art/Iris-Cef-x86_64.flatpak"
+          fi
           if [ -f art/Iris-android.apk ]; then
             files="$files art/Iris-android.apk"
           fi
