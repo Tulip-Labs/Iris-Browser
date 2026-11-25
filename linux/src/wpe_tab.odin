@@ -14,6 +14,18 @@ Tab_View :: struct {
 	sandbox_session: ^WebKitNetworkSession,
 	/// a web context of the tab's own (a peek's: tab_isolate)
 	own_context:     ^WebKitWebContext,
+	/// views that may share a web process have the same number: a pop-up
+	/// and its opener (WebKit puts a related view in its opener's process)
+	process_group:   int,
+}
+
+@(private="file") next_process_group := 1
+
+/// another open tab's view may be in t's web process
+@(private="file") tab_shares_process :: proc(t: ^Tab) -> bool {
+	for x in b.tabs do if x != t && x.web != nil && x.process_group == t.process_group do return true
+	if p := b.peek; p != nil && p != t && p.web != nil && p.process_group == t.process_group do return true
+	return false
 }
 
 tab_has_view :: proc(t: ^Tab) -> bool { return t.web != nil }
@@ -51,6 +63,12 @@ tab_ensure_web :: proc(t: ^Tab, related: rawptr = nil) -> ^WebKitWebView {
 	// its video and keeping its memory.)
 	if g_object_is_floating(w) != 0 do g_object_ref_sink(w)
 	t.web = w
+	t.process_group = next_process_group
+	next_process_group += 1
+	if related != nil {
+		for x in b.tabs do if x.web == cast(^WebKitWebView)related do t.process_group = x.process_group
+		if p := b.peek; p != nil && p.web == cast(^WebKitWebView)related do t.process_group = p.process_group
+	}
 	shields_apply(t.ucm, "")
 	tab_connect(t, w)
 	tab_connect_extra(t, w)
@@ -75,7 +93,13 @@ tab_release_web :: proc(t: ^Tab) {
 	t.page = nil
 	// a context of its own (a peek's): its web process ends with the view
 	tab_end_isolated(t)
+	if len(find_hooked) > 0 do delete_key(&find_hooked, webkit_web_view_get_find_controller(t.web))
 	webkit_web_view_try_close(t.web)
+	// WebKit keeps a closed page's web process for five minutes (its
+	// process cache, for a page opened again), memory and all: a process
+	// only this view uses ends now. One a pop-up or its opener still uses
+	// stays, and ends with the last of them.
+	if t.own_context == nil && !tab_shares_process(t) do webkit_web_view_terminate_web_process(t.web)
 	unref(t.web)
 	unref(t.ucm)
 	t.web, t.ucm = nil, nil

@@ -91,7 +91,7 @@ shield_rules_cli :: proc(level_name, dir, out: string) -> int {
 		lists += 1
 	}
 	// as Iris itself does: its own domains until the lists come, and at ultra
-	if lists == 0 || l == .ultra do converter_add_domains(&c, shield_domains())
+	c.builtin = lists == 0 || l == .ultra
 	blocks, hides, exceptions := len(c.blocks), len(c.hides), len(c.exceptions)
 	parts := converter_finish(&c, 120_000)
 	for p, i in parts {

@@ -1,6 +1,7 @@
 // Shields in the CEF engine (IRIS_ENGINE=cef, see engine_api.odin): the
 // lists shields.odin fetches, turned by rules.odin's converter into the
-// same rules as for WebKit, matched per request (shield_match.odin) in
+// same rules as for WebKit (whole hosts as host sets), kept in a file that
+// later starts read, matched per request (shield_match.odin) in
 // OnBeforeResourceLoad on CEF's IO thread; hiding goes into each page as a
 // style sheet (cef_view.odin).
 package iris
@@ -22,14 +23,11 @@ cef_shields_start :: proc() {
 	shields_start()
 }
 
-/// a matcher built (shields.odin's thread): it replaces the one in use,
-/// which goes a minute later (a request on the IO thread may hold it)
-cef_shields_install :: proc(m: ^Matcher, l: Level) {
+/// a matcher made (shields.odin): it replaces the one in use, which goes a
+/// minute later (a request on the IO thread may hold it). The level is
+/// shields.odin's to check: a level asked for meanwhile is made next.
+cef_shields_install :: proc(m: ^Matcher) {
 	if m == nil do return
-	if l != shield_level() {
-		matcher_free(m)
-		return
-	}
 	old := intrinsics.atomic_exchange(&the_matcher, m)
 	if old != nil do after(60_000, proc(d: rawptr) { matcher_free(cast(^Matcher)d) }, old)
 	if shields.installed != nil do shields.installed()
@@ -37,7 +35,11 @@ cef_shields_install :: proc(m: ^Matcher, l: Level) {
 
 engine_shields_level_changed :: proc() { shields_level_changed() }
 
-engine_shields_ready :: proc() -> bool { return cef_matcher() != nil }
+/// the lists' rules are in place (until then Iris's own domains block)
+engine_shields_ready :: proc() -> bool {
+	_, ok := shields.have.?
+	return ok
+}
 
 /// new rules or the switch changed: every open page takes them
 browser_reapply_shields :: proc() {

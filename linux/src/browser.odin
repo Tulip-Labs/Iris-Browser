@@ -404,13 +404,16 @@ Window_Choice :: enum u8 { Block, Own_Tab, Related }
 new_window_choice :: proc(u, page_url: string, link, gesture, sandboxed, shield: bool) -> Window_Choice {
 	host, _ := host_of(u, context.temp_allocator)
 	page_host, _ := host_of(page_url, context.temp_allocator)
-	if shield && host_blocked(host) do return .Block
 	// a page opens web addresses in new tabs, never your files or other
 	// programs (WebKit would refuse them in the page itself)
 	if len(u) > 0 && !page_may_open(u, page_url) do return .Block
 	// a link you click is a plain new tab, loaded by Iris (its address is
-	// known, and nothing then depends on WebKit filling a window later)
+	// known, and nothing then depends on WebKit filling a window later),
+	// even through a host Iris's list blocks: a webmail's links go through
+	// email click-trackers, and a password reset must open
 	if link && len(u) > 0 && u != "about:blank" do return .Own_Tab
+	// a pop-up a script opens to an ad or tracker host goes nowhere
+	if shield && host_blocked(host) do return .Block
 	if sandboxed do return .Block
 	if gesture && (site_of(host) == site_of(page_host) || is_sign_in(host) || len(u) == 0 || u == "about:blank") do return .Related
 	if shield do return .Block

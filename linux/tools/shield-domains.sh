@@ -13,6 +13,9 @@
 # Then: lower case, only host characters, never Google's or YouTube's own
 # hosts (the shield leaves them to youtube.js and to the lists' own rules),
 # never sign-in or messaging hosts, and no subdomain of a domain already in.
+# Iris reads the result in place as a host set (rules.odin's set_has: a
+# binary search over its lines), so it stays one lower-case name a line in
+# byte order (LC_ALL=C sort), with no blank lines.
 #   sh tools/shield-domains.sh            writes src/shield-domains.txt.gz
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)

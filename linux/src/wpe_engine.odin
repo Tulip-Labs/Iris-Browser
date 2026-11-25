@@ -204,7 +204,23 @@ engine_start :: proc() -> bool {
 	session_made = downloads_listen
 	shields.installed = browser_reapply_shields
 	shields_start()
+	if p := env("IRIS_TEST_CLOSE_TABS"); len(p) > 0 do close_tabs_on_request(strings.clone(p))
 	return true
+}
+
+/// for the tests (linux.yml): when the file IRIS_TEST_CLOSE_TABS names
+/// appears, every tab but the first closes, as Ctrl+W would close them,
+/// and the file goes (so the test knows)
+@(private="file") close_tabs_on_request :: proc(path: string) {
+	after(250, proc(d: rawptr) {
+		path := cast(^string)d
+		if os.exists(path^) {
+			for len(b.tabs) > 1 do browser_close(b.tabs[len(b.tabs) - 1])
+			os.remove(path^)
+		}
+		close_tabs_on_request(path^)
+		free(path)
+	}, new_clone(path))
 }
 
 engine_stop :: proc() {}

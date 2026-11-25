@@ -107,6 +107,28 @@ jobs:
           assert len(set(d[1000:200000])) > 64, "the screen is empty"
           print("drawn")
           PY
+      # Closing a tab really frees it: its web process ends and its memory
+      # comes back (WebKit would keep it five minutes in its process cache)
+      - name: A closed tab gives its web process and memory back
+        timeout-minutes: 10
+        run: |
+          export XDG_RUNTIME_DIR=$(mktemp -d) WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 WLR_HEADLESS_OUTPUTS=1
+          chmod 700 $XDG_RUNTIME_DIR
+          printf 'output HEADLESS-1 resolution 1280x800\ndefault_border none\n' > /tmp/sway-tabs.conf
+          sway -c /tmp/sway-tabs.conf > /tmp/sway-tabs.log 2>&1 &
+          for i in $(seq 1 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; sleep 0.2; done
+          export WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
+          export LIBGL_ALWAYS_SOFTWARE=1 WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+          python3 linux/tools/tab-close-check.py linux/iris /tmp/iris-tabs || { cat /tmp/iris-tabs/iris-tabs-*.log; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-tabs
+          path: |
+            /tmp/iris-tabs/*.log
+            /tmp/iris-tabs/*.png
+            /tmp/sway-tabs.log
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: always()
         with:
