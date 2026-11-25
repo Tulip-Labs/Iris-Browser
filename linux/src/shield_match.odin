@@ -8,9 +8,12 @@
 // by four bytes of literal text in their url-filter (the rest).
 //
 // A Matcher is built on a thread and only read afterwards, so any thread
-// (CEF's IO thread) may match against it.
+// (CEF's IO thread) may match against it. Matching uses the calling
+// thread's temporary allocator inside a guard: what the caller has there
+// stays.
 package iris
 
+import "base:runtime"
 import "core:encoding/json"
 import "core:mem/virtual"
 import "core:strings"
@@ -64,6 +67,7 @@ matcher_from_rules :: proc(parts: []string) -> ^Matcher {
 	read: [dynamic]^Net_Rule
 	defer delete(read)
 	for part in parts {
+		runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 		v, err := json.parse_string(part, parse_integers = false, allocator = context.temp_allocator)
 		if err != nil do continue
 		arr, ok := v.(json.Array)
@@ -72,10 +76,10 @@ matcher_from_rules :: proc(parts: []string) -> ^Matcher {
 			if r, rok := read_rule(item, index); rok do append(&read, r)
 			index += 1
 		}
-		free_all(context.temp_allocator)
 	}
 	// each regex rule is filed under the four bytes of its literal text
 	// that the fewest rules share, so a URL tries few regexes
+	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	seen := make(map[u32]int, 1 << 16, context.temp_allocator)
 	for r in read do for run in r.runs do for k in 0 ..= len(run) - 4 do seen[gram(transmute([]u8)run[k:k + 4])] += 1
 	for r in read {
@@ -88,7 +92,6 @@ matcher_from_rules :: proc(parts: []string) -> ^Matcher {
 		add_rule(m, r)
 		m.rules += 1
 	}
-	free_all(context.temp_allocator)
 	if m.rules == 0 {
 		matcher_free(m)
 		return nil
@@ -334,7 +337,7 @@ matcher_free :: proc(m: ^Matcher) {
 /// for none.
 matcher_page_ignore :: proc(m: ^Matcher, page_url, page_host: string) -> i32 {
 	if m == nil do return -1
-	defer free_all(context.temp_allocator)
+	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	h := Hits{-1, -1}
 	url := strings.to_lower(page_url, context.temp_allocator)
 	check :: proc(h: ^Hits, rs: [dynamic]^Net_Rule, url, page_host: string) {
@@ -359,7 +362,7 @@ matcher_page_ignore :: proc(m: ^Matcher, page_url, page_host: string) -> i32 {
 /// child frame
 matcher_blocks :: proc(m: ^Matcher, url, host, page_host: string, page_ignore: i32, t: Req_Type, child := false) -> bool {
 	if m == nil || len(host) == 0 do return false
-	defer free_all(context.temp_allocator)
+	runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
 	h := hits(m, url, host, page_host, t, child)
 	return h.block >= 0 && h.block > max(h.ignore, page_ignore)
 }
@@ -367,7 +370,11 @@ matcher_blocks :: proc(m: ^Matcher, url, host, page_host: string, page_ignore: i
 /// the style that hides what the rules hide on this page ("" for nothing)
 matcher_css :: proc(m: ^Matcher, page_url, page_host: string, allocator := context.allocator) -> string {
 	if m == nil || len(page_host) == 0 do return ""
-	h := hits(m, page_url, page_host, page_host, .document, false)
+	ignore: i32
+	{
+		runtime.DEFAULT_TEMP_ALLOCATOR_TEMP_GUARD()
+		ignore = hits(m, page_url, page_host, page_host, .document, false).ignore
+	}
 	b := strings.builder_make(allocator)
 	add :: proc(b: ^strings.Builder, r: ^Net_Rule, page_host: string, after: i32) {
 		if r.action != .hide || r.index <= after do return
@@ -382,14 +389,13 @@ matcher_css :: proc(m: ^Matcher, page_url, page_host: string, allocator := conte
 		strings.write_string(b, r.selector)
 		strings.write_string(b, "{display:none!important}\n")
 	}
-	for r in m.hides do add(&b, r, page_host, h.ignore)
+	for r in m.hides do add(&b, r, page_host, ignore)
 	for x := page_host; len(x) > 0; {
-		if rs, ok := m.by_page[x]; ok do for r in rs do add(&b, r, page_host, h.ignore)
+		if rs, ok := m.by_page[x]; ok do for r in rs do add(&b, r, page_host, ignore)
 		dot := strings.index_byte(x, '.')
 		if dot < 0 do break
 		x = x[dot + 1:]
 	}
-	free_all(context.temp_allocator)
 	return strings.to_string(b)
 }
 
@@ -407,6 +413,13 @@ matcher_css :: proc(m: ^Matcher, page_url, page_host: string, allocator := conte
 	testing.expect(t, m != nil)
 	defer matcher_free(m)
 	no := i32(-1)
+	// what the caller keeps in its temporary allocator stays (the main
+	// thread's turn of the loop is not over)
+	keep := strings.clone("keep", context.temp_allocator)
+	_ = matcher_blocks(m, "https://x.ads.example.com/a.js", "x.ads.example.com", "site.example", no, .script)
+	_ = matcher_page_ignore(m, "https://site.example/", "site.example")
+	_ = strings.repeat("x", 1 << 16, context.temp_allocator)
+	testing.expect_value(t, keep, "keep")
 	testing.expect(t, matcher_blocks(m, "https://x.ads.example.com/a.js", "x.ads.example.com", "site.example", no, .script))
 	testing.expect(t, matcher_blocks(m, "https://builtin-ads.example/p", "builtin-ads.example", "site.example", no, .image))
 	testing.expect(t, matcher_blocks(m, "https://cdn.site.example/banner/1.png", "cdn.site.example", "site.example", no, .image))

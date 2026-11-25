@@ -169,7 +169,9 @@ cef_switches :: proc() -> []string {
 		"--site-per-process",
 		"--ozone-platform=headless",
 		"--disable-features=Translate,MediaRouter,OptimizationHints,InterestFeedContentSuggestions",
-		"--enable-features=VaapiVideoDecodeLinuxGL,VaapiVideoDecoder,ParallelDownloading",
+		// cameras through the desktop's portal and PipeWire (the Flatpak gives
+		// the GPU only, not every device)
+		"--enable-features=VaapiVideoDecodeLinuxGL,VaapiVideoDecoder,ParallelDownloading,WebRtcPipeWireCamera",
 		"--disable-background-networking",
 		"--disable-component-update",
 		"--disable-domain-reliability",

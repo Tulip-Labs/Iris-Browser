@@ -48,6 +48,10 @@ ENGINE_CEF :: IRIS_ENGINE == "cef"
 
 #assert(IRIS_ENGINE == "wpe" || IRIS_ENGINE == "cef", "IRIS_ENGINE is wpe or cef")
 
+// the CEF build is an app of its own (io.github.tulip_labs.Iris.Cef), so
+// both can be installed and tried side by side
+when ENGINE_CEF { APP_ID_ENGINE :: ".Cef" } else { APP_ID_ENGINE :: "" }
+
 /// the editing commands a context menu sends (tab_edit)
 EDIT_CUT :: "Cut"
 EDIT_COPY :: "Copy"
