@@ -95,7 +95,6 @@ tab_release_web :: proc(t: ^Tab) {
 	t.page = nil
 	// a context of its own (a peek's): its web process ends with the view
 	tab_end_isolated(t)
-	if len(find_hooked) > 0 do delete_key(&find_hooked, webkit_web_view_get_find_controller(t.web))
 	webkit_web_view_try_close(t.web)
 	// WebKit keeps a closed page's web process for five minutes (its
 	// process cache, for a page opened again), memory and all: a process
