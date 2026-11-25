@@ -20,8 +20,6 @@ Browser :: struct {
 	win:           plat.Window,
 	tabs:          [dynamic]^Tab,
 	current:       ^Tab,
-	/// a tab already on Google AI Mode, for the next new tab
-	spare:         ^Tab,
 	closed:        [dynamic]Saved_Tab,
 	fullscreen:    bool,
 	page_fullscreen: bool,
@@ -55,6 +53,7 @@ b: Browser
 browser_start :: proc() -> bool {
 	w := &b.win
 	if !plat.open(w, {app_id = APP_ID, title = "Iris", width = 1280, height = 820, min_width = 480, min_height = 360}) do return false
+	theme_init()
 	renderer_init(w.egl_display)
 	text_init()
 	clipboard_init(w)
@@ -92,7 +91,7 @@ browser_draw :: proc(w: ^plat.Window) {
 		page_latch(p)
 		c := b.card
 		r: f32 = b.page_fullscreen ? 0 : 14
-		draw_fill(c.x, c.y + 4, c.z, c.w, r, {0.14, 0.11, 0.25, 0.16}, soft = 12)
+		draw_fill(c.x, c.y + 6, c.z, c.w, r, {0, 0, 0, 0.12}, soft = 16)
 		draw_fill(c.x, c.y, c.z, c.w, r, {1, 1, 1, 1})
 		draw_texture(p.tex, c.x, c.y, c.z, c.w, r)
 	}
@@ -100,18 +99,20 @@ browser_draw :: proc(w: ^plat.Window) {
 	chrome_draw(f32(w.width), f32(w.height))
 }
 
-/// Iris's glass for each kind the chrome asks for
+/// Iris's glass for each kind the chrome asks for: clear and colourless,
+/// light or dark
 glass_style :: proc(g: Glass_Rect) -> Glass {
+	dk := theme.dark
 	switch g.kind {
 	case 1: // panels, menus, notes: frosted, for reading
-		return {radius = g.r, tint = {0.99, 0.99, 1, 0.8}, bend = 3.5, rim = 10, lens = 0.01, frost = 1, shadow = 1.2, rim_light = 1, dispersion = true}
+		return {radius = g.r, tint = dk ? {0.11, 0.12, 0.14, 0.78} : {0.99, 0.99, 1, 0.8}, bend = 3.5, rim = 10, lens = 0.01, frost = 1, shadow = 1.2, rim_light = dk ? 0.5 : 1, dispersion = true}
 	case 2: // the selected tab's pill
-		return {radius = g.r, tint = {1, 1, 1, 0.42}, bend = 6, rim = 12, lens = 0.02, shadow = 0.5, rim_light = 1}
+		return {radius = g.r, tint = dk ? {1, 1, 1, 0.12} : {1, 1, 1, 0.42}, bend = 6, rim = 12, lens = 0.02, shadow = 0.5, rim_light = dk ? 0.5 : 1}
 	case 3: // a hovered button
-		return {radius = g.r, tint = {1, 1, 1, 0.3}, bend = 4, rim = 9, lens = 0.02, rim_light = 0.8}
+		return {radius = g.r, tint = dk ? {1, 1, 1, 0.10} : {1, 1, 1, 0.3}, bend = 4, rim = 9, lens = 0.02, rim_light = dk ? 0.4 : 0.8}
 	}
 	// bars: clear glass that bends the page
-	return {radius = g.r, tint = {1, 1, 1, 0.22}, bend = 8, rim = 16, lens = 0.03, shadow = 0.8, rim_light = 1, dispersion = true}
+	return {radius = g.r, tint = dk ? {0.08, 0.09, 0.10, 0.30} : {1, 1, 1, 0.22}, bend = 8, rim = 16, lens = 0.03, shadow = 0.8, rim_light = dk ? 0.5 : 1, dispersion = true}
 }
 
 browser_layout :: proc() {
@@ -158,16 +159,11 @@ New_Tab :: struct {
 	lazy:      bool,
 }
 
-/// a new tab; a plain one is Google AI Mode (the spare one, already loaded)
+/// a new tab; a plain one is Iris's start page, drawn by Iris (no web
+/// view at all until you go somewhere: it opens at once and costs nothing)
 browser_new_tab :: proc(o: New_Tab) -> ^Tab {
 	plain := len(o.url) == 0 && o.related == nil
-	t: ^Tab
-	if plain && o.container == "" && b.spare != nil {
-		t = b.spare
-		b.spare = nil
-	} else {
-		t = tab_new(o.container)
-	}
+	t := tab_new(o.container)
 	at := len(b.tabs)
 	if o.after != nil {
 		for x, i in b.tabs do if x == o.after do at = i + 1
@@ -177,7 +173,7 @@ browser_new_tab :: proc(o: New_Tab) -> ^Tab {
 		tab_ensure_web(t, o.related)
 		t.held = true
 	} else if plain {
-		if !tab_has_view(t) do tab_load(t, HOME)
+		// the start page: nothing to load
 	} else if o.lazy {
 		set_str(&t.url, o.url)
 	} else {
@@ -185,17 +181,26 @@ browser_new_tab :: proc(o: New_Tab) -> ^Tab {
 	}
 	if o.select do browser_select(t)
 	chrome_push()
-	after(800, proc(_: rawptr) { browser_prepare_spare() }, nil)
 	return t
 }
 
-/// the next new tab is ready before it is asked for
-browser_prepare_spare :: proc() {
-	if b.spare != nil do return
-	t := tab_new("")
-	tab_load(t, HOME)
-	if t.page != nil do page_set_visible(t.page, false)
-	b.spare = t
+/// a tab showing Iris's start page (no page in it)
+tab_is_start :: proc(t: ^Tab) -> bool {
+	return t != nil && !tab_has_view(t) && len(t.url) == 0
+}
+
+/// the tab back to the start page (Alt+Home)
+browser_go_start :: proc(t: ^Tab) {
+	if t == nil do return
+	tab_release_web(t)
+	set_str(&t.url, "")
+	set_str(&t.title, "")
+	delete(t.favicon_px)
+	t.favicon_px = nil
+	t.loading, t.can_back, t.can_forward, t.progress = false, false, false, 0
+	if t == b.current do chrome_start_shown()
+	browser_layout()
+	chrome_push()
 }
 
 browser_attach :: proc(t: ^Tab) {
@@ -210,7 +215,7 @@ browser_detach :: proc(t: ^Tab) {
 
 browser_has_tab :: proc(t: ^Tab) -> bool {
 	for x in b.tabs do if x == t do return true
-	return t == b.spare
+	return false
 }
 
 browser_select :: proc(t: ^Tab) {
@@ -222,17 +227,17 @@ browser_select :: proc(t: ^Tab) {
 		page_focus(old.page, false)
 	}
 	b.current = t
+	if !tab_is_start(t) do chrome_leave_start()
 	if !tab_has_view(t) && len(t.url) > 0 {
 		u := strings.clone(t.url, context.temp_allocator)
 		tab_load(t, u)
-	} else if !tab_has_view(t) {
-		tab_load(t, HOME)
 	}
 	if t.page != nil {
 		page_set_visible(t.page, true)
 		if !b.chrome_focus do page_focus(t.page, true)
 	}
 	b.hover = .None
+	if tab_is_start(t) do chrome_start_shown()
 	browser_layout()
 	chrome_push()
 }
@@ -250,6 +255,7 @@ browser_close :: proc(t: ^Tab) {
 		}
 		append(&b.closed, Saved_Tab{url = strings.clone(t.url), container = strings.clone(t.container)})
 	}
+	chrome_tab_closed(t)
 	ordered_remove(&b.tabs, idx)
 	if b.current == t {
 		b.current = nil
@@ -310,7 +316,6 @@ browser_go :: proc(text: string) {
 }
 
 browser_tab_changed :: proc(t: ^Tab) {
-	if t == b.spare do return
 	chrome_push()
 }
 
@@ -329,6 +334,35 @@ browser_zoom :: proc(d: int) {
 	}
 	tab_set_zoom(t, steps[clamp(i + d, 0, len(steps) - 1)])
 	browser_toast(fmt.tprintf("Zoom %d%%", int(t.zoom * 100 + 0.5)))
+}
+
+// ---------------------------------------------------------------- pop-ups
+
+Window_Choice :: enum u8 { Block, Own_Tab, Related }
+
+/// what a page asking for a new window gets: nothing (an ad, a file, a
+/// script's pop-up without your click), a tab of Iris's own that loads the
+/// address itself, or (a pop-up of the same site or a sign-in page, which
+/// talks to its opener) a view WebKit fills
+new_window_choice :: proc(u, page_url: string, link, gesture, sandboxed, shield: bool) -> Window_Choice {
+	host, _ := host_of(u, context.temp_allocator)
+	page_host, _ := host_of(page_url, context.temp_allocator)
+	if shield && host_blocked(host) do return .Block
+	// a page opens web addresses in new tabs, never your files or other
+	// programs (WebKit would refuse them in the page itself)
+	if len(u) > 0 && !page_may_open(u, page_url) do return .Block
+	// a link you click is a plain new tab, loaded by Iris (its address is
+	// known, and nothing then depends on WebKit filling a window later)
+	if link && len(u) > 0 && u != "about:blank" do return .Own_Tab
+	if sandboxed do return .Block
+	if gesture && (site_of(host) == site_of(page_host) || is_sign_in(host) || len(u) == 0 || u == "about:blank") do return .Related
+	if shield do return .Block
+	return len(u) > 0 && u != "about:blank" ? .Own_Tab : .Block
+}
+
+/// a link from t's page in a tab of its own, next to t
+browser_open_link :: proc(t: ^Tab, u: string, background: bool) {
+	browser_new_tab({url = strings.clone(u, context.temp_allocator), container = t.container, after = t, select = !background})
 }
 
 // ---------------------------------------------------------------- input
@@ -391,6 +425,10 @@ browser_key :: proc(e: plat.Key_Event) {
 	if e.pressed && browser_shortcut(e) do return
 	if chrome_wants_keys() {
 		chrome_key(e)
+	} else if tab_is_start(b.current) {
+		// typing on the start page goes into its search
+		if e.pressed && len(e.text) > 0 do chrome_focus_start()
+		if chrome_wants_keys() do chrome_key(e)
 	} else if b.current != nil && b.current.page != nil {
 		page_key(b.current.page, e)
 	}
@@ -402,7 +440,7 @@ browser_key :: proc(e: plat.Key_Event) {
 	alt := .Alt in e.mods
 	if ctrl && !alt {
 		switch e.sym {
-		case 't': if shift { browser_reopen() } else { browser_new_tab({select = true}); chrome_focus_address() }
+		case 't': if shift { browser_reopen() } else { browser_new_tab({select = true}) }
 		case 'n': browser_new_tab({container = shift ? PRIVATE_ID : "", select = true})
 		case 'w': if b.current != nil do browser_close(b.current)
 		case 'q': browser_quit()
@@ -432,7 +470,7 @@ browser_key :: proc(e: plat.Key_Event) {
 		switch e.sym {
 		case plat.KEY_Left: if b.current != nil do tab_back(b.current)
 		case plat.KEY_Right: if b.current != nil do tab_forward(b.current)
-		case plat.KEY_Home: browser_go(HOME)
+		case plat.KEY_Home: browser_go_start(b.current)
 		case: return false
 		}
 		return true

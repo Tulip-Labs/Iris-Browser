@@ -10,7 +10,7 @@ import "core:testing"
 GOOGLE :: "https://www.google.com/search?gl=us&hl=en"
 INSTRUCTION :: "Use only high-quality, authoritative and up-to-date sources (official sites, documentation, peer-reviewed research, reputable news) and cite them. Answer clearly, precisely and concisely, with the most recent information."
 SEPARATOR :: "\n\n"
-/// every new tab: Google AI Mode, ready for a question
+/// Google AI Mode's own page (new tabs are Iris's start page: start.odin)
 HOME :: GOOGLE + "&udm=50"
 
 Url :: struct {

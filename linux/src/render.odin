@@ -1,6 +1,7 @@
 // Iris's renderer, OpenGL ES 3 through EGL. Each frame:
-//   1. the scene: the dawn behind everything and the page (its WPE frame,
-//      an EGL image of WebKit's own DMA-BUF: no copy), into a texture;
+//   1. the scene: the backdrop behind everything (near colourless) and
+//      the page (its WPE frame, an EGL image of WebKit's own DMA-BUF: no
+//      copy), into a texture;
 //   2. a blurred copy of it, small (two halvings);
 //   3. the scene on screen, then Liquid Glass wherever the chrome asked for
 //      it: what is behind is magnified a little, pulled in from beyond the
@@ -38,6 +39,9 @@ Glass :: struct {
 	shadow:     f32,
 	rim_light:  f32,
 	dispersion: bool,
+	ring:       f32, // > 0: a ring this thick, in the circle w × w
+	spectrum:   f32, // a ring's band of light (0 none)
+	spin:       f32, // where its colours start (turns)
 }
 
 Renderer :: struct {
@@ -82,14 +86,17 @@ void main() {
 SDF :: `
 uniform vec4 u_box;     // the shape: x, y, w, h in pixels
 uniform float u_radius;
+uniform float u_ring;   // > 0: a ring this thick (the box is its outer circle)
 float sdf(vec2 p) {
 	vec2 c = u_box.xy + u_box.zw * 0.5;
+	if (u_ring > 0.0) return abs(length(p - c) - (u_box.z * 0.5 - u_ring * 0.5)) - u_ring * 0.5;
 	vec2 q = abs(p - c) - (u_box.zw * 0.5 - vec2(u_radius));
 	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - u_radius;
 }
 vec2 outward(vec2 p) {
 	vec2 c = u_box.xy + u_box.zw * 0.5;
 	vec2 d = p - c;
+	if (u_ring > 0.0) return normalize(d + 1e-4) * sign(length(d) - (u_box.z * 0.5 - u_ring * 0.5) + 1e-4);
 	vec2 q = abs(d) - (u_box.zw * 0.5 - vec2(u_radius));
 	vec2 n = q.x > 0.0 && q.y > 0.0 ? normalize(q) : (q.x > q.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0));
 	return n * sign(d + 1e-4);
@@ -136,14 +143,16 @@ precision highp float;
 in vec2 v_px;
 out vec4 o;
 uniform vec2 u_screen;
+uniform float u_dark;
 void main() {
 	vec2 uv = v_px / u_screen;
-	// a dawn of lilac, rose and peach
-	vec3 sky = mix(vec3(0.82, 0.80, 0.97), vec3(0.97, 0.86, 0.90), smoothstep(0.0, 0.7, uv.y));
-	sky = mix(sky, vec3(1.0, 0.89, 0.80), smoothstep(0.55, 1.0, uv.y));
-	vec2 sun = vec2(0.72, 0.86);
-	float r = length((uv - sun) * vec2(u_screen.x / u_screen.y, 1.0));
-	sky += vec3(1.0, 0.93, 0.82) * 0.35 * exp(-r * r * 9.0);
+	// near colourless: warm white to cool white (or graphite), and one very
+	// faint, wide bloom of light
+	vec3 top = mix(vec3(0.961, 0.965, 0.973), vec3(0.043, 0.047, 0.055), u_dark);
+	vec3 bottom = mix(vec3(0.925, 0.933, 0.949), vec3(0.082, 0.090, 0.106), u_dark);
+	vec3 sky = mix(top, bottom, smoothstep(0.0, 1.0, uv.y));
+	float r = length((uv - vec2(0.5, 0.38)) * vec2(u_screen.x / u_screen.y, 1.0));
+	sky += vec3(1.0, 0.995, 0.985) * mix(0.035, 0.03, u_dark) * exp(-r * r * 2.2);
 	o = vec4(sky, 1.0);
 }`
 
@@ -181,7 +190,24 @@ uniform float u_rimlight;
 uniform float u_dispersion;
 uniform vec2 u_pointer;   // pixels, or negative
 uniform float u_scale;
+uniform float u_spectrum; // a ring's band of light: its strength
+uniform float u_spin;     // and where its colours start (turns)
 ` + SDF + `
+vec3 hsv(float h, float s, float v) {
+	vec3 k = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+	return v * mix(vec3(1.0), k, s);
+}
+// red, orange, yellow, green, cyan, blue (220 degrees), then back to red
+// through a short warm white: never through magenta or violet
+vec3 spectrum(float h) {
+	const float span = 0.84;
+	if (h < span) return hsv(h / span * (220.0 / 360.0), 0.55, 1.0);
+	float q = (h - span) / (1.0 - span);
+	vec3 blue = hsv(220.0 / 360.0, 0.55, 1.0);
+	vec3 warm = vec3(1.0, 0.97, 0.92);
+	vec3 red = hsv(0.0, 0.55, 1.0);
+	return q < 0.5 ? mix(blue, warm, q * 2.0) : mix(warm, red, q * 2.0 - 1.0);
+}
 vec3 behind(vec2 p) {
 	vec2 uv = vec2(p.x / u_screen.x, 1.0 - p.y / u_screen.y);
 	return mix(texture(u_scene, uv).rgb, texture(u_blurred, uv).rgb, u_frost);
@@ -189,11 +215,11 @@ vec3 behind(vec2 p) {
 void main() {
 	float d = sdf(v_px);
 	if (d > 0.5) {
-		// the shadow under the glass: soft, a little below it, in the
-		// dawn's violet (premultiplied)
-		float ds = max(sdf(v_px - vec2(0.0, 3.0 * u_scale)), 0.0) / (9.0 * u_scale);
-		float s = u_shadow * 0.085 * exp(-ds * ds) * smoothstep(0.0, 1.5, d);
-		o = vec4(vec3(0.14, 0.11, 0.25) * s, s);
+		// the shadow under the glass: neutral, faint, wide, a little below
+		// it (premultiplied black)
+		float ds = max(sdf(v_px - vec2(0.0, 4.0 * u_scale)), 0.0) / (13.0 * u_scale);
+		float s = u_shadow * 0.07 * exp(-ds * ds) * smoothstep(0.0, 1.5, d);
+		o = vec4(vec3(0.0), s);
 		return;
 	}
 	float inside = clamp(0.5 - d, 0.0, 1.0);
@@ -212,6 +238,14 @@ void main() {
 		col = behind(p + n * pull);
 	}
 	col = mix(col, u_tint.rgb, u_tint.a);
+	if (u_ring > 0.0 && u_spectrum > 0.0) {
+		// light through the ring: a thin band of colour inside its rim
+		vec2 dd = v_px - c;
+		float h = fract(atan(dd.y, dd.x) / 6.2831853 + 0.5 + u_spin);
+		float off = (length(dd) - (u_box.z * 0.5 - u_ring * 0.5)) / (u_ring * 0.5);
+		float band = exp(-pow((off - 0.3) / 0.3, 2.0));
+		col = mix(col, spectrum(h), u_spectrum * band);
+	}
 	// light from above: a bright line inside the top rim, a soft glow, a
 	// faint shade along the bottom
 	float top = clamp(-n.y, 0.0, 1.0);
@@ -345,11 +379,13 @@ frame_scene_done :: proc() {
 	gl.Uniform2f(loc(p, "u_screen"), f32(rnd.sw), f32(rnd.sh))
 }
 
+/// the backdrop behind everything, light or dark
 draw_dawn :: proc() {
 	p := &rnd.dawn
 	gl.UseProgram(p.id)
 	gl.Uniform4f(loc(p, "u_rect"), 0, 0, f32(rnd.sw), f32(rnd.sh))
 	gl.Uniform2f(loc(p, "u_screen"), f32(rnd.sw), f32(rnd.sh))
+	gl.Uniform1f(loc(p, "u_dark"), theme.dark ? 1 : 0)
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
 }
 
@@ -405,6 +441,9 @@ draw_glass :: proc(x, y, w, h: f32, g: Glass) {
 	gl.Uniform1f(loc(p, "u_rimlight"), g.rim_light)
 	gl.Uniform1f(loc(p, "u_dispersion"), g.dispersion ? 1 : 0)
 	gl.Uniform1f(loc(p, "u_scale"), s)
+	gl.Uniform1f(loc(p, "u_ring"), g.ring * s)
+	gl.Uniform1f(loc(p, "u_spectrum"), g.spectrum)
+	gl.Uniform1f(loc(p, "u_spin"), g.spin)
 	px := rnd.pointer.x >= 0 ? rnd.pointer * s : [2]f32{-1, -1}
 	gl.Uniform2f(loc(p, "u_pointer"), px.x, px.y)
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)

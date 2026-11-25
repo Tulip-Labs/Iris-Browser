@@ -11,19 +11,14 @@ import "core:strings"
 import "core:time"
 import plat "../plat"
 
-INK :: [4]f32{0.14, 0.11, 0.25, 1}
-DIM :: [4]f32{0.14, 0.11, 0.25, 0.58}
-FAINT :: [4]f32{0.14, 0.11, 0.25, 0.12}
-ACCENT :: [4]f32{0.416, 0.298, 0.961, 1}
-WARN :: [4]f32{0.91, 0.35, 0.05, 1}
-WHITE :: [4]f32{1, 1, 1, 1}
+// the palette (INK, DIM, FAINT, ACCENT, light or dark): theme.odin
 
 // ---------------------------------------------------------------- what can be clicked
 
 Wid :: enum u16 {
 	None, Tab, Tab_Close, Plus, Back, Forward, Reload, Address, Shield, Downloads, Containers,
 	Frame_Min, Frame_Max, Frame_Close, Drag, Row, Suggest, Find_Field, Find_Prev, Find_Next, Find_Close,
-	Toast, Toast_Action, Dialog, Dialog_Ok, Dialog_Cancel, Prompt, Name, Icon_Choice, Panel, Pill, Download_Act, Download_Row, Scrim,
+	Toast, Toast_Action, Dialog, Dialog_Ok, Dialog_Cancel, Prompt, Name, Icon_Choice, Panel, Pill, Download_Act, Download_Row, Scrim, Start_Field,
 }
 
 Id :: distinct u64
@@ -75,7 +70,15 @@ Option_Item :: struct {
 	group, selected, enabled: bool,
 }
 
-Field :: enum u8 { None, Address, Find, Prompt, Name }
+Field :: enum u8 { None, Address, Find, Prompt, Name, Start }
+
+/// a tab going away: drawn a moment longer, narrowing and fading
+Ghost :: struct {
+	x, w:  f32,
+	title: string,
+	t0:    f64,
+	cur:   bool,
+}
 
 Ui :: struct {
 	hits, next_hits: [dynamic]Hit,
@@ -114,6 +117,19 @@ Ui :: struct {
 	hover:          map[Id]f32,
 	last_frame:     time.Tick,
 	animating:      bool,
+	was_animating:  bool,
+	/// the chrome's clock (seconds): it runs with the frames, so a motion
+	/// begins where it is first drawn
+	clock:          f64,
+	blink_pending:  bool,
+	start:          Line, // the start page's search
+	start_t0:       f64,
+	start_fresh:    bool,
+	start_focus:    Spring,
+	addr_focus:     Spring,
+	addr_slide:     Spring, // 1: the address centred, 0: at the left, for editing
+	ghosts:         [dynamic]Ghost,
+	panel_t0:       f64,
 	address_rect:   [4]f32,
 	icons_cache:    [Icon]bool,
 }
@@ -128,7 +144,7 @@ ui_test_dt: f32
 	return c
 }
 
-@(private="file") hit :: proc(i: Id, r: [4]f32, act: Action = {}, cursor := plat.Cursor_Shape.Default) {
+@(private) hit :: proc(i: Id, r: [4]f32, act: Action = {}, cursor := plat.Cursor_Shape.Default) {
 	append(&ui.next_hits, Hit{i, r, act, cursor})
 }
 
@@ -151,6 +167,7 @@ chrome_wants_keys :: proc() -> bool { return ui.focus != .None || chrome_modal()
 // ---------------------------------------------------------------- start
 
 chrome_start :: proc() {
+	palette_apply()
 	ui.sel = -1
 	ui.suggest_sel = -1
 	ui.find_count = -1
@@ -173,13 +190,14 @@ chrome_set_focus :: proc(on: bool) {
 	if t := b.current; t != nil && t.page != nil do page_focus(t.page, !on)
 	if !on {
 		if ui.focus == .Address do line_set(&ui.address, "")
+		if ui.focus == .Start do line_set(&ui.start, "")
 		ui.focus = .None
 		clear_suggestions()
 	}
 	chrome_push()
 }
 
-@(private="file") focus_field :: proc(f: Field) {
+@(private) focus_field :: proc(f: Field) {
 	ui.focus = f
 	b.chrome_focus = true
 	if t := b.current; t != nil && t.page != nil do page_focus(t.page, false)
@@ -304,6 +322,7 @@ chrome_dialog :: proc(id, kind: int, title, message, default_text: string) {
 	ui.panel_right = right
 	ui.panel_scroll = 0
 	ui.panel_show = 0
+	ui.panel_t0 = ui.clock
 	ui.sel = -1
 	clear_suggestions()
 	if p == .New_Container {
@@ -316,7 +335,7 @@ chrome_dialog :: proc(id, kind: int, title, message, default_text: string) {
 	chrome_push()
 }
 
-@(private="file") close_panel :: proc() {
+@(private) close_panel :: proc() {
 	if ui.panel == .None do return
 	if ui.panel == .Option do answer_option(-1)
 	if ui.panel == .Downloads {
@@ -444,12 +463,10 @@ chrome_dismiss_dialog :: proc() {
 	case .Close_Tab: if x := tab_by_id(a.n); x != nil do browser_close(x)
 	case .New_Tab:
 		close_panel()
-		browser_new_tab({select = true})
-		chrome_focus_address()
+		browser_new_tab({select = true}) // the start page takes the keys
 	case .New_Tab_In:
 		close_panel()
 		browser_new_tab({container = a.s, select = true})
-		chrome_focus_address()
 	case .Back: if t != nil do tab_back(t)
 	case .Forward: if t != nil do tab_forward(t)
 	case .Reload: if t != nil do tab_reload(t)
@@ -596,7 +613,7 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 			ui.drag_dx = p.x - ui.drag_x0
 			if abs(ui.drag_dx) > 6 do ui.dragging = true
 		}
-		if ui.pressed != 0 && (wid_of(ui.pressed) == .Address || wid_of(ui.pressed) == .Find_Field || wid_of(ui.pressed) == .Prompt || wid_of(ui.pressed) == .Name) {
+		if ui.pressed != 0 && (wid_of(ui.pressed) == .Address || wid_of(ui.pressed) == .Find_Field || wid_of(ui.pressed) == .Prompt || wid_of(ui.pressed) == .Name || wid_of(ui.pressed) == .Start_Field) {
 			// selecting by dragging in a field
 			if l, r := field_of(wid_of(ui.pressed)); l != nil do l.cursor = line_index_at(l, r, p.x, field_size(wid_of(ui.pressed)))
 		}
@@ -675,6 +692,10 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 	case .Name:
 		focus_field(.Name)
 		field_press(&ui.name, h.r, p, e.clicks, 14)
+	case .Start_Field:
+		focus_field(.Start)
+		warm_for_search()
+		field_press(&ui.start, start_field_rect(h.r), p, e.clicks, 16)
 	case:
 		if ui.focus == .Address && k != .Suggest do chrome_set_focus(false)
 	}
@@ -724,11 +745,15 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 	case .Find_Field: return &ui.find, r
 	case .Prompt: return &ui.prompt, r
 	case .Name: return &ui.name, r
+	case .Start_Field: return &ui.start, start_field_rect(r)
 	}
 	return nil, r
 }
 
-@(private="file") field_size :: proc(k: Wid) -> f32 { return k == .Address ? 14.5 : 14 }
+/// the text's place inside the start page's search capsule
+start_field_rect :: proc(r: [4]f32) -> [4]f32 { return {r.x + 50, r.y, r.z - 70, r.w} }
+
+@(private="file") field_size :: proc(k: Wid) -> f32 { return k == .Address ? 14.5 : k == .Start_Field ? 16 : 14 }
 
 /// the byte in a field nearest x
 @(private="file") line_index_at :: proc(l: ^Line, r: [4]f32, x: f32, size: f32) -> int {
@@ -744,7 +769,7 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 	return best
 }
 
-@(private="file") field_press :: proc(l: ^Line, r: [4]f32, p: [2]f32, clicks: int, size: f32) {
+@(private) field_press :: proc(l: ^Line, r: [4]f32, p: [2]f32, clicks: int, size: f32) {
 	i := line_index_at(l, r, p.x, size)
 	switch clicks {
 	case 2: line_select_word(l, i)
@@ -826,6 +851,8 @@ chrome_key :: proc(e: plat.Key_Event) -> bool {
 		case .Escape: close_panel()
 		case .Changed, .Moved, .Ignored:
 		}
+	case .Start:
+		start_key(e)
 	case .Prompt, .None:
 	}
 	ui.address.blink = 0
@@ -848,7 +875,7 @@ chrome_key :: proc(e: plat.Key_Event) -> bool {
 	return true
 }
 
-@(private="file") hover_of :: proc(i: Id, dt: f32) -> f32 {
+@(private) hover_of :: proc(i: Id, dt: f32) -> f32 {
 	h := ui.hover[i]
 	if ease(&h, ui.hot == i ? 1 : 0, dt, 18) do ui.animating = true
 	ui.hover[i] = h
@@ -856,7 +883,7 @@ chrome_key :: proc(e: plat.Key_Event) -> bool {
 }
 
 /// glass, faded in by amount (a hovered button's glass comes and goes)
-@(private="file") glass_amount :: proc(g: Glass, a: f32) -> Glass {
+@(private) glass_amount :: proc(g: Glass, a: f32) -> Glass {
 	x := g
 	x.tint.a *= a
 	x.rim_light *= a
@@ -865,7 +892,7 @@ chrome_key :: proc(e: plat.Key_Event) -> bool {
 	return x
 }
 
-@(private="file") baseline :: proc(y, h, size: f32) -> f32 {
+@(private) baseline :: proc(y, h, size: f32) -> f32 {
 	asc, desc := text_metrics(size)
 	return y + (h + asc - desc) / 2
 }
@@ -898,8 +925,14 @@ chrome_draw :: proc(W, H: f32) {
 	if ui.last_frame._nsec != 0 do dt = clamp(f32(time.duration_seconds(time.tick_diff(ui.last_frame, now))), 0.001, 0.1)
 	ui.last_frame = now
 	if ui_test_dt > 0 do dt = ui_test_dt
+	// after a still moment the first frame of a motion is its first step
+	// (not the whole time Iris was idle)
+	if !ui.was_animating do dt = min(dt, 1.0 / 60)
+	ui.clock += f64(dt)
 	ui.animating = false
+	if ui.focus == .Start && !tab_is_start(b.current) do chrome_leave_start()
 
+	if tab_is_start(b.current) && !(b.page_fullscreen || b.fullscreen) do draw_start(W, H, dt)
 	if !(b.page_fullscreen || b.fullscreen) {
 		draw_strip(W, dt)
 		draw_bar(W, dt)
@@ -912,8 +945,30 @@ chrome_draw :: proc(W, H: f32) {
 	if ui.dialog_open do draw_dialog(W, H, dt)
 
 	ui.hits, ui.next_hits = ui.next_hits, ui.hits
-	if ui.focus != .None do ui.animating = true // the cursor blinks
-	if ui.animating do after(16, proc(_: rawptr) { plat.invalidate(&b.win) }, nil)
+	ui.was_animating = ui.animating
+	if ui.animating {
+		after(16, proc(_: rawptr) { plat.invalidate(&b.win) }, nil)
+	} else if ui.focus != .None && !ui.blink_pending {
+		// the cursor blinks: one frame when it turns on or off, no more
+		ui.blink_pending = true
+		m := math.mod(now_s(), 1.0)
+		next := m < 0.6 ? 0.6 - m : 1.0 - m
+		after(u32(next * 1000) + 2, proc(_: rawptr) {
+			ui.blink_pending = false
+			plat.invalidate(&b.win)
+		}, nil)
+	}
+}
+
+/// a tab closing: a ghost of it narrows and fades where it was
+chrome_tab_closed :: proc(t: ^Tab) {
+	x, ok := ui.tab_x[t.id]
+	if !ok || theme.reduce_motion do return
+	title := t.title
+	if len(title) == 0 do title = display_url(t.url, context.temp_allocator)
+	if len(title) == 0 do title = "New Tab"
+	append(&ui.ghosts, Ghost{x = x, w = ui.tab_w[t.id], title = strings.clone(title), t0 = ui.clock, cur = t == b.current})
+	chrome_push()
 }
 
 // ---------------------------------------------------------------- the tab strip
@@ -932,8 +987,12 @@ chrome_draw :: proc(W, H: f32) {
 			ui.tab_w[t.id] = 0
 		}
 		tx, tww := ui.tab_x[t.id], ui.tab_w[t.id]
-		if ease(&tx, x, dt, 14) do ui.animating = true
-		if ease(&tww, tw, dt, 14) do ui.animating = true
+		if theme.reduce_motion {
+			tx, tww = x, tw
+		} else {
+			if ease(&tx, x, dt, 16) do ui.animating = true
+			if ease(&tww, tw, dt, 16) do ui.animating = true
+		}
 		ui.tab_x[t.id], ui.tab_w[t.id] = tx, tww
 		x += tw + 2
 	}
@@ -945,6 +1004,28 @@ chrome_draw :: proc(W, H: f32) {
 			delete_key(&ui.tab_x, k)
 			delete_key(&ui.tab_w, k)
 		}
+	}
+	// tabs that closed, going
+	for i := 0; i < len(ui.ghosts); {
+		g := ui.ghosts[i]
+		k, moving := motion(g.t0, ui.clock, 160)
+		if !moving {
+			delete(g.title)
+			ordered_remove(&ui.ghosts, i)
+			continue
+		}
+		ui.animating = true
+		gw := g.w * (1 - k)
+		if gw >= 8 {
+			r := [4]f32{g.x, 9, gw, 32}
+			if g.cur do draw_glass(r.x, r.y, r.z, r.w, glass_amount(glass_style({r = 16, kind = 2}), 1 - k))
+			c := DIM
+			c.a *= 1 - k
+			clip_push(r)
+			draw_text(g.title, r.x + 35, baseline(r.y, r.w, 13), 13, c, .Semibold, max(8, g.w - 70))
+			clip_pop()
+		}
+		i += 1
 	}
 	dragged: ^Tab
 	for t in b.tabs {
@@ -989,6 +1070,7 @@ chrome_draw :: proc(W, H: f32) {
 	case t.sandboxed: draw_icon(.Warn, ix, iy, 16, WARN)
 	case tab_is_private(t): draw_icon(.Mask, ix, iy, 16, INK)
 	case is_ai_mode(t.url): draw_icon(.Sparkle, ix, iy, 16, ACCENT)
+	case tab_is_start(t): draw_icon(.Search, ix, iy, 16, DIM)
 	case len(t.favicon_px) > 0:
 		if t.favicon_dirty {
 			texture_upload(&t.favicon_tex, raw_data(t.favicon_px), t.favicon_w, t.favicon_h, t.favicon_stride)
@@ -1084,7 +1166,11 @@ chrome_draw :: proc(W, H: f32) {
 	// the address between them
 	ar := [4]f32{136, y, act_r.x - 10 - 136, h}
 	ui.address_rect = ar
-	draw_glass(ar.x, ar.y, ar.z, ar.w, glass_style({r = 22, kind = 0}))
+	// it lights up a little while it has the keys
+	if spring_step(&ui.addr_focus, ui.focus == .Address ? 1 : 0, dt) do ui.animating = true
+	ag := glass_style({r = 22, kind = 0})
+	ag.rim_light *= 1 + 0.6 * ui.addr_focus.x
+	draw_glass(ar.x, ar.y, ar.z, ar.w, ag)
 	draw_address(ar, dt)
 	// the page loading: a line along the address's bottom
 	if loading {
@@ -1116,27 +1202,128 @@ chrome_draw :: proc(W, H: f32) {
 			x += 26
 		}
 	}
-	tr := [4]f32{x, r.y, r.x + r.z - 14 - x, r.w}
+	// the text centred in what is left, as wide on both sides
+	right := r.x + r.z - 14
+	side := max(x - (r.x + 14), 0)
+	tr := [4]f32{x, r.y, right - side - x, r.w}
 	if ui.focus == .Address {
-		draw_field(&ui.address, tr, 14.5, "Ask Google AI Mode or type an address", dt)
+		// from the middle to the left, where it is edited
+		if spring_step(&ui.addr_slide, 0, dt) do ui.animating = true
+		tr = {x, r.y, right - x, r.w}
+		off := max(0, (tr.z - text_width(line_string(&ui.address), 14.5)) / 2) * ui.addr_slide.x
+		draw_field(&ui.address, {tr.x + off, tr.y, tr.z - off, tr.w}, 14.5, START_PLACEHOLDER, dt)
 	} else {
+		ui.addr_slide = {x = 1}
 		text := ""
+		words := false
 		if t != nil {
-			q, ai := ai_query(t.url, context.temp_allocator)
-			text = ai ? q : (is_ai_mode(t.url) ? "" : editable_url(t.url, context.temp_allocator))
+			if q, ok := ai_query(t.url, context.temp_allocator); ok {
+				text, words = q, true
+			} else if q2, ok2 := search_query(t.url, context.temp_allocator); ok2 {
+				text, words = q2, true
+			} else if !is_ai_mode(t.url) && t.url != "about:blank" {
+				text = t.url
+			}
 		}
-		if len(text) == 0 {
-			draw_text("Ask Google AI Mode or type an address", tr.x, baseline(tr.y, tr.w, 14.5), 14.5, DIM, max_w = tr.z)
-		} else {
-			draw_text(text, tr.x, baseline(tr.y, tr.w, 14.5), 14.5, INK, max_w = tr.z)
+		by := baseline(tr.y, tr.w, 14.5)
+		switch {
+		case len(text) == 0:
+			w := min(text_width(START_PLACEHOLDER, 14.5), tr.z)
+			draw_text(START_PLACEHOLDER, tr.x + (tr.z - w) / 2, by, 14.5, DIM, max_w = tr.z)
+		case words:
+			w := min(text_width(text, 14.5), tr.z)
+			draw_text(text, tr.x + (tr.z - w) / 2, by, 14.5, INK, max_w = tr.z)
+		case:
+			draw_url(text, tr, 14.5)
 		}
 	}
 	hit(id(.Address), {r.x, r.y, r.z, r.w}, {}, .Text)
 }
 
+/// an address in three parts: "https://", the host, and the rest (any of
+/// them empty); together exactly the address
+url_parts :: proc(url: string) -> (scheme, host, rest: string) {
+	i := strings.index(url, "://")
+	if i <= 0 do return "", "", url
+	after := url[i + 3:]
+	end := strings.index_any(after, "/?#")
+	if end < 0 do end = len(after)
+	return url[:i + 3], after[:end], after[end:]
+}
+
+/// where an address too wide for max_w is cut, in the middle: the bytes
+/// before the ellipsis and from where it goes on. glyph_x is where each
+/// glyph starts (left to right), glyph_byte its first byte, total the whole
+/// width; the head keeps the first keep_bytes (the host) whole when it can.
+elide_middle :: proc(glyph_x: []f32, glyph_byte: []int, total, max_w, ellipsis: f32, keep_bytes: int, n_bytes: int) -> (head_end, tail_start: int) {
+	n := len(glyph_x)
+	if total <= max_w || n == 0 do return n_bytes, n_bytes
+	avail := max(max_w - ellipsis, 0)
+	head_w := avail * 0.6
+	for i in 0 ..< n do if glyph_byte[i] >= keep_bytes {
+		head_w = clamp(glyph_x[i], head_w, avail * 0.8)
+		break
+	}
+	// the head: whole glyphs that end within head_w
+	head_end = 0
+	used: f32 = 0
+	for i in 0 ..< n {
+		end := i + 1 < n ? glyph_x[i + 1] : total
+		if end > head_w {
+			head_end = glyph_byte[i]
+			used = glyph_x[i]
+			break
+		}
+	}
+	// the tail: whole glyphs from the end, in what is left
+	tail_w := avail - used
+	tail_start = n_bytes
+	for i in 0 ..< n do if glyph_x[i] >= total - tail_w && glyph_byte[i] >= head_end {
+		tail_start = glyph_byte[i]
+		break
+	}
+	return
+}
+
+/// an address centred in r: the host in ink, the scheme faint, the rest
+/// dimmer; cut in the middle only when it does not fit
+@(private="file") draw_url :: proc(url: string, r: [4]f32, size: f32) {
+	sch, host, _ := url_parts(url)
+	s := shape(url, size)
+	by := baseline(r.y, r.w, size)
+	faint := DIM
+	faint.a *= 0.7
+	piece :: proc(url: string, a, z: int, x: ^f32, by, size: f32, sch_end, host_end: int, faint: [4]f32) {
+		bounds := [4]int{0, sch_end, host_end, len(url)}
+		colors := [3][4]f32{faint, INK, DIM}
+		for k in 0 ..< 3 {
+			lo, hi := max(a, bounds[k]), min(z, bounds[k + 1])
+			if hi <= lo do continue
+			x^ += draw_text(url[lo:hi], x^, by, size, colors[k])
+		}
+	}
+	se, he := len(sch), len(sch) + len(host)
+	if s.width <= r.z {
+		x := r.x + (r.z - s.width) / 2
+		piece(url, 0, len(url), &x, by, size, se, he, faint)
+		return
+	}
+	xs := make([]f32, len(s.glyphs), context.temp_allocator)
+	bs := make([]int, len(s.glyphs), context.temp_allocator)
+	for g, i in s.glyphs do xs[i], bs[i] = g.x, g.byte
+	ew := text_width("…", size)
+	head_end, tail_start := elide_middle(xs, bs, s.width, r.z, ew, he, len(url))
+	x := r.x
+	piece(url, 0, head_end, &x, by, size, se, he, faint)
+	x += draw_text("…", x, by, size, DIM)
+	tail := url[tail_start:]
+	tx := r.x + r.z - text_width(tail, size)
+	piece(url, tail_start, len(url), &tx, by, size, se, he, faint)
+}
+
 /// an editable line: its text, selection and cursor, scrolled to keep the
 /// cursor in view
-@(private="file") draw_field :: proc(l: ^Line, r: [4]f32, size: f32, placeholder: string, dt: f32) {
+@(private) draw_field :: proc(l: ^Line, r: [4]f32, size: f32, placeholder: string, dt: f32) {
 	s := shape(line_string(l), size)
 	pos :: proc(s: Shaped, i: int, text_len: int) -> f32 {
 		if i >= text_len do return s.width
@@ -1338,7 +1525,7 @@ Pill :: struct {
 		row(&items, .Globe, "No Container", {op = .New_Tab})
 		containers_ensure()
 		for k in containers do row(&items, container_icon(k.icon), k.name, {op = .New_Tab_In, s = keep(k.id)}, color = parse_color(k.color))
-		row(&items, .Mask, "Private", {op = .New_Tab_In, s = PRIVATE_ID}, color = {0.37, 0.36, 0.9, 1})
+		row(&items, .Mask, "Private", {op = .New_Tab_In, s = PRIVATE_ID}, color = {0.36, 0.38, 0.42, 1})
 		if ui.panel_tab != -1 && t != nil && len(t.url) > 0 {
 			append(&items, Item{kind = .Sep}, Item{kind = .Head, text = "Open this page in"})
 			if len(t.container) > 0 do row(&items, .Globe, "No Container", {op = .Open_In, n = t.id, s = ""})
@@ -1482,9 +1669,12 @@ Pill :: struct {
 	r := [4]f32{x, y, width, h}
 	ui.panel_rect = r
 	ui.panel_scroll = clamp(ui.panel_scroll, 0, max(0, content - h))
-	if ease(&ui.panel_show, 1, dt, 18) do ui.animating = true
-	sh := ui.panel_show
-	draw_glass(r.x, r.y + (1 - sh) * -4, r.z, r.w, glass_amount(glass_style({r = 18, kind = 1}), sh))
+	// it opens: a quick fade and a few pixels' drop (a plain fade with
+	// reduced motion)
+	sh, moving := motion(ui.panel_t0, ui.clock, 180)
+	if moving do ui.animating = true
+	ui.panel_show = sh
+	draw_glass(r.x, r.y + motion_from(-6, 0, sh), r.z, r.w, glass_amount(glass_style({r = 18, kind = 1}), sh))
 	hit(id(.Panel), r)
 	clip_push(r)
 	defer clip_pop()
@@ -1618,7 +1808,7 @@ Pill :: struct {
 // ---------------------------------------------------------------- dialogs
 
 @(private="file") draw_dialog :: proc(W, H: f32, dt: f32) {
-	draw_fill(0, 0, W, H, 0, {0.14, 0.11, 0.25, 0.18})
+	draw_fill(0, 0, W, H, 0, {0, 0, 0, 0.18})
 	hit(id(.Scrim), {0, 0, W, H})
 	w := min(440, W * 0.9)
 	lines := wrap_text(ui.dialog_message, 13.5, w - 44)

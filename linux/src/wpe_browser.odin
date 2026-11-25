@@ -22,6 +22,11 @@ browser_tab_of_web :: proc(w: ^WebKitWebView) -> ^Tab {
 
 // ---------------------------------------------------------------- pop-ups
 
+/// a middle click, or Ctrl+click, on a link
+link_wants_new_tab :: proc(button, mods: u32) -> bool {
+	return button == 2 || (button == 1 && (mods & u32(WPE_MODIFIER_KEYBOARD_CONTROL)) != 0)
+}
+
 /// a link that opens a new window opens as a tab next to yours; a
 /// script's pop-up needs your click and goes only to the same site or a
 /// sign-in page; ad domains open nothing
@@ -29,46 +34,70 @@ browser_new_window_action :: proc(t: ^Tab, d: ^WebKitPolicyDecision) -> bool {
 	nav := webkit_navigation_policy_decision_get_navigation_action(cast(^WebKitNavigationPolicyDecision)d)
 	req := webkit_navigation_action_get_request(nav)
 	if req == nil do return false
-	u := string(webkit_uri_request_get_uri(req))
-	host, _ := host_of(u, context.temp_allocator)
+	// copied first: the request's own string goes with the decision
+	u := strings.clone(string(webkit_uri_request_get_uri(req)), context.temp_allocator)
 	page_host, _ := host_of(t.url, context.temp_allocator)
 	shield := shields_on_for(page_host)
-	if shield && host_blocked(host) {
-		webkit_policy_decision_ignore(d)
-		return true
-	}
-	// a page opens web addresses in new tabs, never your files or other
-	// programs (WebKit would refuse them in the page itself)
-	if !page_may_open(u, t.url) {
-		webkit_policy_decision_ignore(d)
-		return true
-	}
-	if webkit_navigation_action_get_navigation_type(nav) == WEBKIT_NAVIGATION_TYPE_LINK_CLICKED {
-		webkit_policy_decision_ignore(d)
-		background := webkit_navigation_action_get_mouse_button(nav) == 2
-		browser_new_tab({url = u, container = t.container, after = t, select = !background})
-		return true
-	}
-	if t.sandboxed {
-		webkit_policy_decision_ignore(d)
-		return true
-	}
+	link := webkit_navigation_action_get_navigation_type(nav) == WEBKIT_NAVIGATION_TYPE_LINK_CLICKED
 	gesture := webkit_navigation_action_is_user_gesture(nav) != 0
-	if gesture && (site_of(host) == site_of(page_host) || is_sign_in(host) || u == "about:blank") {
+	switch new_window_choice(u, t.url, link, gesture, t.sandboxed, shield) {
+	case .Related:
 		return false // WebKit goes on and asks for the view ("create")
-	}
-	webkit_policy_decision_ignore(d)
-	if shield {
-		browser_toast("Pop-up blocked")
-	} else {
-		browser_new_tab({url = u, container = t.container, after = t})
+	case .Own_Tab:
+		webkit_policy_decision_ignore(d)
+		// a middle click, or a script's tab you did not click for, stays behind yours
+		background := (link && webkit_navigation_action_get_mouse_button(nav) == 2) || !gesture
+		browser_open_link(t, u, background)
+	case .Block:
+		webkit_policy_decision_ignore(d)
+		if !link && shield && !t.sandboxed do browser_toast("Pop-up blocked")
 	}
 	return true
 }
 
+/// a view for window.open() (no new-window decision comes before it):
+/// the same choice, and a tab that never stays blank
 browser_popup :: proc(t: ^Tab, nav: ^WebKitNavigationAction) -> ^WebKitWebView {
 	if t.web == nil do return nil
+	req := webkit_navigation_action_get_request(nav)
+	u := req != nil ? strings.clone(string(webkit_uri_request_get_uri(req)), context.temp_allocator) : ""
+	page_host, _ := host_of(t.url, context.temp_allocator)
+	shield := shields_on_for(page_host)
+	gesture := webkit_navigation_action_is_user_gesture(nav) != 0
+	switch new_window_choice(u, t.url, false, gesture, t.sandboxed, shield) {
+	case .Block:
+		if shield && !t.sandboxed do browser_toast("Pop-up blocked")
+		return nil
+	case .Own_Tab:
+		browser_open_link(t, u, !gesture)
+		return nil
+	case .Related:
+	}
 	p := browser_new_tab({container = t.container, after = t, related = t.web})
+	if strings.has_prefix(u, "http") do set_str(&p.url, u)
+	// WebKit loads the address into the view itself; if it has not begun
+	// to soon, Iris loads it, and a window the page only wrote into shows
+	Check :: struct {
+		t:  ^Tab,
+		id: int,
+	}
+	c := new(Check)
+	c^ = {p, p.id}
+	after(1200, proc(d: rawptr) {
+		c := cast(^Check)d
+		defer free(c)
+		t := c.t
+		if !browser_has_tab(t) || t.id != c.id do return
+		started := t.web != nil && (t.loading || (webkit_web_view_get_uri(t.web) != nil && string(webkit_web_view_get_uri(t.web)) != "about:blank" && len(string(webkit_web_view_get_uri(t.web))) > 0))
+		if !started && strings.has_prefix(t.url, "http") {
+			u := strings.clone(t.url, context.temp_allocator)
+			tab_load(t, u)
+		}
+		if t.held {
+			t.held = false
+			browser_select(t)
+		}
+	}, c)
 	return p.web
 }
 
