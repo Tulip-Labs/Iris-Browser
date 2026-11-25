@@ -2,6 +2,7 @@ dist/
 build/
 third_party/
 linux/.build/
+linux/.cef-stub/
 linux/deps/
 android/.gradle/
 android/app/build/
