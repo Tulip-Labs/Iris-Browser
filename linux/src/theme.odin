@@ -47,7 +47,7 @@ theme_init :: proc() {
 		theme.reduce_motion, theme.fixed_motion = m != "0", true
 	}
 	palette_apply()
-	engine_set_color_scheme(theme.dark)
+	engine_theme_changed()
 	if theme.fixed_dark && theme.fixed_motion do return
 	if !theme.fixed_dark do portal_setting("org.freedesktop.appearance", "color-scheme")
 	if !theme.fixed_motion do portal_setting("org.gnome.desktop.interface", "enable-animations")
@@ -88,7 +88,7 @@ theme_init :: proc() {
 		theme.dark = dark
 		palette_apply()
 		// the pages too: prefers-color-scheme follows Iris
-		engine_set_color_scheme(dark)
+		engine_theme_changed()
 	case ns == "org.gnome.desktop.interface" && key == "enable-animations" && ty == "b":
 		if theme.fixed_motion do return
 		theme.reduce_motion = g_variant_get_boolean(v) == 0

@@ -39,8 +39,10 @@
 // Iris 2.3's features (wpe_extra.odin, cef_extra.odin)
 //   tab_set_muted(t, on), tab_run_isolated(t, js, done) (a world of Iris's
 //   own where the engine has one), tab_show_html(t, html, base) and
-//   tab_reader_exit(t) (the reader), tab_isolate(t) (a peek: processes of
-//   its own), tab_end_isolated(t), tab_view_free(t); and they call
+//   tab_reader_exit(t) (the reader), engine_theme_changed() (Iris went
+//   light or dark, theme.dark: pages follow where the engine can; call
+//   it wherever theme.dark changes), tab_isolate(t) (a peek: processes
+//   of its own), tab_end_isolated(t), tab_view_free(t); and they call
 //   browser_page_audio, browser_page_committed, browser_page_finished,
 //   browser_load_failed (page_events.odin), https_first/https_wanted/
 //   https_is_upgrade (features.odin) where they load and decide
@@ -48,9 +50,6 @@
 // handler calls cert_decide, then cert_block or https_failed)
 //   tab_cert_proceed(t, url, host, engine) ("Show anyway": the tab in the
 //   sandbox, the certificate let through there), tab_cert_release(engine)
-// Light or dark (theme.odin, as the desktop changes it)
-//   engine_set_color_scheme(dark) (pages' prefers-color-scheme: WPE in
-//   wpe_extra.odin, CEF in cef_theme.odin)
 // The engines tell the browser through browser_tab_changed,
 // browser_page_frame, browser_page_cursor, browser_fullscreen,
 // browser_hover_link, browser_toast and the history/download procedures.

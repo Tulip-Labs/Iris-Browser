@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy — Iris docs</title>
+  <meta name="description" content="What Iris for Linux and Android connect to, and what they keep. No telemetry, no analytics, no account.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0B0C0E" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://tulip-labs.github.io/Iris-Browser/docs/privacy.html">
+  <link rel="icon" type="image/svg+xml" href="../assets/iris.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="../assets/iris-64.png">
+  <link rel="apple-touch-icon" href="../assets/iris-256.png">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Iris">
+  <meta property="og:title" content="Privacy — Iris docs">
+  <meta property="og:description" content="What Iris for Linux and Android connect to, and what they keep. No telemetry, no analytics, no account.">
+  <meta property="og:url" content="https://tulip-labs.github.io/Iris-Browser/docs/privacy.html">
+  <meta property="og:image" content="https://tulip-labs.github.io/Iris-Browser/assets/iris-512.png">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="../style.css">
+  <script src="../main.js" defer></script>
+</head>
+<body class="docs-page">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <nav class="topbar__inner glass" aria-label="Main">
+      <a class="brand" href="../index.html" aria-label="Iris, home">
+        <img src="../assets/iris-64.png" width="28" height="28" alt="">
+        <span>Iris</span>
+      </a>
+      <ul class="nav">
+        <li><a href="../index.html#features">Features</a></li>
+        <li><a href="../index.html#privacy">Privacy</a></li>
+        <li><a href="../index.html#engines">Engines</a></li>
+        <li><a href="../index.html#android">Android</a></li>
+        <li><a href="../index.html#install">Install</a></li>
+        <li><a href="index.html" aria-current="page">Docs</a></li>
+        <li><a href="../index.html#faq">FAQ</a></li>
+      </ul>
+      <div class="topbar__end">
+        <a class="btn btn--small topbar__docs" href="index.html" aria-current="page">Docs</a>
+        <a class="btn btn--small" href="https://github.com/Tulip-Labs/Iris-Browser">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <div class="docs">
+    <aside class="docs__side">
+      <nav class="sidenav glass" aria-label="Documentation">
+        <p class="sidenav__title">Documentation</p>
+        <ul>
+          <li><a href="index.html">Getting started</a></li>
+          <li><a href="using.html">Using Iris</a></li>
+          <li><a href="shields.html">Shields</a></li>
+          <li><a href="shortcuts.html">Keyboard shortcuts</a></li>
+          <li><a href="privacy.html" aria-current="page">Privacy</a>
+            <ul>
+              <li><a href="#none">What Iris never sends</a></li>
+              <li><a href="#connects">What Iris connects to</a></li>
+              <li><a href="#device">What stays on your device</a></li>
+              <li><a href="#engines">The engines</a></li>
+            </ul>
+          </li>
+          <li><a href="building.html">Building from source</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting and FAQ</a></li>
+          <li><a href="contributing.html">Contributing and license</a></li>
+        </ul>
+      </nav>
+    </aside>
+
+    <main id="main" class="docs__main">
+      <article class="prose">
+
+        <p class="eyebrow">Documentation</p>
+        <h1>Privacy</h1>
+        <p class="lead">Iris collects nothing. It has no account, no telemetry, no analytics and no crash reporting. Tulip Labs runs no servers for Iris.</p>
+
+        <h2 id="none">What Iris never sends</h2>
+        <p>Nothing about you or your browsing is sent to Tulip Labs or to anyone on its behalf. The Privacy Report counts trackers on your own device, and keeps only tracker names and numbers.</p>
+
+        <h2 id="connects">What Iris connects to</h2>
+        <p>Besides the sites you open, these are the only connections Iris makes by itself:</p>
+        <div class="table-wrap">
+        <table class="stack">
+          <thead><tr><th scope="col">What</th><th scope="col">Where</th><th scope="col">When</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Update check</th><td data-label="Where">GitHub's API, for Iris's latest release</td><td data-label="When">Once a day. It carries nothing about you beyond your network address. On Android it also downloads the new APK.</td></tr>
+            <tr><th scope="row">Shields lists</th><td data-label="Where">uBlock Origin's list mirrors (<code>ublockorigin.github.io</code>, <code>ublockorigin.pages.dev</code>, <code>cdn.jsdelivr.net</code>)</td><td data-label="When">When a list is missing or more than four days old</td></tr>
+            <tr><th scope="row">Search</th><td data-label="Where">Google</td><td data-label="When">When you search. What you typed goes to Google, or to Google AI Mode when you ask it.</td></tr>
+            <tr><th scope="row">Google and YouTube warm-up <span class="from">From 2.3</span></th><td data-label="Where">Google's and YouTube's own hosts</td><td data-label="When">When Iris starts and when you type in the address bar or the start page, at most every 20 seconds. Iris looks up the hosts' names ahead of time. From an https page you opened yourself, never a private or sandboxed tab, it also opens their first connections early.</td></tr>
+          </tbody>
+        </table>
+        </div>
+
+        <h2 id="device">What stays on your device</h2>
+        <ul>
+          <li>Your history, settings, open tabs, workspaces, cookies, sign-ins and cache are kept in your user profile, readable only by you. Each container keeps its own cookies, storage and cache.</li>
+          <li>Private tabs keep nothing after the last one closes.</li>
+          <li>With <strong>Forget everything on close</strong> <span class="nowrap"><span class="from">From 2.3</span>,</span> your history, cookies, site data and tabs go when Iris closes.</li>
+          <li>Downloads go to your Downloads folder.</li>
+        </ul>
+
+        <h2 id="engines">The engines</h2>
+        <p>Pages are drawn by WPE WebKit, or by Chromium (CEF) in the Chromium build and on Android through Cefrium. Sites you visit receive what any browser sends them, and their own policies apply.</p>
+        <p>The full policy is in <a href="https://github.com/Tulip-Labs/Iris-Browser/blob/main/PRIVACY.md">PRIVACY.md</a>.</p>
+
+      </article>
+      <nav class="pager" aria-label="Previous and next page"><a class="pager__prev glass" href="shortcuts.html"><span>Previous</span>Keyboard shortcuts</a><a class="pager__next glass" href="building.html"><span>Next</span>Building from source</a></nav>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <div class="footer__brand">
+        <img src="../assets/iris-64.png" width="32" height="32" alt="">
+        <div>
+          <p><strong>Iris</strong> by Tulip Labs</p>
+          <p class="muted">Cesar Jose Luis Torrecilla Gelvez</p>
+        </div>
+      </div>
+      <ul class="footer__links" role="list">
+        <li><a href="index.html">Docs</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser">GitHub</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/releases">Releases</a></li>
+        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/blob/main/LICENSE">License: GPL-3.0</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/issues">Report an issue</a></li>
+      </ul>
+      <p class="muted footer__small">This site has no trackers, no analytics and no outside fonts or scripts.</p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -183,7 +183,7 @@ New_Tab :: struct {
 	after:     ^Tab,
 	select:    bool,
 	/// the engine's opener view, for a pop-up that must share its process
-	/// (WPE; CEF opens pop-ups as plain tabs with their address)
+	/// and talk to its opener (both engines make such related pop-ups)
 	related:   rawptr,
 	lazy:      bool,
 	pinned:    bool,

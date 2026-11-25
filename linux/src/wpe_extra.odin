@@ -115,10 +115,10 @@ WPE_SETTINGS_SOURCE_APPLICATION :: 1
 /// the first view made the display (Iris does not make it earlier)
 @(private="file") display_made: bool
 
-/// pages follow Iris's light or dark (prefers-color-scheme): WPE's
-/// platform setting on Iris's display, every view on it at once
-engine_set_color_scheme :: proc(dark: bool) {
-	pages_dark = dark
+/// Iris went light or dark (theme.dark): pages follow (prefers-color-scheme)
+/// through WPE's platform setting on Iris's display, every view on it at once
+engine_theme_changed :: proc() {
+	pages_dark = theme.dark
 	// the display is made with the first view (tab_ensure_web): not before
 	if display_made do color_scheme_sync()
 }

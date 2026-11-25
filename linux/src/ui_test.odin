@@ -178,3 +178,32 @@ test_new_window_choice :: proc(t: ^testing.T) {
 		testing.expect(t, !link_wants_new_tab(1, 0))
 	}
 }
+
+@(test)
+test_page_first_keys :: proc(t: ^testing.T) {
+	// a web app's own shortcuts: the page first
+	testing.expect(t, page_first_key(key('k', {.Ctrl})))
+	testing.expect(t, page_first_key(key('m', {.Ctrl})))
+	testing.expect(t, page_first_key(key('f', {.Ctrl})))
+	testing.expect(t, page_first_key(key('c', {.Ctrl, .Shift})))
+	testing.expect(t, page_first_key(key('s', {.Ctrl, .Shift})))
+	// always Iris's
+	for sym in ([?]u32{'l', 't', 'w', 'n', 'q'}) do testing.expect(t, !page_first_key(key(sym, {.Ctrl})))
+	testing.expect(t, !page_first_key(key('t', {.Ctrl, .Shift})))
+	testing.expect(t, !page_first_key(key(plat.KEY_Tab, {.Ctrl})))
+	testing.expect(t, !page_first_key(key('k', {.Ctrl, .Shift})))
+	testing.expect(t, !page_first_key(key('c', {.Ctrl})))
+	testing.expect(t, !page_first_key(key('k', {.Ctrl, .Alt})))
+	testing.expect(t, !page_first_key(key('k')))
+	// the page's answer, for this ask only
+	took, ours := key_answer("7:page", 7)
+	testing.expect(t, took && ours)
+	took, ours = key_answer("7:free", 7)
+	testing.expect(t, !took && ours)
+	took, ours = key_answer("7:", 7)
+	testing.expect(t, !took && ours)
+	_, ours = key_answer("6:page", 7)
+	testing.expect(t, !ours)
+	_, ours = key_answer("", 7)
+	testing.expect(t, !ours)
+}

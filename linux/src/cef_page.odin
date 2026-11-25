@@ -166,7 +166,8 @@ page_focus :: proc(p: ^Page, on: bool) {
 /// CEF reads keys by Windows key code and xkb keycode: no keymap needed
 set_keymap :: proc(format: u32, fd: i32, size: u32) {}
 
-/// the desktop copied something: a paste in the page types it (CEF's own
+/// the desktop copied something: kept, and put on Chromium's own clipboard
+/// when a page pastes (cef_view.odin's clipboard_to_chromium; CEF's
 /// clipboard has no desktop behind it: its ozone platform is headless)
 clipboard_from_desktop :: proc(text: string) {
 	delete(clipboard_text)
@@ -255,22 +256,23 @@ page_key :: proc(p: ^Page, e: plat.Key_Event) {
 	host := p.view.host
 	if host == nil do return
 	ctrl := .Ctrl in e.mods
-	// the page's clipboard is Iris's: Ctrl+V types the desktop's text,
-	// Ctrl+C / Ctrl+X take the selection to the desktop
-	if ctrl && !(.Alt in e.mods) && e.pressed {
-		switch e.sym {
-		case 'v':
-			page_commit_text(p, clipboard_text)
-			return
-		case 'c', 'x':
-			tab_edit(cast(^Tab)p.user, e.sym == 'c' ? EDIT_COPY : EDIT_CUT)
-			return
-		}
+	// Ctrl+V: Chromium's clipboard gets the desktop's text first (it has no
+	// desktop of its own), then the key goes to the page, whose paste event
+	// fires as in any browser (cef_view.odin). Ctrl+C / X / A / Z go as
+	// they are: the page's copy event fires, and what it copied comes back
+	// to the desktop by the page's copy watcher.
+	if ctrl && !(.Alt in e.mods) && e.pressed && keycode_us_letter(e.code, e.sym) == 'V' {
+		cef_paste_key(cast(^Tab)p.user, i32(e.code), flags(e.mods, 0))
+		return
 	}
 	ev := cef_key_event_t{size = size_of(cef_key_event_t)}
 	ev.modifiers = flags(e.mods, 0)
 	if e.repeat do ev.modifiers |= EVENTFLAG_IS_REPEAT
 	ev.windows_key_code = windows_key_code(e.keysym, e.sym)
+	// a key of a layout that is not Latin (Cyrillic, Greek...): the key the
+	// US layout has there, as Chromium does itself, so Ctrl+A, Ctrl+Z and
+	// the rest work in every layout
+	if ev.windows_key_code == 0 do ev.windows_key_code = us_layout_key_code(e.code)
 	ev.native_key_code = i32(e.code)
 	if !e.pressed {
 		ev.type = KEYEVENT_KEYUP
@@ -314,6 +316,49 @@ page_preedit :: proc(p: ^Page, text: string) {
 	none := cef_range_t{max(u32), max(u32)}
 	sel := cef_range_t{u32(len(text)), u32(len(text))}
 	host.ime_set_composition(host, &s, 0, nil, &none, &sel)
+}
+
+// ---- pure logic, no CEF in it (scratch tests copy it from between the
+// markers) ---- BEGIN CEF_LOGIC_KEYS
+
+/// the Windows key code of the key at this place on a US keyboard (code:
+/// the xkb keycode, evdev's + 8), for a layout whose keysyms are not Latin
+us_layout_key_code :: proc(code: u32) -> i32 {
+	if code < 8 do return 0
+	ROW_Q := "QWERTYUIOP"
+	ROW_A := "ASDFGHJKL"
+	ROW_Z := "ZXCVBNM"
+	switch k := code - 8; k {
+	case 2 ..= 10: return i32('1' + k - 2) // KEY_1..KEY_9
+	case 11: return '0'
+	case 12: return 0xBD // minus
+	case 13: return 0xBB // equal
+	case 16 ..= 25: return i32(ROW_Q[k - 16])
+	case 26: return 0xDB // [
+	case 27: return 0xDD // ]
+	case 30 ..= 38: return i32(ROW_A[k - 30])
+	case 39: return 0xBA // ;
+	case 40: return 0xDE // '
+	case 41: return 0xC0 // `
+	case 43: return 0xDC // backslash
+	case 44 ..= 50: return i32(ROW_Z[k - 44])
+	case 51: return 0xBC // ,
+	case 52: return 0xBE // .
+	case 53: return 0xBF // /
+	case 57: return 0x20 // space
+	case 86: return 0xE2 // the key left of Z on ISO keyboards
+	}
+	return 0
+}
+
+/// the letter a shortcut means: the keysym's, when it is Latin (Dvorak's V
+/// is where Dvorak puts it), else the US layout's at that place
+keycode_us_letter :: proc(code, sym: u32) -> i32 {
+	if sym >= 'a' && sym <= 'z' do return i32(sym - 'a' + 'A')
+	if sym >= 'A' && sym <= 'Z' do return i32(sym)
+	if sym < 0x80 do return 0 // a Latin key that is not a letter
+	k := us_layout_key_code(code)
+	return k >= 'A' && k <= 'Z' ? k : 0
 }
 
 /// a keysym as the Windows virtual key code Chromium reads keys by
@@ -377,5 +422,7 @@ windows_key_code :: proc(keysym, sym: u32) -> i32 {
 	}
 	return 0
 }
+
+// ---- END CEF_LOGIC_KEYS
 
 } // when ENGINE_CEF
