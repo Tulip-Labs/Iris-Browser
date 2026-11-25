@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Using Iris — Iris docs</title>
+  <meta name="description" content="How to use Iris: tabs, pinned tabs, workspaces, split view, compact mode, peek, reader, the command palette, containers, private tabs, the sandbox and more.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0B0C0E" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://tulip-labs.github.io/Iris-Browser/docs/using.html">
+  <link rel="icon" type="image/svg+xml" href="../assets/iris.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="../assets/iris-64.png">
+  <link rel="apple-touch-icon" href="../assets/iris-256.png">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Iris">
+  <meta property="og:title" content="Using Iris — Iris docs">
+  <meta property="og:description" content="How to use Iris: tabs, pinned tabs, workspaces, split view, compact mode, peek, reader, the command palette, containers, private tabs, the sandbox and more.">
+  <meta property="og:url" content="https://tulip-labs.github.io/Iris-Browser/docs/using.html">
+  <meta property="og:image" content="https://tulip-labs.github.io/Iris-Browser/assets/iris-512.png">
+  <meta name="twitter:card" content="summary">
+  <link rel="stylesheet" href="../style.css">
+  <script src="../main.js" defer></script>
+</head>
+<body class="docs-page">
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <nav class="topbar__inner glass" aria-label="Main">
+      <a class="brand" href="../index.html" aria-label="Iris, home">
+        <img src="../assets/iris-64.png" width="28" height="28" alt="">
+        <span>Iris</span>
+      </a>
+      <ul class="nav">
+        <li><a href="../index.html#features">Features</a></li>
+        <li><a href="../index.html#privacy">Privacy</a></li>
+        <li><a href="../index.html#engines">Engines</a></li>
+        <li><a href="../index.html#android">Android</a></li>
+        <li><a href="../index.html#install">Install</a></li>
+        <li><a href="index.html" aria-current="page">Docs</a></li>
+        <li><a href="../index.html#faq">FAQ</a></li>
+      </ul>
+      <div class="topbar__end">
+        <a class="btn btn--small topbar__docs" href="index.html" aria-current="page">Docs</a>
+        <a class="btn btn--small" href="https://github.com/Tulip-Labs/Iris-Browser">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <div class="docs">
+    <aside class="docs__side">
+      <nav class="sidenav glass" aria-label="Documentation">
+        <p class="sidenav__title">Documentation</p>
+        <ul>
+          <li><a href="index.html">Getting started</a></li>
+          <li><a href="using.html" aria-current="page">Using Iris</a>
+            <ul>
+              <li><a href="#search">Search and the address bar</a></li>
+              <li><a href="#tabs">Tabs</a></li>
+              <li><a href="#workspaces">Workspaces</a></li>
+              <li><a href="#split">Split View</a></li>
+              <li><a href="#compact">Compact mode</a></li>
+              <li><a href="#peek">Peek</a></li>
+              <li><a href="#reader">Reader</a></li>
+              <li><a href="#palette">Command palette</a></li>
+              <li><a href="#find">Find and zoom</a></li>
+              <li><a href="#downloads">Downloads</a></li>
+              <li><a href="#containers">Containers</a></li>
+              <li><a href="#private">Private tabs and the sandbox</a></li>
+              <li><a href="#https">HTTPS first</a></li>
+              <li><a href="#forget">Forget everything on close</a></li>
+              <li><a href="#menu">The right-click menu</a></li>
+            </ul>
+          </li>
+          <li><a href="shields.html">Shields</a></li>
+          <li><a href="shortcuts.html">Keyboard shortcuts</a></li>
+          <li><a href="privacy.html">Privacy</a></li>
+          <li><a href="building.html">Building from source</a></li>
+          <li><a href="troubleshooting.html">Troubleshooting and FAQ</a></li>
+          <li><a href="contributing.html">Contributing and license</a></li>
+        </ul>
+      </nav>
+    </aside>
+
+    <main id="main" class="docs__main">
+      <article class="prose">
+
+        <p class="eyebrow">Documentation</p>
+        <h1>Using Iris</h1>
+        <p class="lead">This page covers Iris for Linux. Iris has no main menu: everything is a shortcut, a button in the chrome, the right-click menu or the command palette. Items marked <span class="from">From 2.3</span> arrive with Iris 2.3.</p>
+
+        <h2 id="search">Search and the address bar</h2>
+        <p><kbd>Ctrl</kbd>+<kbd>L</kbd> or <kbd>F6</kbd> puts the keyboard in the address bar. Type an address, or anything else to search Google. Each suggestion list also offers <em>Ask Google AI Mode</em>. Start with <code>yt</code> to search YouTube: <code>yt cats</code>.</p>
+        <p>The start page <span class="from">From 2.3</span> is drawn by Iris itself, with no web page behind it. A new tab opens at once and uses no web process until you go somewhere. <kbd>Alt</kbd>+<kbd>Home</kbd> takes the tab back to it.</p>
+
+        <h2 id="tabs">Tabs</h2>
+        <ul>
+          <li><kbd>Ctrl</kbd>+<kbd>T</kbd> opens a new tab and <kbd>Ctrl</kbd>+<kbd>W</kbd> closes one. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> brings closed tabs back where they were, pinned or not.</li>
+          <li><strong>Pinned tabs</strong> <span class="nowrap"><span class="from">From 2.3</span>:</span> choose <em>Pin Tab</em> from a tab's menu. A pinned tab stays at the left as its icon.</li>
+          <li><strong>Sound</strong> <span class="nowrap"><span class="from">From 2.3</span>:</span> a tab playing sound shows a speaker. Click it, or press <kbd>Ctrl</kbd>+<kbd>M</kbd>, to mute.</li>
+          <li><strong>Duplicate</strong> <span class="nowrap"><span class="from">From 2.3</span>:</span> <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>K</kbd>.</li>
+          <li>Links that open a new window open as a tab next to yours. Script pop-ups need your click and may only go to the same site or a sign-in page; anything else is stopped, with an Open button if you meant it.</li>
+          <li>Every tab stays awake: Iris has no sleeping tabs. Closing a tab ends its page and frees its memory.</li>
+        </ul>
+
+        <h2 id="workspaces">Workspaces <span class="from">From 2.3</span></h2>
+        <p>Workspaces are named sets of tabs. Make one from the Containers menu or the command palette, and switch with <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>9</kbd>. The first workspace is Home; removing a workspace moves its tabs there. Every tab and workspace comes back next time.</p>
+
+        <h2 id="split">Split View <span class="from">From 2.3</span></h2>
+        <p><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> shows two tabs side by side. Drag the divider between them to resize.</p>
+
+        <h2 id="compact">Compact mode <span class="from">From 2.3</span></h2>
+        <p><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> hides the tabs and the bar. They slide down in glass when the pointer reaches the top of the window.</p>
+
+        <h2 id="peek">Peek <span class="from">From 2.3</span></h2>
+        <p>Alt+click a link, or choose <em>Peek Link</em> from its menu, to open it in a floating glass card over the page.</p>
+        <ul>
+          <li><kbd>Esc</kbd> or a click beside the card closes it, and its view and process go with it.</li>
+          <li><kbd>Enter</kbd>, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> or the expand button turns it into a tab.</li>
+        </ul>
+
+        <h2 id="reader">Reader <span class="from">From 2.3</span></h2>
+        <p>On an article, a Reader button appears in the address bar. Click it or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd> to see the article alone, on a calm glass page in light or dark that runs no script.</p>
+
+        <h2 id="palette">Command palette <span class="from">From 2.3</span></h2>
+        <p><kbd>Ctrl</kbd>+<kbd>K</kbd> opens the palette. It finds your tabs in every workspace, Iris's commands and your history by a fuzzy match. Settings such as HTTPS first and Shields for the current site can be switched from here too.</p>
+
+        <h2 id="find">Find and zoom</h2>
+        <ul>
+          <li><kbd>Ctrl</kbd>+<kbd>F</kbd> finds in the page.</li>
+          <li><kbd>Ctrl</kbd>+<kbd>+</kbd>, <kbd>Ctrl</kbd>+<kbd>−</kbd> and <kbd>Ctrl</kbd>+<kbd>0</kbd> zoom in, zoom out and reset.</li>
+          <li><kbd>F11</kbd> is full screen. Videos can go full screen too.</li>
+        </ul>
+
+        <h2 id="downloads">Downloads</h2>
+        <p>Files go to your Downloads folder and show in a glass panel with their progress (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Y</kbd> or <kbd>Ctrl</kbd>+<kbd>J</kbd>). The downloads button appears while a file comes in, then shows how many finished until you open it. Downloaded files get safe names.</p>
+
+        <h2 id="containers">Containers</h2>
+        <p>Containers keep sites apart. Iris starts with Personal, Work, Shopping and Banking, and you can add your own.</p>
+        <ul>
+          <li>Each container keeps its own cookies, storage, cache and sign-ins, on disk.</li>
+          <li>Open a new tab in a container, or open the current page in another one.</li>
+          <li>Removing a container deletes everything its sites kept.</li>
+        </ul>
+
+        <h2 id="private">Private tabs and the sandbox</h2>
+        <p><strong>Private tabs</strong> (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd>) share one in-memory world, which is gone when the last private tab closes.</p>
+        <p><strong>The sandbox</strong> is automatic. Sites Iris does not trust open in it without asking: plain http, a bare IP address (in any form) or a failing certificate.</p>
+        <ul>
+          <li>It has web processes of its own and a network session per tab, in memory only.</li>
+          <li>It gives none of your data to the site, and allows no downloads, camera, microphone, location, clipboard, WebGL, WebRTC or pop-ups.</li>
+          <li>Sandboxed tabs have an orange rim.</li>
+        </ul>
+
+        <h2 id="https">HTTPS first <span class="from">From 2.3</span></h2>
+        <p>On by default: an http address is tried over https first. When a site has no https, one click takes you back to http, which opens in the sandbox. Turn it off in the Shields panel or from the command palette.</p>
+
+        <h2 id="forget">Forget everything on close <span class="from">From 2.3</span></h2>
+        <p>Off by default. Turn it on in the Shields panel. When Iris closes, your history, cookies, sign-ins, site data and tabs go. Cookies and site data are cleared when Iris next starts, before any page loads.</p>
+
+        <h2 id="menu">The right-click menu</h2>
+        <ul>
+          <li><strong>Links:</strong> open in a new tab or in a container, Peek <span class="nowrap"><span class="from">From 2.3</span>,</span> copy, Copy Clean Link <span class="from">From 2.3</span> (the address without its tracking), download.</li>
+          <li><strong>Images and video:</strong> open, copy the address, save.</li>
+          <li><strong>Selected text:</strong> copy, or ask Google AI Mode about it.</li>
+          <li><strong>Text fields:</strong> cut, copy, paste, select all.</li>
+          <li><strong>The page:</strong> back, forward, reload, select all, Reader <span class="from">From 2.3</span> on articles, and <em>Site broken? Reload without Shields</em> <span class="nowrap"><span class="from">From 2.3</span>.</span></li>
+        </ul>
+
+      </article>
+      <nav class="pager" aria-label="Previous and next page"><a class="pager__prev glass" href="index.html"><span>Previous</span>Getting started</a><a class="pager__next glass" href="shields.html"><span>Next</span>Shields</a></nav>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <div class="footer__brand">
+        <img src="../assets/iris-64.png" width="32" height="32" alt="">
+        <div>
+          <p><strong>Iris</strong> by Tulip Labs</p>
+          <p class="muted">Cesar Jose Luis Torrecilla Gelvez</p>
+        </div>
+      </div>
+      <ul class="footer__links" role="list">
+        <li><a href="index.html">Docs</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser">GitHub</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/releases">Releases</a></li>
+        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/blob/main/LICENSE">License: GPL-3.0</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/issues">Report an issue</a></li>
+      </ul>
+      <p class="muted footer__small">This site has no trackers, no analytics and no outside fonts or scripts.</p>
+    </div>
+  </footer>
+</body>
+</html>
