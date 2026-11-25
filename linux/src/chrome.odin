@@ -391,12 +391,7 @@ chrome_dialog :: proc(id, kind: int, title, message, default_text: string) {
 @(private="file") answer_option :: proc(index: int) {
 	id := ui.option_id
 	ui.option_id = 0
-	if m, ok := b.options[id]; ok {
-		if index >= 0 do webkit_option_menu_activate_item(m, u32(index))
-		webkit_option_menu_close(m)
-		unref(m)
-		delete_key(&b.options, id)
-	}
+	engine_answer_option(id, index)
 }
 
 @(private="file") row_index_of_option :: proc(item: int) -> int {
@@ -410,11 +405,7 @@ chrome_dialog :: proc(id, kind: int, title, message, default_text: string) {
 }
 
 answer_permission :: proc(id: int, allow: bool) {
-	if r, ok := b.permissions[id]; ok {
-		if allow { webkit_permission_request_allow(r) } else { webkit_permission_request_deny(r) }
-		unref(r)
-		delete_key(&b.permissions, id)
-	}
+	engine_answer_permission(id, allow)
 }
 
 /// the dialog showing goes, answered no (its page is closing)
@@ -426,16 +417,7 @@ chrome_dismiss_dialog :: proc() {
 	b.dialog_tab = nil
 	if !ui.dialog_open do return
 	ui.dialog_open = false
-	id := ui.dialog_id
-	if d, ok := b.dialogs[id]; ok {
-		kind := webkit_script_dialog_get_dialog_type(d)
-		ok_ := yes || kind == WEBKIT_SCRIPT_DIALOG_ALERT
-		if kind == WEBKIT_SCRIPT_DIALOG_CONFIRM || kind == WEBKIT_SCRIPT_DIALOG_BEFORE_UNLOAD_CONFIRM do webkit_script_dialog_confirm_set_confirmed(d, ok_ ? 1 : 0)
-		if kind == WEBKIT_SCRIPT_DIALOG_PROMPT && ok_ do webkit_script_dialog_prompt_set_text(d, cstr(line_string(&ui.prompt)))
-		webkit_script_dialog_close(d)
-		webkit_script_dialog_unref(d)
-		delete_key(&b.dialogs, id)
-	}
+	engine_answer_dialog(ui.dialog_id, yes, line_string(&ui.prompt))
 	if ui.focus == .Prompt do ui.focus = .None
 	chrome_set_focus(false)
 }
@@ -443,14 +425,14 @@ chrome_dismiss_dialog :: proc() {
 @(private="file") close_find :: proc() {
 	ui.find_open = false
 	ui.find_count = -1
-	if t := b.current; t != nil && t.web != nil do webkit_find_controller_search_finish(webkit_web_view_get_find_controller(t.web))
+	if t := b.current; t != nil do tab_find_stop(t)
 	if ui.focus == .Find do chrome_set_focus(false)
 	chrome_push()
 }
 
 // ---------------------------------------------------------------- suggestions
 
-@(private="file") clear_suggestions :: proc() {
+@(private) clear_suggestions :: proc() {
 	for s in ui.suggestions {
 		delete(s.title)
 		delete(s.sub)
@@ -481,42 +463,18 @@ chrome_dismiss_dialog :: proc() {
 
 // ---------------------------------------------------------------- find in page
 
-WEBKIT_FIND_OPTIONS_CASE_INSENSITIVE :: u32(1 << 0)
-WEBKIT_FIND_OPTIONS_WRAP_AROUND :: u32(1 << 4)
-
-@(private="file") find_hooked: map[^WebKitFindController]bool
-
+/// dir: "next", "prev", or "" for a new search of the field's text (the
+/// engine sets ui.find_count as it counts)
 @(private="file") find :: proc(dir: string) {
 	t := b.current
-	if t == nil || t.web == nil do return
-	fc := webkit_web_view_get_find_controller(t.web)
-	if fc not_in find_hooked {
-		find_hooked[fc] = true
-		on(fc, "counted-matches", rawptr(proc "c" (fc: rawptr, n: u32, d: rawptr) {
-			context = main_context
-			ui.find_count = int(n)
-			chrome_push()
-		}), nil)
-		on(fc, "failed-to-find-text", rawptr(proc "c" (fc: rawptr, d: rawptr) {
-			context = main_context
-			ui.find_count = 0
-			chrome_push()
-		}), nil)
-	}
+	if t == nil || !tab_has_view(t) do return
 	text := line_string(&ui.find)
-	switch dir {
-	case "next": webkit_find_controller_search_next(fc)
-	case "prev": webkit_find_controller_search_previous(fc)
-	case:
-		if len(text) == 0 {
-			webkit_find_controller_search_finish(fc)
-			ui.find_count = -1
-			return
-		}
-		opts := WEBKIT_FIND_OPTIONS_CASE_INSENSITIVE | WEBKIT_FIND_OPTIONS_WRAP_AROUND
-		webkit_find_controller_search(fc, cstr(text), opts, 1000)
-		webkit_find_controller_count_matches(fc, cstr(text), opts, 1000)
+	if dir == "" && len(text) == 0 {
+		tab_find_stop(t)
+		ui.find_count = -1
+		return
 	}
+	tab_find(t, text, dir)
 }
 
 // ---------------------------------------------------------------- doing what was clicked
@@ -552,7 +510,7 @@ WEBKIT_FIND_OPTIONS_WRAP_AROUND :: u32(1 << 4)
 		if t == nil do break
 		host, _ := host_of(t.url, context.temp_allocator)
 		toggle_site(site_of(host))
-		shields_apply(t.ucm, host)
+		tab_shields_apply(t, host)
 		tab_reload(t)
 	case .Shield_All:
 		s := settings()
@@ -566,7 +524,7 @@ WEBKIT_FIND_OPTIONS_WRAP_AROUND :: u32(1 << 4)
 		if l != s.shieldLevel {
 			s.shieldLevel = l
 			settings_save()
-			shields_level_changed()
+			engine_shields_level_changed()
 			chrome_toast(fmt.tprintf("Shields: %s. Pages pick it up as they load.", level_title(l)))
 		}
 	case .Dl_Cancel, .Dl_Open, .Dl_Show:
@@ -659,11 +617,10 @@ WEBKIT_FIND_OPTIONS_WRAP_AROUND :: u32(1 << 4)
 	case .Ctx_Save:
 		if t.sandboxed {
 			browser_toast("Downloads are off for sites in the sandbox")
-		} else if t.web != nil {
-			d := webkit_web_view_download_uri(t.web, cstr(a.s))
-			if d != nil do unref(d)
+		} else {
+			tab_download(t, a.s)
 		}
-	case .Ctx_Edit: if t.web != nil do webkit_web_view_execute_editing_command(t.web, cstr(a.s))
+	case .Ctx_Edit: tab_edit(t, a.s)
 	case .Ctx_Back: tab_back(t)
 	case .Ctx_Forward: tab_forward(t)
 	case .Ctx_Reload: tab_reload(t)
@@ -1711,7 +1668,7 @@ Pill :: struct {
 			append(&items, Item{kind = .Sep})
 			for l in Level do row(&items, l == s.shieldLevel ? Icon.Check : nil, level_title(l), {op = .Level, n = int(l)}, on = l == s.shieldLevel)
 			append(&items, Item{kind = .Note, text = level_hint(s.shieldLevel)})
-			if !shields_ready() do append(&items, Item{kind = .Note, text = "Getting the block list ready (the first start takes a moment)…"})
+			if !engine_shields_ready() do append(&items, Item{kind = .Note, text = "Getting the block list ready (the first start takes a moment)…"})
 		}
 		append(&items, Item{kind = .Sep})
 		row(&items, .Lock, "HTTPS first", {op = .Command, n = int(Command.Https)}, s.httpsOnly ? "On" : "Off", on = s.httpsOnly)
@@ -1846,20 +1803,20 @@ Pill :: struct {
 		}
 		if c.editable {
 			if len(items) > 0 do append(&items, Item{kind = .Sep})
-			row(&items, .Cut, "Cut", {op = .Ctx_Edit, s = WEBKIT_EDITING_COMMAND_CUT}, "Ctrl+X")
-			row(&items, .Copy, "Copy", {op = .Ctx_Edit, s = WEBKIT_EDITING_COMMAND_COPY}, "Ctrl+C")
-			row(&items, .Paste, "Paste", {op = .Ctx_Edit, s = WEBKIT_EDITING_COMMAND_PASTE}, "Ctrl+V")
-			row(&items, .Select_All, "Select All", {op = .Ctx_Edit, s = WEBKIT_EDITING_COMMAND_SELECT_ALL}, "Ctrl+A")
+			row(&items, .Cut, "Cut", {op = .Ctx_Edit, s = EDIT_CUT}, "Ctrl+X")
+			row(&items, .Copy, "Copy", {op = .Ctx_Edit, s = EDIT_COPY}, "Ctrl+C")
+			row(&items, .Paste, "Paste", {op = .Ctx_Edit, s = EDIT_PASTE}, "Ctrl+V")
+			row(&items, .Select_All, "Select All", {op = .Ctx_Edit, s = EDIT_SELECT_ALL}, "Ctrl+A")
 		} else if c.selection {
 			if len(items) > 0 do append(&items, Item{kind = .Sep})
-			row(&items, .Copy, "Copy", {op = .Ctx_Edit, s = WEBKIT_EDITING_COMMAND_COPY}, "Ctrl+C")
+			row(&items, .Copy, "Copy", {op = .Ctx_Edit, s = EDIT_COPY}, "Ctrl+C")
 			row(&items, .Sparkle, "Ask Google AI Mode", {op = .Ctx_Ask_AI}, color = ACCENT)
 		}
 		if len(items) == 0 {
 			row(&items, .Back, "Back", {op = .Ctx_Back}, "Alt+←", disabled = ct == nil || !ct.can_back)
 			row(&items, .Forward, "Forward", {op = .Ctx_Forward}, "Alt+→", disabled = ct == nil || !ct.can_forward)
 			row(&items, .Reload, "Reload", {op = .Ctx_Reload}, "Ctrl+R")
-			row(&items, .Select_All, "Select All", {op = .Ctx_Edit, s = WEBKIT_EDITING_COMMAND_SELECT_ALL}, "Ctrl+A")
+			row(&items, .Select_All, "Select All", {op = .Ctx_Edit, s = EDIT_SELECT_ALL}, "Ctrl+A")
 			if ct != nil && (ct.article || ct.reader) do row(&items, .Reader, ct.reader ? "Leave Reader" : "Reader", {op = .Command, n = int(Command.Reader)}, "Ctrl+Alt+R")
 			// the way out when the shield breaks a site (and back in)
 			if ct != nil && ct == b.current && settings().shields && strings.has_prefix(ct.url, "http") {
@@ -2096,14 +2053,4 @@ Pill :: struct {
 	}
 }
 
-// ---------------------------------------------------------------- shields everywhere
-
-/// new rules or the switch changed: every open page takes them
-browser_reapply_shields :: proc() {
-	for t in b.tabs {
-		if t.ucm == nil do continue
-		h, _ := host_of(t.url, context.temp_allocator)
-		shields_apply(t.ucm, h)
-	}
-}
 

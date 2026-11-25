@@ -70,7 +70,7 @@ split_start :: proc(t, other: ^Tab) {
 	b.split_a, b.split_b = t, other
 	if b.split_ratio <= 0 do b.split_ratio = 0.5
 	if b.current != t do browser_select(t)
-	if other.web == nil && len(other.url) > 0 {
+	if !tab_has_view(other) && len(other.url) > 0 {
 		tab_load(other, other.url)
 	}
 	if other.page != nil do page_set_visible(other.page, true)

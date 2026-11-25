@@ -1,10 +1,8 @@
 // The browser: one window, its tabs, and the chrome around them.
 //
-// The chrome (tabs, address bar, menus, dialogs) is HTML in a WPE view of
-// its own, as wide as the window and transparent around what it draws. It
-// tells Iris where its glass goes and which parts of the window it takes
-// the pointer in; Iris draws the glass under it, over the live page, and
-// sends each pointer event and key to the chrome or to the page.
+// The chrome (tabs, address bar, menus, dialogs) is drawn by Iris itself
+// (chrome.odin), with its glass over the live page; each pointer event and
+// key goes to the chrome or to the page (the engine's: engine_api.odin).
 package iris
 
 import "core:fmt"
@@ -42,11 +40,8 @@ Browser :: struct {
 	// input
 	hover:         Target,
 	grab:          Target,
-	// what pages asked for, until answered
-	options:       map[int]^WebKitOptionMenu,
-	dialogs:       map[int]^WebKitScriptDialog,
-	choosers:      map[int]^WebKitFileChooserRequest,
-	permissions:   map[int]^WebKitPermissionRequest,
+	// what pages asked for, until answered (the engine's handles)
+	using pending: Browser_Asks,
 	context_tab:   ^Tab,
 	context_info:  Context_Info,
 	asks:          int,
@@ -185,7 +180,9 @@ New_Tab :: struct {
 	container: string,
 	after:     ^Tab,
 	select:    bool,
-	related:   ^WebKitWebView,
+	/// the engine's opener view, for a pop-up that must share its process
+	/// (WPE; CEF opens pop-ups as plain tabs with their address)
+	related:   rawptr,
 	lazy:      bool,
 	pinned:    bool,
 }
@@ -220,7 +217,7 @@ browser_new_tab :: proc(o: New_Tab) -> ^Tab {
 
 /// a tab showing Iris's start page (no page in it)
 tab_is_start :: proc(t: ^Tab) -> bool {
-	return t != nil && t.web == nil && len(t.url) == 0
+	return t != nil && !tab_has_view(t) && len(t.url) == 0
 }
 
 /// the tab back to the start page (Alt+Home)
@@ -253,11 +250,6 @@ browser_has_tab :: proc(t: ^Tab) -> bool {
 	return false
 }
 
-browser_tab_of_web :: proc(w: ^WebKitWebView) -> ^Tab {
-	for t in b.tabs do if t.web == w do return t
-	return nil
-}
-
 browser_select :: proc(t: ^Tab) {
 	if !browser_has_tab(t) do return
 	old := b.current
@@ -280,7 +272,7 @@ browser_select :: proc(t: ^Tab) {
 	}
 	b.current = t
 	if !tab_is_start(t) do chrome_leave_start()
-	if t.web == nil && len(t.url) > 0 {
+	if !tab_has_view(t) && len(t.url) > 0 {
 		u := strings.clone(t.url, context.temp_allocator)
 		tab_load(t, u)
 	}
@@ -425,88 +417,9 @@ new_window_choice :: proc(u, page_url: string, link, gesture, sandboxed, shield:
 	return len(u) > 0 && u != "about:blank" ? .Own_Tab : .Block
 }
 
-/// a middle click, or Ctrl+click, on a link
-link_wants_new_tab :: proc(button, mods: u32) -> bool {
-	return button == 2 || (button == 1 && (mods & u32(WPE_MODIFIER_KEYBOARD_CONTROL)) != 0)
-}
-
 /// a link from t's page in a tab of its own, next to t
 browser_open_link :: proc(t: ^Tab, u: string, background: bool) {
 	browser_new_tab({url = strings.clone(u, context.temp_allocator), container = t.container, after = t, select = !background})
-}
-
-/// a link that opens a new window opens as a tab next to yours; a
-/// script's pop-up needs your click and goes only to the same site or a
-/// sign-in page; ad domains open nothing
-browser_new_window_action :: proc(t: ^Tab, d: ^WebKitPolicyDecision) -> bool {
-	nav := webkit_navigation_policy_decision_get_navigation_action(cast(^WebKitNavigationPolicyDecision)d)
-	req := webkit_navigation_action_get_request(nav)
-	if req == nil do return false
-	// copied first: the request's own string goes with the decision
-	u := strings.clone(string(webkit_uri_request_get_uri(req)), context.temp_allocator)
-	page_host, _ := host_of(t.url, context.temp_allocator)
-	shield := shields_on_for(page_host)
-	link := webkit_navigation_action_get_navigation_type(nav) == WEBKIT_NAVIGATION_TYPE_LINK_CLICKED
-	gesture := webkit_navigation_action_is_user_gesture(nav) != 0
-	switch new_window_choice(u, t.url, link, gesture, t.sandboxed, shield) {
-	case .Related:
-		return false // WebKit goes on and asks for the view ("create")
-	case .Own_Tab:
-		webkit_policy_decision_ignore(d)
-		// a middle click, or a script's tab you did not click for, stays behind yours
-		background := (link && webkit_navigation_action_get_mouse_button(nav) == 2) || !gesture
-		browser_open_link(t, u, background)
-	case .Block:
-		webkit_policy_decision_ignore(d)
-		if !link && shield && !t.sandboxed do browser_toast("Pop-up blocked")
-	}
-	return true
-}
-
-/// a view for window.open() (no new-window decision comes before it):
-/// the same choice, and a tab that never stays blank
-browser_popup :: proc(t: ^Tab, nav: ^WebKitNavigationAction) -> ^WebKitWebView {
-	if t.web == nil do return nil
-	req := webkit_navigation_action_get_request(nav)
-	u := req != nil ? strings.clone(string(webkit_uri_request_get_uri(req)), context.temp_allocator) : ""
-	page_host, _ := host_of(t.url, context.temp_allocator)
-	shield := shields_on_for(page_host)
-	gesture := webkit_navigation_action_is_user_gesture(nav) != 0
-	switch new_window_choice(u, t.url, false, gesture, t.sandboxed, shield) {
-	case .Block:
-		if shield && !t.sandboxed do browser_toast("Pop-up blocked")
-		return nil
-	case .Own_Tab:
-		browser_open_link(t, u, !gesture)
-		return nil
-	case .Related:
-	}
-	p := browser_new_tab({container = t.container, after = t, related = t.web})
-	if strings.has_prefix(u, "http") do set_str(&p.url, u)
-	// WebKit loads the address into the view itself; if it has not begun
-	// to soon, Iris loads it, and a window the page only wrote into shows
-	Check :: struct {
-		t:  ^Tab,
-		id: int,
-	}
-	c := new(Check)
-	c^ = {p, p.id}
-	after(1200, proc(d: rawptr) {
-		c := cast(^Check)d
-		defer free(c)
-		t := c.t
-		if !browser_has_tab(t) || t.id != c.id do return
-		started := t.web != nil && (t.loading || (webkit_web_view_get_uri(t.web) != nil && string(webkit_web_view_get_uri(t.web)) != "about:blank" && len(string(webkit_web_view_get_uri(t.web))) > 0))
-		if !started && strings.has_prefix(t.url, "http") {
-			u := strings.clone(t.url, context.temp_allocator)
-			tab_load(t, u)
-		}
-		if t.held {
-			t.held = false
-			browser_select(t)
-		}
-	}, c)
-	return p.web
 }
 
 // ---------------------------------------------------------------- input
@@ -568,6 +481,19 @@ browser_pointer :: proc(e: plat.Pointer_Event) {
 		plat.set_cursor(&b.win, h.cursor)
 	}
 	if e.kind == .Enter do return
+	// Alt+click on a link: the link in a peek (the page never sees the click)
+	@(static) swallow: bool
+	if e.kind == .Button && t == .Page {
+		if e.pressed && pt != b.peek && len(ui.status) > 0 && link_wants_peek(e.button, e.mods) && page_may_open(ui.status, pt != nil ? pt.url : "") {
+			swallow = true
+			peek_open(pt, ui.status)
+			return
+		}
+		if !e.pressed && swallow {
+			swallow = false
+			return
+		}
+	}
 	if e.kind == .Button {
 		if e.pressed {
 			b.grab = t
@@ -635,8 +561,8 @@ browser_key :: proc(e: plat.Key_Event) {
 		case 'c': if !shift do return false; compact_toggle()
 		case 'm': tab_toggle_mute(b.current)
 		case 'r':
-			if b.current != nil && b.current.web != nil {
-				if shift { webkit_web_view_reload_bypass_cache(b.current.web) } else { tab_reload(b.current) }
+			if b.current != nil {
+				if shift { tab_reload_bypass(b.current) } else { tab_reload(b.current) }
 			}
 		case 'f': chrome_open_find()
 		case 'j': chrome_open_downloads()
@@ -707,112 +633,30 @@ browser_hover_link :: proc(t: ^Tab, link: string) {
 	if t != b.current do return
 	if len(link) > 0 {
 		// the link's site is looked up while the pointer rests on it
-		if h, ok := host_of(link, context.temp_allocator); ok && t.web != nil do warm_dns(webkit_web_view_get_network_session(t.web), h)
+		if h, ok := host_of(link, context.temp_allocator); ok do tab_warm_dns(t, h)
 	}
 	chrome_status(link)
 }
 
-browser_permission :: proc(t: ^Tab, req: ^WebKitPermissionRequest) {
-	// nothing of your computer for a site in the sandbox
-	if t.sandboxed {
-		webkit_permission_request_deny(req)
-		return
-	}
-	name := type_name(req)
-	what: string
-	switch name {
-	case "WebKitUserMediaPermissionRequest": what = "use your camera or microphone"
-	case "WebKitGeolocationPermissionRequest": what = "know your location"
-	case "WebKitNotificationPermissionRequest": what = "show notifications"
-	case "WebKitClipboardPermissionRequest": what = "read your clipboard"
-	case "WebKitPointerLockPermissionRequest":
-		webkit_permission_request_allow(req)
-		return
-	case: what = "use a feature of your computer"
-	}
-	b.asks += 1
-	b.permissions[b.asks] = cast(^WebKitPermissionRequest)g_object_ref(req)
-	site := display_url(t.url, context.temp_allocator)
-	chrome_permission(b.asks, strings.concatenate({len(site) > 0 ? site : "This page", " wants to ", what}, context.temp_allocator))
-}
-
-browser_context_menu :: proc(t: ^Tab, menu: ^WebKitContextMenu, hit: ^WebKitHitTestResult) {
-	x, y: i32
-	webkit_context_menu_get_position(menu, &x, &y)
+/// what was under the pointer when a page's context menu was asked for
+/// (strings are copied); the chrome shows its menu at x, y in the page
+browser_context_menu_at :: proc(t: ^Tab, x, y: f32, info: Context_Info) {
 	ci := &b.context_info
 	delete(ci.link)
 	delete(ci.image)
 	delete(ci.media)
-	ci^ = {}
-	if webkit_hit_test_result_context_is_link(hit) != 0 do ci.link = strings.clone(string(webkit_hit_test_result_get_link_uri(hit)))
-	if webkit_hit_test_result_context_is_image(hit) != 0 do ci.image = strings.clone(string(webkit_hit_test_result_get_image_uri(hit)))
-	if webkit_hit_test_result_context_is_media(hit) != 0 do ci.media = strings.clone(string(webkit_hit_test_result_get_media_uri(hit)))
-	ci.editable = webkit_hit_test_result_context_is_editable(hit) != 0
-	ci.selection = webkit_hit_test_result_context_is_selection(hit) != 0
+	ci^ = {editable = info.editable, selection = info.selection}
+	if !strings.has_prefix(info.link, "javascript:") do ci.link = strings.clone(info.link)
+	ci.image = strings.clone(info.image)
+	ci.media = strings.clone(info.media)
 	b.context_tab = t
-	if strings.has_prefix(ci.link, "javascript:") {
-		delete(ci.link)
-		ci.link = ""
-	}
 	r := browser_tab_rect(t)
-	chrome_context_menu(r.x + f32(x), r.y + f32(y))
-}
-
-browser_option_menu :: proc(t: ^Tab, menu: ^WebKitOptionMenu, rect: ^WPERectangle) {
-	b.asks += 1
-	id := b.asks
-	b.options[id] = cast(^WebKitOptionMenu)g_object_ref(menu)
-	items := make([dynamic]Option_Item, context.temp_allocator)
-	for i in 0 ..< webkit_option_menu_get_n_items(menu) {
-		it := webkit_option_menu_get_item(menu, i)
-		append(&items, Option_Item{string(webkit_option_menu_item_get_label(it)), webkit_option_menu_item_is_group_label(it) != 0,
-			webkit_option_menu_item_is_selected(it) != 0, webkit_option_menu_item_is_enabled(it) != 0})
-	}
-	r := rect != nil ? rect^ : WPERectangle{}
-	c := browser_tab_rect(t)
-	chrome_option_menu(id, c.x + f32(r.x), c.y + f32(r.y + r.height), f32(r.width), items[:])
-	on(menu, "close", rawptr(proc "c" (m: ^WebKitOptionMenu, d: rawptr) {
-		context = main_context
-		chrome_close_option()
-	}), nil)
-}
-
-browser_script_dialog :: proc(t: ^Tab, d: ^WebKitScriptDialog) {
-	// a dialog shows over its own page only, one at a time, and a page that
-	// keeps opening them is stopped; the others are answered at once (no to
-	// a question, yes to leaving the page), so no page waits forever
-	host := display_url(t.url, context.temp_allocator)
-	if t != b.current || b.dialog_tab != nil || !dialog_allowed(t, now_s()) {
-		kind := webkit_script_dialog_get_dialog_type(d)
-		if kind == WEBKIT_SCRIPT_DIALOG_CONFIRM do webkit_script_dialog_confirm_set_confirmed(d, 0)
-		if kind == WEBKIT_SCRIPT_DIALOG_BEFORE_UNLOAD_CONFIRM do webkit_script_dialog_confirm_set_confirmed(d, 1)
-		if t.dialogs_blocked && t.dialogs_n == DIALOGS_BURST + 1 {
-			t.dialogs_n += 1 // said once
-			browser_toast(strings.concatenate({len(host) > 0 ? host : "This page", " kept opening dialogs: Iris stopped them"}, context.temp_allocator))
-		}
-		return
-	}
-	b.dialog_tab = t
-	b.asks += 1
-	b.dialogs[b.asks] = webkit_script_dialog_ref(d)
-	kind := webkit_script_dialog_get_dialog_type(d)
-	default_text := kind == WEBKIT_SCRIPT_DIALOG_PROMPT ? string(webkit_script_dialog_prompt_get_default_text(d)) : ""
-	chrome_dialog(b.asks, int(kind), len(host) > 0 ? host : "This page", string(webkit_script_dialog_get_message(d)), default_text)
+	chrome_context_menu(r.x + x, r.y + y)
 }
 
 /// a tab going away answers the dialog its page left open
 browser_forget_dialog :: proc(t: ^Tab) {
 	if b.dialog_tab == t do chrome_dismiss_dialog()
-}
-
-browser_file_chooser :: proc(t: ^Tab, req: ^WebKitFileChooserRequest) {
-	if t.sandboxed {
-		// the sandbox reads no files of yours
-		webkit_file_chooser_request_cancel(req)
-		browser_toast("Files can't be uploaded to sites in the sandbox")
-		return
-	}
-	portal_open_file(cast(^WebKitFileChooserRequest)g_object_ref(req), webkit_file_chooser_request_get_select_multiple(req) != 0)
 }
 
 // ---------------------------------------------------------------- the session

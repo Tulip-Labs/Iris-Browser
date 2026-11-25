@@ -170,8 +170,11 @@ test_new_window_choice :: proc(t: ^testing.T) {
 	testing.expect_value(t, new_window_choice("https://other.org/", page, false, true, false, false), Window_Choice.Own_Tab)
 	// never a file of yours
 	testing.expect_value(t, new_window_choice("file:///etc/passwd", page, true, true, false, false), Window_Choice.Block)
-	// middle click and Ctrl+click
-	testing.expect(t, link_wants_new_tab(2, 0))
-	testing.expect(t, link_wants_new_tab(1, u32(WPE_MODIFIER_KEYBOARD_CONTROL)))
-	testing.expect(t, !link_wants_new_tab(1, 0))
+	// middle click and Ctrl+click (WPE: CEF tells these apart itself, as
+	// OnOpenURLFromTab's disposition)
+	when !ENGINE_CEF {
+		testing.expect(t, link_wants_new_tab(2, 0))
+		testing.expect(t, link_wants_new_tab(1, u32(WPE_MODIFIER_KEYBOARD_CONTROL)))
+		testing.expect(t, !link_wants_new_tab(1, 0))
+	}
 }

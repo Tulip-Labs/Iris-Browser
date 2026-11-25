@@ -48,7 +48,7 @@ clamp_insert :: proc(at: int, pinned: bool, n_pinned, n: int) -> int {
 tab_toggle_mute :: proc(t: ^Tab) {
 	if t == nil do return
 	t.muted = !t.muted
-	engine_set_muted(t, t.muted)
+	tab_set_muted(t, t.muted)
 	chrome_push()
 }
 

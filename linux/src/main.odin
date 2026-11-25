@@ -1,6 +1,8 @@
-// Iris for Linux: Odin, Wayland, EGL/GLES and WPE WebKit. No GTK, no X11.
+// Iris for Linux: Odin, Wayland, EGL/GLES and a page engine (WPE WebKit,
+// or CEF when built with -define:IRIS_ENGINE=cef). No GTK, no X11.
 //
-// One loop runs everything: GLib's (WebKit needs it). The compositor's
+// One loop runs everything: GLib's (WebKit needs it; CEF's work is pumped
+// from it). The compositor's
 // socket and the key-repeat timer are two of its sources, and just before
 // GLib sleeps, Iris reads what the compositor already sent and sends what
 // it has written (its poll function wraps GLib's).
@@ -60,6 +62,8 @@ USAGE :: `Iris %s: a browser made of glass.
 
 main :: proc() {
 	main_context = context
+	// CEF runs this same binary for its renderers and helpers: they stop here
+	if code, sub := engine_subprocess(); sub do os.exit(code)
 	args := os.args[1:]
 	if len(args) > 0 {
 		switch args[0] {
@@ -79,7 +83,6 @@ main :: proc() {
 			os.exit(shield_rules_cli(args[1], args[2], args[3]))
 		}
 	}
-	video_environment()
 	// WebKit names its sandboxed web processes after this (WTF::applicationID),
 	// and the Flatpak portal only lets them start under the app's own ID:
 	// "iris" is not a valid ID, so WebKit made one up and the portal refused it.
@@ -89,9 +92,10 @@ main :: proc() {
 	g_main_context_set_poll_func(g_main_context_default(), poll_with_wayland)
 
 	containers_ensure()
-	session_made = downloads_listen
-	shields.installed = browser_reapply_shields
-	shields_start()
+	if !engine_start() {
+		fmt.eprintln("Iris could not start its page engine (", IRIS_ENGINE, ")")
+		os.exit(1)
+	}
 
 	if !browser_start() {
 		fmt.eprintln("Iris needs a Wayland session (WAYLAND_DISPLAY), with EGL and OpenGL ES 3.")
@@ -130,6 +134,7 @@ main :: proc() {
 	g_main_loop_run(main_loop)
 	browser_save_session()
 	history_flush()
+	engine_stop()
 	plat.close_window(w)
 }
 

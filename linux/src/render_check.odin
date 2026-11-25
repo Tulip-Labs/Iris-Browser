@@ -156,7 +156,7 @@ render_check :: proc(out: string) -> int {
 	// the start page: a new tab draws Iris's own page (no web view), its
 	// search takes the keys, in light and in dark
 	st := browser_new_tab({select = true})
-	expect(tab_is_start(st) && st.web == nil, "a new tab is not the start page", &problems)
+	expect(tab_is_start(st) && !tab_has_view(st), "a new tab is not the start page", &problems)
 	expect(ui.focus == .Start, "the start page's search did not take the keys", &problems)
 	for dark in ([2]bool{false, true}) {
 		theme.dark = dark

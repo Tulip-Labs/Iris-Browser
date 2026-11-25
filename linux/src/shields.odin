@@ -21,7 +21,7 @@ import "core:time"
 
 VERSION :: "2.2.7"
 // the Flatpak's ID: the window's app_id, and the name WebKit gives its sandboxed processes
-APP_ID :: "io.github.tulip_labs.Iris"
+APP_ID :: "io.github.tulip_labs.Iris" + APP_ID_ENGINE // (".Cef": the CEF build installs beside the WPE one)
 USER_AGENT :: "Iris/" + VERSION
 
 @(private="file") DOMAINS_GZ :: #load("shield-domains.txt.gz")
@@ -84,14 +84,20 @@ shields: Shields
 shields_start :: proc() {
 	shields.dir = join({cache_dir(), "shields"})
 	make_dirs(join({shields.dir, "lists"}, context.temp_allocator))
-	shields.store = webkit_user_content_filter_store_new(cstr(shields.dir))
-	forget_old_rules()
-	shields_load(shield_level())
+	when ENGINE_CEF {
+		// CEF has no content rules: the same rules become a matcher
+		// (shield_match.odin, cef_shields.odin), built at each start
+		shields_build(shield_level())
+	} else {
+		shields.store = webkit_user_content_filter_store_new(cstr(shields.dir))
+		forget_old_rules()
+		shields_load(shield_level())
+	}
 	after(8000, proc(_: rawptr) { refresh_lists() }, nil)
 }
 
 shields_level_changed :: proc() {
-	shields_load(shield_level())
+	when ENGINE_CEF { shields_build(shield_level()) } else { shields_load(shield_level()) }
 }
 
 shields_ready :: proc() -> bool {
@@ -201,6 +207,7 @@ RULES_REV :: 2
 	lists: [dynamic]List,
 	arena: virtual.Arena,
 	parts: []string,
+	matcher: ^Matcher, // (CEF)
 }
 
 @(private="file") shields_build :: proc(l: Level) {
@@ -235,12 +242,14 @@ RULES_REV :: 2
 		if !any || job.l == .ultra do converter_add_domains(&conv, shield_domains())
 		max_rules := 120_000
 		if v, ok := strconv.parse_int(os.get_env("IRIS_SHIELDS_PART", context.temp_allocator)); ok do max_rules = v
+		when ENGINE_CEF do max_rules = 1 << 30 // one part: no compiler limit to fit
 		job.parts = converter_finish(&conv, max_rules)
+		when ENGINE_CEF do job.matcher = matcher_from_rules(job.parts)
 		context.allocator = main_context.allocator
 		idle(proc(d: rawptr) {
 			job := cast(^Build)d
 			shields.building = nil
-			shields_compile(job.parts, job.l)
+			when ENGINE_CEF { cef_shields_install(job.matcher, job.l) } else { shields_compile(job.parts, job.l) }
 			for p in job.paths do delete(p)
 			delete(job.paths)
 			delete(job.lists)

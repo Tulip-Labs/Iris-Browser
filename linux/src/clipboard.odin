@@ -22,6 +22,10 @@ import plat "../plat"
 
 @(private="file") clip: Clip
 
+/// the text on the clipboard (the desktop's, or what Iris copied), for the
+/// chrome's fields (and, in the CEF engine, what a page pastes)
+clipboard_text: string
+
 TEXT_TYPES :: [?]cstring{"text/plain;charset=utf-8", "text/plain", "UTF8_STRING", "TEXT", "STRING"}
 
 clipboard_init :: proc(w: ^plat.Window) {
