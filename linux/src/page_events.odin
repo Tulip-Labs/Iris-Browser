@@ -15,6 +15,7 @@ browser_page_audio :: proc(t: ^Tab, on: bool) {
 
 /// a new page is in the tab: what Iris knew of the last one goes
 browser_page_committed :: proc(t: ^Tab, uri: string) {
+	set_str(&t.committed_url, uri)
 	cert_committed(t, uri)
 	t.article = false
 	for h in t.trackers do delete(h)
@@ -52,5 +53,6 @@ tab_free_extra :: proc(t: ^Tab) {
 	delete(t.trackers)
 	delete(t.space)
 	delete(t.upgraded_from)
+	delete(t.committed_url)
 	tab_view_free(t)
 }

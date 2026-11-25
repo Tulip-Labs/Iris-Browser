@@ -21,6 +21,20 @@ Cert_Error :: struct {
 	engine:   rawptr,
 	details:  bool,
 	t0:       f64,
+	/// the page committed before the failure (where "Go back" goes)
+	back_url: string,
+	/// when the page last appeared or changed under the pointer (wall
+	/// clock): its buttons wait CLICK_DELAY before taking a click, so a
+	/// click meant for the page before cannot land on them
+	armed_at: f64,
+}
+
+/// seconds Iris's page ignores clicks after it appears or Details opens
+CLICK_DELAY :: 0.5
+
+/// whether a click now may act (pure: the times are given)
+cert_click_ready :: proc(armed_at, now: f64) -> bool {
+	return now - armed_at >= CLICK_DELAY || now < armed_at
 }
 
 /// hosts whose failing certificate you chose to see anyway, this run: they
@@ -54,7 +68,8 @@ cert_block :: proc(t: ^Tab, uri, reason, code: string, engine: rawptr) {
 	cert_clear(t)
 	h, _ := host_of(uri, context.temp_allocator)
 	c := new(Cert_Error)
-	c^ = {url = strings.clone(uri), host = strings.clone(h), reason = strings.clone(reason), code = strings.clone(code), engine = engine, t0 = ui.clock}
+	c^ = {url = strings.clone(uri), host = strings.clone(h), reason = strings.clone(reason), code = strings.clone(code), engine = engine, t0 = ui.clock,
+		back_url = strings.clone(t.committed_url), armed_at = now_s()}
 	t.cert_error = c
 	if t == b.current || t == b.peek do chrome_set_focus(false)
 	browser_tab_changed(t)
@@ -66,6 +81,7 @@ cert_block :: proc(t: ^Tab, uri, reason, code: string, engine: rawptr) {
 	delete(c.host)
 	delete(c.reason)
 	delete(c.code)
+	delete(c.back_url)
 	free(c)
 }
 
@@ -91,7 +107,10 @@ cert_committed :: proc(t: ^Tab, uri: string) {
 cert_go_back :: proc(t: ^Tab) {
 	c := t.cert_error
 	if c == nil do return
-	stayed := len(t.url) > 0 && t.url != "about:blank" && t.url != c.url
+	// nothing committed since the failure: the page before is still there
+	// (WPE); CEF committed its error page in its place, and back is back
+	stayed := tab_has_view(t) && len(c.back_url) > 0 && c.back_url != "about:blank" && c.back_url != c.url && t.committed_url == c.back_url
+	if stayed do set_str(&t.url, c.back_url)
 	cert_clear(t)
 	switch {
 	case stayed: browser_tab_changed(t)
@@ -124,10 +143,14 @@ cert_proceed :: proc(t: ^Tab) {
 cert_act :: proc(op: Op, tab_id: int) {
 	t := alive_by_id(tab_id)
 	if t == nil || t.cert_error == nil do return
+	// a click too soon after the page appeared or changed is ignored
+	now := now_s()
+	if !cert_click_ready(t.cert_error.armed_at, now) do return
 	#partial switch op {
 	case .Cert_Back: cert_go_back(t)
 	case .Cert_Details:
 		t.cert_error.details = !t.cert_error.details
+		t.cert_error.armed_at = now
 		chrome_push()
 	case .Cert_Proceed: cert_proceed(t)
 	}
@@ -278,6 +301,15 @@ draw_interstitial :: proc(t: ^Tab, r: [4]f32, dt: f32, opaque := false) {
 	tab.upgraded_from = strings.clone("http://old.example/")
 	testing.expect_value(t, cert_decide(&tab, "https://old.example/"), Cert_Answer.Upgrade_Failed)
 	testing.expect_value(t, cert_decide(&tab, "https://bank.example/"), Cert_Answer.Block)
+}
+
+@(test) test_cert_click_delay :: proc(t: ^testing.T) {
+	testing.expect(t, !cert_click_ready(100, 100))
+	testing.expect(t, !cert_click_ready(100, 100.49))
+	testing.expect(t, cert_click_ready(100, 100.5))
+	testing.expect(t, cert_click_ready(100, 200))
+	// a clock that went back never locks the buttons
+	testing.expect(t, cert_click_ready(100, 50))
 }
 
 @(test) test_cert_words :: proc(t: ^testing.T) {

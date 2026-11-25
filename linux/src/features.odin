@@ -212,7 +212,7 @@ clear_on_exit :: proc() {
 	history_clear()
 	privacy_forget()
 	s := settings()
-	clear(&s.session)
+	session_clear(&s.session)
 	settings_save()
 }
 

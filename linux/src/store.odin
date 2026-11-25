@@ -188,8 +188,28 @@ settings :: proc() -> ^Settings {
 	return &settings_value
 }
 
+/// the bytes last written to settings.json: the same again is not written
+/// (the session is saved often while you browse, mostly unchanged)
+@(private="file") settings_written: []u8
+
 settings_save :: proc() {
-	save_json("settings.json", settings()^)
+	data, err := json.marshal(settings()^, {pretty = true}, context.temp_allocator)
+	if err != nil do return
+	if settings_written != nil && string(data) == string(settings_written) do return
+	if !write_file(data_path("settings.json"), data) do return
+	delete(settings_written)
+	settings_written = slice.clone(data)
+}
+
+/// the saved tabs gone, their strings too
+session_clear :: proc(s: ^[dynamic]Saved_Tab) {
+	for x in s {
+		delete(x.url)
+		delete(x.title)
+		delete(x.container)
+		delete(x.space)
+	}
+	clear(s)
 }
 
 shields_off_for :: proc(site: string) -> bool {

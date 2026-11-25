@@ -57,6 +57,9 @@ Tab :: struct {
 	/// a certificate that failed: Iris's page over the tab says so, and
 	/// nothing of the site shows until you choose (interstitial.odin)
 	cert_error:     ^Cert_Error,
+	/// the address of the page last committed in the tab (a failed load
+	/// changes t.url, not this)
+	committed_url:  string,
 }
 
 @(private="file") next_tab_id := 1

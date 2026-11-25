@@ -592,7 +592,9 @@ PAGE_KEYS_JS :: `(() => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     const k = (e.key || '').toLowerCase();
     if (!(['k', 'm', 'f'].includes(k) && !e.shiftKey) && !(['c', 's'].includes(k) && e.shiftKey)) return;
-    s.r = '';
+    // seen, its answer still to come (the page's own listeners run first,
+    // then this timeout, however long the page keeps its thread)
+    s.r = 'pending';
     setTimeout(() => { s.r = e.defaultPrevented ? 'page' : 'free'; }, 0);
   }, true);
   return 1;
@@ -608,51 +610,82 @@ page_keys_watch :: proc(t: ^Tab) {
 	seq, tab: int,
 	e:        plat.Key_Event,
 	done:     bool,
+	/// the page saw the key and was still busy with it when last asked
+	pending:  bool,
+	started:  f64,
 }
 @(private="file") key_ask: Key_Ask
 
-/// how long the page has before Iris asks what it did, and before Iris
-/// acts without its answer (a page that cannot answer: no listener, a frame)
+/// how long the page has before Iris asks what it did (and between asks
+/// while it is busy), and when Iris stops asking
 KEY_ASK_MS :: 60
 KEY_GIVE_UP_MS :: 350
 
-/// the answer to the ask: "<seq>:page" (the page took the key), "<seq>:free"
-/// or "<seq>:" (no word: Iris acts); false for another ask's
-key_answer :: proc(result: string, seq: int) -> (page_took: bool, ours: bool) {
+Key_Answer :: enum u8 {
+	/// another ask's answer (or none)
+	Other,
+	/// the page took the key (preventDefault): Iris does nothing
+	Page,
+	/// the page let it be, or has no listener: Iris acts
+	Free,
+	/// the page saw the key and has not finished with it: ask again
+	Pending,
+}
+
+/// the answer to ask seq: "<seq>:page", "<seq>:free", "<seq>:pending" or
+/// "<seq>:" (no word: no listener)
+key_answer :: proc(result: string, seq: int) -> Key_Answer {
 	c := strings.index_byte(result, ':')
-	if c < 0 do return false, false
-	if result[:c] != fmt.tprint(seq) do return false, false
-	return result[c + 1:] == "page", true
+	if c < 0 || result[:c] != fmt.tprint(seq) do return .Other
+	switch result[c + 1:] {
+	case "page": return .Page
+	case "pending": return .Pending
+	}
+	return .Free
 }
 
 @(private="file") page_first_ask :: proc(t: ^Tab, e: plat.Key_Event) {
 	key_ask.seq += 1
 	ev := e
 	ev.text = "" // (the event's own text does not outlive it)
-	key_ask = {seq = key_ask.seq, tab = t.id, e = ev}
+	key_ask = {seq = key_ask.seq, tab = t.id, e = ev, started = now_s()}
 	seq := rawptr(uintptr(key_ask.seq))
-	after(KEY_ASK_MS, proc(d: rawptr) {
-		seq := int(uintptr(d))
-		if key_ask.seq != seq || key_ask.done do return
-		t := key_page()
-		if t == nil || t.id != key_ask.tab {
-			key_ask.done = true // the keys went elsewhere meanwhile
-			return
-		}
-		js := fmt.tprintf("(() => { const s = window.__irisKeys; const r = s ? s.r : ''; if (s) s.r = ''; return '%d:' + r; })()", seq)
-		tab_run_isolated(t, js, proc(t: ^Tab, result: string) {
-			took, ours := key_answer(result, key_ask.seq)
-			if !ours || key_ask.done do return
-			key_ask.done = true
-			if !took && key_page() == t do browser_shortcut(key_ask.e)
-		})
-	}, seq)
+	after(KEY_ASK_MS, key_ask_page, seq)
 	after(KEY_GIVE_UP_MS, proc(d: rawptr) {
 		seq := int(uintptr(d))
 		if key_ask.seq != seq || key_ask.done do return
 		key_ask.done = true
+		// a page still busy with the key may yet act on it: Iris does not
+		// act too (one find bar, not two); one that never answered is let be
+		if key_ask.pending do return
 		if t := key_page(); t != nil && t.id == key_ask.tab do browser_shortcut(key_ask.e)
 	}, seq)
+}
+
+@(private="file") key_ask_page :: proc(d: rawptr) {
+	seq := int(uintptr(d))
+	if key_ask.seq != seq || key_ask.done do return
+	t := key_page()
+	if t == nil || t.id != key_ask.tab {
+		key_ask.done = true // the keys went elsewhere meanwhile
+		return
+	}
+	// (a pending answer stays for the next ask; a final one is taken)
+	js := fmt.tprintf("(() => { const s = window.__irisKeys; const r = s ? s.r : ''; if (s && r !== 'pending') s.r = ''; return '%d:' + r; })()", seq)
+	tab_run_isolated(t, js, proc(t: ^Tab, result: string) {
+		if key_ask.done do return
+		switch key_answer(result, key_ask.seq) {
+		case .Other:
+		case .Pending:
+			key_ask.pending = true
+			if (now_s() - key_ask.started) * 1000 + KEY_ASK_MS < KEY_GIVE_UP_MS do after(KEY_ASK_MS, key_ask_page, rawptr(uintptr(key_ask.seq)))
+		case .Page:
+			key_ask.done = true
+		case .Free:
+			key_ask.done = true
+			if key_page() == t do browser_shortcut(key_ask.e)
+		}
+	})
 }
 
 @(private="file") browser_shortcut :: proc(e: plat.Key_Event) -> bool {
@@ -802,7 +835,7 @@ browser_session_changed :: proc() {
 
 browser_save_session :: proc() {
 	s := settings()
-	clear(&s.session)
+	session_clear(&s.session)
 	// with "forget everything when Iris closes", no session is kept
 	if !s.clearOnExit do for t in b.tabs {
 		if tab_is_private(t) || t.sandboxed || len(t.url) == 0 || is_ai_mode(t.url) do continue

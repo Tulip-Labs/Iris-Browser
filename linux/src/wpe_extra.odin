@@ -47,10 +47,10 @@ tab_isolate :: proc(t: ^Tab) {
 	}
 }
 
-/// a view with a context of its own going: its process ends now, and the
-/// context with the tab (tab_view_free)
+/// a view with a context of its own going: its process ends once the page
+/// has closed (tab_release_web), and the context with the tab (tab_view_free)
 tab_end_isolated :: proc(t: ^Tab) {
-	if t.web != nil && t.own_context != nil do webkit_web_view_terminate_web_process(t.web)
+	// (tab_release_web ends it, once the page has closed: end_after_close)
 }
 
 tab_view_free :: proc(t: ^Tab) {

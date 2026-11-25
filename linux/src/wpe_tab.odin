@@ -22,10 +22,44 @@ Tab_View :: struct {
 @(private="file") next_process_group := 1
 
 /// another open tab's view may be in t's web process
-@(private="file") tab_shares_process :: proc(t: ^Tab) -> bool {
-	for x in b.tabs do if x != t && x.web != nil && x.process_group == t.process_group do return true
-	if p := b.peek; p != nil && p != t && p.web != nil && p.process_group == t.process_group do return true
+/// a live view (a tab's or the peek's) in this process group
+@(private="file") group_in_use :: proc(group: int) -> bool {
+	for x in browser_all_tabs() do if x.web != nil && x.process_group == group do return true
 	return false
+}
+
+END_GRACE_MS :: 1500
+
+@(private="file") Ending :: struct {
+	web:      ^WebKitWebView,
+	group:    int,
+	isolated: bool,
+	timer:    u32,
+}
+
+/// a closing view's web process ends when the page has closed (its "close"
+/// signal) or END_GRACE_MS later, whichever comes first, unless a live tab
+/// or the peek uses that process by then
+@(private="file") end_after_close :: proc(w: ^WebKitWebView, group: int, isolated: bool) {
+	e := new(Ending)
+	e^ = {web = cast(^WebKitWebView)g_object_ref(w), group = group, isolated = isolated}
+	on(w, "close", rawptr(proc "c" (w: ^WebKitWebView, e: ^Ending) {
+		context = main_context
+		if e.timer != 0 do g_source_remove(e.timer)
+		ending_done(e)
+	}), e)
+	e.timer = after(END_GRACE_MS, proc(d: rawptr) {
+		e := cast(^Ending)d
+		e.timer = 0 // (the timer ends itself)
+		ending_done(e)
+	}, e)
+}
+
+@(private="file") ending_done :: proc(e: ^Ending) {
+	disconnect_all(e.web, e)
+	if e.isolated || !group_in_use(e.group) do webkit_web_view_terminate_web_process(e.web)
+	unref(e.web)
+	free(e)
 }
 
 tab_has_view :: proc(t: ^Tab) -> bool { return t.web != nil }
@@ -93,14 +127,14 @@ tab_release_web :: proc(t: ^Tab) {
 	delete_key(&find_hooked, t.id)
 	page_free(t.page)
 	t.page = nil
-	// a context of its own (a peek's): its web process ends with the view
-	tab_end_isolated(t)
-	webkit_web_view_try_close(t.web)
 	// WebKit keeps a closed page's web process for five minutes (its
 	// process cache, for a page opened again), memory and all: a process
-	// only this view uses ends now. One a pop-up or its opener still uses
-	// stays, and ends with the last of them.
-	if t.own_context == nil && !tab_shares_process(t) do webkit_web_view_terminate_web_process(t.web)
+	// only this view uses ends, once the page has said goodbye (pagehide,
+	// unload, a last sendBeacon: try_close runs them, then "close"), or
+	// END_GRACE_MS after at most. One a pop-up or its opener still uses
+	// stays, and ends with the last of them; a peek's own context's always ends.
+	end_after_close(t.web, t.process_group, t.own_context != nil)
+	webkit_web_view_try_close(t.web)
 	unref(t.web)
 	unref(t.ucm)
 	t.web, t.ucm = nil, nil
