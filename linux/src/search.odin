@@ -322,6 +322,8 @@ untrusted :: proc(url: string) -> bool {
 	http := strings.equal_fold(u.scheme, "http")
 	if !http && !strings.equal_fold(u.scheme, "https") do return false
 	lh := strings.to_lower(u.host, context.temp_allocator)
+	// a host whose failing certificate you chose to see (interstitial.odin)
+	if cert_host_sandboxed(lh) do return true
 	if is_private_host(lh) || strings.has_suffix(lh, ".local") || strings.has_suffix(lh, ".lan") || strings.has_suffix(lh, ".home.arpa") do return false
 	if http do return true
 	bare := strings.trim(lh, "[]")
@@ -371,35 +373,159 @@ has_scheme :: proc(t: string) -> bool {
 	return false
 }
 
+/// typed text that is an address (a path, a scheme, a host Iris can tell
+/// from words); anything else is a search
 is_url_like :: proc(text: string) -> bool {
-	t := strings.trim_space(text)
-	if len(t) == 0 do return false
-	if has_scheme(t) do return true
-	if _, ok := scheme_part(t); ok do return false // "note: milk", "javascript:"
-	if strings.index_byte(t, ' ') >= 0 do return false
-	return strings.index_byte(t, '.') >= 0 || strings.equal_fold(t, "localhost") || strings.has_prefix(strings.to_lower(t, context.temp_allocator), "localhost:")
+	_, ok := address_of(strings.trim_space(text), context.temp_allocator)
+	return ok
 }
 
-@(private="file") complete :: proc(t: string, allocator := context.allocator) -> string {
-	if has_scheme(t) do return strings.clone(t, allocator)
-	h := t
-	if i := strings.index_byte(h, '/'); i >= 0 do h = h[:i]
-	if i := strings.index_any(h, "?#"); i >= 0 do h = h[:i]
-	if len(h) > 0 && h[0] != '[' {
-		if i := strings.last_index_byte(h, ':'); i >= 0 do h = h[:i]
+/// the top-level names the address bar knows without a scheme, a path or a
+/// port: the common generic ones and every country's (anything else, as
+/// "node.js" or "e.g.", is words)
+@(rodata) KNOWN_TLDS := [?]string{
+	"com", "net", "org", "edu", "gov", "mil", "int", "info", "biz", "name", "pro", "aero", "coop", "museum",
+	"mobi", "asia", "tel", "travel", "jobs", "cat", "arpa", "app", "dev", "page", "xyz", "online", "site",
+	"store", "tech", "blog", "cloud", "shop", "top", "club", "live", "news", "art", "design", "wiki", "link",
+	"website", "space", "fun", "icu", "vip", "work", "today", "world", "life", "email", "digital", "network",
+	"systems", "solutions", "agency", "studio", "media", "social", "one", "global", "group", "company",
+	"center", "academy", "services", "zone", "tools", "guru", "ninja", "rocks", "codes", "software", "host",
+	"hosting", "game", "games", "video", "music", "photo", "photos", "pics", "money", "bank", "finance",
+	"capital", "health", "care", "law", "legal", "school", "university", "college", "berlin", "london",
+	"nyc", "paris", "tokyo", "google", "microsoft", "apple", "amazon", "youtube", "gmail", "new", "moe",
+	"run", "build", "chat", "ltd", "inc", "llc", "foundation", "community", "events", "red", "blue",
+	"green", "pink", "black", "gold", "plus", "ventures", "works", "zip", "mov", "day", "here", "how",
+	"meme", "porn", "sex", "xxx", "eus", "cymru", "scot", "quebec", "lat", "africa", "kiwi",
+	"ac", "ad", "ae", "af", "ag", "ai", "al", "am", "ao", "aq", "ar", "as", "at", "au", "aw", "ax", "az",
+	"ba", "bb", "bd", "be", "bf", "bg", "bh", "bi", "bj", "bm", "bn", "bo", "br", "bs", "bt", "bw", "by", "bz",
+	"ca", "cc", "cd", "cf", "cg", "ch", "ci", "ck", "cl", "cm", "cn", "co", "cr", "cu", "cv", "cw", "cx", "cy", "cz",
+	"de", "dj", "dk", "dm", "do", "dz", "ec", "ee", "eg", "er", "es", "et", "eu", "fi", "fj", "fk", "fm", "fo", "fr",
+	"ga", "gd", "ge", "gf", "gg", "gh", "gi", "gl", "gm", "gn", "gp", "gq", "gr", "gs", "gt", "gu", "gw", "gy",
+	"hk", "hm", "hn", "hr", "ht", "hu", "id", "ie", "il", "im", "in", "io", "iq", "ir", "is", "it",
+	"je", "jm", "jo", "jp", "ke", "kg", "kh", "ki", "km", "kn", "kp", "kr", "kw", "ky", "kz",
+	"la", "lb", "lc", "li", "lk", "lr", "ls", "lt", "lu", "lv", "ly", "ma", "mc", "md", "me", "mg", "mh", "mk",
+	"ml", "mm", "mn", "mo", "mp", "mq", "mr", "ms", "mt", "mu", "mv", "mw", "mx", "my", "mz",
+	"na", "nc", "ne", "nf", "ng", "ni", "nl", "no", "np", "nr", "nu", "nz", "om", "pa", "pe", "pf", "pg", "ph",
+	"pk", "pl", "pm", "pn", "pr", "ps", "pt", "pw", "py", "qa", "re", "ro", "rs", "ru", "rw",
+	"sa", "sb", "sc", "sd", "se", "sg", "sh", "si", "sk", "sl", "sm", "sn", "so", "sr", "ss", "st", "su", "sv",
+	"sx", "sy", "sz", "tc", "td", "tf", "tg", "th", "tj", "tk", "tl", "tm", "tn", "to", "tr", "tt", "tv", "tw", "tz",
+	"ua", "ug", "uk", "us", "uy", "uz", "va", "vc", "ve", "vg", "vi", "vn", "vu", "wf", "ws", "ye", "yt",
+	"za", "zm", "zw",
+}
+
+/// names of your own network: never on the web, opened over http
+@(rodata) LOCAL_SUFFIXES := [?]string{".local", ".lan", ".home.arpa", ".internal", ".localhost"}
+
+Host_Kind :: enum u8 { None, Local, Public }
+
+/// whether a typed host is one: an address (all four parts, or [IPv6]),
+/// localhost or a name of your network, a single name with a port, or a
+/// name whose last part is a known top-level one (any, with a port or a
+/// path after it)
+host_kind :: proc(host: string, has_port, has_path: bool) -> Host_Kind {
+	if len(host) == 0 do return .None
+	if host[0] == '[' {
+		if len(host) < 4 || host[len(host) - 1] != ']' do return .None
+		inner := host[1:len(host) - 1]
+		if strings.index_byte(inner, ':') < 0 do return .None
+		for c in transmute([]u8)inner {
+			if _, ok := hex_value(c); !ok && c != ':' && c != '.' do return .None
+		}
+		return inner == "::1" || strings.has_prefix(strings.to_lower(inner, context.temp_allocator), "fe80:") ? .Local : .Public
+	}
+	h := strings.to_lower(strings.trim_suffix(host, "."), context.temp_allocator)
+	if len(h) == 0 || h[0] == '.' || strings.contains(h, "..") do return .None
+	numeric := true
+	for c in transmute([]u8)h {
+		switch c {
+		case '0' ..= '9', '.':
+		case 'a' ..= 'z', '-', '_': numeric = false
+		case:
+			if c < 0x80 do return .None // no other signs in a name
+			numeric = false
+		}
+	}
+	if h == "localhost" || strings.has_suffix(h, ".localhost") do return .Local
+	if numeric {
+		// "3.14" is a number: an address is all four parts
+		if strings.count(h, ".") != 3 do return .None
+		rest := h
+		for p in strings.split_iterator(&rest, ".") {
+			if len(p) == 0 || len(p) > 3 || (len(p) > 1 && p[0] == '0') do return .None
+			v := 0
+			for c in transmute([]u8)p do v = v * 10 + int(c - '0')
+			if v > 255 do return .None
+		}
+		return is_private_host(h) ? .Local : .Public
+	}
+	dot := strings.last_index_byte(h, '.')
+	if dot < 0 do return has_port ? .Local : .None
+	for s in LOCAL_SUFFIXES do if strings.has_suffix(h, s) && len(h) > len(s) do return .Local
+	tld := h[dot + 1:]
+	if len(tld) < 2 do return .None
+	ascii := true
+	for c in transmute([]u8)tld {
+		if c >= 0x80 {
+			ascii = false
+			continue
+		}
+		if c < 'a' || c > 'z' do return .None
+	}
+	if !ascii do return .Public // an internationalised top-level name
+	if has_port || has_path do return .Public
+	for k in KNOWN_TLDS do if k == tld do return .Public
+	return .None
+}
+
+/// what typed text opens as an address, or false (words: a search)
+address_of :: proc(t: string, allocator := context.allocator) -> (string, bool) {
+	if len(t) == 0 do return "", false
+	// a file of yours: "/etc/hosts", "~/a.txt"
+	if t[0] == '/' do return file_uri(t, allocator), true
+	if t == "~" || strings.has_prefix(t, "~/") do return file_uri(strings.concatenate({home_dir(), t[1:]}, context.temp_allocator), allocator), true
+	if has_scheme(t) do return strings.clone(t, allocator), true
+	if _, ok := scheme_part(t); ok do return "", false // "note: milk", "javascript:"
+	if strings.index_any(t, " \t") >= 0 do return "", false
+	end := strings.index_any(t, "/?#")
+	if end < 0 do end = len(t)
+	hp := t[:end]
+	// a name with a user before it ("user@example.com") is an e-mail address
+	if strings.index_byte(hp, '@') >= 0 do return "", false
+	host, port := hp, ""
+	if len(hp) > 0 && hp[0] == '[' {
+		close := strings.index_byte(hp, ']')
+		if close < 0 do return "", false
+		host = hp[:close + 1]
+		after := hp[close + 1:]
+		if len(after) > 0 {
+			if after[0] != ':' do return "", false
+			port = after[1:]
+			if len(port) == 0 do return "", false
+		}
+	} else if c := strings.last_index_byte(hp, ':'); c >= 0 {
+		host, port = hp[:c], hp[c + 1:]
+		if len(port) == 0 do return "", false
+	}
+	if len(port) > 5 do return "", false
+	for c in transmute([]u8)port do if c < '0' || c > '9' do return "", false
+	kind := host_kind(host, len(port) > 0, end < len(t) && t[end] == '/')
+	switch kind {
+	case .None: return "", false
+	case .Local: return strings.concatenate({"http://", t}, allocator), true
+	case .Public:
 	}
 	// Google and YouTube answer their bare names with a redirect to www.
-	for bare in ([?]string{"google.com", "youtube.com"}) do if strings.equal_fold(h, bare) {
-		return strings.concatenate({"https://www.", bare, t[len(h):]}, allocator)
+	for bare in ([?]string{"google.com", "youtube.com"}) do if strings.equal_fold(host, bare) && len(port) == 0 {
+		return strings.concatenate({"https://www.", bare, t[len(host):]}, allocator), true
 	}
-	return strings.concatenate({is_private_host(h) ? "http://" : "https://", t}, allocator)
+	return strings.concatenate({"https://", t}, allocator), true
 }
 
 /// what the address bar opens for what was typed
 resolve :: proc(input: string, allocator := context.allocator) -> string {
 	t := strings.trim_space(input)
 	if len(t) == 0 do return ""
-	if is_url_like(t) do return complete(t, allocator)
+	if u, ok := address_of(t, allocator); ok do return u
 	if len(t) > 3 && strings.has_prefix(strings.to_lower(t[:3], context.temp_allocator), "yt ") do return youtube_url(strings.trim_space(t[3:]), allocator)
 	// words are a Google search (AI Mode is its own choice: ai_url)
 	return search_url(t, allocator)
@@ -411,9 +537,9 @@ resolve :: proc(input: string, allocator := context.allocator) -> string {
 resolve_arg :: proc(arg: string, cwd: string, allocator := context.allocator) -> string {
 	t := strings.trim_space(arg)
 	if len(t) == 0 do return ""
-	if t[0] == '/' do return file_uri(t, allocator)
-	if strings.has_prefix(t, "./") || strings.has_prefix(t, "../") || strings.has_prefix(t, "~/") {
-		if t[0] == '~' do return file_uri(strings.concatenate({home_dir(), t[1:]}, context.temp_allocator), allocator)
+	// a path relative to where Iris started; "/..." and "~/..." as typed in
+	// the address bar (address_of)
+	if strings.has_prefix(t, "./") || strings.has_prefix(t, "../") {
 		return file_uri(strings.concatenate({cwd, "/", t}, context.temp_allocator), allocator)
 	}
 	return resolve(t, allocator)
@@ -603,4 +729,70 @@ is_sign_in :: proc(h: string) -> bool {
 	testing.expect_value(t, site_of("news.bbc.co.uk"), "bbc.co.uk")
 	testing.expect_value(t, site_of("a.b.example.com"), "example.com")
 	testing.expect_value(t, display_url("https://www.example.com/x", context.temp_allocator), "example.com")
+}
+
+@(test) test_address_bar :: proc(t: ^testing.T) {
+	Case :: struct { typed, want: string }
+	SEARCH :: "?" // a Google search
+	cases := [?]Case{
+		// the everyday ones
+		{"google.com", "https://www.google.com"},
+		{"youtube.com/watch?v=x", "https://www.youtube.com/watch?v=x"},
+		{"example.com", "https://example.com"},
+		{"news.bbc.co.uk/sport", "https://news.bbc.co.uk/sport"},
+		{"localhost:3000", "http://localhost:3000"},
+		{"localhost", "http://localhost"},
+		{"192.168.1.1", "http://192.168.1.1"},
+		{"8.8.8.8", "https://8.8.8.8"},
+		{"https://x.y/z", "https://x.y/z"},
+		{"mailto:a@b.c", "mailto:a@b.c"},
+		{"why is the sky blue", SEARCH},
+		{"cats", SEARCH},
+		// files of yours
+		{"/home/user/file.pdf", "file:///home/user/file.pdf"},
+		{"/etc/hosts", "file:///etc/hosts"},
+		// numbers and words with dots are words
+		{"3.14", SEARCH},
+		{"127.1", SEARCH},
+		{"1.2.3.4.5", SEARCH},
+		{"256.1.1.1", SEARCH},
+		{"v2.3.1", SEARCH},
+		{"node.js", SEARCH},
+		{"e.g.", SEARCH},
+		{"i.e", SEARCH},
+		{"user@example.com", SEARCH},
+		{"note: milk", SEARCH},
+		{"javascript:alert(1)", SEARCH},
+		{"a..b.com", SEARCH},
+		// a top-level name Iris does not know, with a path or a port, is a site
+		{"node.js/docs", "https://node.js/docs"},
+		{"site.example:8443", "https://site.example:8443"},
+		// IPv6
+		{"[::1]:8080", "http://[::1]:8080"},
+		{"[::1]", "http://[::1]"},
+		{"[2001:db8::1]/x", "https://[2001:db8::1]/x"},
+		{"[zz::1]", SEARCH},
+		// your own network: http
+		{"router.local", "http://router.local"},
+		{"nas.lan/admin", "http://nas.lan/admin"},
+		{"printer.home.arpa", "http://printer.home.arpa"},
+		{"devbox:8080", "http://devbox:8080"},
+		{"devbox", SEARCH},
+		{"devbox:abc", SEARCH},
+	}
+	for c in cases {
+		got := resolve(c.typed, context.temp_allocator)
+		if c.want == SEARCH {
+			testing.expectf(t, strings.has_prefix(got, GOOGLE), "%q: want a search, got %q", c.typed, got)
+			testing.expectf(t, !is_url_like(c.typed), "%q is not an address", c.typed)
+		} else {
+			testing.expectf(t, got == c.want, "%q: want %q, got %q", c.typed, c.want, got)
+			testing.expectf(t, is_url_like(c.typed), "%q is an address", c.typed)
+		}
+	}
+	// ~ is your home folder
+	home := resolve("~/a.txt", context.temp_allocator)
+	testing.expect(t, strings.has_prefix(home, "file:///"))
+	testing.expect(t, strings.has_suffix(home, "/a.txt"))
+	testing.expect(t, strings.index_byte(home, '~') < 0)
 }

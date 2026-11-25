@@ -22,6 +22,8 @@ Wid :: enum u16 {
 	// 2.3
 	Tab_Audio, Reader_Button, Split_Divider, Space_Chip, Peek_Scrim, Peek_Card, Peek_Open, Peek_Close,
 	Palette_Scrim, Palette_Card, Palette_Field, Palette_Row,
+	// a certificate that fails (interstitial.odin)
+	Cert_Card, Cert_Proceed,
 }
 
 Id :: distinct u64
@@ -36,6 +38,8 @@ Op :: enum u8 {
 	Ctx_Tab, Ctx_In, Ctx_Copy, Ctx_Save, Ctx_Edit, Ctx_Back, Ctx_Forward, Ctx_Reload, Ctx_Ask_AI,
 	Option, Find_Prev, Find_Next, Find_Close, Toast_Action, Dialog_Ok, Dialog_Cancel,
 	Minimize, Maximize, Close_Window, Focus_Address,
+	/// Iris's page for a failing certificate (n: the tab)
+	Cert_Back, Cert_Details, Cert_Proceed,
 	/// one of Iris 2.3's commands (palette.odin): n is the Command, n2 a tab
 	Command,
 }
@@ -603,6 +607,7 @@ chrome_dismiss_dialog :: proc() {
 	case .Maximize: plat.toggle_maximized(&b.win)
 	case .Close_Window: browser_quit()
 	case .Command: run_command(Command(a.n), a)
+	case .Cert_Back, .Cert_Details, .Cert_Proceed: cert_act(a.op, a.n)
 	}
 	chrome_push()
 }
@@ -809,6 +814,7 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 		for o, i in b.tabs do if o == last_of_group do at = i + 1
 	}
 	inject_at(&b.tabs, clamp_insert(at, t.pinned, pinned_count(), len(b.tabs)), t)
+	browser_session_changed()
 }
 
 @(private="file") field_of :: proc(k: Wid) -> (^Line, [4]f32) {
@@ -1015,6 +1021,8 @@ chrome_draw :: proc(W, H: f32) {
 	full := b.page_fullscreen || b.fullscreen
 	if tab_is_start(b.current) && !full do draw_start(W, H, dt)
 	if split_on() && !full do draw_split(dt)
+	// a failing certificate: Iris's page in the tab's place (a peek's: draw_peek)
+	for t in screen_tabs() do if t != b.peek && t.cert_error != nil do draw_interstitial(t, browser_tab_rect(t), dt)
 	// compact mode: the strip and bar slide down over the page while the
 	// pointer is at the top (or the address or a menu of theirs is open)
 	dy: f32 = 0

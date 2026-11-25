@@ -867,54 +867,28 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		defer { rel(browser); rel(ssl) }
 		t := vw(self).tab
 		u := from_cef(url)
-		h, ok := host_of(u)
-		if t == nil || !ok || https_is_upgrade(t, u) {
-			// (an https try of an http address: it fails, and Iris offers http)
-			if ok do delete(h)
+		if t == nil {
 			rel(cb)
 			return 0
 		}
-		// a certificate that fails: the site opens in the sandbox, its
-		// certificate let through there once (never in a normal tab)
-		if t.sandboxed {
-			if h not_in t.allowed_certs {
-				t.allowed_certs[h] = true
-				browser_toast(strings.concatenate({display_url(u, context.temp_allocator), " has a certificate that fails: it is open in the sandbox"}, context.temp_allocator))
-			} else {
-				delete(h)
-			}
+		switch cert_decide(t, u) {
+		case .Upgrade_Failed:
+			// an https try of an http address: it fails, and Iris offers
+			// http (on_load_error, https_failed)
+			rel(cb)
+			return 0
+		case .Allowed:
+			// you chose to see it, in this sandboxed tab (interstitial.odin)
 			cb.cont(cb)
 			rel(cb)
 			return 1
+		case .Block:
 		}
+		// a certificate that fails: never let through on its own; Iris's
+		// page over the tab says so, and "Show anyway" waits behind Details
 		rel(cb)
-		Move :: struct {
-			t:    ^Tab,
-			url:  string,
-			host: string,
-		}
-		m := new(Move)
-		m^ = {t, strings.clone(u), h}
-		idle(proc(d: rawptr) {
-			m := cast(^Move)d
-			defer {
-				delete(m.url)
-				free(m)
-			}
-			t := m.t
-			if !browser_has_tab(t) {
-				delete(m.host)
-				return
-			}
-			tab_release_web(t)
-			t.sandboxed = true
-			t.allowed_certs[m.host] = true
-			browser_toast(strings.concatenate({display_url(m.url, context.temp_allocator), " has a certificate that fails: it is open in the sandbox"}, context.temp_allocator))
-			v := tab_ensure_web(t)
-			set_str(&t.url, m.url)
-			load_url(v, m.url)
-			browser_tab_changed(t)
-		}, m)
+		reason, code := cef_cert_error_text(cert_error)
+		cert_block(t, u, reason, code, nil)
 		return 0
 	}
 	q.on_render_process_terminated = proc "c" (self: ^cef_request_handler_t, browser: ^cef_browser_t, status: i32, code: i32, text: ^cef_string_t) {

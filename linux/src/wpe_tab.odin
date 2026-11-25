@@ -26,6 +26,7 @@ tab_ensure_web :: proc(t: ^Tab, related: rawptr = nil) -> ^WebKitWebView {
 	add_page_scripts(t.ucm)
 	st := t.sandboxed ? sandbox_settings() : normal_settings()
 	defer unref(st)
+	color_scheme_sync()
 	d := display()
 	disp := Prop{name = "display", value = rawptr(d), type = wpe_display_get_type()}
 	ucm := Prop{name = "user-content-manager", value = rawptr(t.ucm), type = webkit_user_content_manager_get_type()}
@@ -71,6 +72,7 @@ tab_release_web :: proc(t: ^Tab) {
 	browser_detach(t)
 	if t.ucm != nil do shields_forget(t.ucm)
 	disconnect_all(t.web, t)
+	delete_key(&find_hooked, t.id)
 	page_free(t.page)
 	t.page = nil
 	// a context of its own (a peek's): its web process ends with the view
@@ -191,7 +193,7 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 	}), t)
 	on(w, "load-failed-with-tls-errors", rawptr(proc "c" (w: ^WebKitWebView, uri: cstring, cert: ^GTlsCertificate, errors: u32, t: ^Tab) -> gboolean {
 		context = main_context
-		return tab_certificate_failed(t, string(uri), cert) ? 1 : 0
+		return tab_certificate_failed(t, string(uri), cert, errors) ? 1 : 0
 	}), t)
 	on(w, "ready-to-show", rawptr(proc "c" (w: ^WebKitWebView, t: ^Tab) {
 		context = main_context
@@ -292,6 +294,9 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 		req := webkit_navigation_action_get_request(nav)
 		if req == nil do return false
 		u := string(webkit_uri_request_get_uri(req))
+		// a form sent (POST): Iris never loads it again itself, which would
+		// lose what it sends (its load would be a GET)
+		body := request_has_body(req)
 		// a pop-up's first real address: it is shown now (about:blank, the
 		// page writing into it, waits), before any of the turns below
 		if t.held && u != "about:blank" && len(u) > 0 {
@@ -299,7 +304,7 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 			browser_select(t)
 		}
 		// an http address goes over https first, where it can (features.odin)
-		if https_wanted(t, u) {
+		if !body && https_wanted(t, u) {
 			webkit_policy_decision_ignore(d)
 			tab_load_later(t, strings.clone(u))
 			return true
@@ -315,13 +320,13 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 		}
 		if webkit_navigation_action_get_frame_name(nav) != nil do return false
 		// a Google result goes straight to the site
-		if target, ok := unwrap_redirect(u); ok {
+		if target, ok := unwrap_redirect(u); ok && !body {
 			webkit_policy_decision_ignore(d)
 			tab_load_later(t, target)
 			return true
 		}
 		// a link you click loses its tracking parameters (utm_*, fbclid...)
-		if webkit_navigation_action_get_navigation_type(nav) == WEBKIT_NAVIGATION_TYPE_LINK_CLICKED && webkit_navigation_action_is_user_gesture(nav) != 0 {
+		if !body && webkit_navigation_action_get_navigation_type(nav) == WEBKIT_NAVIGATION_TYPE_LINK_CLICKED && webkit_navigation_action_is_user_gesture(nav) != 0 {
 			if clean := shields_clean_url(u); clean != u {
 				webkit_policy_decision_ignore(d)
 				tab_load_later(t, strings.clone(clean))
@@ -330,9 +335,19 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 		}
 		// into or out of the sandbox: the tab is made again
 		if strings.has_prefix(u, "http") && untrusted(u) != t.sandboxed {
-			webkit_policy_decision_ignore(d)
-			tab_load_later(t, strings.clone(u))
-			return true
+			switch sandbox_move_for(t.sandboxed, body) {
+			case .Reload:
+				webkit_policy_decision_ignore(d)
+				tab_load_later(t, strings.clone(u))
+				return true
+			case .Stay:
+				// a form a sandboxed page sends to a site Iris trusts: it goes
+				// from the sandbox (no cookies of yours go with it)
+			case .Refuse:
+				webkit_policy_decision_ignore(d)
+				browser_toast(strings.concatenate({"Iris did not send this form to ", display_url(u, context.temp_allocator), ": the site is not secure"}, context.temp_allocator))
+				return true
+			}
 		}
 		h, _ := host_of(u, context.temp_allocator)
 		shields_apply(t.ucm, h)
@@ -354,56 +369,49 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 	return false
 }
 
-/// a certificate that fails: the site opens in the sandbox, its certificate
-/// let through there once (never in a normal tab)
-@(private="file") tab_certificate_failed :: proc(t: ^Tab, uri: string, cert: ^GTlsCertificate) -> bool {
-	// an http address Iris tried over https: WebKit's error page, and Iris
-	// offers the http one (features.odin), never a certificate let through
-	if https_is_upgrade(t, uri) do return false
-	h, ok := host_of(uri)
-	if !ok do return false
-	if h in t.allowed_certs {
-		delete(h)
+/// a certificate that fails: Iris's page over the tab (interstitial.odin),
+/// and nothing of the site; an https try of an http address offers http
+@(private="file") tab_certificate_failed :: proc(t: ^Tab, uri: string, cert: ^GTlsCertificate, errors: u32) -> bool {
+	switch cert_decide(t, uri) {
+	case .Upgrade_Failed:
+		// WebKit's error page, and the toast that opens the http address
+		https_failed(t, uri)
 		return false
+	case .Allowed, .Block:
+		// (a certificate you allowed is not asked about again: one that
+		// fails now is another, and asks you again)
 	}
-	Job :: struct {
-		t:         ^Tab,
-		uri, host: string,
-		cert:      ^GTlsCertificate,
-	}
-	j := new(Job)
-	j^ = {t, strings.clone(uri), h, cast(^GTlsCertificate)g_object_ref(cert)}
-	idle(proc(d: rawptr) {
-		j := cast(^Job)d
-		defer {
-			unref(j.cert)
-			delete(j.uri)
-			free(j)
-		}
-		t := j.t
-		if !browser_has_tab(t) {
-			delete(j.host)
-			return
-		}
-		if !t.sandboxed {
-			tab_release_web(t)
-			t.sandboxed = true
-		}
-		w := tab_ensure_web(t)
-		if t.sandbox_session != nil do webkit_network_session_allow_tls_certificate_for_host(t.sandbox_session, j.cert, cstr(j.host))
-		if j.host in t.allowed_certs {
-			delete(j.host)
-		} else {
-			t.allowed_certs[j.host] = true
-		}
-		set_str(&t.url, j.uri)
-		webkit_web_view_load_uri(w, cstr(j.uri))
-		browser_toast(strings.concatenate({display_url(j.uri, context.temp_allocator), " has a certificate that fails: it is open in the sandbox"}, context.temp_allocator))
-		browser_tab_changed(t)
-	}, j)
+	reason, code := tls_flags_text(errors)
+	cert_block(t, uri, reason, code, g_object_ref(cert))
 	return true
 }
 
+/// "Show anyway": the tab in the sandbox (a world of its own), the
+/// certificate let through there for its host, and the page loaded
+tab_cert_proceed :: proc(t: ^Tab, url, host: string, engine: rawptr) {
+	if t.web != nil && (!t.sandboxed || t.sandbox_session == nil) do tab_release_web(t)
+	t.sandboxed = true
+	w := tab_ensure_web(t)
+	cert := cast(^GTlsCertificate)engine
+	if t.sandbox_session != nil && cert != nil && len(host) > 0 do webkit_network_session_allow_tls_certificate_for_host(t.sandbox_session, cert, cstr(host))
+	if len(host) > 0 && host not_in t.allowed_certs do t.allowed_certs[strings.clone(host)] = true
+	set_str(&t.url, url)
+	shields_apply(t.ucm, host)
+	webkit_web_view_load_uri(w, cstr(url))
+	browser_tab_changed(t)
+}
+
+tab_cert_release :: proc(engine: rawptr) {
+	if engine != nil do unref(engine)
+}
+
+/// the request sends a body (a form's POST): not a plain GET or HEAD
+request_has_body :: proc(req: ^WebKitURIRequest) -> bool {
+	m := webkit_uri_request_get_http_method(req)
+	if m == nil do return false
+	s := string(m)
+	return len(s) > 0 && !strings.equal_fold(s, "GET") && !strings.equal_fold(s, "HEAD")
+}
 
 tab_reload_bypass :: proc(t: ^Tab) { if t.web != nil do webkit_web_view_reload_bypass_cache(t.web) }
 
@@ -425,13 +433,16 @@ tab_edit :: proc(t: ^Tab, cmd: string) { if t.web != nil do webkit_web_view_exec
 WEBKIT_FIND_OPTIONS_CASE_INSENSITIVE :: u32(1 << 0)
 WEBKIT_FIND_OPTIONS_WRAP_AROUND :: u32(1 << 4)
 
-@(private="file") find_hooked: map[^WebKitFindController]bool
+/// the tabs whose view's find controller Iris listens to, by tab id (a
+/// controller's address can come back for another view once one is freed;
+/// a tab's entry goes with its view: tab_release_web)
+@(private="file") find_hooked: map[int]bool
 
 tab_find :: proc(t: ^Tab, text: string, dir: string) {
 	if t.web == nil do return
 	fc := webkit_web_view_get_find_controller(t.web)
-	if fc not_in find_hooked {
-		find_hooked[fc] = true
+	if t.id not_in find_hooked {
+		find_hooked[t.id] = true
 		on(fc, "counted-matches", rawptr(proc "c" (fc: rawptr, n: u32, d: rawptr) {
 			context = main_context
 			ui.find_count = int(n)

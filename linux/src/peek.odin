@@ -57,6 +57,7 @@ peek_promote :: proc() {
 	inject_at(&b.tabs, clamp_insert(at, false, pinned_count(), len(b.tabs)), t)
 	set_str(&t.space, b.space)
 	browser_select(t)
+	browser_session_changed()
 	chrome_push()
 }
 
@@ -117,7 +118,10 @@ draw_peek :: proc(W, H: f32, dt: f32) {
 		ui.animating = true
 	}
 	// the page itself, drawn over its glass (it is not behind it)
-	if t.page != nil && k > 0.02 {
+	if t.cert_error != nil {
+		// a failing certificate: Iris's page, never the site
+		draw_interstitial(t, peek_page_rect(), dt, opaque = true)
+	} else if t.page != nil && k > 0.02 {
 		p := peek_page_rect()
 		draw_texture(t.page.tex, p.x, p.y + motion_from(10, 0, k), p.z, p.w, 14, k)
 	}

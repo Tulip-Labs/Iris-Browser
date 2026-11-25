@@ -15,6 +15,7 @@ browser_page_audio :: proc(t: ^Tab, on: bool) {
 
 /// a new page is in the tab: what Iris knew of the last one goes
 browser_page_committed :: proc(t: ^Tab, uri: string) {
+	cert_committed(t, uri)
 	t.article = false
 	for h in t.trackers do delete(h)
 	clear(&t.trackers)
@@ -28,12 +29,14 @@ browser_page_committed :: proc(t: ^Tab, uri: string) {
 		delete(t.upgraded_from)
 		t.upgraded_from = ""
 	}
+	browser_session_changed()
 	browser_tab_changed(t)
 }
 
 /// the page finished loading: one look at it (article? trackers stopped?)
 browser_page_finished :: proc(t: ^Tab) {
 	if t.reader do return
+	page_keys_watch(t)
 	survey_page(t)
 }
 

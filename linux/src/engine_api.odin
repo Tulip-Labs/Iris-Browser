@@ -44,6 +44,13 @@
 //   browser_page_audio, browser_page_committed, browser_page_finished,
 //   browser_load_failed (page_events.odin), https_first/https_wanted/
 //   https_is_upgrade (features.odin) where they load and decide
+// A failing certificate (interstitial.odin; the engine's certificate
+// handler calls cert_decide, then cert_block or https_failed)
+//   tab_cert_proceed(t, url, host, engine) ("Show anyway": the tab in the
+//   sandbox, the certificate let through there), tab_cert_release(engine)
+// Light or dark (theme.odin, as the desktop changes it)
+//   engine_set_color_scheme(dark) (pages' prefers-color-scheme: WPE in
+//   wpe_extra.odin, CEF in cef_theme.odin)
 // The engines tell the browser through browser_tab_changed,
 // browser_page_frame, browser_page_cursor, browser_fullscreen,
 // browser_hover_link, browser_toast and the history/download procedures.

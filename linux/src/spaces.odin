@@ -56,6 +56,7 @@ space_switch :: proc(id: string) {
 	} else {
 		browser_select(pick)
 	}
+	browser_session_changed()
 	chrome_push()
 }
 
@@ -106,6 +107,7 @@ tab_move_to_space :: proc(t: ^Tab, id: string) {
 	if split_has(t) do split_end()
 	set_str(&t.space, id)
 	b.space_last[id] = t.id
+	browser_session_changed()
 	if leaving {
 		rest := visible_tabs()
 		if len(rest) > 0 {

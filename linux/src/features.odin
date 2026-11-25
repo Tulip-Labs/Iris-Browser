@@ -34,6 +34,7 @@ tab_set_pinned :: proc(t: ^Tab, on: bool) {
 	}
 	t.pinned = on
 	inject_at(&b.tabs, pinned_count() - (on ? 1 : 0), t)
+	browser_session_changed()
 	chrome_push()
 }
 

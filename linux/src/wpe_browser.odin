@@ -16,7 +16,7 @@ Browser_Asks :: struct {
 }
 
 browser_tab_of_web :: proc(w: ^WebKitWebView) -> ^Tab {
-	for t in b.tabs do if t.web == w do return t
+	for t in browser_all_tabs() do if t.web == w do return t
 	return nil
 }
 
@@ -73,10 +73,23 @@ browser_popup :: proc(t: ^Tab, nav: ^WebKitNavigationAction) -> ^WebKitWebView {
 		return nil
 	case .Related:
 	}
+	// a peek's view has a web process of its own, ended with the peek: a
+	// pop-up sharing it would die with it, so it is a tab of its own that
+	// loads the address itself (a blank one is not opened)
+	if t.isolated {
+		if strings.has_prefix(u, "http") {
+			browser_open_link(t, u, !gesture)
+		} else if shield && !t.sandboxed {
+			browser_toast("Pop-up blocked")
+		}
+		return nil
+	}
 	p := browser_new_tab({container = t.container, after = t, related = t.web})
-	if strings.has_prefix(u, "http") do set_str(&p.url, u)
 	// WebKit loads the address into the view itself; if it has not begun
-	// to soon, Iris loads it, and a window the page only wrote into shows
+	// to soon, Iris loads it, and a window the page only wrote into shows.
+	// A form sent into the window (POST) is never loaded again by Iris: its
+	// load would be a GET, without what the form sent
+	if strings.has_prefix(u, "http") && !(req != nil && request_has_body(req)) do set_str(&p.url, u)
 	Check :: struct {
 		t:  ^Tab,
 		id: int,
@@ -226,7 +239,7 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 
 /// new rules or the switch changed: every open page takes them
 browser_reapply_shields :: proc() {
-	for t in b.tabs {
+	for t in browser_all_tabs() {
 		if t.ucm == nil do continue
 		h, _ := host_of(t.url, context.temp_allocator)
 		shields_apply(t.ucm, h)
