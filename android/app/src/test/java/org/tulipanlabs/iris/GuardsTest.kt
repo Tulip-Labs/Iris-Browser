@@ -28,6 +28,28 @@ class GuardsTest {
         assertFalse(Search.untrusted("http://192.168.1.1/"))
     }
 
+    @Test fun everyFormOfAnAddressIsAnAddress() {
+        // java.net.URI names no host for these; Chromium reads them as IPv4
+        assertTrue(Search.untrusted("http://0xcb.0.113.7/"))
+        assertTrue(Search.untrusted("https://0xcb.0.113.7/"))
+        assertTrue(Search.untrusted("https://3405803783/"))
+        assertTrue(Search.untrusted("https://203.0.113.7./"))
+        assertTrue(Search.untrusted("https://user@3405803783:443/x"))
+        assertFalse(Search.untrusted("http://127.1:8000/"))
+        assertFalse(Search.untrusted("http://[::1]/"))
+        assertFalse(Search.untrusted("https://1.2.3.4.example.com/"))
+        assertEquals(listOf(127, 0, 0, 1), Search.ipv4("2130706433")?.toList())
+        assertEquals(listOf(127, 0, 0, 1), Search.ipv4("0x7f.1")?.toList())
+        assertEquals(listOf(8, 0, 0, 1), Search.ipv4("010.0.0.1")?.toList())
+        assertEquals(listOf(10, 0, 255, 255), Search.ipv4("10.65535")?.toList())
+        assertNull(Search.ipv4("256.1.1.1"))
+        assertNull(Search.ipv4("1.2.3.4.5"))
+        assertNull(Search.ipv4("1..2"))
+        assertNull(Search.ipv4("4294967296"))
+        assertNull(Search.ipv4("08.0.0.1"))
+        assertNull(Search.ipv4("example.com"))
+    }
+
     @Test fun downloadsOnlyFromTheWeb() {
         assertTrue(Downloads.isWeb("https://example.com/a.pdf"))
         assertTrue(Downloads.isWeb("http://example.com/a.pdf"))

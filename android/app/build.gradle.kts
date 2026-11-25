@@ -16,8 +16,8 @@ android {
         applicationId = "org.tulipanlabs.lite"
         minSdk = 29
         targetSdk = 36
-        versionCode = 226
-        versionName = "2.2.6"
+        versionCode = 227
+        versionName = "2.2.7"
     }
 
     // One Android build, on Cefrium: its own Chromium (CEF), the same

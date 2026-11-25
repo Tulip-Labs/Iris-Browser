@@ -194,9 +194,24 @@ Visit :: struct {
 	return f64(v.visits) / (1 + days / 7)
 }
 
-history_record :: proc(url, title: string) {
+/// a page that writes megabytes into its address or title (with
+/// history.pushState, or a title that keeps growing) leaves none of it in
+/// your history: longer addresses are not kept, titles are clipped
+HISTORY_URL_MAX :: 8192
+HISTORY_TITLE_MAX :: 512
+
+/// at most n bytes of s, never cutting a character in two
+clip :: proc(s: string, n: int) -> string {
+	if len(s) <= n do return s
+	i := n
+	for i > 0 && (s[i] & 0xC0) == 0x80 do i -= 1
+	return s[:i]
+}
+
+history_record :: proc(url, title0: string) {
 	history_ensure()
-	if !strings.has_prefix(url, "http") do return
+	if !strings.has_prefix(url, "http") || len(url) > HISTORY_URL_MAX do return
+	title := clip(title0, HISTORY_TITLE_MAX)
 	if _, ok := ai_query(url, context.temp_allocator); ok do return
 	t := now_s()
 	for &v in history do if v.url == url {
@@ -237,8 +252,9 @@ history_trim :: proc(h: ^[dynamic]Visit, now: f64) {
 	resize(h, HISTORY_KEEP)
 }
 
-history_title :: proc(url, title: string) {
+history_title :: proc(url, title0: string) {
 	history_ensure()
+	title := clip(title0, HISTORY_TITLE_MAX)
 	if len(title) == 0 do return
 	for &v in history do if v.url == url {
 		// a page that keeps changing its title (a chat, a timer) no longer
@@ -314,4 +330,14 @@ history_suggest :: proc(q0: string, n: int, allocator := context.temp_allocator)
 	testing.expect_value(t, len(h), HISTORY_KEEP)
 	testing.expect_value(t, h[0].url, fmt.tprintf("https://e.com/%d", HISTORY_MAX))
 	testing.expect_value(t, h[1].url, "https://e.com/0")
+}
+
+@(test) test_history_limits :: proc(t: ^testing.T) {
+	testing.expect_value(t, clip("hello", 10), "hello")
+	testing.expect_value(t, clip("hello", 3), "hel")
+	// "é" is two bytes: it is kept whole or not at all
+	testing.expect_value(t, clip("caf\u00e9", 4), "caf")
+	testing.expect_value(t, clip("caf\u00e9", 5), "caf\u00e9")
+	testing.expect_value(t, clip("\u2713\u2713", 4), "\u2713")
+	testing.expect_value(t, clip("", 0), "")
 }

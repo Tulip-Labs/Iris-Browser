@@ -42,6 +42,8 @@ Browser :: struct {
 	context_tab:   ^Tab,
 	context_info:  Context_Info,
 	asks:          int,
+	/// the tab whose dialog is showing
+	dialog_tab:    ^Tab,
 	unseen_downloads: int,
 }
 
@@ -354,6 +356,12 @@ browser_new_window_action :: proc(t: ^Tab, d: ^WebKitPolicyDecision) -> bool {
 		webkit_policy_decision_ignore(d)
 		return true
 	}
+	// a page opens web addresses in new tabs, never your files or other
+	// programs (WebKit would refuse them in the page itself)
+	if !page_may_open(u, t.url) {
+		webkit_policy_decision_ignore(d)
+		return true
+	}
 	if webkit_navigation_action_get_navigation_type(nav) == WEBKIT_NAVIGATION_TYPE_LINK_CLICKED {
 		webkit_policy_decision_ignore(d)
 		background := webkit_navigation_action_get_mouse_button(nav) == 2
@@ -590,12 +598,31 @@ browser_option_menu :: proc(t: ^Tab, menu: ^WebKitOptionMenu, rect: ^WPERectangl
 }
 
 browser_script_dialog :: proc(t: ^Tab, d: ^WebKitScriptDialog) {
+	// a dialog shows over its own page only, one at a time, and a page that
+	// keeps opening them is stopped; the others are answered at once (no to
+	// a question, yes to leaving the page), so no page waits forever
+	host := display_url(t.url, context.temp_allocator)
+	if t != b.current || b.dialog_tab != nil || !dialog_allowed(t, now_s()) {
+		kind := webkit_script_dialog_get_dialog_type(d)
+		if kind == WEBKIT_SCRIPT_DIALOG_CONFIRM do webkit_script_dialog_confirm_set_confirmed(d, 0)
+		if kind == WEBKIT_SCRIPT_DIALOG_BEFORE_UNLOAD_CONFIRM do webkit_script_dialog_confirm_set_confirmed(d, 1)
+		if t.dialogs_blocked && t.dialogs_n == DIALOGS_BURST + 1 {
+			t.dialogs_n += 1 // said once
+			browser_toast(strings.concatenate({len(host) > 0 ? host : "This page", " kept opening dialogs: Iris stopped them"}, context.temp_allocator))
+		}
+		return
+	}
+	b.dialog_tab = t
 	b.asks += 1
 	b.dialogs[b.asks] = webkit_script_dialog_ref(d)
-	host := display_url(t.url, context.temp_allocator)
 	kind := webkit_script_dialog_get_dialog_type(d)
 	default_text := kind == WEBKIT_SCRIPT_DIALOG_PROMPT ? string(webkit_script_dialog_prompt_get_default_text(d)) : ""
 	chrome_dialog(b.asks, int(kind), len(host) > 0 ? host : "This page", string(webkit_script_dialog_get_message(d)), default_text)
+}
+
+/// a tab going away answers the dialog its page left open
+browser_forget_dialog :: proc(t: ^Tab) {
+	if b.dialog_tab == t do chrome_dismiss_dialog()
 }
 
 browser_file_chooser :: proc(t: ^Tab, req: ^WebKitFileChooserRequest) {

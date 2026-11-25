@@ -1,3 +1,22 @@
+Iris 2.2.7: no page can trap you in its dialogs, and the sandbox catches every form of an address.
+
+**Linux**
+- **A page can no longer hold Iris in an endless row of alerts.** A page that keeps opening `alert()`, `confirm()` or `prompt()` is stopped after a few in a row, and Iris says so; opening another address gives the tab its dialogs back.
+- **Dialogs show over their own page only.** A tab in the background can no longer put a dialog over the page you are reading, and a second dialog no longer replaces the first one and leaves its page waiting forever. Closing a tab with a dialog open closes the dialog too.
+- **Web pages open web addresses only.** A link on a web page that points to a file on your computer is no longer opened in a new tab, or downloaded, by Iris; you can still copy it. Local pages you open yourself still link to each other.
+- **Every way of writing an IP address counts as one.** An address written as one number or in hexadecimal (`https://3405803783/`, `http://0x7f.1/`) is treated like the usual dotted form, so a site at a bare address always opens in the sandbox, and your own network is still trusted in every form.
+- **Lighter with big site icons and long titles.** A site's 512-pixel icon is kept at 64 pixels (it shows at 16), titles are kept to a sensible length, and a page that writes megabytes into its address or title leaves none of it in your history.
+- **Update checks recover from a wrong clock.** If your computer's clock was once far in the future, Iris no longer stops checking for new versions until that date.
+
+**Android**
+- **Every way of writing an IP address counts as one**, as on Linux: plain http sites written in hexadecimal or as one number (`http://0xcb.0.113.7/`) now open in the sandbox, as every other http site does.
+
+**Install**
+- Linux: `flatpak install --user Iris-x86_64.flatpak`
+- Android: `Iris-android.apk` (Android 10 and newer). It installs over 2.2.6.
+
+---
+
 Iris 2.2.6: the WebView build is gone — Cefrium is the only Android build.
 
 **Android**

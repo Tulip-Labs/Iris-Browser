@@ -4,7 +4,6 @@
 package iris
 
 import "core:fmt"
-import "core:strconv"
 import "core:strings"
 import "core:testing"
 
@@ -205,18 +204,48 @@ is_private_host :: proc(h0: string) -> bool {
 	h := strings.trim(h0, "[]")
 	h = strings.trim_suffix(h, ".")
 	if strings.equal_fold(h, "localhost") || strings.has_suffix(strings.to_lower(h, context.temp_allocator), ".localhost") do return true
+	ip, ok := ipv4_parse(h)
+	if !ok do return h == "::1"
+	return ip[0] == 127 || ip[0] == 10 || (ip[0] == 192 && ip[1] == 168) || (ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31)
+}
+
+/// a host the web reads as an IPv4 address: the dotted form, and the short
+/// and numeric ones every engine accepts too ("127.1", "0x7f.0.0.1",
+/// "2130706433"), so none of them passes for a name
+ipv4_parse :: proc(host: string) -> (ip: [4]u8, ok: bool) {
+	h := strings.trim_suffix(host, ".")
+	if len(h) == 0 do return
 	parts: [4]u64
 	n := 0
 	rest := h
 	for p in strings.split_iterator(&rest, ".") {
-		if n == 4 do return false
-		v, ok := strconv.parse_u64(p, 10)
-		if !ok || v > 255 do return h == "::1"
-		parts[n] = v
+		if n == 4 do return
+		parts[n] = ipv4_number(p) or_return
 		n += 1
 	}
-	if n != 4 do return h == "::1"
-	return parts[0] == 127 || parts[0] == 10 || (parts[0] == 192 && parts[1] == 168) || (parts[0] == 172 && parts[1] >= 16 && parts[1] <= 31)
+	for i in 0 ..< n - 1 do if parts[i] > 255 do return
+	if parts[n - 1] >= u64(1) << (8 * u64(5 - n)) do return
+	v := parts[n - 1]
+	for i in 0 ..< n - 1 do v += parts[i] << (8 * u64(3 - i))
+	return {u8(v >> 24), u8(v >> 16), u8(v >> 8), u8(v)}, true
+}
+
+/// one part of an IPv4 address: decimal, 0x hexadecimal or 0 octal
+@(private="file") ipv4_number :: proc(s: string) -> (v: u64, ok: bool) {
+	if len(s) == 0 do return
+	digits, base := s, u64(10)
+	if len(s) >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') {
+		digits, base = s[2:], 16
+	} else if len(s) >= 2 && s[0] == '0' {
+		digits, base = s[1:], 8
+	}
+	if len(digits) > 16 do return
+	for c in transmute([]u8)digits {
+		d := hex_value(c) or_return
+		if u64(d) >= base do return
+		v = v * base + u64(d)
+	}
+	return v, true
 }
 
 /// a site Iris does not trust (no encryption, or a bare IP address) opens in
@@ -230,14 +259,23 @@ untrusted :: proc(url: string) -> bool {
 	if is_private_host(lh) || strings.has_suffix(lh, ".local") || strings.has_suffix(lh, ".lan") || strings.has_suffix(lh, ".home.arpa") do return false
 	if http do return true
 	bare := strings.trim(lh, "[]")
-	n := 0
-	ipv4 := true
-	rest := bare
-	for p in strings.split_iterator(&rest, ".") {
-		if _, ok2 := strconv.parse_u64(p, 10); !ok2 do ipv4 = false
-		n += 1
+	if _, ip := ipv4_parse(bare); ip do return true
+	return strings.index_byte(bare, ':') >= 0
+}
+
+/// what a page may open in a new tab of its own: a web address, never a
+/// file of yours (WebKit keeps web pages away from file: addresses, and a
+/// tab Iris opens for them must too) unless the page is a local file itself
+page_may_open :: proc(url: string, from: string) -> bool {
+	if url == "about:blank" do return true
+	s, ok := scheme_part(url)
+	if !ok do return false
+	if s == "http" || s == "https" do return true
+	if s == "file" {
+		f, fok := scheme_part(from)
+		return fok && f == "file"
 	}
-	return (ipv4 && n == 4) || strings.index_byte(bare, ':') >= 0
+	return false
 }
 
 OPENABLE :: [?]string{"http", "https", "file", "about", "mailto", "tel"}
@@ -410,6 +448,53 @@ is_sign_in :: proc(h: string) -> bool {
 	testing.expect(t, !untrusted("http://192.168.1.1/"))
 	testing.expect(t, !untrusted("http://printer.local/"))
 	testing.expect(t, !untrusted("about:blank"))
+	// an address in any of the forms WebKit reads as IPv4 is an address
+	testing.expect(t, untrusted("https://3405803783/"))
+	testing.expect(t, untrusted("https://0xcb.0.113.7/"))
+	testing.expect(t, untrusted("https://203.0.113.7./"))
+	testing.expect(t, !untrusted("http://127.1:8000/"))
+	testing.expect(t, !untrusted("http://0x7f000001/"))
+	testing.expect(t, !untrusted("https://1.2.3.4.example.com/"))
+}
+
+@(test) test_ipv4 :: proc(t: ^testing.T) {
+	ip, ok := ipv4_parse("192.168.1.4")
+	testing.expect(t, ok)
+	testing.expect_value(t, ip, [4]u8{192, 168, 1, 4})
+	ip, ok = ipv4_parse("2130706433")
+	testing.expect_value(t, ip, [4]u8{127, 0, 0, 1})
+	ip, ok = ipv4_parse("0x7f.1")
+	testing.expect_value(t, ip, [4]u8{127, 0, 0, 1})
+	ip, ok = ipv4_parse("010.0.0.1")
+	testing.expect_value(t, ip, [4]u8{8, 0, 0, 1})
+	ip, ok = ipv4_parse("10.65535")
+	testing.expect_value(t, ip, [4]u8{10, 0, 255, 255})
+	_, ok = ipv4_parse("256.1.1.1")
+	testing.expect(t, !ok)
+	_, ok = ipv4_parse("1.2.3.4.5")
+	testing.expect(t, !ok)
+	_, ok = ipv4_parse("1..2")
+	testing.expect(t, !ok)
+	_, ok = ipv4_parse("4294967296")
+	testing.expect(t, !ok)
+	_, ok = ipv4_parse("example.com")
+	testing.expect(t, !ok)
+	_, ok = ipv4_parse("08.0.0.1")
+	testing.expect(t, !ok)
+	testing.expect(t, is_private_host("127.1"))
+	testing.expect(t, is_private_host("[::1]"))
+	testing.expect(t, !is_private_host("8.8.8.8"))
+}
+
+@(test) test_new_tabs_from_pages :: proc(t: ^testing.T) {
+	testing.expect(t, page_may_open("https://example.com/", "https://a.com/"))
+	testing.expect(t, page_may_open("about:blank", "https://a.com/"))
+	testing.expect(t, !page_may_open("file:///home/a/Downloads/x.html", "https://a.com/"))
+	testing.expect(t, !page_may_open("FILE:///etc/passwd", "https://a.com/"))
+	testing.expect(t, page_may_open("file:///home/a/b.html", "file:///home/a/a.html"))
+	testing.expect(t, !page_may_open("javascript:alert(1)", "https://a.com/"))
+	testing.expect(t, !page_may_open("data:text/html,hi", "https://a.com/"))
+	testing.expect(t, !page_may_open("", "https://a.com/"))
 }
 
 @(test) test_sites :: proc(t: ^testing.T) {

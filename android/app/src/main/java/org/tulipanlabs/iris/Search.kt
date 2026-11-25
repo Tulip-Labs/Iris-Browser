@@ -51,12 +51,59 @@ object Search {
     fun untrusted(url: String): Boolean {
         val u = runCatching { URI(url) }.getOrNull() ?: return false
         val scheme = u.scheme?.lowercase() ?: return false
-        val host = u.host?.lowercase()?.trim('[', ']') ?: return false
         if (scheme != "http" && scheme != "https") return false
+        // an http address always goes to the sandbox, even one whose host
+        // java.net.URI cannot name (it has none for "0xcb.0.113.7")
+        val host = authorityHost(u) ?: return scheme == "http"
         if (isPrivateHost(host) || host.endsWith(".local") || host.endsWith(".lan") || host.endsWith(".home.arpa")) return false
         if (scheme == "http") return true
-        val ipv4 = host.split('.').let { p -> p.size == 4 && p.all { it.toIntOrNull() in 0..255 } }
-        return ipv4 || host.contains(':')
+        return ipv4(host) != null || host.contains(':')
+    }
+
+    /** the host of an address, also when java.net.URI reads none (a short or numeric IPv4 like "127.1") */
+    private fun authorityHost(u: URI): String? {
+        u.host?.let { return it.lowercase().trim('[', ']') }
+        val h = (u.rawAuthority ?: return null).substringAfterLast('@')
+        val name = if (h.startsWith("[")) h.substringBefore(']').trimStart('[') else h.substringBefore(':')
+        return name.lowercase().ifEmpty { null }
+    }
+
+    /**
+     * A host the web reads as an IPv4 address: the dotted form, and the short
+     * and numeric ones every engine accepts too ("127.1", "0x7f.0.0.1",
+     * "2130706433"), so none of them passes for a name. The same rule as Iris
+     * on Linux.
+     */
+    fun ipv4(host: String): IntArray? {
+        val h = host.removeSuffix(".")
+        if (h.isEmpty()) return null
+        val parts = h.split('.')
+        if (parts.size > 4) return null
+        val nums = LongArray(parts.size)
+        for (i in parts.indices) nums[i] = ipv4Number(parts[i]) ?: return null
+        for (i in 0 until nums.size - 1) if (nums[i] > 255) return null
+        if (nums.last() >= (1L shl (8 * (5 - nums.size)))) return null
+        var v = nums.last()
+        for (i in 0 until nums.size - 1) v += nums[i] shl (8 * (3 - i))
+        return intArrayOf(((v shr 24) and 255).toInt(), ((v shr 16) and 255).toInt(), ((v shr 8) and 255).toInt(), (v and 255).toInt())
+    }
+
+    /** one part of an IPv4 address: decimal, 0x hexadecimal or 0 octal */
+    private fun ipv4Number(s: String): Long? {
+        if (s.isEmpty()) return null
+        val (digits, radix) = when {
+            s.length >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') -> s.substring(2) to 16
+            s.length >= 2 && s[0] == '0' -> s.substring(1) to 8
+            else -> s to 10
+        }
+        if (digits.length > 15) return null
+        var v = 0L
+        for (c in digits) {
+            val d = Character.digit(c, 16)
+            if (d < 0 || d >= radix || c.code > 127) return null
+            v = v * radix + d
+        }
+        return v
     }
 
     fun youtubeUrl(q: String) = "https://m.youtube.com/results?search_query=" + enc(q.trim())
@@ -87,8 +134,7 @@ object Search {
 
     private fun isPrivateHost(h: String): Boolean {
         if (h == "localhost" || h.endsWith(".localhost")) return true
-        val p = h.split('.').mapNotNull { it.toIntOrNull() }
-        if (p.size != 4) return false
+        val p = ipv4(h) ?: return h == "::1"
         return p[0] == 127 || p[0] == 10 || (p[0] == 192 && p[1] == 168) || (p[0] == 172 && p[1] in 16..31)
     }
 

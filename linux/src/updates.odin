@@ -33,6 +33,9 @@ version_newer :: proc(a, b: string) -> bool {
 updates_check :: proc() {
 	s := settings()
 	now := now_s()
+	// a check dated in the future (the clock was wrong once) would stop
+	// every check until that day came: it counts as never made
+	if s.lastUpdateCheck > now do s.lastUpdateCheck = 0
 	if now - s.lastUpdateCheck < 86400 do return
 	s.lastUpdateCheck = now
 	settings_save()

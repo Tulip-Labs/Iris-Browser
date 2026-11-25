@@ -36,6 +36,12 @@
 
 ---
 
+## What is new in 2.2.7
+
+- **No page can trap you in its dialogs.** A page that keeps opening alerts is stopped after a few, dialogs show over their own page only, and closing a tab closes its dialog.
+- **The sandbox catches every form of an address**: an IP address written as one number or in hexadecimal opens in the sandbox like the dotted form, on Linux and Android.
+- **Web pages open web addresses only** in new tabs, never files on your computer; and big site icons and long titles take less memory.
+
 ## What is new in 2.2.6
 
 - **Cefrium is the only Android build now.** The WebView build is gone: in 2.2.5 nothing could be typed in it, while the Cefrium build worked. The one build carries its own Chromium (CEF, through Cefrium 0.21.0, Chromium 156), installs over 2.2.4's WebView build under the same name, Iris, and keeps its tabs and sign-ins. If you installed the separate "Iris Cefrium" build, uninstall it after installing this one.

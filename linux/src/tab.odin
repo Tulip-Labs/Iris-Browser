@@ -3,6 +3,7 @@
 package iris
 
 import "core:strings"
+import "core:testing"
 
 Tab :: struct {
 	id:             int,
@@ -30,9 +31,16 @@ Tab :: struct {
 	favicon_w, favicon_h, favicon_stride: i32,
 	favicon_tex:    Texture,
 	favicon_dirty:  bool,
+	/// script dialogs lately (alert, confirm, prompt): a page that keeps
+	/// opening them is stopped, so it cannot hold Iris in a loop
+	dialogs_since:  f64,
+	dialogs_n:      int,
+	dialogs_blocked: bool,
 }
 
 @(private="file") next_tab_id := 1
+
+TITLE_MAX :: 1024
 
 tab_new :: proc(container: string) -> ^Tab {
 	t := new(Tab)
@@ -90,6 +98,8 @@ tab_ensure_web :: proc(t: ^Tab, related: ^WebKitWebView = nil) -> ^WebKitWebView
 /// the web view goes (to be made again, in or out of the sandbox)
 tab_release_web :: proc(t: ^Tab) {
 	if t.web == nil do return
+	// a dialog the page left open goes with it
+	browser_forget_dialog(t)
 	browser_detach(t)
 	if t.ucm != nil do shields_forget(t.ucm)
 	disconnect_all(t.web, t)
@@ -103,6 +113,11 @@ tab_release_web :: proc(t: ^Tab) {
 		unref(t.sandbox_session)
 		t.sandbox_session = nil
 	}
+	forget_certs(t)
+}
+
+@(private="file") forget_certs :: proc(t: ^Tab) {
+	for h in t.allowed_certs do delete(h)
 	clear(&t.allowed_certs)
 }
 
@@ -119,6 +134,8 @@ tab_load :: proc(t: ^Tab, u: string) {
 	}
 	w := tab_ensure_web(t)
 	set_str(&t.url, u)
+	// an address you open gives the tab its dialogs back
+	t.dialogs_blocked, t.dialogs_n = false, 0
 	h, _ := host_of(u, context.temp_allocator)
 	shields_apply(t.ucm, h)
 	webkit_web_view_load_uri(w, cstr(u))
@@ -131,6 +148,7 @@ tab_free :: proc(t: ^Tab) {
 	delete(t.url)
 	delete(t.title)
 	delete(t.favicon_px)
+	forget_certs(t)
 	if t.favicon_tex.owned do texture_free(&t.favicon_tex)
 	delete(t.allowed_certs)
 	free(t)
@@ -189,7 +207,9 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 	}), t)
 	on(w, "notify::title", rawptr(proc "c" (w: ^WebKitWebView, spec: rawptr, t: ^Tab) {
 		context = main_context
-		set_str(&t.title, string(webkit_web_view_get_title(w)))
+		// a title is a line in a tab: a page that writes megabytes into it
+		// does not make Iris shape them all on every frame
+		set_str(&t.title, clip(string(webkit_web_view_get_title(w)), TITLE_MAX))
 		if !tab_is_private(t) && !t.sandboxed do history_title(t.url, t.title)
 		browser_tab_changed(t)
 	}), t)
@@ -289,18 +309,25 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 		gap := max(i32)
 		for i in 0 ..< webkit_image_list_get_length(list) {
 			img := webkit_image_list_get(list, i)
+			if img == nil do continue
 			g := abs(webkit_image_get_width(img) - 32)
-			if img != nil && g < gap do best, gap = img, g
+			if g < gap do best, gap = img, g
 		}
 		if best == nil do return
 		b := webkit_image_as_bytes(best)
+		if b == nil do return
 		defer g_bytes_unref(b)
 		n: uint
 		p := g_bytes_get_data(b, &n)
+		if p == nil do return
+		// the icon shows at 16 px: a site's 512 px one is kept at most
+		// FAVICON_MAX a side, and pixels that do not cover the sizes the
+		// image claims are never read past their end
+		px, fw, fh, ok := favicon_fit(([^]u8)(p)[:n], int(webkit_image_get_width(best)), int(webkit_image_get_height(best)), int(webkit_image_get_stride(best)))
+		if !ok do return
 		delete(t.favicon_px)
-		t.favicon_px = make([]u8, int(n))
-		copy(t.favicon_px, ([^]u8)(p)[:n])
-		t.favicon_w, t.favicon_h, t.favicon_stride = webkit_image_get_width(best), webkit_image_get_height(best), i32(webkit_image_get_stride(best))
+		t.favicon_px = px
+		t.favicon_w, t.favicon_h, t.favicon_stride = i32(fw), i32(fh), i32(fw * 4)
 		t.favicon_dirty = true
 		browser_tab_changed(t)
 	}), g_object_ref(t.web))
@@ -392,18 +419,115 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 			free(j)
 		}
 		t := j.t
-		if !browser_has_tab(t) do return
+		if !browser_has_tab(t) {
+			delete(j.host)
+			return
+		}
 		if !t.sandboxed {
 			tab_release_web(t)
 			t.sandboxed = true
 		}
 		w := tab_ensure_web(t)
-		t.allowed_certs[j.host] = true
 		if t.sandbox_session != nil do webkit_network_session_allow_tls_certificate_for_host(t.sandbox_session, j.cert, cstr(j.host))
+		if j.host in t.allowed_certs {
+			delete(j.host)
+		} else {
+			t.allowed_certs[j.host] = true
+		}
 		set_str(&t.url, j.uri)
 		webkit_web_view_load_uri(w, cstr(j.uri))
 		browser_toast(strings.concatenate({display_url(j.uri, context.temp_allocator), " has a certificate that fails: it is open in the sandbox"}, context.temp_allocator))
 		browser_tab_changed(t)
 	}, j)
 	return true
+}
+
+// ---------------------------------------------------------------- dialogs
+
+DIALOGS_BURST :: 5
+DIALOGS_WINDOW :: 15.0
+
+/// whether a page may show one more dialog: past DIALOGS_BURST in
+/// DIALOGS_WINDOW seconds (an alert in a loop) its dialogs stop, until you
+/// open another address in the tab
+dialog_allowed :: proc(t: ^Tab, now: f64) -> bool {
+	if t.dialogs_blocked do return false
+	if now - t.dialogs_since > DIALOGS_WINDOW || now < t.dialogs_since {
+		t.dialogs_since, t.dialogs_n = now, 0
+	}
+	t.dialogs_n += 1
+	if t.dialogs_n > DIALOGS_BURST {
+		t.dialogs_blocked = true
+		return false
+	}
+	return true
+}
+
+@(test) test_dialog_loop :: proc(t: ^testing.T) {
+	tab: Tab
+	now := 1000.0
+	for _ in 0 ..< DIALOGS_BURST {
+		testing.expect(t, dialog_allowed(&tab, now))
+		now += 1
+	}
+	// one more in the same few seconds: the page is stopped
+	testing.expect(t, !dialog_allowed(&tab, now))
+	testing.expect(t, !dialog_allowed(&tab, now + 100))
+	// a page that asks now and then is never stopped
+	calm: Tab
+	for i in 0 ..< 20 do testing.expect(t, dialog_allowed(&calm, 2000 + f64(i) * 20))
+}
+
+// ---------------------------------------------------------------- icons
+
+FAVICON_MAX :: 64
+
+/// a site's icon at most FAVICON_MAX pixels a side, rows packed (a larger
+/// one is averaged down: the pixels are premultiplied, so a plain average
+/// is right); false when the pixels do not cover the sizes given
+favicon_fit :: proc(px: []u8, w, h, stride: int, allocator := context.allocator) -> (out: []u8, ow, oh: int, ok: bool) {
+	if w <= 0 || h <= 0 || w > 4096 || h > 4096 || stride < w * 4 do return
+	if len(px) < stride * (h - 1) + w * 4 do return
+	f := max(1, (max(w, h) + FAVICON_MAX - 1) / FAVICON_MAX)
+	ow, oh = max(1, w / f), max(1, h / f)
+	out = make([]u8, ow * oh * 4, allocator)
+	for y in 0 ..< oh do for x in 0 ..< ow {
+		sum: [4]int
+		for dy in 0 ..< f do for dx in 0 ..< f {
+			sy, sx := y * f + dy, x * f + dx
+			if sy >= h || sx >= w do continue
+			q := sy * stride + sx * 4
+			for c in 0 ..< 4 do sum[c] += int(px[q + c])
+		}
+		for c in 0 ..< 4 do out[(y * ow + x) * 4 + c] = u8(sum[c] / (f * f))
+	}
+	return out, ow, oh, true
+}
+
+@(test) test_favicon_fit :: proc(t: ^testing.T) {
+	// a 32 px icon stays as it is, its rows packed
+	src := make([]u8, 160 * 32, context.temp_allocator)
+	for i in 0 ..< len(src) do src[i] = u8(i % 251)
+	out, w, h, ok := favicon_fit(src, 32, 32, 160, context.temp_allocator)
+	testing.expect(t, ok)
+	testing.expect_value(t, w, 32)
+	testing.expect_value(t, h, 32)
+	testing.expect_value(t, len(out), 32 * 32 * 4)
+	testing.expect_value(t, out[32 * 4], src[160])
+	// a 512 px one comes down to 64, each pixel the average of 8x8
+	big := make([]u8, 512 * 512 * 4, context.temp_allocator)
+	for i in 0 ..< len(big) do big[i] = 200
+	out, w, h, ok = favicon_fit(big, 512, 512, 512 * 4, context.temp_allocator)
+	testing.expect(t, ok)
+	testing.expect_value(t, w, 64)
+	testing.expect_value(t, h, 64)
+	testing.expect_value(t, len(out), 64 * 64 * 4)
+	testing.expect_value(t, out[1000], 200)
+	// sizes the pixels do not cover are refused
+	_, _, _, ok = favicon_fit(src, 32, 64, 160, context.temp_allocator)
+	testing.expect(t, !ok)
+	_, _, _, ok = favicon_fit(src, 32, 32, 64, context.temp_allocator)
+	testing.expect(t, !ok)
+	_, _, _, ok = favicon_fit(nil, 0, 0, 0, context.temp_allocator)
+	testing.expect(t, !ok)
 }

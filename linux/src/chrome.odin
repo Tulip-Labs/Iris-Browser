@@ -369,7 +369,13 @@ answer_permission :: proc(id: int, allow: bool) {
 	}
 }
 
+/// the dialog showing goes, answered no (its page is closing)
+chrome_dismiss_dialog :: proc() {
+	answer_dialog(false)
+}
+
 @(private="file") answer_dialog :: proc(yes: bool) {
+	b.dialog_tab = nil
 	if !ui.dialog_open do return
 	ui.dialog_open = false
 	id := ui.dialog_id
@@ -1419,10 +1425,15 @@ Pill :: struct {
 		// the sandbox downloads nothing, from the menu either
 		saves := ct == nil || !ct.sandboxed
 		if len(c.link) > 0 {
-			row(&items, .Tab, "Open Link in New Tab", {op = .Ctx_Tab, s = keep(c.link)})
-			for k in containers do if ct == nil || k.id != ct.container do row(&items, container_icon(k.icon), fmt.tprintf("Open Link in %s", k.name), {op = .Ctx_In, s = keep(c.link), s2 = keep(k.id)}, color = parse_color(k.color))
+			// a link to a file of yours (or another program) from a web
+			// page can be copied, not opened or downloaded by Iris
+			opens := page_may_open(c.link, ct != nil ? ct.url : "")
+			if opens {
+				row(&items, .Tab, "Open Link in New Tab", {op = .Ctx_Tab, s = keep(c.link)})
+				for k in containers do if ct == nil || k.id != ct.container do row(&items, container_icon(k.icon), fmt.tprintf("Open Link in %s", k.name), {op = .Ctx_In, s = keep(c.link), s2 = keep(k.id)}, color = parse_color(k.color))
+			}
 			row(&items, .Link, "Copy Link", {op = .Ctx_Copy, s = keep(c.link)})
-			if saves do row(&items, .Download, "Download Link", {op = .Ctx_Save, s = keep(c.link)})
+			if saves && opens do row(&items, .Download, "Download Link", {op = .Ctx_Save, s = keep(c.link)})
 		}
 		if len(c.image) > 0 {
 			if len(items) > 0 do append(&items, Item{kind = .Sep})
