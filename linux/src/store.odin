@@ -122,6 +122,16 @@ Saved_Tab :: struct {
 	url:       string,
 	title:     string,
 	container: string,
+	pinned:    bool,
+	/// its workspace's id ("" the first one)
+	space:     string,
+}
+
+/// a workspace (as in Zen): a named set of tabs. The first one, Home, is
+/// implicit (id "").
+Space :: struct {
+	id:   string,
+	name: string,
 }
 
 Settings :: struct {
@@ -138,16 +148,27 @@ Settings :: struct {
 	/// which of Iris's changes to the settings this file has had (see
 	/// settings_migrate)
 	settingsRev:       int,
+	/// 2.3: the tab strip and bar hidden until the pointer reaches the top
+	compact:           bool,
+	/// http addresses are tried over https first
+	httpsOnly:         bool,
+	/// history, cookies, site data and the session go when Iris closes
+	clearOnExit:       bool,
+	/// the workspaces after the first (Home), and the one you are in
+	spaces:            [dynamic]Space,
+	space:             string,
 }
 
 /// 1: Shields at the ultra level, the new default, once for everyone (a
 /// level chosen after that stays)
-SETTINGS_REV :: 1
+/// 2: https first, on for everyone (2.3.0)
+SETTINGS_REV :: 2
 
 /// brings settings written by an older Iris up to date; true if anything changed
 settings_migrate :: proc(s: ^Settings) -> bool {
 	if s.settingsRev >= SETTINGS_REV do return false
 	if s.settingsRev < 1 do s.shieldLevel = .ultra
+	if s.settingsRev < 2 do s.httpsOnly = true
 	s.settingsRev = SETTINGS_REV
 	return true
 }
@@ -158,7 +179,7 @@ settings_migrate :: proc(s: ^Settings) -> bool {
 settings :: proc() -> ^Settings {
 	if !settings_loaded {
 		settings_loaded = true
-		settings_value = {shields = true, lightVideo = true, shieldLevel = .ultra, settingsRev = SETTINGS_REV}
+		settings_value = {shields = true, lightVideo = true, shieldLevel = .ultra, settingsRev = SETTINGS_REV, httpsOnly = true}
 		if s, ok := load_json(Settings, "settings.json"); ok {
 			settings_value = s
 			if settings_migrate(&settings_value) do settings_save()
@@ -294,6 +315,18 @@ history_flush :: proc() {
 	if !history_dirty do return
 	history_dirty = false
 	save_json("history.json", history[:])
+}
+
+/// every visit forgotten, on disk too (clear on exit)
+history_clear :: proc() {
+	history_ensure()
+	for v in history {
+		delete(v.url)
+		delete(v.title)
+	}
+	clear(&history)
+	history_dirty = false
+	os.remove(data_path("history.json"))
 }
 
 /// the visits that match what was typed, best first
