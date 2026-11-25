@@ -19,6 +19,9 @@ Wid :: enum u16 {
 	None, Tab, Tab_Close, Plus, Back, Forward, Reload, Address, Shield, Downloads, Containers,
 	Frame_Min, Frame_Max, Frame_Close, Drag, Row, Suggest, Find_Field, Find_Prev, Find_Next, Find_Close,
 	Toast, Toast_Action, Dialog, Dialog_Ok, Dialog_Cancel, Prompt, Name, Icon_Choice, Panel, Pill, Download_Act, Download_Row, Scrim, Start_Field,
+	// 2.3
+	Tab_Audio, Reader_Button, Split_Divider, Space_Chip, Peek_Scrim, Peek_Card, Peek_Open, Peek_Close,
+	Palette_Scrim, Palette_Card, Palette_Field, Palette_Row,
 }
 
 Id :: distinct u64
@@ -33,6 +36,8 @@ Op :: enum u8 {
 	Ctx_Tab, Ctx_In, Ctx_Copy, Ctx_Save, Ctx_Edit, Ctx_Back, Ctx_Forward, Ctx_Reload, Ctx_Ask_AI,
 	Option, Find_Prev, Find_Next, Find_Close, Toast_Action, Dialog_Ok, Dialog_Cancel,
 	Minimize, Maximize, Close_Window, Focus_Address,
+	/// one of Iris 2.3's commands (palette.odin): n is the Command, n2 a tab
+	Command,
 }
 
 Action :: struct {
@@ -40,6 +45,7 @@ Action :: struct {
 	n:  int,
 	s:  string, // lives until the next frame (frame_strings)
 	s2: string,
+	n2: int,
 }
 
 Hit :: struct {
@@ -49,11 +55,12 @@ Hit :: struct {
 	cursor: plat.Cursor_Shape,
 }
 
-Panel :: enum u8 { None, Shields, Downloads, Containers, New_Container, Remove_Container, Tab_Menu, Context, Option }
+Panel :: enum u8 { None, Shields, Downloads, Containers, New_Container, Remove_Container, Tab_Menu, Context, Option, New_Space, Report }
 
 Toast :: struct {
 	text, action, url: string,
 	perm:   int, // a permission asked for: Allow answers it
+	tab:    int, // the tab its button acts in (its url opens there)
 	show:   f32, // 0..1, springs in
 	gone:   bool,
 	timer:  u32,
@@ -70,7 +77,7 @@ Option_Item :: struct {
 	group, selected, enabled: bool,
 }
 
-Field :: enum u8 { None, Address, Find, Prompt, Name, Start }
+Field :: enum u8 { None, Address, Find, Prompt, Name, Start, Palette }
 
 /// a tab going away: drawn a moment longer, narrowing and fading
 Ghost :: struct {
@@ -132,13 +139,27 @@ Ui :: struct {
 	panel_t0:       f64,
 	address_rect:   [4]f32,
 	icons_cache:    [Icon]bool,
+	// 2.3
+	/// compact mode: the pointer is where the bars show, and how far they are in
+	compact_hold:   bool,
+	compact_show:   Spring,
+	/// the split view's divider is being dragged
+	split_drag:     bool,
+	peek_t0:        f64,
+	/// the command palette (palette.odin)
+	palette_open:   bool,
+	palette:        Line,
+	palette_items:  [dynamic]Palette_Item,
+	palette_sel:    int,
+	palette_rect:   [4]f32,
+	palette_t0:     f64,
 }
 
 ui: Ui
 /// a fixed time step for the springs (the render check), or 0
 ui_test_dt: f32
 
-@(private="file") keep :: proc(s: string) -> string {
+@(private) keep :: proc(s: string) -> string {
 	c := strings.clone(s)
 	append(&ui.frame_strings, c)
 	return c
@@ -159,7 +180,7 @@ chrome_hit_at :: proc(p: [2]f32) -> (Hit, bool) {
 }
 
 /// anything open that takes every click (a menu, a dialog)
-chrome_modal :: proc() -> bool { return ui.dialog_open || ui.panel != .None }
+chrome_modal :: proc() -> bool { return ui.dialog_open || ui.panel != .None || ui.palette_open }
 
 /// the keyboard goes to the chrome (a field, a menu, a dialog)
 chrome_wants_keys :: proc() -> bool { return ui.focus != .None || chrome_modal() }
@@ -207,6 +228,8 @@ chrome_set_focus :: proc(on: bool) {
 /// where the page goes, for a window of w × h
 chrome_card :: proc(w, h: f32) -> [4]f32 {
 	if b.page_fullscreen || b.fullscreen do return {0, 0, w, h}
+	// compact: the page has the window; the bars float over it when they show
+	if compact_on() do return {8, 8, w - 16, h - 16}
 	return {8, 100, w - 16, h - 108}
 }
 
@@ -239,14 +262,18 @@ chrome_close_all :: proc() {
 		answer_dialog(false)
 		return
 	}
+	if ui.palette_open {
+		palette_close()
+		return
+	}
 	close_panel()
 	clear_suggestions()
 	if ui.focus == .Find do close_find()
 }
 
-chrome_toast :: proc(text: string, action := "", url := "", perm := 0, life_ms: u32 = 4500) {
+chrome_toast :: proc(text: string, action := "", url := "", perm := 0, life_ms: u32 = 4500, tab := 0) {
 	t := new(Toast)
-	t^ = {text = strings.clone(text), action = strings.clone(action), url = strings.clone(url), perm = perm}
+	t^ = {text = strings.clone(text), action = strings.clone(action), url = strings.clone(url), perm = perm, tab = tab}
 	append(&ui.toasts, t)
 	t.timer = after(life_ms, proc(d: rawptr) { toast_gone(cast(^Toast)d) }, t)
 	chrome_push()
@@ -315,7 +342,7 @@ chrome_dialog :: proc(id, kind: int, title, message, default_text: string) {
 
 // ---------------------------------------------------------------- panels
 
-@(private="file") open_panel :: proc(p: Panel, anchor: [4]f32, right: bool) {
+@(private) open_panel :: proc(p: Panel, anchor: [4]f32, right: bool) {
 	if ui.panel == .Option && p != .Option do answer_option(-1)
 	ui.panel = p
 	ui.panel_anchor = anchor
@@ -325,7 +352,8 @@ chrome_dialog :: proc(id, kind: int, title, message, default_text: string) {
 	ui.panel_t0 = ui.clock
 	ui.sel = -1
 	clear_suggestions()
-	if p == .New_Container {
+	if ui.palette_open do palette_close()
+	if p == .New_Container || p == .New_Space {
 		line_set(&ui.name, "")
 		focus_field(.Name)
 	} else if ui.focus == .Name {
@@ -347,7 +375,7 @@ chrome_dialog :: proc(id, kind: int, title, message, default_text: string) {
 	chrome_push()
 }
 
-@(private="file") toggle_panel :: proc(p: Panel, anchor: [4]f32, right: bool) {
+@(private) toggle_panel :: proc(p: Panel, anchor: [4]f32, right: bool) {
 	if ui.panel == p {
 		close_panel()
 		return
@@ -355,7 +383,7 @@ chrome_dialog :: proc(id, kind: int, title, message, default_text: string) {
 	open_panel(p, anchor, right)
 }
 
-@(private="file") button_rect :: proc(k: Wid) -> [4]f32 {
+@(private) button_rect :: proc(k: Wid) -> [4]f32 {
 	for h in ui.hits do if wid_of(h.id) == k do return h.r
 	return {f32(b.win.width) - 60, 50, 34, 34}
 }
@@ -404,7 +432,7 @@ chrome_dismiss_dialog :: proc() {
 
 // ---------------------------------------------------------------- suggestions
 
-@(private="file") clear_suggestions :: proc() {
+@(private) clear_suggestions :: proc() {
 	for s in ui.suggestions {
 		delete(s.title)
 		delete(s.sub)
@@ -451,12 +479,12 @@ chrome_dismiss_dialog :: proc() {
 
 // ---------------------------------------------------------------- doing what was clicked
 
-@(private="file") tab_by_id :: proc(id: int) -> ^Tab {
+@(private) tab_by_id :: proc(id: int) -> ^Tab {
 	for t in b.tabs do if t.id == id do return t
 	return nil
 }
 
-@(private="file") act :: proc(a: Action) {
+@(private) act :: proc(a: Action) {
 	t := b.current
 	#partial switch a.op {
 	case .Select_Tab: if x := tab_by_id(a.n); x != nil do browser_select(x)
@@ -559,6 +587,11 @@ chrome_dismiss_dialog :: proc() {
 			x.answered = true
 			if x.perm != 0 {
 				answer_permission(x.perm, true)
+			} else if x.tab != 0 && len(x.url) > 0 {
+				// https first's way back: the http address, in its own tab
+				target := tab_by_id(x.tab)
+				if target == nil && b.peek != nil && b.peek.id == x.tab do target = b.peek
+				if target != nil do https_fallback(target, x.url)
 			} else if len(x.url) > 0 {
 				browser_new_tab({url = x.url, select = true})
 			}
@@ -569,13 +602,14 @@ chrome_dismiss_dialog :: proc() {
 	case .Minimize: plat.minimize(&b.win)
 	case .Maximize: plat.toggle_maximized(&b.win)
 	case .Close_Window: browser_quit()
+	case .Command: run_command(Command(a.n), a)
 	}
 	chrome_push()
 }
 
 @(private="file") context_action :: proc(a: Action) {
 	t := b.context_tab
-	if t == nil || !browser_has_tab(t) do return
+	if t == nil || !browser_tab_alive(t) do return
 	#partial switch a.op {
 	case .Ctx_Tab: browser_new_tab({url = a.s, container = t.container, after = t})
 	case .Ctx_In: browser_new_tab({url = a.s, container = a.s2, after = t, select = true})
@@ -609,11 +643,18 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 	switch e.kind {
 	case .Enter, .Motion:
 		ui.hot = over ? h.id : 0
+		if ui.split_drag {
+			// the divider follows the pointer
+			c := b.card
+			if c.z > 0 do b.split_ratio = clamp((p.x - c.x) / c.z, SPLIT_MIN, 1 - SPLIT_MIN)
+			browser_layout()
+			return
+		}
 		if ui.drag_id != 0 && ui.pressed != 0 {
 			ui.drag_dx = p.x - ui.drag_x0
 			if abs(ui.drag_dx) > 6 do ui.dragging = true
 		}
-		if ui.pressed != 0 && (wid_of(ui.pressed) == .Address || wid_of(ui.pressed) == .Find_Field || wid_of(ui.pressed) == .Prompt || wid_of(ui.pressed) == .Name || wid_of(ui.pressed) == .Start_Field) {
+		if ui.pressed != 0 && (wid_of(ui.pressed) == .Address || wid_of(ui.pressed) == .Find_Field || wid_of(ui.pressed) == .Prompt || wid_of(ui.pressed) == .Name || wid_of(ui.pressed) == .Start_Field || wid_of(ui.pressed) == .Palette_Field) {
 			// selecting by dragging in a field
 			if l, r := field_of(wid_of(ui.pressed)); l != nil do l.cursor = line_index_at(l, r, p.x, field_size(wid_of(ui.pressed)))
 		}
@@ -637,8 +678,13 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 
 @(private="file") press :: proc(e: plat.Pointer_Event, p: [2]f32, h: Hit, over: bool) {
 	k := wid_of(h.id)
+	// a press away from the palette closes it (and does nothing else)
+	if ui.palette_open && !inside(ui.palette_rect, p) {
+		palette_close()
+		return
+	}
 	// a press away from an open panel closes it (and does nothing else)
-	if ui.panel != .None && !inside(ui.panel_rect, p) && k != .Shield && k != .Downloads && k != .Containers {
+	if ui.panel != .None && !inside(ui.panel_rect, p) && k != .Shield && k != .Downloads && k != .Containers && k != .Space_Chip {
 		close_panel()
 		if !over || k == .Scrim do return
 	}
@@ -669,6 +715,17 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 			ui.panel_tab = -1
 			ui.pressed = 0
 		}
+	case .Split_Divider:
+		ui.pressed = 0
+		if e.clicks == 2 {
+			b.split_ratio = 0.5
+			browser_layout()
+		} else {
+			ui.split_drag = true
+		}
+	case .Palette_Field:
+		focus_field(.Palette)
+		field_press(&ui.palette, h.r, p, e.clicks, 16)
 	case .Drag:
 		ui.pressed = 0
 		if e.clicks == 2 {
@@ -706,6 +763,10 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 	pressed := ui.pressed
 	pa := ui.pressed_act
 	ui.pressed = 0
+	if ui.split_drag {
+		ui.split_drag = false
+		return
+	}
 	if ui.drag_id != 0 {
 		id := ui.drag_id
 		ui.drag_id = 0
@@ -721,20 +782,33 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 	act(pa)
 }
 
-/// a tab dropped at x: before the first tab whose middle is right of it
+/// a tab dropped at x: before the first tab of its workspace whose middle is
+/// right of it, and never across the line between pinned tabs and the rest
 @(private="file") move_tab :: proc(id: int, x: f32) {
 	t := tab_by_id(id)
 	if t == nil do return
-	to := 0
-	for o in b.tabs {
-		if o == t do continue
-		if x > ui.tab_x[o.id] + ui.tab_w[o.id] / 2 do to += 1
+	// the tab it goes before, among those the strip shows
+	before: ^Tab
+	for o in visible_tabs() {
+		if o == t || o.pinned != t.pinned do continue
+		if x < ui.tab_x[o.id] + ui.tab_w[o.id] / 2 {
+			before = o
+			break
+		}
 	}
+	last_of_group: ^Tab
+	for o in visible_tabs() do if o != t && o.pinned == t.pinned do last_of_group = o
 	for o, i in b.tabs do if o == t {
 		ordered_remove(&b.tabs, i)
 		break
 	}
-	inject_at(&b.tabs, clamp(to, 0, len(b.tabs)), t)
+	at := len(b.tabs)
+	if before != nil {
+		for o, i in b.tabs do if o == before do at = i
+	} else if last_of_group != nil {
+		for o, i in b.tabs do if o == last_of_group do at = i + 1
+	}
+	inject_at(&b.tabs, clamp_insert(at, t.pinned, pinned_count(), len(b.tabs)), t)
 }
 
 @(private="file") field_of :: proc(k: Wid) -> (^Line, [4]f32) {
@@ -745,6 +819,7 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 	case .Find_Field: return &ui.find, r
 	case .Prompt: return &ui.prompt, r
 	case .Name: return &ui.name, r
+	case .Palette_Field: return &ui.palette, r
 	case .Start_Field: return &ui.start, start_field_rect(r)
 	}
 	return nil, r
@@ -753,7 +828,7 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 /// the text's place inside the start page's search capsule
 start_field_rect :: proc(r: [4]f32) -> [4]f32 { return {r.x + 50, r.y, r.z - 70, r.w} }
 
-@(private="file") field_size :: proc(k: Wid) -> f32 { return k == .Address ? 14.5 : k == .Start_Field ? 16 : 14 }
+@(private="file") field_size :: proc(k: Wid) -> f32 { return k == .Address ? 14.5 : (k == .Start_Field || k == .Palette_Field) ? 16 : 14 }
 
 /// the byte in a field nearest x
 @(private="file") line_index_at :: proc(l: ^Line, r: [4]f32, x: f32, size: f32) -> int {
@@ -793,6 +868,11 @@ chrome_key :: proc(e: plat.Key_Event) -> bool {
 		} else if ui.focus == .Prompt {
 			line_key(&ui.prompt, e)
 		}
+		chrome_push()
+		return true
+	}
+	if ui.palette_open {
+		palette_key(e)
 		chrome_push()
 		return true
 	}
@@ -847,13 +927,13 @@ chrome_key :: proc(e: plat.Key_Event) -> bool {
 		}
 	case .Name:
 		switch line_key(&ui.name, e) {
-		case .Enter: act({op = .Add_Container})
+		case .Enter: act(ui.panel == .New_Space ? Action{op = .Command, n = int(Command.Space_Add)} : Action{op = .Add_Container})
 		case .Escape: close_panel()
 		case .Changed, .Moved, .Ignored:
 		}
 	case .Start:
 		start_key(e)
-	case .Prompt, .None:
+	case .Prompt, .None, .Palette:
 	}
 	ui.address.blink = 0
 	chrome_push()
@@ -865,7 +945,7 @@ chrome_key :: proc(e: plat.Key_Event) -> bool {
 @(private="file") now_s :: proc() -> f64 { return f64(time.tick_now()._nsec) / 1e9 }
 
 /// eases a value towards its target; true while it moves
-@(private="file") ease :: proc(v: ^f32, target: f32, dt: f32, speed: f32 = 16) -> bool {
+@(private) ease :: proc(v: ^f32, target: f32, dt: f32, speed: f32 = 16) -> bool {
 	d := target - v^
 	if abs(d) < 0.002 {
 		v^ = target
@@ -897,12 +977,12 @@ chrome_key :: proc(e: plat.Key_Event) -> bool {
 	return y + (h + asc - desc) / 2
 }
 
-@(private="file") fill :: proc(r: [4]f32, radius: f32, c: [4]f32) {
+@(private) fill :: proc(r: [4]f32, radius: f32, c: [4]f32) {
 	draw_fill(r.x, r.y, r.z, r.w, radius, c)
 }
 
 /// a round button with an icon: its glass shows while hovered
-@(private="file") button :: proc(k: Wid, r: [4]f32, ic: Icon, a: Action, dt: f32, enabled := true, color := INK, n := 0) {
+@(private) button :: proc(k: Wid, r: [4]f32, ic: Icon, a: Action, dt: f32, enabled := true, color := INK, n := 0) {
 	i := id(k, n)
 	hv := enabled ? hover_of(i, dt) : 0
 	if hv > 0.01 do draw_glass(r.x, r.y, r.z, r.w, glass_amount(glass_style({r = r.w / 2, kind = 3}), hv))
@@ -932,16 +1012,38 @@ chrome_draw :: proc(W, H: f32) {
 	ui.animating = false
 	if ui.focus == .Start && !tab_is_start(b.current) do chrome_leave_start()
 
-	if tab_is_start(b.current) && !(b.page_fullscreen || b.fullscreen) do draw_start(W, H, dt)
-	if !(b.page_fullscreen || b.fullscreen) {
-		draw_strip(W, dt)
-		draw_bar(W, dt)
+	full := b.page_fullscreen || b.fullscreen
+	if tab_is_start(b.current) && !full do draw_start(W, H, dt)
+	if split_on() && !full do draw_split(dt)
+	// compact mode: the strip and bar slide down over the page while the
+	// pointer is at the top (or the address or a menu of theirs is open)
+	dy: f32 = 0
+	bars := !full
+	if compact_on() {
+		want := ui.compact_hold || ui.focus == .Address || (ui.panel != .None && ui.panel != .Context && ui.panel != .Option) || ui.dragging
+		if spring_step(&ui.compact_show, want ? 1 : 0, dt) do ui.animating = true
+		dy = -(1 - ui.compact_show.x) * 104
+		if ui.compact_show.x < 0.01 {
+			bars = false
+		} else {
+			// one pane of frosted glass behind them, so they read over any page
+			draw_glass(6, dy + 4, W - 12, 92, glass_style({r = 24, kind = 1}))
+			hit(id(.Panel, 104), {6, dy + 4, W - 12, 92})
+		}
+	} else {
+		ui.compact_show = {}
+	}
+	if bars {
+		draw_strip(W, dt, dy)
+		draw_bar(W, dt, dy)
 	}
 	draw_find(dt)
 	draw_status()
+	if b.peek != nil do draw_peek(W, H, dt)
 	draw_toasts(W, H, dt)
 	if ui.focus == .Address && len(ui.suggestions) > 0 do draw_suggestions(dt)
 	if ui.panel != .None do draw_panel(W, H, dt)
+	if ui.palette_open do draw_palette(W, H, dt)
 	if ui.dialog_open do draw_dialog(W, H, dt)
 
 	ui.hits, ui.next_hits = ui.next_hits, ui.hits
@@ -973,33 +1075,50 @@ chrome_tab_closed :: proc(t: ^Tab) {
 
 // ---------------------------------------------------------------- the tab strip
 
-@(private="file") draw_strip :: proc(W: f32, dt: f32) {
+@(private="file") draw_strip :: proc(W: f32, dt: f32, dy: f32) {
 	own := !b.win.server_frame
 	right := W - 8 - (own ? 3 * 34 : 0)
 	x0: f32 = 10
-	avail := right - x0 - 40 - 60
-	n := max(1, len(b.tabs))
+	// the workspace you are in, when there is more than Home: a click lists them
+	if len(space_list()) > 1 {
+		name := space_name(b.space)
+		cw := min(text_width(name, 12.5, .Bold) + 42, 170)
+		r := [4]f32{x0, dy + 9, cw, 32}
+		i := id(.Space_Chip)
+		hv := hover_of(i, dt)
+		draw_glass(r.x, r.y, r.z, r.w, glass_amount(glass_style({r = 16, kind = 3}), 0.6 + 0.4 * hv))
+		draw_icon(.Grid, r.x + 11, r.y + 8, 16, ACCENT)
+		draw_text(name, r.x + 33, baseline(r.y, r.w, 12.5), 12.5, INK, .Bold, cw - 42)
+		hit(i, r, {op = .Command, n = int(Command.Spaces)})
+		x0 += cw + 6
+	}
+	tabs := visible_tabs()
+	n_pinned := 0
+	for t in tabs do if t.pinned do n_pinned += 1
+	avail := right - x0 - 40 - 60 - f32(n_pinned) * (PINNED_W + 2)
+	n := max(1, len(tabs) - n_pinned)
 	tw := clamp(avail / f32(n), 52, 220)
 	x := x0
-	for t in b.tabs {
+	for t in tabs {
+		want := t.pinned ? PINNED_W : tw
 		if t.id not_in ui.tab_x {
 			ui.tab_x[t.id] = x
 			ui.tab_w[t.id] = 0
 		}
 		tx, tww := ui.tab_x[t.id], ui.tab_w[t.id]
 		if theme.reduce_motion {
-			tx, tww = x, tw
+			tx, tww = x, want
 		} else {
 			if ease(&tx, x, dt, 16) do ui.animating = true
-			if ease(&tww, tw, dt, 16) do ui.animating = true
+			if ease(&tww, want, dt, 16) do ui.animating = true
 		}
 		ui.tab_x[t.id], ui.tab_w[t.id] = tx, tww
-		x += tw + 2
+		x += want + 2
 	}
-	// what closed lets its place go
+	// what closed, or is in another workspace, lets its place go
 	for k in ui.tab_x {
 		found := false
-		for t in b.tabs do if t.id == k do found = true
+		for t in tabs do if t.id == k do found = true
 		if !found {
 			delete_key(&ui.tab_x, k)
 			delete_key(&ui.tab_w, k)
@@ -1017,7 +1136,7 @@ chrome_tab_closed :: proc(t: ^Tab) {
 		ui.animating = true
 		gw := g.w * (1 - k)
 		if gw >= 8 {
-			r := [4]f32{g.x, 9, gw, 32}
+			r := [4]f32{g.x, dy + 9, gw, 32}
 			if g.cur do draw_glass(r.x, r.y, r.z, r.w, glass_amount(glass_style({r = 16, kind = 2}), 1 - k))
 			c := DIM
 			c.a *= 1 - k
@@ -1028,42 +1147,49 @@ chrome_tab_closed :: proc(t: ^Tab) {
 		i += 1
 	}
 	dragged: ^Tab
-	for t in b.tabs {
+	for t in tabs {
 		if ui.dragging && t.id == ui.drag_id {
 			dragged = t
 			continue
 		}
-		draw_tab(t, ui.tab_x[t.id], ui.tab_w[t.id], dt)
+		draw_tab(t, ui.tab_x[t.id], ui.tab_w[t.id], dt, dy)
 	}
-	if dragged != nil do draw_tab(dragged, ui.tab_x[dragged.id] + ui.drag_dx, ui.tab_w[dragged.id], dt)
+	if dragged != nil do draw_tab(dragged, ui.tab_x[dragged.id] + ui.drag_dx, ui.tab_w[dragged.id], dt, dy)
 	// the new-tab button, then the empty strip that moves the window
 	px := min(x, right - 40)
-	button(.Plus, {px + 2, 9, 32, 32}, .Plus, {op = .New_Tab}, dt)
-	hit(id(.Drag), {px + 38, 0, right - px - 38, 46})
+	button(.Plus, {px + 2, dy + 9, 32, 32}, .Plus, {op = .New_Tab}, dt)
+	hit(id(.Drag), {px + 38, dy, right - px - 38, 46})
 	if own {
 		ic := [3]Icon{.Min, b.win.maximized ? .Restore : .Max, .Close}
 		ops := [3]Op{.Minimize, .Maximize, .Close_Window}
 		ks := [3]Wid{.Frame_Min, .Frame_Max, .Frame_Close}
-		for i in 0 ..< 3 do button(ks[i], {right + 4 + f32(i) * 34, 10, 30, 30}, ic[i], {op = ops[i]}, dt)
+		for i in 0 ..< 3 do button(ks[i], {right + 4 + f32(i) * 34, dy + 10, 30, 30}, ic[i], {op = ops[i]}, dt)
 	}
 }
 
-@(private="file") draw_tab :: proc(t: ^Tab, x, w: f32, dt: f32) {
+/// a pinned tab's width: its icon alone
+PINNED_W :: f32(40)
+
+@(private="file") draw_tab :: proc(t: ^Tab, x, w: f32, dt: f32, dy: f32) {
 	if w < 8 do return
-	r := [4]f32{x, 9, w, 32}
+	r := [4]f32{x, dy + 9, w, 32}
 	i := id(.Tab, t.id)
 	cur := t == b.current
+	// the other half of a split view: its glass shows, a little fainter
+	half := !cur && split_has(t)
 	hv := hover_of(i, dt)
 	if cur {
 		draw_glass(r.x, r.y, r.z, r.w, glass_style({r = 16, kind = 2}))
+	} else if half {
+		draw_glass(r.x, r.y, r.z, r.w, glass_amount(glass_style({r = 16, kind = 2}), 0.55))
 	} else if hv > 0.01 {
 		draw_glass(r.x, r.y, r.z, r.w, glass_amount(glass_style({r = 16, kind = 3}), hv))
 	}
 	if t.sandboxed do draw_fill(r.x + 10, r.y + r.w - 3, r.z - 20, 2, 1, WARN)
 	k, has := container_get(t.container)
 	if has do draw_fill(r.x + 6, r.y + 6, 6, 6, 3, parse_color(k.color))
-	// the site's icon, or what stands for it
-	ix := r.x + 11
+	// the site's icon, or what stands for it (a pinned tab: in the middle)
+	ix := t.pinned ? r.x + (r.z - 16) / 2 : r.x + 11
 	iy := r.y + 8
 	switch {
 	case t.loading: draw_spinner(ix + 8, iy + 8, 6)
@@ -1079,13 +1205,34 @@ chrome_tab_closed :: proc(t: ^Tab) {
 		draw_texture(t.favicon_tex, ix, iy, 16, 16, 3)
 	case: draw_icon(.Globe, ix, iy, 16, DIM)
 	}
+	hit(i, r, {op = .Select_Tab, n = t.id})
+	sound := t.audio || t.muted
+	if t.pinned {
+		// sound: a small speaker on the icon's corner, a click mutes
+		if sound {
+			sr := [4]f32{r.x + r.z - 17, r.y + r.w - 17, 15, 15}
+			draw_fill(sr.x, sr.y, sr.z, sr.w, 7.5, theme.dark ? [4]f32{0.16, 0.17, 0.2, 0.95} : [4]f32{1, 1, 1, 0.95})
+			draw_icon(t.muted ? .Speaker_Off : .Speaker, sr.x + 1.5, sr.y + 1.5, 12, t.muted ? DIM : ACCENT)
+			hit(id(.Tab_Audio, t.id), sr, {op = .Command, n = int(Command.Mute), n2 = t.id})
+		}
+		return
+	}
 	title := t.title
 	if len(title) == 0 do title = is_ai_mode(t.url) ? "Google AI Mode" : display_url(t.url, context.temp_allocator)
 	if len(title) == 0 do title = "New Tab"
 	show_close := cur || hv > 0.3
-	tmax := r.z - 8 - 27 - (show_close ? 24 : 8)
-	if tmax > 8 do draw_text(title, r.x + 35, baseline(r.y, r.w, 13), 13, cur ? INK : DIM, .Semibold, tmax)
-	hit(i, r, {op = .Select_Tab, n = t.id})
+	right_x := r.x + r.z - (show_close && r.z > 80 ? 28 : 8)
+	if sound && r.z > 70 {
+		// the speaker: playing, or muted; a click on it mutes or unmutes
+		sr := [4]f32{right_x - 20, r.y + 7, 18, 18}
+		ah := hover_of(id(.Tab_Audio, t.id), dt)
+		if ah > 0.01 do draw_fill(sr.x, sr.y, sr.z, sr.w, 9, {FAINT.r, FAINT.g, FAINT.b, FAINT.a * ah})
+		draw_icon(t.muted ? .Speaker_Off : .Speaker, sr.x + 2, sr.y + 2, 14, t.muted ? DIM : INK)
+		hit(id(.Tab_Audio, t.id), sr, {op = .Command, n = int(Command.Mute), n2 = t.id})
+		right_x -= 22
+	}
+	tmax := right_x - (r.x + 35) - 2
+	if tmax > 8 do draw_text(title, r.x + 35, baseline(r.y, r.w, 13), 13, cur || half ? INK : DIM, .Semibold, tmax)
 	if show_close && r.z > 80 {
 		cr := [4]f32{r.x + r.z - 26, r.y + 6, 20, 20}
 		ci := id(.Tab_Close, t.id)
@@ -1096,7 +1243,7 @@ chrome_tab_closed :: proc(t: ^Tab) {
 	}
 }
 
-@(private="file") draw_spinner :: proc(cx, cy, rad: f32) {
+@(private) draw_spinner :: proc(cx, cy, rad: f32) {
 	// a ring with a bright arc turning
 	a := f32(math.mod(now_s() * 5, 2 * math.PI))
 	draw_fill(cx - rad, cy - rad, rad * 2, rad * 2, rad, FAINT)
@@ -1124,11 +1271,28 @@ chrome_tab_closed :: proc(t: ^Tab) {
 	return {(v(hex[1]) * 16 + v(hex[2])) / 255, (v(hex[3]) * 16 + v(hex[4])) / 255, (v(hex[5]) * 16 + v(hex[6])) / 255, 1}
 }
 
+// ---------------------------------------------------------------- split view
+
+/// the divider between the halves (drag it; a double click evens them),
+/// and a short line of the accent over the half with the keys
+@(private="file") draw_split :: proc(dt: f32) {
+	a, z := split_rects(b.card, b.split_ratio, SPLIT_GAP)
+	gap := [4]f32{a.x + a.z, a.y, z.x - (a.x + a.z), a.w}
+	i := id(.Split_Divider)
+	hv := hover_of(i, dt)
+	hc := DIM
+	hc.a *= 0.35 + 0.65 * max(hv, ui.split_drag ? 1 : 0)
+	draw_fill(gap.x + gap.z / 2 - 2, gap.y + gap.w / 2 - 22, 4, 44, 2, hc)
+	hit(i, gap, {}, .Ew_Resize)
+	r := browser_tab_rect(b.current)
+	draw_fill(r.x + r.z / 2 - 18, r.y - 5, 36, 3, 1.5, ACCENT)
+}
+
 // ---------------------------------------------------------------- the bar
 
-@(private="file") draw_bar :: proc(W: f32, dt: f32) {
+@(private="file") draw_bar :: proc(W: f32, dt: f32, dy: f32) {
 	t := b.current
-	y: f32 = 48
+	y: f32 = 48 + dy
 	h: f32 = 44
 	// back, forward, reload
 	nav := [4]f32{10, y, 116, h}
@@ -1202,8 +1366,10 @@ chrome_tab_closed :: proc(t: ^Tab) {
 			x += 26
 		}
 	}
+	// the reader's button, when the page is an article (or is the reader)
+	reader := t != nil && (t.article || t.reader) && ui.focus != .Address
 	// the text centred in what is left, as wide on both sides
-	right := r.x + r.z - 14
+	right := r.x + r.z - 14 - (reader ? 30 : 0)
 	side := max(x - (r.x + 14), 0)
 	tr := [4]f32{x, r.y, right - side - x, r.w}
 	if ui.focus == .Address {
@@ -1238,6 +1404,7 @@ chrome_tab_closed :: proc(t: ^Tab) {
 		}
 	}
 	hit(id(.Address), {r.x, r.y, r.z, r.w}, {}, .Text)
+	if reader do button(.Reader_Button, {r.x + r.z - 40, r.y + 5, 34, 34}, .Reader, {op = .Command, n = int(Command.Reader)}, dt, color = t.reader ? ACCENT : DIM)
 }
 
 /// an address in three parts: "https://", the host, and the rest (any of
@@ -1473,7 +1640,7 @@ Pill :: struct {
 	primary: bool,
 }
 
-@(private="file") row :: proc(items: ^[dynamic]Item, icon: Maybe(Icon), text: string, a: Action, keys := "", on := false, disabled := false, color := INK) {
+@(private) row :: proc(items: ^[dynamic]Item, icon: Maybe(Icon), text: string, a: Action, keys := "", on := false, disabled := false, color := INK) {
 	append(items, Item{kind = .Row, icon = icon, icon_color = color, text = text, act = a, keys = keys, on = on, disabled = disabled})
 }
 
@@ -1496,11 +1663,17 @@ Pill :: struct {
 		}
 		row(&items, s.shields ? .Shield_On : .Shield_Off, s.shields ? "On everywhere" : "Off everywhere", {op = .Shield_All}, s.shields ? "Turn off" : "Turn on", on = s.shields)
 		if s.shields {
+			n := t != nil ? len(t.trackers) : 0
+			row(&items, .Eye, n == 0 ? "Privacy Report" : fmt.tprintf("Privacy Report: %d stopped here", n), {op = .Command, n = int(Command.Report)})
 			append(&items, Item{kind = .Sep})
 			for l in Level do row(&items, l == s.shieldLevel ? Icon.Check : nil, level_title(l), {op = .Level, n = int(l)}, on = l == s.shieldLevel)
 			append(&items, Item{kind = .Note, text = level_hint(s.shieldLevel)})
 			if !engine_shields_ready() do append(&items, Item{kind = .Note, text = "Getting the block list ready (the first start takes a moment)…"})
 		}
+		append(&items, Item{kind = .Sep})
+		row(&items, .Lock, "HTTPS first", {op = .Command, n = int(Command.Https)}, s.httpsOnly ? "On" : "Off", on = s.httpsOnly)
+		row(&items, .Trash, "Forget everything on close", {op = .Command, n = int(Command.Clear_Exit)}, s.clearOnExit ? "On" : "Off", on = s.clearOnExit)
+		if s.clearOnExit do append(&items, Item{kind = .Note, text = "When Iris closes, your history, cookies, sign-ins, site data and tabs go."})
 	case .Downloads:
 		width = 380
 		it := Item{kind = .Title_Buttons, text = "Downloads"}
@@ -1534,6 +1707,26 @@ Pill :: struct {
 		append(&items, Item{kind = .Sep})
 		row(&items, .Plus, "New Container…", {op = .New_Container})
 		if len(containers) > 0 do row(&items, .Trash, "Remove a Container…", {op = .Remove_Container_Panel})
+		// workspaces: named sets of tabs (Alt+1…9)
+		append(&items, Item{kind = .Sep}, Item{kind = .Head, text = "Workspaces"})
+		for sp, k in space_list() {
+			keys := k < 9 ? fmt.tprintf("Alt+%d", k + 1) : ""
+			row(&items, sp.id == b.space ? Icon.Check : Icon.Grid, sp.name, {op = .Command, n = int(Command.Space), s = keep(sp.id)}, keys, on = sp.id == b.space)
+		}
+		row(&items, .Plus, "New Workspace…", {op = .Command, n = int(Command.Space_New)})
+		if b.space != "" do row(&items, .Trash, fmt.tprintf("Remove %s", space_name(b.space)), {op = .Command, n = int(Command.Space_Remove), s = keep(b.space)})
+	case .New_Space:
+		width = 290
+		append(&items, Item{kind = .Title, text = "New Workspace"})
+		append(&items, Item{kind = .Note, text = "A set of tabs of its own: switch with Alt and its number. Removing one moves its tabs to Home."})
+		append(&items, Item{kind = .Field, text = "Name"})
+		it := Item{kind = .Buttons}
+		it.buttons[0] = {text = "Add", act = {op = .Command, n = int(Command.Space_Add)}, primary = true}
+		it.n_buttons = 1
+		append(&items, it)
+	case .Report:
+		width = 340
+		privacy_items(&items)
 	case .New_Container:
 		width = 290
 		append(&items, Item{kind = .Title, text = "New Container"})
@@ -1555,7 +1748,20 @@ Pill :: struct {
 		x := tab_by_id(id)
 		if x == nil do break
 		row(&items, .Reload, "Reload", {op = .Reload_Tab, n = id})
-		row(&items, .Copy, "Duplicate", {op = .Duplicate, n = id})
+		row(&items, .Copy, "Duplicate", {op = .Duplicate, n = id}, "Ctrl+Shift+K")
+		row(&items, .Pin, x.pinned ? "Unpin Tab" : "Pin Tab", {op = .Command, n = int(Command.Pin), n2 = id})
+		row(&items, x.muted ? .Speaker : .Speaker_Off, x.muted ? "Unmute Tab" : "Mute Tab", {op = .Command, n = int(Command.Mute), n2 = id}, "Ctrl+M")
+		if !tab_is_start(x) {
+			if split_has(x) {
+				row(&items, .Split, "End Split View", {op = .Command, n = int(Command.Split)}, "Ctrl+Shift+S")
+			} else if x != b.current && b.current != nil && !tab_is_start(b.current) {
+				row(&items, .Split, "Split with Current Tab", {op = .Command, n = int(Command.Split_With), n2 = id})
+			}
+			row(&items, .Link, "Copy Clean Link", {op = .Command, n = int(Command.Copy_Link), n2 = id})
+		}
+		for sp in space_list() do if sp.id != x.space {
+			row(&items, .Grid, fmt.tprintf("Move to %s", sp.name), {op = .Command, n = int(Command.Space_Move), n2 = id, s = keep(sp.id)})
+		}
 		first := true
 		for k in containers do if k.id != x.container {
 			if first do append(&items, Item{kind = .Sep})
@@ -1579,7 +1785,9 @@ Pill :: struct {
 				row(&items, .Tab, "Open Link in New Tab", {op = .Ctx_Tab, s = keep(c.link)})
 				for k in containers do if ct == nil || k.id != ct.container do row(&items, container_icon(k.icon), fmt.tprintf("Open Link in %s", k.name), {op = .Ctx_In, s = keep(c.link), s2 = keep(k.id)}, color = parse_color(k.color))
 			}
+			if opens do row(&items, .Eye, "Peek Link", {op = .Command, n = int(Command.Peek_Link), s = keep(c.link)}, "Alt+click")
 			row(&items, .Link, "Copy Link", {op = .Ctx_Copy, s = keep(c.link)})
+			if _, dirty := strip_tracking(c.link, context.temp_allocator); dirty do row(&items, .Link, "Copy Clean Link", {op = .Command, n = int(Command.Copy_Link), s = keep(c.link)})
 			if saves && opens do row(&items, .Download, "Download Link", {op = .Ctx_Save, s = keep(c.link)})
 		}
 		if len(c.image) > 0 {
@@ -1609,6 +1817,7 @@ Pill :: struct {
 			row(&items, .Forward, "Forward", {op = .Ctx_Forward}, "Alt+→", disabled = ct == nil || !ct.can_forward)
 			row(&items, .Reload, "Reload", {op = .Ctx_Reload}, "Ctrl+R")
 			row(&items, .Select_All, "Select All", {op = .Ctx_Edit, s = EDIT_SELECT_ALL}, "Ctrl+A")
+			if ct != nil && (ct.article || ct.reader) do row(&items, .Reader, ct.reader ? "Leave Reader" : "Reader", {op = .Command, n = int(Command.Reader)}, "Ctrl+Alt+R")
 			// the way out when the shield breaks a site (and back in)
 			if ct != nil && ct == b.current && settings().shields && strings.has_prefix(ct.url, "http") {
 				h, _ := host_of(ct.url, context.temp_allocator)
@@ -1771,7 +1980,7 @@ Pill :: struct {
 	if ui.sel >= len(ui.rows) do ui.sel = -1
 }
 
-@(private="file") pill :: proc(p: Pill, r: [4]f32, k: int, dt: f32) {
+@(private) pill :: proc(p: Pill, r: [4]f32, k: int, dt: f32) {
 	i := id(.Pill, k)
 	hv := hover_of(i, dt)
 	if p.primary {

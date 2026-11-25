@@ -148,7 +148,8 @@ browser_option_menu :: proc(t: ^Tab, menu: ^WebKitOptionMenu, rect: ^WPERectangl
 			webkit_option_menu_item_is_selected(it) != 0, webkit_option_menu_item_is_enabled(it) != 0})
 	}
 	r := rect != nil ? rect^ : WPERectangle{}
-	chrome_option_menu(id, b.card.x + f32(r.x), b.card.y + f32(r.y + r.height), f32(r.width), items[:])
+	c := browser_tab_rect(t)
+	chrome_option_menu(id, c.x + f32(r.x), c.y + f32(r.y + r.height), f32(r.width), items[:])
 	on(menu, "close", rawptr(proc "c" (m: ^WebKitOptionMenu, d: rawptr) {
 		context = main_context
 		chrome_close_option()

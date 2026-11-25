@@ -35,6 +35,25 @@ Tab :: struct {
 	dialogs_since:  f64,
 	dialogs_n:      int,
 	dialogs_blocked: bool,
+	// 2.3: what the tab strip, reader, peek and the privacy report know
+	// (features.odin, reader.odin, peek.odin, privacy.odin)
+	pinned:         bool,
+	muted:          bool,
+	/// the page is playing sound (the engine says so; nothing is polled)
+	audio:          bool,
+	/// the workspace the tab belongs to ("" the first one)
+	space:          string,
+	/// the page looks like an article: the reader can show it
+	article:        bool,
+	/// the tab shows the reader's page of its article; reader_pending until
+	/// that page commits
+	reader, reader_pending: bool,
+	/// known tracker hosts the page tried to load, which Shields stopped
+	trackers:       [dynamic]string,
+	/// an http address tried over https first: the one it came from
+	upgraded_from:  string,
+	/// the view is a peek's: a process of its own, ended with it
+	isolated:       bool,
 }
 
 @(private="file") next_tab_id := 1
@@ -66,6 +85,7 @@ tab_free :: proc(t: ^Tab) {
 	forget_certs(t)
 	if t.favicon_tex.owned do texture_free(&t.favicon_tex)
 	delete(t.allowed_certs)
+	tab_free_extra(t)
 	free(t)
 }
 

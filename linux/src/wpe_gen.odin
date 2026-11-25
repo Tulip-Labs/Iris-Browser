@@ -259,4 +259,6 @@ foreign wpewebkit_2_0_lib {
 	wpe_keymap_xkb_get_type :: proc() -> GType ---
 	wpe_view_buffers_changed :: proc(view: ^WPEView, buffers: rawptr, n_buffers: u32) ---
 	webkit_memory_pressure_settings_get_type :: proc() -> GType ---
+	webkit_web_view_set_is_muted :: proc(web_view: ^WebKitWebView, muted: gboolean) ---
+	webkit_web_view_terminate_web_process :: proc(web_view: ^WebKitWebView) ---
 }

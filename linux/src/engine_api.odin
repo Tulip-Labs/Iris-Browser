@@ -36,6 +36,14 @@
 //   page_latch, flush_rendered, page_place, page_set_visible,
 //   page_set_active, page_focus, page_pointer, page_key, set_keymap,
 //   clipboard_from_desktop
+// Iris 2.3's features (wpe_extra.odin, cef_extra.odin)
+//   tab_set_muted(t, on), tab_run_isolated(t, js, done) (a world of Iris's
+//   own where the engine has one), tab_show_html(t, html, base) and
+//   tab_reader_exit(t) (the reader), tab_isolate(t) (a peek: processes of
+//   its own), tab_end_isolated(t), tab_view_free(t); and they call
+//   browser_page_audio, browser_page_committed, browser_page_finished,
+//   browser_load_failed (page_events.odin), https_first/https_wanted/
+//   https_is_upgrade (features.odin) where they load and decide
 // The engines tell the browser through browser_tab_changed,
 // browser_page_frame, browser_page_cursor, browser_fullscreen,
 // browser_hover_link, browser_toast and the history/download procedures.

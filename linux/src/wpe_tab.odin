@@ -12,6 +12,8 @@ Tab_View :: struct {
 	web:             ^WebKitWebView,
 	ucm:             ^WebKitUserContentManager,
 	sandbox_session: ^WebKitNetworkSession,
+	/// a web context of the tab's own (a peek's: tab_isolate)
+	own_context:     ^WebKitWebContext,
 }
 
 tab_has_view :: proc(t: ^Tab) -> bool { return t.web != nil }
@@ -37,11 +39,11 @@ tab_ensure_web :: proc(t: ^Tab, related: rawptr = nil) -> ^WebKitWebView {
 		t.sandbox_session = sandbox_session()
 		w = cast(^WebKitWebView)gnew(webkit_web_view_get_type(), disp, ucm, set,
 			{name = "network-session", value = rawptr(t.sandbox_session), type = webkit_network_session_get_type()},
-			{name = "web-context", value = rawptr(sandbox_context()), type = webkit_web_context_get_type()})
+			{name = "web-context", value = rawptr(t.own_context != nil ? t.own_context : sandbox_context()), type = webkit_web_context_get_type()})
 	} else {
 		w = cast(^WebKitWebView)gnew(webkit_web_view_get_type(), disp, ucm, set,
 			{name = "network-session", value = rawptr(container_session(t.container)), type = webkit_network_session_get_type()},
-			{name = "web-context", value = rawptr(web_context()), type = webkit_web_context_get_type()})
+			{name = "web-context", value = rawptr(t.own_context != nil ? t.own_context : web_context()), type = webkit_web_context_get_type()})
 	}
 	// WPE's WebKitWebView is a plain GObject, born with the one reference
 	// Iris owns. (g_object_ref_sink on it added a second one, so the unref in
@@ -51,6 +53,7 @@ tab_ensure_web :: proc(t: ^Tab, related: rawptr = nil) -> ^WebKitWebView {
 	t.web = w
 	shields_apply(t.ucm, "")
 	tab_connect(t, w)
+	tab_connect_extra(t, w)
 	t.page = page_new(w)
 	t.page.user = t
 	t.page.on_frame = proc(p: ^Page) { browser_page_frame(cast(^Tab)p.user) }
@@ -70,10 +73,13 @@ tab_release_web :: proc(t: ^Tab) {
 	disconnect_all(t.web, t)
 	page_free(t.page)
 	t.page = nil
+	// a context of its own (a peek's): its web process ends with the view
+	tab_end_isolated(t)
 	webkit_web_view_try_close(t.web)
 	unref(t.web)
 	unref(t.ucm)
 	t.web, t.ucm = nil, nil
+	t.audio, t.article, t.reader, t.reader_pending = false, false, false, false
 	if t.sandbox_session != nil {
 		unref(t.sandbox_session)
 		t.sandbox_session = nil
@@ -85,7 +91,8 @@ tab_release_web :: proc(t: ^Tab) {
 /// a trusted one comes out of it
 tab_load :: proc(t: ^Tab, u0: string) {
 	if len(u0) == 0 do return
-	u := shields_clean_url(u0)
+	// https first (features.odin), then without tracking parameters
+	u := shields_clean_url(https_first(t, u0))
 	want := untrusted(u)
 	if t.web == nil {
 		t.sandboxed = want
@@ -131,7 +138,7 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 		if v == nil do return
 		defer unref(v)
 		// the tab may have closed while the page answered
-		if !browser_has_tab(j.t) || j.t.id != j.id do return
+		if !browser_tab_alive(j.t) || j.t.id != j.id do return
 		s := jsc_value_to_string(v)
 		j.done(j.t, string(s))
 		g_free(rawptr(s))
@@ -291,6 +298,12 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 			t.held = false
 			browser_select(t)
 		}
+		// an http address goes over https first, where it can (features.odin)
+		if https_wanted(t, u) {
+			webkit_policy_decision_ignore(d)
+			tab_load_later(t, strings.clone(u))
+			return true
+		}
 		// a middle click or Ctrl+click opens the link in a new tab (WebKit
 		// leaves that to the browser: it asks to navigate this tab)
 		if webkit_navigation_action_get_navigation_type(nav) == WEBKIT_NAVIGATION_TYPE_LINK_CLICKED && link_wants_new_tab(webkit_navigation_action_get_mouse_button(nav), webkit_navigation_action_get_modifiers(nav)) {
@@ -344,6 +357,9 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 /// a certificate that fails: the site opens in the sandbox, its certificate
 /// let through there once (never in a normal tab)
 @(private="file") tab_certificate_failed :: proc(t: ^Tab, uri: string, cert: ^GTlsCertificate) -> bool {
+	// an http address Iris tried over https: WebKit's error page, and Iris
+	// offers the http one (features.odin), never a certificate let through
+	if https_is_upgrade(t, uri) do return false
 	h, ok := host_of(uri)
 	if !ok do return false
 	if h in t.allowed_certs {

@@ -205,3 +205,5 @@ wpe_keymap_xkb_update
 wpe_keymap_xkb_get_type
 wpe_view_buffers_changed
 webkit_memory_pressure_settings_get_type
+webkit_web_view_set_is_muted
+webkit_web_view_terminate_web_process

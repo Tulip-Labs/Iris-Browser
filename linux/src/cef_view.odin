@@ -239,7 +239,8 @@ tab_release_web :: proc(t: ^Tab) {
 /// a trusted one comes out of it
 tab_load :: proc(t: ^Tab, u0: string) {
 	if len(u0) == 0 do return
-	u := shields_clean_url(u0)
+	// https first (features.odin), then without tracking parameters
+	u := shields_clean_url(https_first(t, u0))
 	want := untrusted(u)
 	if t.cv == nil {
 		t.sandboxed = want
@@ -380,6 +381,7 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 			p.media = on
 			page_apply_hidden(p)
 		}
+		if t := v.tab; t != nil do browser_page_audio(t, on)
 		return true
 	}
 	if !strings.has_prefix(msg, ANSWER) do return false
@@ -393,6 +395,7 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 			j.done(t, rest[len(j.token) + 1:])
 			break
 		}
+		if p := b.peek; p != nil && p.id == j.tab_id && p.cv == v do j.done(p, rest[len(j.token) + 1:])
 		return true
 	}
 	return true
@@ -661,7 +664,10 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		context = main_context
 		defer { rel(browser); rel(frame) }
 		v := vw(self)
-		if t := v.tab; t != nil && frame.is_main(frame) != 0 do page_hiding(t, v, frame)
+		if t := v.tab; t != nil && frame.is_main(frame) != 0 {
+			page_hiding(t, v, frame)
+			browser_page_committed(t, from_userfree(frame.get_url(frame)))
+		}
 	}
 	ld.on_load_end = proc "c" (self: ^cef_load_handler_t, browser: ^cef_browser_t, frame: ^cef_frame_t, status: i32) {
 		context = main_context
@@ -670,6 +676,7 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		if t == nil do return
 		page_scripts(t, frame)
 		if frame.is_main(frame) != 0 && !tab_is_private(t) && !t.sandboxed do history_record(t.url, t.title)
+		if frame.is_main(frame) != 0 do browser_page_finished(t)
 	}
 	ld.on_load_error = proc "c" (self: ^cef_load_handler_t, browser: ^cef_browser_t, frame: ^cef_frame_t, code: i32, text: ^cef_string_t, failed: ^cef_string_t) {
 		context = main_context
@@ -677,6 +684,11 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		t := vw(self).tab
 		// -3 aborted (a new address came), -20 blocked by Shields
 		if t == nil || frame.is_main(frame) == 0 || code == -3 || code == -20 do return
+		// an http address tried over https: Iris offers the http one
+		if https_is_upgrade(t, from_cef(failed)) {
+			browser_load_failed(t, from_cef(failed), false)
+			return
+		}
 		host := display_url(from_cef(failed), context.temp_allocator)
 		browser_toast(fmt.tprintf("%s could not be opened (%s)", len(host) > 0 ? host : "The page", from_cef(text)))
 	}
@@ -808,6 +820,11 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		t := vw(self).tab
 		if t == nil || frame.is_main(frame) == 0 do return 0
 		u := from_userfree(request.get_url(request))
+		// an http address goes over https first, where it can (features.odin)
+		if https_wanted(t, u) {
+			tab_load_later(t, strings.clone(u))
+			return 1
+		}
 		// a Google result goes straight to the site
 		if target, ok := unwrap_redirect(u); ok {
 			tab_load_later(t, target)
@@ -851,7 +868,9 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		t := vw(self).tab
 		u := from_cef(url)
 		h, ok := host_of(u)
-		if t == nil || !ok {
+		if t == nil || !ok || https_is_upgrade(t, u) {
+			// (an https try of an http address: it fails, and Iris offers http)
+			if ok do delete(h)
 			rel(cb)
 			return 0
 		}
