@@ -38,6 +38,11 @@
 
 ## What is new in 2.3.0
 
+- **New tabs never open blank**, and middle-click or Ctrl+click opens a link in a new tab.
+- **Iris's own start page**: the glass ring and a search field, drawn by Iris, with no page behind it. **The full address, centred.** Light animations. Light or dark follows your desktop, live.
+- **Shields at Ultra aggressive by default**, the complete uBlock lists, cookie banners hidden, tracking parameters stripped; links you click always open. **Faster Google and YouTube.**
+- **Closing a tab gives its process and memory back.** **A glass warning for failing certificates.** **Tabs survive a crash.**
+- **Iris (Chromium)**: the same Iris on CEF 156, as a second Flatpak (experimental).
 - **Pinned tabs, sound and muting.** Pin a tab from its menu: it stays at the left as its icon. A tab playing sound shows a speaker; click it, or press Ctrl+M, to mute. Ctrl+Shift+T brings closed tabs back where they were, pinned or not; Ctrl+Shift+K duplicates a tab.
 - **Reader** (Ctrl+Alt+R, or the button that shows in the address only on articles): the article alone, in a calm page of glass, light or dark, that runs no script.
 - **Split View** (Ctrl+Shift+S): two tabs side by side, a divider to drag between them.
