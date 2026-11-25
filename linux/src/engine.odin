@@ -1,7 +1,6 @@
-// The engine around the pages: one web context for every tab (one pool of
-// web processes and caches, with memory limits), the sandbox's own context,
-// the containers (a network session each), the scripts pages get, and the
-// downloads.
+// What both engines share around the pages: the containers' list, the
+// scripts pages get, and the downloads' list (the engines' own parts:
+// wpe_engine.odin, cef_engine.odin).
 package iris
 
 import "core:fmt"
@@ -15,36 +14,10 @@ import "core:unicode/utf8"
 
 // ---------------------------------------------------------------- the engine
 
-@(private="file") the_pressure: ^WebKitMemoryPressureSettings
-@(private="file") the_context: ^WebKitWebContext
-@(private="file") sandbox_context_: ^WebKitWebContext
-
 memory_mb :: proc() -> u64 {
 	info: linux.Sys_Info
 	if linux.sysinfo(&info) != .NONE do return 8192
 	return u64(info.totalram) * u64(max(1, info.mem_unit)) / (1 << 20)
-}
-
-/// each web process gives memory back early, and never takes more than
-/// a sixth of the computer's
-pressure :: proc() -> ^WebKitMemoryPressureSettings {
-	if the_pressure != nil do return the_pressure
-	p := webkit_memory_pressure_settings_new()
-	webkit_memory_pressure_settings_set_memory_limit(p, u32(min(2048, max(512, memory_mb() / 6))))
-	webkit_memory_pressure_settings_set_conservative_threshold(p, 0.33)
-	webkit_memory_pressure_settings_set_strict_threshold(p, 0.5)
-	webkit_memory_pressure_settings_set_poll_interval(p, 5)
-	the_pressure = p
-	return p
-}
-
-web_context :: proc() -> ^WebKitWebContext {
-	if the_context != nil do return the_context
-	webkit_network_session_set_memory_pressure_settings(pressure())
-	ctx := cast(^WebKitWebContext)gnew(webkit_web_context_get_type(), {name = "memory-pressure-settings", value = rawptr(pressure()), type = webkit_memory_pressure_settings_get_type(), boxed = true})
-	webkit_web_context_set_cache_model(ctx, WEBKIT_CACHE_MODEL_WEB_BROWSER)
-	the_context = ctx
-	return ctx
 }
 
 LIGHT_VIDEO :: `(() => {
@@ -65,90 +38,6 @@ AI_GLASS :: #load("aimode.js", string)
 /// for Android's)
 YOUTUBE :: #load("youtube.js", string)
 
-@(private="file") add_script :: proc(ucm: ^WebKitUserContentManager, source: string, all_frames: bool, hosts: []cstring) {
-	list: [8]cstring
-	for h, i in hosts[:min(len(hosts), 7)] do list[i] = h
-	s := webkit_user_script_new(cstr(source), all_frames ? 0 : WEBKIT_USER_CONTENT_INJECT_TOP_FRAME, 0, &list[0], nil)
-	if s == nil do return
-	webkit_user_content_manager_add_script(ucm, s)
-	webkit_user_script_unref(s)
-}
-
-add_page_scripts :: proc(ucm: ^WebKitUserContentManager) {
-	google := [?]cstring{"https://www.google.com/*", "https://google.com/*"}
-	add_script(ucm, AI_GLASS, false, google[:])
-	yt := [?]cstring{"https://*.youtube.com/*", "https://youtube.com/*", "https://*.youtube-nocookie.com/*"}
-	add_script(ucm, YOUTUBE, true, yt[:])
-	if settings().lightVideo do add_script(ucm, LIGHT_VIDEO, true, yt[:])
-}
-
-GOOGLE_HOSTS :: [?]string{"www.google.com", "www.gstatic.com", "ssl.gstatic.com", "fonts.gstatic.com", "encrypted-tbn0.gstatic.com", "lh3.googleusercontent.com"}
-
-/// names looked up before they are needed (a link under the pointer, Google)
-warm_dns :: proc(session: ^WebKitNetworkSession, hosts: ..string) {
-	for h in hosts do if len(h) > 0 do webkit_network_session_prefetch_dns(session, cstr(h))
-}
-
-/// video decoding on the graphics chip stays off: some drivers broke the
-/// picture into blocks
-video_environment :: proc() {
-	off := "vah264dec:NONE,vah265dec:NONE,vavp8dec:NONE,vavp9dec:NONE,vaav1dec:NONE,vampeg2dec:NONE,vaapih264dec:NONE,vaapih265dec:NONE,vaapivp8dec:NONE,vaapivp9dec:NONE,vaapiav1dec:NONE,nvh264dec:NONE,nvh265dec:NONE,nvvp9dec:NONE,nvav1dec:NONE,v4l2slh264dec:NONE,v4l2slh265dec:NONE,v4l2slvp9dec:NONE,v4l2slav1dec:NONE"
-	have := env("GST_PLUGIN_FEATURE_RANK")
-	all := len(have) > 0 ? strings.concatenate({have, ",", off}, context.temp_allocator) : off
-	g_setenv("GST_PLUGIN_FEATURE_RANK", cstr(all), 1)
-}
-
-// ---------------------------------------------------------------- the sandbox
-
-/// sites Iris does not trust: a web context of their own (their own web
-/// processes, in WebKit's process sandbox)
-sandbox_context :: proc() -> ^WebKitWebContext {
-	if sandbox_context_ != nil do return sandbox_context_
-	ctx := cast(^WebKitWebContext)gnew(webkit_web_context_get_type(), {name = "memory-pressure-settings", value = rawptr(pressure()), type = webkit_memory_pressure_settings_get_type(), boxed = true})
-	webkit_web_context_set_cache_model(ctx, 0) // document viewer
-	sandbox_context_ = ctx
-	return ctx
-}
-
-/// a world in memory for one sandboxed tab: none of your cookies, storage
-/// or sign-ins, gone when the tab closes
-sandbox_session :: proc() -> ^WebKitNetworkSession {
-	s := webkit_network_session_new_ephemeral()
-	webkit_cookie_manager_set_accept_policy(webkit_network_session_get_cookie_manager(s), WEBKIT_COOKIE_POLICY_ACCEPT_NO_THIRD_PARTY)
-	webkit_network_session_set_itp_enabled(s, 1)
-	return s
-}
-
-sandbox_settings :: proc() -> ^WebKitSettings {
-	s := webkit_settings_new()
-	webkit_settings_set_enable_developer_extras(s, 0)
-	webkit_settings_set_javascript_can_open_windows_automatically(s, 0)
-	webkit_settings_set_javascript_can_access_clipboard(s, 0)
-	webkit_settings_set_enable_webgl(s, 0)
-	webkit_settings_set_enable_webrtc(s, 0)
-	webkit_settings_set_enable_media_stream(s, 0)
-	webkit_settings_set_enable_encrypted_media(s, 0)
-	webkit_settings_set_allow_file_access_from_file_urls(s, 0)
-	webkit_settings_set_allow_universal_access_from_file_urls(s, 0)
-	webkit_settings_set_enable_smooth_scrolling(s, 1)
-	return s
-}
-
-normal_settings :: proc() -> ^WebKitSettings {
-	s := webkit_settings_new()
-	webkit_settings_set_enable_developer_extras(s, 1)
-	webkit_settings_set_javascript_can_open_windows_automatically(s, 0)
-	webkit_settings_set_enable_smooth_scrolling(s, 1)
-	webkit_settings_set_media_playback_requires_user_gesture(s, 0)
-	webkit_settings_set_enable_webrtc(s, 1)
-	webkit_settings_set_enable_media_stream(s, 1)
-	webkit_settings_set_enable_encrypted_media(s, 1)
-	webkit_settings_set_enable_media(s, 1)
-	webkit_settings_set_enable_mediasource(s, 1)
-	webkit_settings_set_enable_media_capabilities(s, 1)
-	return s
-}
-
 // ---------------------------------------------------------------- containers
 
 Container :: struct {
@@ -164,10 +53,6 @@ PALETTE :: [?]string{"#0a84ff", "#ff9f0a", "#30d158", "#ff375f", "#bf5af2", "#64
 
 containers: [dynamic]Container
 @(private="file") containers_loaded: bool
-@(private="file") sessions: map[string]^WebKitNetworkSession
-/// every new network session (downloads listen to it)
-session_made: proc(s: ^WebKitNetworkSession)
-
 new_id :: proc() -> string {
 	b: [16]u8
 	linux.getrandom(b[:], {})
@@ -218,37 +103,6 @@ valid_container_id :: proc(id: string) -> bool {
 	return true
 }
 
-/// the network session of a container ("" for none): cookies and storage
-/// of its own, on disk (private: in memory only)
-container_session :: proc(id: string) -> ^WebKitNetworkSession {
-	if s, ok := sessions[id]; ok do return s
-	s: ^WebKitNetworkSession
-	if id == PRIVATE_ID || (id != "" && !valid_container_id(id)) {
-		s = webkit_network_session_new_ephemeral()
-	} else {
-		sub := id == "" ? "default" : strings.concatenate({"containers/", id}, context.temp_allocator)
-		data := join({data_dir(), "web", sub}, context.temp_allocator)
-		cache := join({cache_dir(), "web", sub}, context.temp_allocator)
-		make_dirs(data)
-		s = webkit_network_session_new(cstr(data), cstr(cache))
-		webkit_cookie_manager_set_persistent_storage(webkit_network_session_get_cookie_manager(s), cstr(join({data, "cookies.sqlite"}, context.temp_allocator)), 1)
-	}
-	webkit_cookie_manager_set_accept_policy(webkit_network_session_get_cookie_manager(s), WEBKIT_COOKIE_POLICY_ACCEPT_NO_THIRD_PARTY)
-	webkit_network_session_set_itp_enabled(s, 1)
-	webkit_website_data_manager_set_favicons_enabled(webkit_network_session_get_website_data_manager(s), 1)
-	sessions[strings.clone(id)] = s
-	if session_made != nil do session_made(s)
-	return s
-}
-
-/// the last private tab closed: its world goes
-end_private :: proc() {
-	if s, ok := sessions[PRIVATE_ID]; ok {
-		delete_key(&sessions, PRIVATE_ID)
-		unref(s)
-	}
-}
-
 container_add :: proc(name, icon: string) -> Container {
 	containers_ensure()
 	p := PALETTE
@@ -270,19 +124,15 @@ container_remove :: proc(id: string) {
 		if containers[i].id == id { ordered_remove(&containers, i) } else { i += 1 }
 	}
 	containers_save()
-	if s, ok := sessions[id]; ok {
-		delete_key(&sessions, id)
-		webkit_website_data_manager_clear(webkit_network_session_get_website_data_manager(s), WEBKIT_WEBSITE_DATA_ALL, 0, nil, nil, nil)
-		unref(s)
-	}
-	if !valid_container_id(id) do return
-	for base in ([?]string{data_dir(), cache_dir()}) do os.remove_all(join({base, "web", "containers", id}, context.temp_allocator))
+	// the engine drops the container's world and the files it kept
+	engine_forget_container(id)
 }
 
 // ---------------------------------------------------------------- downloads
 
 Download :: struct {
-	dl:        ^WebKitDownload,
+	/// the engine's handle on it (wpe_engine.odin, cef_engine.odin)
+	using engine: Download_Engine,
 	id:        int,
 	name:      string,
 	path:      string,
@@ -296,7 +146,7 @@ Download :: struct {
 downloads: [dynamic]^Download
 /// a download started, moved on or ended
 downloads_changed: proc(d: ^Download)
-@(private="file") next_download := 1
+next_download := 1
 
 download_status :: proc(d: ^Download) -> string {
 	if d.failed do return d.cancelled ? "Cancelled" : "Failed"
@@ -320,13 +170,6 @@ downloads_active :: proc() -> int {
 	n := 0
 	for d in downloads do if !d.done && !d.failed do n += 1
 	return n
-}
-
-downloads_listen :: proc(s: ^WebKitNetworkSession) {
-	on(s, "download-started", rawptr(proc "c" (s: rawptr, dl: ^WebKitDownload, data: rawptr) {
-		context = main_context
-		download_started(dl)
-	}), nil)
 }
 
 @(private="file") taken :: proc(p: string) -> bool {
@@ -376,50 +219,9 @@ unique_download :: proc(name: string) -> string {
 	return p
 }
 
-@(private="file") download_started :: proc(dl: ^WebKitDownload) {
-	d := new(Download)
-	d^ = {dl = cast(^WebKitDownload)g_object_ref(dl), id = next_download}
-	next_download += 1
-	inject_at(&downloads, 0, d)
-	on(dl, "decide-destination", rawptr(proc "c" (dl: ^WebKitDownload, name: cstring, d: ^Download) -> gboolean {
-		context = main_context
-		suggested := string(name)
-		p := unique_download(len(suggested) > 0 ? suggested : "download")
-		d.path = p
-		d.name = filepath.base(p)
-		webkit_download_set_destination(d.dl, cstr(p))
-		changed(d)
-		return 1
-	}), d)
-	on(dl, "notify::estimated-progress", rawptr(proc "c" (dl: ^WebKitDownload, spec: rawptr, d: ^Download) {
-		context = main_context
-		d.progress = webkit_download_get_estimated_progress(d.dl)
-		d.received = webkit_download_get_received_data_length(d.dl)
-		changed(d)
-	}), d)
-	on(dl, "failed", rawptr(proc "c" (dl: ^WebKitDownload, err: ^GError, d: ^Download) {
-		context = main_context
-		d.failed = true
-		changed(d)
-	}), d)
-	on(dl, "finished", rawptr(proc "c" (dl: ^WebKitDownload, d: ^Download) {
-		context = main_context
-		if !d.failed {
-			d.done = true
-			d.progress = 1
-		}
-		changed(d)
-	}), d)
-	changed(d)
-}
-
-@(private="file") changed :: proc(d: ^Download) {
+/// a download started, moved on or ended: the chrome shows it
+download_changed :: proc(d: ^Download) {
 	if downloads_changed != nil do downloads_changed(d)
-}
-
-download_cancel :: proc(d: ^Download) {
-	d.cancelled = true
-	webkit_download_cancel(d.dl)
 }
 
 downloads_clear_finished :: proc() {
@@ -427,7 +229,7 @@ downloads_clear_finished :: proc() {
 		d := downloads[i]
 		if d.done || d.failed {
 			ordered_remove(&downloads, i)
-			unref(d.dl)
+			download_release(d)
 			free(d)
 		} else {
 			i += 1

@@ -10,5 +10,6 @@ MODS="harfbuzz fontconfig wpe-webkit-2.0 wpe-platform-2.0 wpe-platform-headless-
 HEADERS="hb.h fontconfig/fontconfig.h wpe/webkit.h wpe/wpe-platform.h wpe/headless/wpe-headless.h libsoup/soup.h glib.h glib-object.h glib-unix.h gio/gio.h wayland-client.h wayland-egl.h wayland-cursor.h xkbcommon/xkbcommon.h EGL/egl.h EGL/eglext.h drm_fourcc.h"
 python3 abi/check.py --headers "$HEADERS" --cflags "$(pkg-config --cflags $MODS)" \
 	--import iris="$here/src" --import wl="$here/wl" --import plat="$here/plat" \
-	src/*.odin plat/*.odin wl/client.odin
+	$(ls src/*.odin | grep -v "/cef_") plat/*.odin wl/client.odin
 sh abi/check-wayland.sh
+# the CEF bindings: abi/check-cef.sh (needs the CEF headers, CEF_DIR)

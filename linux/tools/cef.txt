@@ -1,0 +1,17 @@
+# CEF C API functions Iris's CEF engine calls (src/cef_gen.odin, by
+# tools/bind_cef.sh; structs in cef_structs.txt).
+cef_api_hash
+cef_execute_process
+cef_initialize
+cef_shutdown
+cef_do_message_loop_work
+cef_get_exit_code
+cef_browser_host_create_browser
+cef_request_context_get_global_context
+cef_request_context_create_context
+cef_process_message_create
+cef_string_utf16_clear
+cef_string_userfree_utf16_free
+cef_string_list_alloc
+cef_string_list_append
+cef_string_list_free

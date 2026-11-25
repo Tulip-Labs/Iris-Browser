@@ -7,8 +7,13 @@ package iris
 import "core:fmt"
 import "core:strings"
 
+/// the files picked (nil-terminated, so at least 2 entries when any), or
+/// nil for none: the engine hands them to the page
+Picked :: proc(data: rawptr, files: []cstring)
+
 @(private="file") Pick :: struct {
-	req:    ^WebKitFileChooserRequest,
+	done:   Picked,
+	data:   rawptr,
 	handle: string,
 	sub:    u32,
 }
@@ -17,16 +22,15 @@ import "core:strings"
 @(private="file") picks: [dynamic]^Pick
 @(private="file") token_n: int
 
-portal_open_file :: proc(req: ^WebKitFileChooserRequest, multiple: bool) {
+portal_open_file :: proc(multiple: bool, done: Picked, data: rawptr) {
 	if bus == nil do bus = g_bus_get_sync(G_BUS_TYPE_SESSION, nil, nil)
 	if bus == nil {
-		webkit_file_chooser_request_cancel(req)
-		unref(req)
+		done(data, nil)
 		browser_toast("No file chooser: the desktop portal is not running")
 		return
 	}
 	p := new(Pick)
-	p.req = req
+	p.done, p.data = done, data
 	append(&picks, p)
 	// every Response signal of the portal; the one for this request is matched by its path
 	p.sub = g_dbus_connection_signal_subscribe(bus, "org.freedesktop.portal.Desktop", "org.freedesktop.portal.Request", "Response", nil, nil, 0,
@@ -99,12 +103,7 @@ portal_open_file :: proc(req: ^WebKitFileChooserRequest, multiple: bool) {
 }
 
 @(private="file") finish :: proc(p: ^Pick, files: []cstring) {
-	if len(files) > 1 {
-		webkit_file_chooser_request_select_files(p.req, &files[0])
-	} else {
-		webkit_file_chooser_request_cancel(p.req)
-	}
-	unref(p.req)
+	p.done(p.data, files)
 	if p.sub != 0 do g_dbus_connection_signal_unsubscribe(bus, p.sub)
 	for x, i in picks do if x == p {
 		ordered_remove(&picks, i)
