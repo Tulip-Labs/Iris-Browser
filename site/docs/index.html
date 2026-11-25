@@ -93,7 +93,9 @@
         <p>The app ID is <code>io.github.tulip_labs.Iris</code>. On niri 26.04 and newer the blur behind the window comes on by itself; no window rule is needed. Elsewhere the window stays nearly solid.</p>
 
         <h2 id="cef">The Chromium (CEF) build <span class="from">From 2.3</span></h2>
-        <p>Beside the WPE build there is a second Flatpak, <strong>Iris (Chromium)</strong>, app ID <code>io.github.tulip_labs.Iris.Cef</code>: the same app built on CEF 156. It installs side by side with the WPE build. It isn't attached to releases yet, so for now you build it from the repository:</p>
+        <p>Beside the WPE build there is a second Flatpak, <strong>Iris (Chromium)</strong>, app ID <code>io.github.tulip_labs.Iris.Cef</code>: the same app built on CEF 156. It installs side by side with the WPE build. It has <a href="https://github.com/Tulip-Labs/Iris-Browser/releases">releases of its own</a>, tagged <code>cef-v</code> (for example <code>cef-v2.4.0</code>, titled "Iris (Chromium) 2.4.0"), with its own version number. They carry only <code>Iris-Cef-x86_64.flatpak</code> and its <code>SHA256SUMS</code>, and they are never the "latest" release, which stays the WPE build and Android. Download the bundle from the newest <code>cef-v</code> release and install it:</p>
+        <pre><code>flatpak install --user Iris-Cef-x86_64.flatpak</code></pre>
+        <p>Iris (Chromium) checks its own releases once a day and links to the new bundle when there is one; installing it the same way updates it. To build it yourself instead:</p>
         <pre><code>flatpak-builder --user --install --force-clean build packaging/flatpak/io.github.tulip_labs.Iris.Cef.yml</code></pre>
         <p>What it gives up next to the WPE build:</p>
         <ul>
