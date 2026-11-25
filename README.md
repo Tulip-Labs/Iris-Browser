@@ -31,7 +31,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/icon/iris-256.png" width="160" alt="Iris's icon: a clear glass ring on a white tile, light entering and leaving as a rainbow">
+  <img src="assets/icon/iris-256.png" width="160" alt="Iris's icon: a clear glass ring on a near-colourless tile, the spectrum gathered at its lower rim">
 </p>
 
 ---
@@ -47,6 +47,7 @@
 - **Privacy Report** (in Shields): the trackers stopped on the page, and today. Only tracker names and numbers are kept, never the sites you visit.
 - **Command palette** (Ctrl+K): your tabs in every workspace, Iris's commands and your history, by a fuzzy match.
 - **HTTPS first**, on by default: http addresses are tried over https, with one click back to http (in the sandbox) when a site has none. **Forget everything on close**, if you want it: history, cookies, site data and tabs. **Copy Clean Link**: an address without its tracking.
+- **A new icon**, the ring from Iris's website: clear glass, the spectrum gathered at its lower rim, on a near-colourless tile. On Android 13 and newer it follows your themed icons too.
 
 ## What is new in 2.2.7
 
@@ -290,7 +291,7 @@ android/                    Iris for Android (Kotlin, Compose, Cefrium)
                             sheets, switches, line icons, the look
     Downloads.kt, Updater.kt, Store.kt, Search.kt
 packaging/                  the Flatpak manifest, desktop file and metainfo
-assets/icon/                the icon (SVG) and its renders
+assets/icon/                the icon (SVG) and its renders; use.sh picks a variant
 ```
 
 How the glass is drawn (Linux): each frame, Iris draws everything behind the glass (the dawn and the page) into one texture, and a blurred copy of it. Then each piece of glass is one shader pass over that texture:
