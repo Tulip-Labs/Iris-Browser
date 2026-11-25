@@ -186,34 +186,109 @@ engine_subprocess :: proc() -> (code: int, is_sub: bool) {
 	return 0, false
 }
 
+/// how Chromium draws: on the GPU, its frames shared with Iris as
+/// DMA-BUFs (the default where there is a Wayland display and a GPU render
+/// node), or in software (IRIS_CEF_GPU=0, or neither is there)
+@(private="file") gpu_wanted :: proc() -> bool {
+	switch env("IRIS_CEF_GPU") {
+	case "0": return false
+	case "1": return true
+	}
+	if len(env("WAYLAND_DISPLAY")) == 0 && !os.exists(join({env("XDG_RUNTIME_DIR"), "wayland-0"}, context.temp_allocator)) do return false
+	return has_render_node()
+}
+
+@(private="file") has_render_node :: proc() -> bool {
+	for i in 128 ..< 136 do if os.exists(fmt.tprintf("/dev/dri/renderD%d", i)) do return true
+	return false
+}
+
 /// the switches: a renderer per site (a closed tab's renderer is its own,
-/// not shared with another site's tabs), no X11 (the page is drawn
-/// off-screen; Iris's window is its own), nothing Chromium would fetch in
-/// the background. IRIS_CEF_FLAGS adds more (space separated).
+/// not shared with another site's tabs), Chromium's GPU process on the real
+/// GPU (its frames come to Iris as DMA-BUFs, cef_osr.odin), none of
+/// Chromium's own surfaces, experiments or services, nothing it would
+/// fetch or keep running in the background. IRIS_CEF_FLAGS adds more
+/// (space separated); IRIS_CEF_OZONE picks Chromium's platform.
 cef_switches :: proc() -> []string {
 	out: [dynamic]string
+	gpu := gpu_wanted()
+	cef_gpu_frames = gpu
+	disable := []string{
+		// Chromium's own features Iris has no use for, or does itself
+		"Translate", "MediaRouter", "DialMediaRouteProvider", "GlobalMediaControls", "CastMediaRouteProvider",
+		"OptimizationHints", "OptimizationHintsFetching", "OptimizationGuideModelDownloading",
+		"OptimizationTargetPrediction", "OptimizationGuideOnDeviceModel", "OnDeviceModelService",
+		"InterestFeedContentSuggestions", "SidePanelPinning", "ReadAnythingPermanentAccessibility",
+		"CertificateTransparencyComponentUpdater", "AutofillServerCommunication",
+		"SafeBrowsingRealTimeUrlLookup", "WebOTP",
+		// (kept: FedCM, for "Sign in with Google"; Prerender2, which makes
+		// pages a site prerenders open at once; heavy-ad intervention)
+	}
+	enable := make([dynamic]string, context.temp_allocator)
+	append(&enable, "ParallelDownloading", "WebRtcPipeWireCamera")
+	if gpu {
+		// video decoded on the GPU (VA-API), its frames composited without
+		// a copy; both the old and the new names of the switches (a name
+		// Chromium does not know is ignored)
+		append(&enable, "AcceleratedVideoDecodeLinuxGL", "AcceleratedVideoDecodeLinuxZeroCopyGL", "AcceleratedVideoEncoder",
+			"VaapiVideoDecodeLinuxGL", "VaapiVideoDecoder", "VaapiIgnoreDriverChecks", "CanvasOopRasterization")
+	}
 	append(&out,
 		"--site-per-process",
-		"--ozone-platform=headless",
-		"--disable-features=Translate,MediaRouter,OptimizationHints,InterestFeedContentSuggestions",
-		// cameras through the desktop's portal and PipeWire (the Flatpak gives
-		// the GPU only, not every device)
-		"--enable-features=VaapiVideoDecodeLinuxGL,VaapiVideoDecoder,ParallelDownloading,WebRtcPipeWireCamera",
+		strings.concatenate({"--disable-features=", strings.join(disable, ",", context.temp_allocator)}, context.temp_allocator),
+		strings.concatenate({"--enable-features=", strings.join(enable[:], ",", context.temp_allocator)}, context.temp_allocator),
+		// nothing in the background, nothing after Iris closes
 		"--disable-background-networking",
 		"--disable-component-update",
 		"--disable-domain-reliability",
+		"--disable-breakpad",
+		"--disable-crash-reporter",
+		"--disable-client-side-phishing-detection",
+		"--disable-default-apps",
+		"--disable-sync",
+		// (extensions stay: Chromium's PDF viewer is one)
+		"--disable-component-extensions-with-background-pages",
+		"--metrics-recording-only",
 		"--no-pings",
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--no-service-autorun",
+		"--safebrowsing-disable-auto-update",
+		// no experiments: no field trials, no variations from a server
+		"--disable-field-trial-config",
+		"--variations-server-url=data:,",
+		"--disable-variations-safe-mode",
 	)
-	// GL for Chromium's compositor without a window: SwiftShader is the one
-	// proved to give frames with the headless platform (experiments/
-	// cef-smoke); IRIS_CEF_GPU=1 tries the real GPU through ANGLE instead
-	if env("IRIS_CEF_GPU") == "1" {
-		append(&out, "--use-gl=angle", "--use-angle=default")
+	if ozone := env("IRIS_CEF_OZONE"); len(ozone) > 0 {
+		append(&out, strings.concatenate({"--ozone-platform=", ozone}, context.temp_allocator))
+	} else if gpu {
+		// the GPU's buffers (GBM, DMA-BUFs) need a real platform: Wayland,
+		// though no window of Chromium's is ever made (pages are drawn
+		// off-screen, into Iris's own)
+		append(&out, "--ozone-platform=wayland")
 	} else {
+		append(&out, "--ozone-platform=headless")
+	}
+	if gpu {
+		// ANGLE on the desktop's OpenGL through EGL (Chromium's default on
+		// Linux), rasterized on the GPU, tiles in GPU memory
+		append(&out, "--use-gl=angle", "--use-angle=gl-egl", "--enable-gpu-rasterization", "--enable-zero-copy", "--enable-native-gpu-memory-buffers")
+	} else {
+		// GL for Chromium's compositor without a window: SwiftShader is the
+		// one proved to give frames with the headless platform
+		// (experiments/cef-smoke)
 		append(&out, "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader")
 	}
 	for f in strings.fields(env("IRIS_CEF_FLAGS")) do append(&out, f)
 	return out[:]
+}
+
+/// the pages' frame rate: the display's (IRIS_CEF_FPS lowers or raises
+/// it; CEF's windowless limit is 60 unless shared textures: then the
+/// display's own, up to 240)
+cef_frame_rate :: proc() -> i32 {
+	if f, ok := strconv.parse_int(env("IRIS_CEF_FPS")); ok && f > 0 do return i32(clamp(f, 1, 240))
+	return CEF_FPS
 }
 
 cef_dir :: proc() -> string {
@@ -250,12 +325,20 @@ engine_start :: proc() -> bool {
 		return false
 	}
 	started = true
-	// a turn of CEF's work every so often even when it asks for none
-	g_timeout_add_full(G_PRIORITY_DEFAULT, 100, proc "c" (d: rawptr) -> gboolean {
+	// Chromium's processes are Iris's to the end: one whose parent went
+	// (a renderer forked by the zygote) comes to Iris, so none outlives it
+	// (engine_stop ends any still there)
+	PR_SET_CHILD_SUBREAPER :: 36
+	linux.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0)
+	// a turn of CEF's work now and then even when it asks for none (CEF
+	// asks for every turn it needs: this is only a safety net, once a
+	// second, never a busy loop)
+	g_timeout_add_full(G_PRIORITY_DEFAULT_IDLE, 1000, proc "c" (d: rawptr) -> gboolean {
 		pump_now()
 		return 1
 	}, nil, nil)
 	cef_shields_start()
+	cef_bench_start()
 	return true
 }
 
@@ -267,10 +350,47 @@ engine_stop :: proc() {
 	if !views_close_all() {
 		log.warn("CEF: a page did not close in time; leaving without CEF's shutdown")
 		started = false
+		end_children()
 		return
 	}
 	cef_shutdown()
 	started = false
+	end_children()
+}
+
+/// every process Iris still has under it (Chromium's GPU, utility and
+/// renderer processes, should CEF's shutdown have left one) ends with Iris:
+/// SIGTERM, a moment, then SIGKILL; only Iris's own descendants, at exit
+@(private="file") end_children :: proc() {
+	kids := descendants(context.temp_allocator)
+	if len(kids) == 0 do return
+	for pid in kids do linux.kill(linux.Pid(pid), .SIGTERM)
+	for _ in 0 ..< 20 {
+		alive := false
+		for pid in kids do if pid_alive(pid) && my_descendant(pid) do alive = true
+		if !alive do return
+		ts := linux.Time_Spec{time_nsec = 25_000_000}
+		linux.nanosleep(&ts, nil)
+	}
+	for pid in kids do if pid_alive(pid) && my_descendant(pid) {
+		log.warnf("CEF: process %d did not end with Iris: killed", pid)
+		linux.kill(linux.Pid(pid), .SIGKILL)
+	}
+}
+
+/// the pids under Iris (children and theirs), from /proc
+@(private="file") descendants :: proc(allocator := context.allocator) -> []i32 {
+	out := make([dynamic]i32, allocator)
+	d, err := os.open("/proc")
+	if err != nil do return out[:]
+	defer os.close(d)
+	fis, _ := os.read_dir(d, -1, context.temp_allocator)
+	for fi in fis {
+		pid, ok := strconv.parse_int(fi.name)
+		if !ok || pid <= 1 || i32(pid) == i32(linux.getpid()) do continue
+		if my_descendant(i32(pid)) do append(&out, i32(pid))
+	}
+	return out[:]
 }
 
 // ---------------------------------------------------------------- the message pump
