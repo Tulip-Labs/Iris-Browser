@@ -23,4 +23,6 @@ foreign cef_lib {
 	cef_string_utf16_to_utf8 :: proc(src: ^u16, src_len: uint, output: ^cef_string_utf8_t) -> i32 ---
 	cef_string_utf16_clear :: proc(str: ^cef_string_utf16_t) ---
 	cef_string_utf8_clear :: proc(str: ^cef_string_utf8_t) ---
+	cef_string_list_size :: proc(list: rawptr) -> uint ---
+	cef_string_list_value :: proc(list: rawptr, index: uint, value: ^cef_string_t) -> i32 ---
 }

@@ -30,11 +30,14 @@
 // the host from get_host is released by the engine in OnBeforeClose.
 //
 // What is NOT here yet (slice 2): the Tab seam in the browser, dialogs,
-// pop-ups as related tabs, downloads, permissions, and JS eval with a
-// result (execute_java_script is fire-and-forget; the result round-trip
-// is a slice-2 design item).
+// pop-ups as related tabs, downloads, permissions, and find results
+// (slice 2b): pop-ups are blocked in `on_before_popup` for now, and the
+// find handler is nil, so searches run but nothing reports the matches.
+// JS eval with a result (eval_js, via a console-message round-trip) and
+// the favicon URL (on_favicon_urlchange) are here now.
 package cef
 
+import "core:fmt"
 import "core:math"
 import "core:mem"
 import "base:runtime"
@@ -102,6 +105,24 @@ Browser :: struct {
 	on_fullscreen: proc(b: ^Browser),
 	on_load_error: proc(b: ^Browser),
 	on_close:      proc(b: ^Browser),
+	/// the page's icon URL, from on_favicon_urlchange; on_favicon fires
+	/// when it changes (the caller fetches the bytes itself)
+	favicon_url:   string,
+	on_favicon:    proc(b: ^Browser),
+	/// the caller's own pointer (the Page), for the callbacks above
+	user:          rawptr,
+
+	// JS evals waiting for their answer (eval_js). A tab that closes
+	// answers its pending evals with "" in OnBeforeClose, so no eval
+	// is ever left hanging.
+	evals:     map[int]Eval_Job,
+	next_eval: int,
+}
+
+// One JS eval with a result, waiting for its console-message answer.
+Eval_Job :: struct {
+	done: proc(result: string, user: rawptr),
+	user: rawptr,
 }
 
 // Options for init. cache_dir is the CEF profile root (root_cache_path);
@@ -299,6 +320,11 @@ destroy_browser :: proc(b: ^Browser) {
 	delete(b.url)
 	delete(b.title)
 	delete(b.frame)
+	delete(b.favicon_url)
+	for _, job in b.evals {
+		job.done("", job.user)
+	}
+	delete(b.evals)
 	free(b)
 }
 
@@ -502,6 +528,50 @@ run_js :: proc(b: ^Browser, code: string) -> bool {
 	return true
 }
 
+// eval_js runs code as an expression in the main frame and calls
+// done(result, user) with its value as text — a string comes back as
+// itself, anything else as JSON, an error as {"error": "..."} (the same
+// shape as the WPE tab_run callback). The result is only valid during
+// the callback; clone it to keep it. The answer comes back through a
+// console message, so it arrives on the pump thread like every other
+// callback. Returns the eval id, or -1 when the tab is not created yet.
+// A tab that closes answers its pending evals with "".
+//
+// The code must be an expression, not statements: it is embedded as
+// (code) in the wrapper, and a syntax error in it means the wrapper
+// never runs and the eval never answers. That is the price of not using
+// eval(), which a page's content-security policy can block; the
+// embedder-injected wrapper itself is not subject to CSP.
+eval_js :: proc(b: ^Browser, code: string, done: proc(result: string, user: rawptr), user: rawptr) -> int {
+	if b.browser == nil {
+		return -1
+	}
+	if b.evals == nil {
+		b.evals = make(map[int]Eval_Job)
+	}
+	id := b.next_eval
+	b.next_eval += 1
+	b.evals[id] = Eval_Job{done = done, user = user}
+	if !run_js(b, eval_wrapper(code, id)) {
+		delete_key(&b.evals, id)
+		return -1
+	}
+	return id
+}
+
+// eval_wrapper is the code eval_js runs: the expression's value (or its
+// error) is printed as one console message carrying the eval id.
+@(private)
+eval_wrapper :: proc(code: string, id: int) -> string {
+	return strings.concatenate({
+		`(function(){var __r;try{__r=(`,
+		code,
+		`)}catch(__e){__r={error:String(__e)}};var __s;try{__s=(typeof __r==="string")?__r:JSON.stringify(__r===undefined?null:__r)}catch(__e2){__s=JSON.stringify({error:"unserializable"})};console.log("[iris-eval:`,
+		fmt.tprintf("%d", id),
+		`]"+__s)})();`,
+	}, context.temp_allocator)
+}
+
 // find starts (or continues, with find_next) a text search in the page.
 // Results come through a find handler, which is nil in slice 1 — the
 // search runs, but nothing reports the matches yet.
@@ -634,8 +704,10 @@ handlers_init :: proc() {
 		base = base_of(size_of(cef_display_handler_t)),
 		on_address_change = display_on_address_change,
 		on_title_change = display_on_title_change,
+		on_favicon_urlchange = display_on_favicon_urlchange,
 		on_fullscreen_mode_change = display_on_fullscreen_mode_change,
 		on_loading_progress_change = display_on_loading_progress_change,
+		on_console_message = display_on_console_message,
 		on_cursor_change = display_on_cursor_change,
 	}
 	load_handler = {
@@ -799,6 +871,13 @@ life_on_before_close :: proc "c" (self: ^cef_life_span_handler_t, browser: rawpt
 	}
 	b.ctx = nil // CEF's now; do not release (see above)
 	b.browser = nil
+	// A closing tab answers its pending evals with "": their callers
+	// must not be left hanging, and their done procs own their jobs.
+	for _, job in b.evals {
+		job.done("", job.user)
+	}
+	delete(b.evals)
+	delete(b.favicon_url)
 	if b.on_close != nil {
 		b.on_close(b)
 	}
@@ -842,6 +921,67 @@ display_on_title_change :: proc "c" (self: ^cef_display_handler_t, browser: rawp
 	if b.on_title != nil {
 		b.on_title(b)
 	}
+}
+
+@(private)
+display_on_favicon_urlchange :: proc "c" (self: ^cef_display_handler_t, browser: rawptr, icon_urls: rawptr) {
+	context = runtime.default_context()
+	b := browser_from_ptr(browser)
+	if b == nil || icon_urls == nil {
+		return
+	}
+	// The first URL is the page's icon; the caller fetches the bytes.
+	if cef_string_list_size(icon_urls) == 0 {
+		return
+	}
+	value: cef_string_t
+	if cef_string_list_value(icon_urls, 0, &value) == 0 {
+		return
+	}
+	defer cef_string_utf16_clear(&value)
+	delete(b.favicon_url)
+	b.favicon_url = from_cef_string(&value)
+	if b.on_favicon != nil {
+		b.on_favicon(b)
+	}
+}
+
+@(private)
+display_on_console_message :: proc "c" (self: ^cef_display_handler_t, browser: rawptr, level: i32, message: ^cef_string_t, source: ^cef_string_t, line: i32) -> i32 {
+	context = runtime.default_context()
+	b := browser_from_ptr(browser)
+	if b == nil || message == nil {
+		return 0
+	}
+	// Only the eval round-trip's messages are intercepted; everything
+	// else is the page's own console, left alone. (A page that prints
+	// "[iris-eval:N]..." itself would be misrouted — it would have to
+	// print exactly that prefix.)
+	m := from_cef_string(message)
+	defer delete(m)
+	if !strings.has_prefix(m, "[iris-eval:") {
+		return 0
+	}
+	rest := m[len("[iris-eval:"):]
+	end := strings.index_byte(rest, ']')
+	if end < 0 {
+		return 0
+	}
+	id_str := rest[:end]
+	id := 0
+	for c in transmute([]u8)id_str {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		id = id * 10 + int(c - '0')
+	}
+	job, ok := b.evals[id]
+	if !ok {
+		return 0
+	}
+	delete_key(&b.evals, id)
+	job.done(rest[end + 1:], job.user)
+	return 0
 }
 
 @(private)

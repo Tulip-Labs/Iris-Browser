@@ -18,3 +18,5 @@ cef_string_utf8_to_utf16
 cef_string_utf16_to_utf8
 cef_string_utf16_clear
 cef_string_utf8_clear
+cef_string_list_size
+cef_string_list_value

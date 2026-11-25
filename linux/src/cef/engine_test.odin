@@ -5,6 +5,7 @@
 package cef
 
 import "core:math"
+import "core:strings"
 import "core:testing"
 
 @(test)
@@ -28,6 +29,16 @@ zoom_levels_step_by_1_2 :: proc(t: ^testing.T) {
 	// Chromium's zoom levels step by a factor of 1.2 per level.
 	testing.expectf(t, math.abs(zoom_factor_from_level(1.0)-1.2) < 1e-12, "level 1 is 1.2, got %v", zoom_factor_from_level(1.0))
 	testing.expectf(t, math.abs(zoom_factor_from_level(-1.0)-1.0/1.2) < 1e-12, "level -1 is 1/1.2, got %v", zoom_factor_from_level(-1.0))
+}
+
+@(test)
+eval_wrapper_carries_code_and_id :: proc(t: ^testing.T) {
+	w := eval_wrapper(`document.title`, 7)
+	testing.expect(t, strings.has_prefix(w, "(function(){var __r;try{__r=(document.title)"))
+	testing.expect(t, strings.contains(w, `console.log("[iris-eval:7]"+__s)`))
+	testing.expect(t, strings.has_suffix(w, ")})();"))
+	// a different id prints a different prefix
+	testing.expect(t, strings.contains(eval_wrapper(`1+1`, 41), "[iris-eval:41]"))
 }
 
 @(test)

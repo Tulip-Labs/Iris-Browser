@@ -66,10 +66,13 @@ and the smoke workflow both do this copy.
 
 ## What is not here yet
 
-- The Tab seam in the browser (slice 2): `Browser` wired behind
-  `Page`, the `--engine=cef` flag, input mapping, favicon.
-- JS eval **with a result** (slice 2): `execute_java_script` is
-  fire-and-forget; the result round-trip is a slice-2 design item.
+- The Tab seam in the browser is here now (slice 2): `Browser` wired
+  behind `Page`, the `--engine=cef` flag, input mapping, the favicon
+  fetch (PNG/JPEG only; ICO left blank). JS eval **with a result** is
+  here now (`eval_js`, answered through a console message with the
+  `[iris-eval:N]` prefix; the code must be an expression — see
+  `eval_js`); the favicon URL is here now too
+  (`on_favicon_urlchange` → `Browser.favicon_url` + `on_favicon`).
 - Dialogs, pop-ups as related tabs, downloads, permissions, find
   results (slice 2b): pop-ups are blocked in `on_before_popup` for
   now, and the find handler is nil, so searches run but nothing
@@ -78,6 +81,22 @@ and the smoke workflow both do this copy.
   the matcher and the cosmetic injection are rebuilt there.
 - The Flatpak (slice 4), the tab-close check on the real build
   (slice 5), and any release (slice 6, only on Cesar's word).
+
+## How the binary links libcef
+
+The iris binary always imports this package, so it always links
+libcef — even the WPE build. With `CEF_DIR` set, `linux/build.sh`
+links the real libcef.so (with an rpath to it). Without it, it links
+a stub built from `linux/cef-stub.c`, which exists only so the link
+succeeds. **The stub is inert but required at run time too**: the
+CEF code paths reference libcef symbols even though WPE mode never
+calls them, and `--as-needed` does not drop `DT_NEEDED` for symbols
+the binary references in code that never runs (verified: a reference
+in dead code still records `DT_NEEDED`, and the binary refuses to
+start without the file). So the WPE build ships the stub (an rpath
+to `.cef-stub/` for dev builds; `build.sh install` puts it in
+`/app/lib`, where the Flatpak loader finds it). The stub is loaded,
+never called.
 
 ## Checks
 
