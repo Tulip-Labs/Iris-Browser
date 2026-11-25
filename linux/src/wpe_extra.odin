@@ -105,4 +105,40 @@ tab_run_isolated :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string
 	}), j)
 }
 
+// ---------------------------------------------------------------- light or dark
+
+WPE_SETTING_DARK_MODE :: "/wpe-platform/dark-mode"
+WPE_SETTINGS_SOURCE_APPLICATION :: 1
+
+@(private="file") pages_dark: Maybe(bool)
+@(private="file") display_dark: Maybe(bool)
+/// the first view made the display (Iris does not make it earlier)
+@(private="file") display_made: bool
+
+/// Iris went light or dark (theme.dark): pages follow (prefers-color-scheme)
+/// through WPE's platform setting on Iris's display, every view on it at once
+engine_theme_changed :: proc() {
+	pages_dark = theme.dark
+	// the display is made with the first view (tab_ensure_web): not before
+	if display_made do color_scheme_sync()
+}
+
+/// the display told, if it does not know yet (before each new view)
+color_scheme_sync :: proc() {
+	display_made = true
+	want, ok := pages_dark.?
+	if !ok do return
+	if have, told := display_dark.?; told && have == want do return
+	d := display()
+	if d == nil do return
+	st := wpe_display_get_settings(d)
+	if st == nil do return
+	// (an older WPE without the setting refuses it: pages stay light)
+	err: ^GError
+	if wpe_settings_set_boolean(st, WPE_SETTING_DARK_MODE, want ? 1 : 0, WPE_SETTINGS_SOURCE_APPLICATION, &err) == 0 {
+		if err != nil do g_error_free(err)
+	}
+	display_dark = want
+}
+
 } // when !ENGINE_CEF

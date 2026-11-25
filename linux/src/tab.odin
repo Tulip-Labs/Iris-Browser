@@ -54,6 +54,9 @@ Tab :: struct {
 	upgraded_from:  string,
 	/// the view is a peek's: a process of its own, ended with it
 	isolated:       bool,
+	/// a certificate that failed: Iris's page over the tab says so, and
+	/// nothing of the site shows until you choose (interstitial.odin)
+	cert_error:     ^Cert_Error,
 }
 
 @(private="file") next_tab_id := 1
@@ -77,6 +80,7 @@ forget_certs :: proc(t: ^Tab) {
 }
 
 tab_free :: proc(t: ^Tab) {
+	cert_clear(t)
 	tab_release_web(t)
 	delete(t.container)
 	delete(t.url)
@@ -95,6 +99,16 @@ set_str :: proc(s: ^string, v: string) {
 	s^ = strings.clone(v)
 }
 
+// (browser_tab_alive, a tab in the strip or the peek: features.odin)
+
+/// every tab with a page Iris has: the strip's and the peek
+browser_all_tabs :: proc() -> []^Tab {
+	out := make([dynamic]^Tab, 0, len(b.tabs) + 1, context.temp_allocator)
+	append(&out, ..b.tabs[:])
+	if b.peek != nil do append(&out, b.peek)
+	return out[:]
+}
+
 /// opens an address after this turn of the loop (from inside an engine's
 /// callback, where the view cannot be remade)
 Later :: struct {
@@ -107,10 +121,37 @@ tab_load_later :: proc(t: ^Tab, u: string) {
 	l^ = {t, u}
 	idle(proc(d: rawptr) {
 		l := cast(^Later)d
-		if browser_has_tab(l.t) do tab_load(l.t, l.url)
+		if browser_tab_alive(l.t) do tab_load(l.t, l.url)
 		delete(l.url)
 		free(l)
 	}, l)
+}
+
+// ---------------------------------------------------------------- the sandbox
+
+Sandbox_Move :: enum u8 {
+	/// the address loads again in a view made for it (in or out of the sandbox)
+	Reload,
+	/// it goes on where it is, in the sandbox
+	Stay,
+	/// it is not sent (a form into the sandbox: loading it again would make
+	/// it a GET, without what it sends)
+	Refuse,
+}
+
+/// a navigation that should cross the sandbox's edge: Iris loads it again
+/// in a view of the other side, unless it sends a body (a form's POST),
+/// which only a sandboxed page may send on from where it is
+sandbox_move_for :: proc(sandboxed, body: bool) -> Sandbox_Move {
+	if !body do return .Reload
+	return sandboxed ? .Stay : .Refuse
+}
+
+@(test) test_sandbox_move :: proc(t: ^testing.T) {
+	testing.expect_value(t, sandbox_move_for(false, false), Sandbox_Move.Reload)
+	testing.expect_value(t, sandbox_move_for(true, false), Sandbox_Move.Reload)
+	testing.expect_value(t, sandbox_move_for(true, true), Sandbox_Move.Stay)
+	testing.expect_value(t, sandbox_move_for(false, true), Sandbox_Move.Refuse)
 }
 
 // ---------------------------------------------------------------- dialogs

@@ -129,7 +129,8 @@
     ' ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"], ytd-rich-section-renderer:has(ytd-statement-banner-renderer),' +
     ' .ytp-ad-overlay-container, .ytp-ad-overlay-slot, .ytp-ad-image-overlay, ytm-promoted-sparkles-web-renderer,' +
     ' ytm-companion-ad-renderer, ytm-promoted-video-renderer, ad-slot-renderer { display: none !important; }' +
-    ' .ad-showing video, .ad-interrupting video, .ad-showing .ytp-ad-player-overlay, .ad-showing .ytp-ad-player-overlay-layout { opacity: 0 !important; }';
+    ' .iris-ad.ad-showing video, .iris-ad.ad-interrupting video, .iris-ad.ad-showing .ytp-ad-player-overlay,' +
+    ' .iris-ad.ad-showing .ytp-ad-player-overlay-layout { opacity: 0 !important; }';
   let styled = false;
   const style = () => {
     if (styled || !document.documentElement) return;
@@ -141,7 +142,26 @@
   let saved = null; // the video's own sound and speed, while an ad plays
   const skipSel = '.ytp-skip-ad-button, .ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-ad-skip-button-container button,' +
     ' .ytp-ad-skip-button-slot button, .ytp-skip-ad button, button[id^="skip-button"]';
-  const isAd = (p) => p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting');
+  const marked = (p) => p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting');
+  // YouTube's own ad parts in the player: a class left behind with none of
+  // them for STALE ms is no ad, and the video shows and sounds again
+  const adSel = '.ytp-ad-player-overlay, .ytp-ad-player-overlay-layout, .ytp-ad-text, .ytp-ad-preview-container,' +
+    ' .ytp-ad-module > *, .video-ads > *, .ytp-ad-persistent-progress-bar-container, .ytp-ad-simple-ad-badge';
+  const STALE = 3000;
+  let adSeen = 0, markedSince = 0;
+  const isAd = (p) => {
+    if (!marked(p)) {
+      markedSince = 0;
+      p.classList.remove('iris-ad');
+      return false;
+    }
+    const now = Date.now();
+    if (!markedSince) markedSince = now;
+    if (p.querySelector(adSel)) adSeen = now;
+    const ad = now - Math.max(adSeen, markedSince) < STALE;
+    p.classList.toggle('iris-ad', ad);
+    return ad;
+  };
   const tick = () => {
     style();
     const player = document.querySelector('#movie_player, .html5-video-player');
@@ -191,7 +211,7 @@
   const onMedia = (e) => {
     if (!(e.target instanceof HTMLVideoElement)) return;
     const p = e.target.closest('#movie_player, .html5-video-player');
-    if (p && (isAd(p) || saved)) tick();
+    if (p && (marked(p) || saved)) tick();
   };
   for (const ev of ['loadedmetadata', 'durationchange', 'playing', 'timeupdate']) document.addEventListener(ev, onMedia, true);
   style();

@@ -174,7 +174,7 @@ def main():
                 ret = g.odin(fm.group(1))
                 ps = [p for p in split_top(fm.group(2)) if p != "void"]
                 names = []
-                pm = re.search(r"\(CEF_CALLBACK\s*\*\s*" + name + r"\)\s*\((.*?)\);", body, re.S)
+                pm = re.search(r"\(\s*CEF_CALLBACK\s*\*\s*" + name + r"\s*\)\s*\((.*?)\)\s*;", body, re.S)
                 if pm:
                     names = [re.findall(r"\w+", x)[-1] for x in split_top(re.sub(r"//[^\n]*", "", pm.group(1))) if x]
                 if len(names) != len(ps):

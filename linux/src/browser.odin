@@ -106,6 +106,8 @@ browser_draw :: proc(w: ^plat.Window) {
 		page_latch(p)
 		if t == b.peek do continue
 		c := browser_tab_rect(t)
+		// a failing certificate: nothing of the site shows (interstitial.odin)
+		if t.cert_error != nil do continue
 		r: f32 = b.page_fullscreen ? 0 : 14
 		draw_fill(c.x, c.y + 6, c.z, c.w, r, {0, 0, 0, 0.12}, soft = 16)
 		draw_fill(c.x, c.y, c.z, c.w, r, {1, 1, 1, 1})
@@ -181,7 +183,7 @@ New_Tab :: struct {
 	after:     ^Tab,
 	select:    bool,
 	/// the engine's opener view, for a pop-up that must share its process
-	/// (WPE; CEF opens pop-ups as plain tabs with their address)
+	/// and talk to its opener (both engines make such related pop-ups)
 	related:   rawptr,
 	lazy:      bool,
 	pinned:    bool,
@@ -211,6 +213,7 @@ browser_new_tab :: proc(o: New_Tab) -> ^Tab {
 		tab_load(t, o.url)
 	}
 	if o.select do browser_select(t)
+	browser_session_changed()
 	chrome_push()
 	return t
 }
@@ -224,12 +227,14 @@ tab_is_start :: proc(t: ^Tab) -> bool {
 browser_go_start :: proc(t: ^Tab) {
 	if t == nil do return
 	if split_has(t) do split_end()
+	cert_clear(t)
 	tab_release_web(t)
 	set_str(&t.url, "")
 	set_str(&t.title, "")
 	delete(t.favicon_px)
 	t.favicon_px = nil
 	t.loading, t.can_back, t.can_forward, t.progress = false, false, false, 0
+	browser_session_changed()
 	if t == b.current do chrome_start_shown()
 	browser_layout()
 	chrome_push()
@@ -314,6 +319,7 @@ browser_close :: proc(t: ^Tab) {
 	private_left := false
 	for x in b.tabs do if tab_is_private(x) do private_left = true
 	tab_free(t)
+	browser_session_changed()
 	if !private_left do end_private()
 	if b.current == nil || len(visible_tabs()) == 0 {
 		browser_new_tab({select = true})
@@ -368,6 +374,7 @@ browser_go :: proc(text: string) {
 		browser_new_tab({url = u, select = true})
 		return
 	}
+	cert_clear(b.current)
 	tab_load(b.current, u)
 	chrome_set_focus(false)
 }
@@ -422,7 +429,8 @@ new_window_choice :: proc(u, page_url: string, link, gesture, sandboxed, shield:
 
 /// a link from t's page in a tab of its own, next to t
 browser_open_link :: proc(t: ^Tab, u: string, background: bool) {
-	browser_new_tab({url = strings.clone(u, context.temp_allocator), container = t.container, after = t, select = !background})
+	// (a peek is in no strip: its links go next to the tab under it)
+	browser_new_tab({url = strings.clone(u, context.temp_allocator), container = t.container, after = t == b.peek ? b.current : t, select = !background})
 }
 
 // ---------------------------------------------------------------- input
@@ -433,6 +441,7 @@ browser_open_link :: proc(t: ^Tab, u: string, background: bool) {
 
 @(private="file") target_at :: proc(x, y: f64) -> Target {
 	if chrome_modal() do return .Chrome
+	if interstitial_at(x, y) do return .Chrome
 	if _, ok := chrome_hit_at({f32(x), f32(y)}); ok && !over_peek_page(x, y) do return .Chrome
 	if page_tab_at(x, y) != nil do return .Page
 	return .Chrome
@@ -519,11 +528,22 @@ browser_pointer :: proc(e: plat.Pointer_Event) {
 	if e.kind == .Motion do plat.invalidate(&b.win) // the pointer's light on the glass
 }
 
-/// Iris's own keys first; the rest go to the chrome or the page
+/// Iris's own keys first (but those a web app may want, which its page has
+/// first: page_first_key); the rest go to the chrome or the page
 browser_key :: proc(e: plat.Key_Event) {
+	if e.pressed && page_first_key(e) {
+		if t := key_page(); t != nil {
+			page_key(t.page, e)
+			page_first_ask(t, e)
+			return
+		}
+	}
 	if e.pressed && browser_shortcut(e) do return
 	if chrome_wants_keys() {
 		chrome_key(e)
+	} else if t := b.peek != nil ? b.peek : b.current; t != nil && t.cert_error != nil {
+		// Iris's page for a failing certificate has the keys, not the site
+		interstitial_key(t, e)
 	} else if b.peek != nil {
 		if e.pressed && peek_key(e) do return
 		if b.peek.page != nil do page_key(b.peek.page, e)
@@ -534,6 +554,105 @@ browser_key :: proc(e: plat.Key_Event) {
 	} else if b.current != nil && b.current.page != nil {
 		page_key(b.current.page, e)
 	}
+}
+
+// ---------------------------------------------------------------- keys a page has first
+
+/// Iris's shortcuts that web apps use too (Ctrl+K a search or a link,
+/// Ctrl+M, Ctrl+F their own find, Ctrl+Shift+C, Ctrl+Shift+S): the page
+/// has them first, and Iris acts only if the page did not take the key
+/// (preventDefault). Ctrl+L, Ctrl+T, Ctrl+W, Ctrl+Tab, Ctrl+Shift+T and the
+/// rest are always Iris's.
+page_first_key :: proc(e: plat.Key_Event) -> bool {
+	if !(.Ctrl in e.mods) || .Alt in e.mods do return false
+	shift := .Shift in e.mods
+	switch e.sym {
+	case 'k', 'm', 'f': return !shift
+	case 'c', 's': return shift
+	}
+	return false
+}
+
+/// the tab whose page has the keyboard (none: the chrome, the start page,
+/// Iris's page for a failing certificate)
+@(private="file") key_page :: proc() -> ^Tab {
+	if chrome_wants_keys() || b.chrome_focus do return nil
+	t := b.peek != nil ? b.peek : b.current
+	if t == nil || t.page == nil || t.cert_error != nil || tab_is_start(t) do return nil
+	return t
+}
+
+/// what the page did with a key, seen by Iris's own listener (installed
+/// with page_keys_watch, in Iris's world where the engine has one): it
+/// reads the event's defaultPrevented once every listener has run
+PAGE_KEYS_JS :: `(() => {
+  if (window.__irisKeys) return 1;
+  const s = window.__irisKeys = { r: '' };
+  addEventListener('keydown', e => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const k = (e.key || '').toLowerCase();
+    if (!(['k', 'm', 'f'].includes(k) && !e.shiftKey) && !(['c', 's'].includes(k) && e.shiftKey)) return;
+    s.r = '';
+    setTimeout(() => { s.r = e.defaultPrevented ? 'page' : 'free'; }, 0);
+  }, true);
+  return 1;
+})()`
+
+/// a page that loaded gets the listener (cheap: one listener, no polling)
+page_keys_watch :: proc(t: ^Tab) {
+	if !strings.has_prefix(t.url, "http") && !strings.has_prefix(t.url, "file:") do return
+	tab_run_isolated(t, PAGE_KEYS_JS, proc(t: ^Tab, result: string) {})
+}
+
+@(private="file") Key_Ask :: struct {
+	seq, tab: int,
+	e:        plat.Key_Event,
+	done:     bool,
+}
+@(private="file") key_ask: Key_Ask
+
+/// how long the page has before Iris asks what it did, and before Iris
+/// acts without its answer (a page that cannot answer: no listener, a frame)
+KEY_ASK_MS :: 60
+KEY_GIVE_UP_MS :: 350
+
+/// the answer to the ask: "<seq>:page" (the page took the key), "<seq>:free"
+/// or "<seq>:" (no word: Iris acts); false for another ask's
+key_answer :: proc(result: string, seq: int) -> (page_took: bool, ours: bool) {
+	c := strings.index_byte(result, ':')
+	if c < 0 do return false, false
+	if result[:c] != fmt.tprint(seq) do return false, false
+	return result[c + 1:] == "page", true
+}
+
+@(private="file") page_first_ask :: proc(t: ^Tab, e: plat.Key_Event) {
+	key_ask.seq += 1
+	ev := e
+	ev.text = "" // (the event's own text does not outlive it)
+	key_ask = {seq = key_ask.seq, tab = t.id, e = ev}
+	seq := rawptr(uintptr(key_ask.seq))
+	after(KEY_ASK_MS, proc(d: rawptr) {
+		seq := int(uintptr(d))
+		if key_ask.seq != seq || key_ask.done do return
+		t := key_page()
+		if t == nil || t.id != key_ask.tab {
+			key_ask.done = true // the keys went elsewhere meanwhile
+			return
+		}
+		js := fmt.tprintf("(() => { const s = window.__irisKeys; const r = s ? s.r : ''; if (s) s.r = ''; return '%d:' + r; })()", seq)
+		tab_run_isolated(t, js, proc(t: ^Tab, result: string) {
+			took, ours := key_answer(result, key_ask.seq)
+			if !ours || key_ask.done do return
+			key_ask.done = true
+			if !took && key_page() == t do browser_shortcut(key_ask.e)
+		})
+	}, seq)
+	after(KEY_GIVE_UP_MS, proc(d: rawptr) {
+		seq := int(uintptr(d))
+		if key_ask.seq != seq || key_ask.done do return
+		key_ask.done = true
+		if t := key_page(); t != nil && t.id == key_ask.tab do browser_shortcut(key_ask.e)
+	}, seq)
 }
 
 @(private="file") browser_shortcut :: proc(e: plat.Key_Event) -> bool {
@@ -663,6 +782,23 @@ browser_forget_dialog :: proc(t: ^Tab) {
 }
 
 // ---------------------------------------------------------------- the session
+
+SESSION_SAVE_MS :: 1500
+
+@(private="file") session_pending: bool
+
+/// the tabs changed (opened, closed, gone somewhere, pinned, moved, to
+/// another workspace): the session is saved a moment later, once for all
+/// the changes of that moment (a crash then loses little); nothing waits
+/// while nothing changes
+browser_session_changed :: proc() {
+	if session_pending || b.win.closed do return
+	session_pending = true
+	after(SESSION_SAVE_MS, proc(_: rawptr) {
+		session_pending = false
+		if !b.win.closed do browser_save_session()
+	}, nil)
+}
 
 browser_save_session :: proc() {
 	s := settings()
