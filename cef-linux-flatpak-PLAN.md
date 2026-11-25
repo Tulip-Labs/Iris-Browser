@@ -89,7 +89,7 @@ downloads, favicon.
   harness passes both scenarios. No Iris code changes, no Flatpak
   changes, WPE untouched.
 
-### Slice 2 — the Tab seam and the browser flag
+### Slice 2 — the Tab seam and the browser flag — DONE (local commits c992ef3 + the seam commit below; CI still to prove)
 
 - `Tab` holds a page that can be WPE or CEF: the `Page` surface grows
   a CEF implementation fed by `linux/src/cef`, and `tab_*` navigation
@@ -101,12 +101,40 @@ downloads, favicon.
   before anything else — subprocesses re-enter `main`) and the
   `cef_api_hash` call.
 - Input mapping (`plat` events → CEF event flags, key codes, mouse
-  buttons), JS eval **with a result** (design item: `execute_java_script`
-  is fire-and-forget, so the result comes back through a round-trip —
-  console message or DevTools protocol — to be decided in the slice,
-  not assumed here), favicon via the display handler.
-- Proves in CI: both engines build; the CEF binary starts headless
-  under Weston, loads a page, and the render-check draws it.
+  buttons), JS eval **with a result** (decided: a console-message
+  round-trip — the code runs as an expression inside a wrapper that
+  prints `[iris-eval:N]` + the value; see `eval_js`), favicon via
+  the display handler (URL from the engine, bytes fetched by the
+  browser over libsoup, PNG/JPEG decoded, ICO left blank).
+- Decisions that differ from the first draft of this plan:
+  - **The stub ships with the WPE build.** The first draft said the
+    WPE binary never needs libcef.so at run time (`--as-needed`
+    drops the DT_NEEDED). That is wrong, verified by a linker
+    experiment: a reference in dead code still records DT_NEEDED,
+    and the binary refuses to start without the file. The WPE
+    binary links libcef and needs it at run time, so the stub
+    (`linux/cef-stub.c`, inert — loaded, never called) ships with
+    the WPE build and its Flatpak (`build.sh install` puts it in
+    `/app/lib`). The alternative (dlopen at run time, only in CEF
+    mode) is a bigger redesign and was not taken.
+  - **The CEF frame is uploaded in the Page's on_frame callback**
+    (`texture_upload` of the engine's BGRA buffer, on the pump
+    thread while the GL context is current) — the renderer never
+    sees the engine's buffer directly.
+  - **A closing CEF tab frees asynchronously**: `tab_free` asks
+    the engine to close it and returns; the engine's `on_close`
+    frees the Tab then (directly when the tab is already out of
+    `b.tabs`, via `browser_close_later` when the page closed
+    itself). The engine's nav procs guard on `browser == nil`, so
+    calls before creation return false instead of crashing.
+  - `--cef-check` is the headless proof (one browser, example.org,
+    title + `1+1` evals + a settled 800x600 frame), not a Weston
+    GUI run — the render-check draws nothing in this mode, because
+    there is no GL context before a window exists.
+- Proves in CI: both engines build; the CEF binary starts headless,
+  loads a page, and `--cef-check` passes (load + title + eval +
+  frame). The smoke job's tab-close check still passes. WPE jobs
+  stay green.
 - Deferred to slice 2b (same slice, second commit): dialogs (JS,
   file chooser, permissions, context menu, option menu), find UI,
   downloads via `CefDownloadHandler`, pop-ups via
