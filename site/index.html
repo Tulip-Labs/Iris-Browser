@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iris — a browser made of glass</title>
+  <meta name="description" content="Iris is a free web browser for Linux and Android by Tulip Labs: Liquid Glass drawn by its own renderer on Wayland and WPE WebKit, Shields that stop ads and trackers inside the engine, and nothing collected about you.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0B0C0E" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://tulip-labs.github.io/Iris-Browser/">
+
+  <link rel="icon" type="image/svg+xml" href="assets/iris.svg">
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/iris-64.png">
+  <link rel="icon" type="image/png" sizes="48x48" href="assets/iris-48.png">
+  <link rel="apple-touch-icon" href="assets/iris-256.png">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Iris">
+  <meta property="og:title" content="Iris — a browser made of glass">
+  <meta property="og:description" content="A free browser for Linux and Android, by Tulip Labs. Liquid Glass, Shields against ads and trackers, and nothing collected about you.">
+  <meta property="og:url" content="https://tulip-labs.github.io/Iris-Browser/">
+  <meta property="og:image" content="https://tulip-labs.github.io/Iris-Browser/assets/iris-512.png">
+  <meta property="og:image:width" content="512">
+  <meta property="og:image:height" content="512">
+  <meta property="og:image:alt" content="Iris's icon: a clear glass ring on a white tile, light entering and leaving as a rainbow">
+  <meta name="twitter:card" content="summary">
+
+  <link rel="stylesheet" href="style.css">
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <nav class="topbar__inner glass" aria-label="Main">
+      <a class="brand" href="#top" aria-label="Iris, back to top">
+        <img src="assets/iris-64.png" width="28" height="28" alt="">
+        <span>Iris</span>
+      </a>
+      <ul class="nav">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#privacy">Privacy</a></li>
+        <li><a href="#engines">Engines</a></li>
+        <li><a href="#android">Android</a></li>
+        <li><a href="#install">Install</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ul>
+      <a class="btn btn--small" href="https://github.com/Tulip-Labs/Iris-Browser">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <!-- Hero -->
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="ring" data-ring aria-hidden="true">
+        <div class="ring__glow"></div>
+        <div class="ring__band"></div>
+        <div class="ring__glass"></div>
+        <svg class="ring__rim" viewBox="0 0 200 200" focusable="false">
+          <defs>
+            <linearGradient id="rimOuter" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#fff" stop-opacity=".95"/>
+              <stop offset=".45" stop-color="#fff" stop-opacity=".15"/>
+              <stop offset="1" stop-color="#fff" stop-opacity=".55"/>
+            </linearGradient>
+            <linearGradient id="rimInner" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#000" stop-opacity=".18"/>
+              <stop offset=".5" stop-color="#fff" stop-opacity=".1"/>
+              <stop offset="1" stop-color="#fff" stop-opacity=".9"/>
+            </linearGradient>
+            <radialGradient id="spec" cx=".32" cy=".18" r=".5">
+              <stop offset="0" stop-color="#fff" stop-opacity=".9"/>
+              <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <circle cx="100" cy="100" r="97" fill="none" stroke="url(#rimOuter)" stroke-width="1.4"/>
+          <circle cx="100" cy="100" r="55" fill="none" stroke="url(#rimInner)" stroke-width="1.4"/>
+          <path d="M40 58 A72 72 0 0 1 112 25" fill="none" stroke="url(#spec)" stroke-width="9" stroke-linecap="round" opacity=".85"/>
+          <path d="M152 150 A68 68 0 0 1 124 165" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+      </div>
+
+      <p class="eyebrow">Iris for Linux and Android</p>
+      <h1 id="hero-title">A browser made of glass.</h1>
+      <p class="lede">
+        Liquid Glass that bends the live page, Shields that stop ads and trackers inside the engine,
+        and nothing about you ever sent anywhere. Free and open source, by Tulip Labs.
+      </p>
+      <div class="cta">
+        <a class="btn btn--primary" href="https://github.com/Tulip-Labs/Iris-Browser/releases/latest">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Download for Linux
+        </a>
+        <a class="btn" href="https://github.com/Tulip-Labs/Iris-Browser/releases/latest">
+          Get it for Android
+        </a>
+      </div>
+      <p class="fineprint">Flatpak for x86_64 Linux on Wayland · APK for Android 10 and newer · GPL-3.0</p>
+    </section>
+
+    <!-- Window mock -->
+    <section class="showcase" aria-labelledby="showcase-title">
+      <h2 class="visually-hidden" id="showcase-title">What Iris 2.3 looks like</h2>
+      <figure class="window reveal" role="img" aria-label="A drawing of the Iris window coming in 2.3: two glass tabs on top, a centered address bar showing the full address, and a start page with the glass ring and one centered search box.">
+        <div class="window__chrome" aria-hidden="true">
+          <div class="tabs">
+            <div class="tab tab--active">
+              <span class="tab__icon tab__icon--ring"></span>
+              <span class="tab__title">New tab</span>
+              <span class="tab__close">×</span>
+            </div>
+            <div class="tab">
+              <span class="tab__icon"></span>
+              <span class="tab__title">Tulip-Labs/Iris-Browser</span>
+              <span class="tab__close">×</span>
+            </div>
+            <div class="tab tab--add">+</div>
+            <div class="wincontrols"><span></span><span></span><span></span></div>
+          </div>
+          <div class="toolbar">
+            <div class="toolbar__group">
+              <svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+              <svg viewBox="0 0 24 24"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 4v4h-4"/></svg>
+            </div>
+            <div class="address">
+              <svg viewBox="0 0 24 24"><rect x="6" y="11" width="12" height="9" rx="2"/><path d="M9 11V8a3 3 0 0 1 6 0v3"/></svg>
+              <span>https://tulip-labs.github.io/Iris-Browser/</span>
+            </div>
+            <div class="toolbar__group">
+              <svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg>
+            </div>
+          </div>
+        </div>
+        <div class="window__page" aria-hidden="true">
+          <div class="minring"></div>
+          <div class="search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>
+            <span>Search or type an address</span>
+          </div>
+        </div>
+      </figure>
+      <p class="caption reveal">The start page coming in 2.3: the glass ring and one search box. No tiles, nothing tracked.</p>
+    </section>
+
+    <!-- Features -->
+    <section class="section" id="features" aria-labelledby="features-title">
+      <header class="section__head reveal">
+        <p class="eyebrow">Features</p>
+        <h2 id="features-title">Clear by design.</h2>
+        <p class="section__lede">Iris for Linux is written in Odin and talks to Wayland, OpenGL ES and WPE WebKit directly. No GTK, no X11. Every piece of its chrome is drawn by Iris itself, in the same frame as its glass.</p>
+      </header>
+
+      <h3 class="subhead reveal">In Iris today</h3>
+      <ul class="grid" role="list">
+        <li class="card glass reveal" data-tilt>
+          <span class="card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/></svg></span>
+          <h4>Real Liquid Glass</h4>
+          <p>Not frosted glass: a shader lens that bends the live page at its rim, with a touch of colour splitting and a line of light along the top.</p>
+        </li>
+        <li class="card glass reveal" data-tilt>
+          <span class="card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="8" height="12" rx="2"/><rect x="13" y="6" width="8" height="12" rx="2"/></svg></span>
+          <h4>Containers</h4>
+          <p>Personal, Work, Shopping and Banking to start, and any you add. Each keeps its own cookies, storage, cache and sign-ins.</p>
+        </li>
+        <li class="card glass reveal" data-tilt>
+          <span class="card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 12h6"/></svg></span>
+          <h4>An automatic sandbox</h4>
+          <p>Sites Iris does not trust (plain http, a bare IP, a failing certificate) open in a world of their own, with none of your data.</p>
+        </li>
+        <li class="card glass reveal" data-tilt>
+          <span class="card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg></span>
+          <h4>Ads open no tabs</h4>
+          <p>A pop-up needs your click and goes only to the same site or a sign-in page. Anything else is stopped, with an Open button if you meant it.</p>
+        </li>
+        <li class="card glass reveal" data-tilt>
+          <span class="card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9l5 3-5 3z"/></svg></span>
+          <h4>YouTube without ads</h4>
+          <p>The player's answer loses its ads before the player reads it, so no ad is scheduled and no request is blocked for YouTube to notice.</p>
+        </li>
+        <li class="card glass reveal" data-tilt>
+          <span class="card__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4"/></svg></span>
+          <h4>Sharp at every scale</h4>
+          <p>Wayland's fractional scaling: pages and chrome render at the screen's own pixels, at 1.25, 1.5 or 2.</p>
+        </li>
+      </ul>
+
+      <h3 class="subhead reveal">Coming in 2.3 <span class="badge">In progress</span></h3>
+      <ul class="grid grid--soon" role="list">
+        <li class="card glass reveal" data-tilt>
+          <h4>A start page drawn by Iris</h4>
+          <p>The glass ring and one centered search box, drawn in Odin. No tracking tiles.</p>
+        </li>
+        <li class="card glass reveal" data-tilt>
+          <h4>The full address, centered</h4>
+          <p>The address bar sits in the middle and shows the whole address, so you always know where you are.</p>
+        </li>
+        <li class="card glass reveal" data-tilt>
+          <h4>New tabs are never blank</h4>
+          <p>A new tab opens ready to use, never on an empty white page, and the chrome moves with light animations.</p>
+        </li>
+        <li class="card glass reveal" data-tilt>
+          <h4>Faster Google and YouTube</h4>
+          <p>Google and YouTube open faster in Iris, on top of the ad-free YouTube you already get.</p>
+        </li>
+        <li class="card glass reveal" data-tilt>
+          <h4>Closed means closed</h4>
+          <p>A closed tab really frees its process, so its memory comes back.</p>
+        </li>
+        <li class="card glass reveal" data-tilt>
+          <h4>Everyday tools</h4>
+          <p>Pinned tabs, reader mode, split view, compact mode, link peek, workspaces, a privacy report and a Ctrl+K command palette.</p>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Privacy -->
+    <section class="section" id="privacy" aria-labelledby="privacy-title">
+      <div class="split">
+        <header class="section__head section__head--left reveal">
+          <p class="eyebrow">Privacy</p>
+          <h2 id="privacy-title">Shields up. Nothing out.</h2>
+          <p class="section__lede">Iris collects nothing. There is no account, no telemetry, no analytics and no crash reporting, and Tulip Labs runs no servers for Iris.</p>
+          <p>Shields stop ads and trackers inside the engine, before a request leaves your device, using uBlock Origin's lists. About 100,000 ad and tracker domains are built in. Third-party cookies are refused, and you can turn Shields off for one site.</p>
+        </header>
+        <div class="shields glass reveal">
+          <h3 class="shields__title">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/></svg>
+            Shields levels
+          </h3>
+          <dl class="levels">
+            <div>
+              <dt>Moderate</dt>
+              <dd>Ads and trackers from other sites (EasyList, EasyPrivacy). A site's own requests always load.</dd>
+            </div>
+            <div>
+              <dt>Aggressive</dt>
+              <dd>Also a site's own ads and trackers, uBlock Origin's filters, and the empty boxes ads leave. The default in Iris 2.2.</dd>
+            </div>
+            <div class="levels__hl">
+              <dt>Ultra aggressive</dt>
+              <dd>Also cookie notices, newsletter and sign-up pop-ups and other annoyances. <strong>Coming in 2.3:</strong> the default, and tracking parameters are stripped from links.</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    </section>
+
+    <!-- Two engines -->
+    <section class="section" id="engines" aria-labelledby="engines-title">
+      <header class="section__head reveal">
+        <p class="eyebrow">Two engines</p>
+        <h2 id="engines-title">One Iris. Your choice of engine.</h2>
+        <p class="section__lede">The same Odin app, the same glass, built on either engine. Both Flatpaks install side by side.</p>
+      </header>
+      <div class="engines">
+        <article class="card glass engine reveal" data-tilt>
+          <p class="engine__tag">Default</p>
+          <h3>WPE WebKit</h3>
+          <p>Each page frame arrives as a DMA-BUF and Iris samples it with no copy, so the glass bends the live page. WebKit keeps its own process sandbox inside Flatpak's.</p>
+          <p class="engine__id"><code>io.github.tulip_labs.Iris</code></p>
+        </article>
+        <article class="card glass engine reveal" data-tilt>
+          <p class="engine__tag engine__tag--soon">Coming in 2.3</p>
+          <h3>Chromium (CEF)</h3>
+          <p>"Iris (Chromium)", built on CEF as a Flatpak of its own, for when you want Chromium underneath. It is larger, has no proprietary codecs, and runs its renderers inside Flatpak's sandbox only.</p>
+          <p class="engine__id"><code>io.github.tulip_labs.Iris.Cef</code></p>
+        </article>
+      </div>
+    </section>
+
+    <!-- Android -->
+    <section class="section" id="android" aria-labelledby="android-title">
+      <div class="split split--rev">
+        <div class="phone reveal" aria-hidden="true">
+          <div class="phone__screen">
+            <div class="phone__tabs"><span class="on"></span><span></span><span class="plus">+</span></div>
+            <div class="phone__page">
+              <div class="minring minring--sm"></div>
+              <div class="search search--sm"><span>Ask anything</span></div>
+            </div>
+            <div class="phone__bar"><span></span><span></span><span></span><span></span><span></span></div>
+          </div>
+        </div>
+        <header class="section__head section__head--left reveal">
+          <p class="eyebrow">Android</p>
+          <h2 id="android-title">The same glass in your pocket.</h2>
+          <p class="section__lede">Iris for Android is Kotlin and Jetpack Compose, drawn as Liquid Glass with no Material components, on Cefrium: its own Chromium, the same engine on every phone.</p>
+          <ul class="ticks" role="list">
+            <li>Shields at the same three levels, and ads that cannot open tabs</li>
+            <li>Containers, each with its own cookies, cache and storage</li>
+            <li>Audio that keeps playing with the screen off</li>
+            <li>A downloads manager that needs no storage permission</li>
+            <li>Updates itself from Iris's own GitHub releases</li>
+          </ul>
+        </header>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section class="section" id="install" aria-labelledby="install-title">
+      <header class="section__head reveal">
+        <p class="eyebrow">Install</p>
+        <h2 id="install-title">Get Iris.</h2>
+        <p class="section__lede">Both builds come from GitHub Releases.</p>
+      </header>
+      <div class="engines">
+        <article class="card glass install reveal">
+          <h3>Linux</h3>
+          <ol class="steps">
+            <li>Download <a href="https://github.com/Tulip-Labs/Iris-Browser/releases/latest"><code>Iris-x86_64.flatpak</code></a> from the latest release.</li>
+            <li>Iris needs the GNOME 50 runtime, which Flatpak installs from Flathub. If Flathub isn't set up yet:
+              <pre><code>flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo</code></pre>
+            </li>
+            <li>Install the bundle:
+              <pre><code>flatpak install --user Iris-x86_64.flatpak</code></pre>
+            </li>
+          </ol>
+          <p class="note">On niri 26.04 and newer, the blur behind the window comes on by itself.</p>
+          <a class="btn btn--primary" href="https://github.com/Tulip-Labs/Iris-Browser/releases/latest">Download the Flatpak</a>
+        </article>
+        <article class="card glass install reveal">
+          <h3>Android</h3>
+          <ol class="steps">
+            <li>Download <a href="https://github.com/Tulip-Labs/Iris-Browser/releases/latest"><code>Iris-android.apk</code></a> from the latest release.</li>
+            <li>Open it and let Android install it. It needs Android 10 or newer.</li>
+            <li>That's all: from then on, Iris updates itself.</li>
+          </ol>
+          <a class="btn btn--primary" href="https://github.com/Tulip-Labs/Iris-Browser/releases/latest">Download the APK</a>
+        </article>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="section section--narrow" id="faq" aria-labelledby="faq-title">
+      <header class="section__head reveal">
+        <p class="eyebrow">FAQ</p>
+        <h2 id="faq-title">Questions.</h2>
+      </header>
+      <div class="faq">
+        <details class="glass reveal">
+          <summary>Is Iris free?</summary>
+          <p>Yes. Iris is free software under the GNU General Public License 3.0, and its source is on GitHub.</p>
+        </details>
+        <details class="glass reveal">
+          <summary>What does Iris collect about me?</summary>
+          <p>Nothing. Your history, tabs, cookies and settings stay on your device. Iris asks GitHub once a day whether there's a newer release, and that request carries nothing about you beyond your network address. The <a href="https://github.com/Tulip-Labs/Iris-Browser/blob/main/PRIVACY.md">privacy page</a> has the details.</p>
+        </details>
+        <details class="glass reveal">
+          <summary>Which Linux desktops does it run on?</summary>
+          <p>Iris for Linux is a native Wayland app: it has no X11 or GTK code. It runs on Wayland compositors; where the compositor offers background blur (niri 26.04 and newer), the desktop shows through the glass.</p>
+        </details>
+        <details class="glass reveal">
+          <summary>What happened to the apt, dnf and zypper repositories?</summary>
+          <p>They are discontinued. Iris for Linux ships as a Flatpak; please install it from GitHub Releases as shown above.</p>
+        </details>
+        <details class="glass reveal">
+          <summary>Why the name?</summary>
+          <p>Iris is the Greek goddess of the rainbow, who carries light between worlds. The icon is a clear glass ring, light entering and leaving as a rainbow.</p>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer__inner">
+      <div class="footer__brand">
+        <img src="assets/iris-64.png" width="32" height="32" alt="">
+        <div>
+          <p><strong>Iris</strong> by Tulip Labs</p>
+          <p class="muted">Cesar Jose Luis Torrecilla Gelvez</p>
+        </div>
+      </div>
+      <ul class="footer__links" role="list">
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser">GitHub</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/releases">Releases</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/blob/main/PRIVACY.md">Privacy</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/blob/main/LICENSE">License: GPL-3.0</a></li>
+        <li><a href="https://github.com/Tulip-Labs/Iris-Browser/issues">Report an issue</a></li>
+      </ul>
+      <p class="muted footer__small">This site has no trackers, no analytics and no outside fonts or scripts.</p>
+    </div>
+  </footer>
+</body>
+</html>
