@@ -229,7 +229,7 @@ Container :: struct {
 
 PRIVATE_ID :: "private"
 CONTAINER_ICONS :: [?]string{"person", "briefcase", "cart", "bank", "home", "heart", "game", "book", "plane", "code", "music", "star"}
-PALETTE :: [?]string{"#0a84ff", "#ff9f0a", "#30d158", "#ff375f", "#bf5af2", "#64d2ff", "#ffd60a", "#ac8e68"}
+PALETTE :: [?]string{"#0a84ff", "#ff9f0a", "#30d158", "#ff375f", "#8e8e93", "#64d2ff", "#ffd60a", "#ac8e68"}
 
 containers: [dynamic]Container
 @(private="file") containers_loaded: bool
@@ -270,7 +270,7 @@ containers_ensure :: proc() {
 container_get :: proc(id: string) -> (Container, bool) {
 	containers_ensure()
 	if id == "" do return {}, false
-	if id == PRIVATE_ID do return {PRIVATE_ID, "Private", "#5e5ce6", "private"}, true
+	if id == PRIVATE_ID do return {PRIVATE_ID, "Private", "#636366", "private"}, true
 	for k in containers do if k.id == id do return k, true
 	return {}, false
 }

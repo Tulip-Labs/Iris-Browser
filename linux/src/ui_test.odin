@@ -94,3 +94,84 @@ test_app_id :: proc(t: ^testing.T) {
 	testing.expect(t, g_application_id_is_valid(APP_ID) != 0, "APP_ID is not a valid application ID")
 	testing.expect(t, g_application_id_is_valid("iris") == 0, "g_application_id_is_valid changed its rules")
 }
+
+@(test)
+test_url_parts :: proc(t: ^testing.T) {
+	s, h, r := url_parts("https://www.example.com:8080/a/b?c=d#e")
+	testing.expect_value(t, s, "https://")
+	testing.expect_value(t, h, "www.example.com:8080")
+	testing.expect_value(t, r, "/a/b?c=d#e")
+	s, h, r = url_parts("about:blank")
+	testing.expect_value(t, s, "")
+	testing.expect_value(t, h, "")
+	testing.expect_value(t, r, "about:blank")
+	s, h, r = url_parts("https://example.com")
+	testing.expect_value(t, h, "example.com")
+	testing.expect_value(t, r, "")
+}
+
+@(test)
+test_elide_middle :: proc(t: ^testing.T) {
+	// 40 glyphs of 10 px, one byte each: 400 px into 200
+	xs: [40]f32
+	bs: [40]int
+	for i in 0 ..< 40 do xs[i], bs[i] = f32(i) * 10, i
+	h, tl := elide_middle(xs[:], bs[:], 400, 200, 10, 8, 40)
+	testing.expect(t, h <= tl, "the head runs into the tail")
+	head_w := f32(h) * 10
+	tail_w := f32(40 - tl) * 10
+	testing.expect(t, head_w + 10 + tail_w <= 200, "the cut address is wider than its place")
+	testing.expect(t, h >= 8, "the host was cut")
+	testing.expect(t, tl < 40, "nothing of the end is shown")
+	// what fits is not cut
+	h, tl = elide_middle(xs[:], bs[:], 400, 500, 10, 8, 40)
+	testing.expect_value(t, h, 40)
+	testing.expect_value(t, tl, 40)
+}
+
+@(test)
+test_motion :: proc(t: ^testing.T) {
+	testing.expect_value(t, ease_out_cubic(0), 0)
+	testing.expect_value(t, ease_out_cubic(1), 1)
+	testing.expect(t, ease_out_cubic(0.5) > 0.5, "ease-out starts fast")
+	k, moving := motion(10, 10.1, 200)
+	testing.expect(t, moving && k > 0.5 && k < 1, "halfway through, more than half there")
+	k, moving = motion(10, 10.3, 200)
+	testing.expect(t, !moving && k == 1, "it ends")
+	k, moving = motion(10, 10.03, 200, 40)
+	testing.expect(t, moving && k == 0, "a delay holds it")
+	// the spring settles within about 200 ms and stops asking for frames
+	sp := Spring{}
+	steps := 0
+	for spring_step(&sp, 1, 1.0 / 60) do steps += 1
+	testing.expect(t, steps < 20, "the spring takes too long")
+	testing.expect_value(t, sp.x, 1)
+	theme.reduce_motion = true
+	k, moving = motion(10, 10.13, 400)
+	testing.expect(t, !moving && k == 1, "reduced motion is a short fade")
+	theme.reduce_motion = false
+}
+
+@(test)
+test_new_window_choice :: proc(t: ^testing.T) {
+	page := "https://news.example.com/a"
+	// a link you click: a tab Iris loads itself (never a blank window)
+	testing.expect_value(t, new_window_choice("https://other.org/x", page, true, true, false, true), Window_Choice.Own_Tab)
+	testing.expect_value(t, new_window_choice("https://other.org/x", page, true, false, false, false), Window_Choice.Own_Tab)
+	// a script's window for the same site, a sign-in or a blank one to fill: WebKit's view
+	testing.expect_value(t, new_window_choice("https://www.example.com/pay", page, false, true, false, true), Window_Choice.Related)
+	testing.expect_value(t, new_window_choice("https://accounts.google.com/o", page, false, true, false, true), Window_Choice.Related)
+	testing.expect_value(t, new_window_choice("", page, false, true, false, true), Window_Choice.Related)
+	testing.expect_value(t, new_window_choice("about:blank", page, false, true, false, true), Window_Choice.Related)
+	// without your click, or to another site with Shields on: nothing
+	testing.expect_value(t, new_window_choice("https://ads.example.net/", page, false, false, false, true), Window_Choice.Block)
+	testing.expect_value(t, new_window_choice("https://other.org/", page, false, true, false, true), Window_Choice.Block)
+	// Shields off: another site's window is a tab of its own
+	testing.expect_value(t, new_window_choice("https://other.org/", page, false, true, false, false), Window_Choice.Own_Tab)
+	// never a file of yours
+	testing.expect_value(t, new_window_choice("file:///etc/passwd", page, true, true, false, false), Window_Choice.Block)
+	// middle click and Ctrl+click
+	testing.expect(t, link_wants_new_tab(2, 0))
+	testing.expect(t, link_wants_new_tab(1, u32(WPE_MODIFIER_KEYBOARD_CONTROL)))
+	testing.expect(t, !link_wants_new_tab(1, 0))
+}

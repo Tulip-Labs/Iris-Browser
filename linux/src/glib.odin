@@ -107,6 +107,9 @@ foreign glib {
 	g_variant_get_child_value :: proc(v: ^GVariant, index: uint) -> ^GVariant ---
 	g_variant_get_string :: proc(v: ^GVariant, length: ^uint) -> cstring ---
 	g_variant_get_uint32 :: proc(v: ^GVariant) -> u32 ---
+	g_variant_get_variant :: proc(v: ^GVariant) -> ^GVariant ---
+	g_variant_get_boolean :: proc(v: ^GVariant) -> gboolean ---
+	g_variant_get_type_string :: proc(v: ^GVariant) -> cstring ---
 	g_variant_lookup_value :: proc(dict: ^GVariant, key: cstring, expected: ^GVariantType) -> ^GVariant ---
 	g_variant_n_children :: proc(v: ^GVariant) -> uint ---
 	g_variant_unref :: proc(v: ^GVariant) ---

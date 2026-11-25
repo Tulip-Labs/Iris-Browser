@@ -1,6 +1,7 @@
 // iris --render-check OUT.ppm: one frame of Iris's renderer, drawn without
 // a window (Mesa's surfaceless EGL) and written as a picture: the dawn, a
-// stand-in page and Liquid Glass of every kind over it. CI runs it so a
+// stand-in page and Liquid Glass of every kind over it, then the start
+// page (its glass ring and search) in light and dark. CI runs it so a
 // shader that does not compile, or glass that draws nothing, fails the
 // build; people look at the picture.
 package iris
@@ -152,13 +153,35 @@ render_check :: proc(out: string) -> int {
 	expect(len(ui.suggestions) == 0, "Escape did not hide the suggestions", &problems)
 	chrome_key({sym = plat.KEY_Escape, pressed = true})
 	expect(ui.focus == .None, "a second Escape did not leave the address", &problems)
+	// the start page: a new tab draws Iris's own page (no web view), its
+	// search takes the keys, in light and in dark
+	st := browser_new_tab({select = true})
+	expect(tab_is_start(st) && st.web == nil, "a new tab is not the start page", &problems)
+	expect(ui.focus == .Start, "the start page's search did not take the keys", &problems)
+	for dark in ([2]bool{false, true}) {
+		theme.dark = dark
+		palette_apply()
+		for _ in 0 ..< 30 {
+			frame_begin(W, H, f64(rnd.scale))
+			draw_dawn()
+			frame_scene_done()
+			chrome_draw(lw, lh)
+			free_all(context.temp_allocator)
+		}
+		expect(button_rect_for_check(.Start_Field).z > 0, "no search on the start page", &problems)
+		name := strings.concatenate({strings.trim_suffix(out, ".ppm"), dark ? "-start-dark.ppm" : "-start.ppm"}, context.temp_allocator)
+		// a calm page by design: fewer colours than a page under glass
+		if !save_frame(fbo, W, H, name, 120) do return 1
+	}
+	theme.dark = false
+	palette_apply()
 	if problems > 0 do return 1
 	fmt.println("render check: the chrome answers clicks and keys")
 	return 0
 }
 
 /// the frame in fbo, as a picture (PPM); fails when it is nearly flat
-@(private="file") save_frame :: proc(fbo: u32, W, H: i32, out: string) -> bool {
+@(private="file") save_frame :: proc(fbo: u32, W, H: i32, out: string, min_colours := 500) -> bool {
 	px := make([]u8, int(W * H * 4))
 	defer delete(px)
 	gl.BindFramebuffer(gl.FRAMEBUFFER, fbo)
@@ -181,7 +204,7 @@ render_check :: proc(out: string) -> int {
 		fmt.eprintln("render check: cannot write", out)
 		return false
 	}
-	if len(colours) < 500 {
+	if len(colours) < min_colours {
 		fmt.eprintfln("render check: the frame is nearly flat (%d colours)", len(colours))
 		return false
 	}
@@ -211,14 +234,14 @@ write_all :: proc(path: string, data: []u8) -> bool {
 
 /// a stand-in page: white, a heading, lines of text and coloured blocks
 @(private="file") draw_sample_page :: proc(card: [4]f32) {
-	draw_fill(card.x, card.y + 4, card.z, card.w, 14, {0.14, 0.11, 0.25, 0.16}, soft = 12)
+	draw_fill(card.x, card.y + 4, card.z, card.w, 14, {0, 0, 0, 0.12}, soft = 16)
 	draw_fill(card.x, card.y, card.z, card.w, 14, {1, 1, 1, 1})
-	draw_fill(card.x + 40, card.y + 30, 420, 28, 6, {0.14, 0.11, 0.25, 0.9})
+	draw_fill(card.x + 40, card.y + 30, 420, 28, 6, {0.10, 0.11, 0.13, 0.9})
 	for i in 0 ..< 14 {
 		y := card.y + 80 + f32(i) * 22
 		w := card.z * 0.55 - f32((i * 37) % 160)
-		draw_fill(card.x + 40, y, w, 9, 4, {0.14, 0.11, 0.25, 0.35})
+		draw_fill(card.x + 40, y, w, 9, 4, {0.10, 0.11, 0.13, 0.35})
 	}
-	colors := [4][4]f32{{0.42, 0.30, 0.96, 1}, {0.22, 0.74, 0.97, 1}, {0.98, 0.55, 0.36, 1}, {0.99, 0.80, 0.30, 1}}
+	colors := [4][4]f32{{0.20, 0.62, 0.42, 1}, {0.22, 0.74, 0.97, 1}, {0.98, 0.55, 0.36, 1}, {0.99, 0.80, 0.30, 1}}
 	for c, i in colors do draw_fill(card.x + card.z * 0.42 + f32(i % 2) * 190, card.y + 40 + f32(i / 2) * 150, 170, 130, 16, c)
 }

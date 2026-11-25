@@ -67,7 +67,9 @@ tab_ensure_web :: proc(t: ^Tab, related: ^WebKitWebView = nil) -> ^WebKitWebView
 	set := Prop{name = "settings", value = rawptr(st), type = webkit_settings_get_type()}
 	w: ^WebKitWebView
 	if related != nil {
-		w = cast(^WebKitWebView)gnew(webkit_web_view_get_type(), disp, ucm, set, {name = "related-view", value = rawptr(related), type = webkit_web_view_get_type()})
+		// the opener's display, web context and session come with it (WebKit
+		// refuses a display given beside a related view)
+		w = cast(^WebKitWebView)gnew(webkit_web_view_get_type(), ucm, set, {name = "related-view", value = rawptr(related), type = webkit_web_view_get_type()})
 	} else if t.sandboxed {
 		t.sandbox_session = sandbox_session()
 		w = cast(^WebKitWebView)gnew(webkit_web_view_get_type(), disp, ucm, set,
@@ -343,6 +345,21 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 		req := webkit_navigation_action_get_request(nav)
 		if req == nil do return false
 		u := string(webkit_uri_request_get_uri(req))
+		// a pop-up's first real address: it is shown now (about:blank, the
+		// page writing into it, waits), before any of the turns below
+		if t.held && u != "about:blank" && len(u) > 0 {
+			t.held = false
+			browser_select(t)
+		}
+		// a middle click or Ctrl+click opens the link in a new tab (WebKit
+		// leaves that to the browser: it asks to navigate this tab)
+		if webkit_navigation_action_get_navigation_type(nav) == WEBKIT_NAVIGATION_TYPE_LINK_CLICKED && link_wants_new_tab(webkit_navigation_action_get_mouse_button(nav), webkit_navigation_action_get_modifiers(nav)) {
+			if page_may_open(u, t.url) {
+				webkit_policy_decision_ignore(d)
+				browser_open_link(t, u, (webkit_navigation_action_get_modifiers(nav) & u32(WPE_MODIFIER_KEYBOARD_SHIFT)) == 0)
+				return true
+			}
+		}
 		if webkit_navigation_action_get_frame_name(nav) != nil do return false
 		// a Google result goes straight to the site
 		if target, ok := unwrap_redirect(u); ok {
@@ -363,10 +380,6 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 			webkit_policy_decision_ignore(d)
 			tab_load_later(t, strings.clone(u))
 			return true
-		}
-		if t.held {
-			t.held = false
-			browser_select(t)
 		}
 		h, _ := host_of(u, context.temp_allocator)
 		shields_apply(t.ucm, h)

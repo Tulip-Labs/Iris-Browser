@@ -91,6 +91,7 @@ foreign wpewebkit_2_0_lib {
 	webkit_memory_pressure_settings_set_strict_threshold :: proc(settings: ^WebKitMemoryPressureSettings, value: f64) ---
 	webkit_navigation_action_get_frame_name :: proc(navigation: ^WebKitNavigationAction) -> cstring ---
 	webkit_navigation_action_get_mouse_button :: proc(navigation: ^WebKitNavigationAction) -> u32 ---
+	webkit_navigation_action_get_modifiers :: proc(navigation: ^WebKitNavigationAction) -> u32 ---
 	webkit_navigation_action_get_navigation_type :: proc(navigation: ^WebKitNavigationAction) -> i32 ---
 	webkit_navigation_action_get_request :: proc(navigation: ^WebKitNavigationAction) -> ^WebKitURIRequest ---
 	webkit_navigation_action_is_user_gesture :: proc(navigation: ^WebKitNavigationAction) -> gboolean ---
