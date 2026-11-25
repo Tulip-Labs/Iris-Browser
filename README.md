@@ -139,8 +139,8 @@ Iris is made again from the start.
 - **Liquid Glass chrome.** The tabs, the address bar and the button groups float as glass.
   - The page's own colour reaches up under the toolbar (as Safari's does), so the glass has something to bend.
   - Menus, suggestions, find, downloads and notices are glass over the page itself.
-- **Google AI Mode in every new tab**, in Iris's glass: the dawn behind it, its panels clear, the question box of glass. The next new tab is loaded ahead, so it opens at once.
-- **Search.** Type an address, or anything else to ask Google AI Mode. Iris asks it to answer from high-quality, current sources. `yt cats` searches YouTube.
+- **Iris's own start page in every new tab**, drawn by Iris itself: the Iris glass ring and a search field in the middle, nothing else. No page loads behind it, so a new tab opens at once and costs no web process. It follows your desktop's light or dark mode.
+- **Search.** Type an address, or anything else to search Google (with its AI Overview). "Ask Google AI Mode" is one suggestion away. `yt cats` searches YouTube.
 - **Containers.**
   - Personal, Work, Shopping and Banking to start with, and any you add.
   - Each is a WPE network session of its own on disk.
@@ -148,7 +148,7 @@ Iris is made again from the start.
   - Removing a container deletes everything its sites kept.
 - **Private tabs.** One in-memory world, gone when the last private tab closes.
 - **The sandbox.** Sites Iris does not trust (http, a bare IP, a failing certificate) open in it without asking: a WPE web context of its own (its own web processes, in WebKit's process sandbox), a network session per tab in memory only, and no downloads, camera, microphone, location, clipboard, WebGL, WebRTC or pop-ups. Its tabs have an orange rim.
-- **Iris Shields.** About 100,000 ad and tracker domains, built into Iris, become WPE content rules. They are compiled once and blocked inside the engine before a request leaves. You can turn Shields off for one site or everywhere.
+- **Iris Shields.** Ultra aggressive by default: uBlock Origin's and EasyList's lists plus about 185,000 ad, tracker, fingerprinting and mining domains built into Iris, blocked inside the engine before a request leaves; cookie banners hidden and tracking parameters stripped from links. Links you click always open, and cookie-consent tools are let through so pages never stay locked. A broken site? Right-click, "Reload without Shields".
 - **Cookies stay home.** Third-party cookies are refused, and WebKit's tracking prevention is on.
 - **Pop-ups.**
   - Links that open a new window open as a tab next to yours.
@@ -215,7 +215,7 @@ On niri, the blur behind the window comes on by itself on 26.04 and newer. No wi
 | Alt+click a link | Peek; Enter or Ctrl+Enter makes it a tab, Esc closes it |
 | Ctrl+R, F5 / Ctrl+Shift+R | Reload / reload without the cache |
 | Alt+← / Alt+→ | Back / forward |
-| Alt+Home | Google AI Mode |
+| Alt+Home | The start page |
 | Ctrl+F | Find in page |
 | Ctrl+Plus / Ctrl+Minus / Ctrl+0 | Zoom |
 | Ctrl+Shift+Y, Ctrl+J | Downloads |
