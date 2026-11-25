@@ -4,6 +4,9 @@
 # frame, and proves a closed tab really frees its memory. It downloads
 # the pinned CEF 156 minimal tarball; it does NOT build WPE WebKit or
 # the Iris Flatpak.
+# The iris-cef job below builds the real binary with --engine=cef and
+# proves it headless (--cef-check: load, title, one JS eval, one frame)
+# and under a headless Wayland compositor.
 name: CEF smoke test
 
 on:
@@ -60,7 +63,7 @@ jobs:
       - name: ABI check
         run: |
           python3 linux/abi/check.py \
-            --headers "include/capi/cef_app_capi.h include/capi/cef_base_capi.h include/capi/cef_browser_capi.h include/capi/cef_client_capi.h include/capi/cef_render_handler_capi.h include/capi/cef_life_span_handler_capi.h include/capi/cef_load_handler_capi.h include/capi/cef_display_handler_capi.h include/capi/cef_frame_capi.h include/internal/cef_string_types.h include/internal/cef_types.h include/internal/cef_types_linux.h include/internal/cef_types_geometry.h include/internal/cef_types_runtime.h include/cef_api_hash.h" \
+            --headers "include/capi/cef_app_capi.h include/capi/cef_base_capi.h include/capi/cef_browser_capi.h include/capi/cef_client_capi.h include/capi/cef_render_handler_capi.h include/capi/cef_life_span_handler_capi.h include/capi/cef_load_handler_capi.h include/capi/cef_display_handler_capi.h include/capi/cef_frame_capi.h include/internal/cef_string_types.h include/internal/cef_string_list.h include/internal/cef_types.h include/internal/cef_types_linux.h include/internal/cef_types_geometry.h include/internal/cef_types_runtime.h include/cef_api_hash.h" \
             --cflags="-I$CEF_DIR" \
             --import cef=linux/src/cef \
             linux/src/cef/cef.odin linux/src/cef/cef_gen.odin
@@ -104,3 +107,85 @@ jobs:
             experiments/cef-smoke/frame.ppm
             experiments/cef-smoke/frame.png
             experiments/cef-smoke/debug.log
+
+  # The real binary with --engine=cef: it builds (against WPE WebKit
+  # AND the real libcef), passes --cef-check headless (load, title,
+  # one JS eval with a result, one settled frame), and starts under a
+  # headless Wayland compositor. The WPE jobs in linux.yml must stay
+  # green beside it.
+  iris-cef:
+    runs-on: ubuntu-24.04
+    container:
+      image: archlinux:latest
+      options: --shm-size=1g --privileged
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: WPE WebKit, Wayland, EGL, the CEF system libraries, sway
+        run: |
+          pacman -Syu --noconfirm --needed wpewebkit libsoup3 harfbuzz fontconfig wayland wayland-protocols libxkbcommon mesa libdrm \
+            pkgconf clang gcc python diffutils curl bzip2 sway grim cantarell-fonts noto-fonts \
+            nss atk at-spi2-core libcups libxcomposite libxdamage libxrandr alsa-lib libxcb libxext libxfixes expat > /dev/null
+          pkg-config --modversion wpe-webkit-2.0 wpe-platform-2.0 wpe-platform-headless-2.0 wayland-client egl glesv2
+
+      - name: Odin
+        run: |
+          curl -sSfL "$ODIN_URL" -o /tmp/odin.tar.gz
+          echo "$ODIN_SHA256  /tmp/odin.tar.gz" | sha256sum -c -
+          mkdir -p /opt/odin && tar -xzf /tmp/odin.tar.gz -C /opt/odin --strip-components=1
+          echo /opt/odin >> $GITHUB_PATH
+          echo ODIN_ROOT=/opt/odin >> $GITHUB_ENV
+
+      - name: CEF 156 minimal
+        run: |
+          curl -sSfL "https://cef-builds.spotifycdn.com/$CEF_TARBALL" -o /tmp/cef.tar.bz2
+          mkdir -p /tmp/cef && tar -xjf /tmp/cef.tar.bz2 -C /tmp/cef
+          echo "CEF_DIR=/tmp/cef/$CEF_DIRNAME" >> $GITHUB_ENV
+          ls -la "/tmp/cef/$CEF_DIRNAME/Release/libcef.so" "/tmp/cef/$CEF_DIRNAME/Resources"
+          # CEF resolves the ICU data file (icudtl.dat) from the libcef.so
+          # directory, not from resources_dir_path: copy the resource files
+          # next to libcef.so or CefInitialize dies with
+          # "Invalid file descriptor to ICU data received".
+          cp "/tmp/cef/$CEF_DIRNAME/Resources/icudtl.dat" "/tmp/cef/$CEF_DIRNAME/Resources/"*.pak "/tmp/cef/$CEF_DIRNAME/Release/"
+
+      - name: Build the real binary with CEF_DIR set
+        run: sh linux/build.sh release
+
+      - name: --cef-check headless (load, title, eval, frame)
+        run: |
+          export HOME=$(mktemp -d) IRIS_CEF_IGNORE_CERT_ERRORS=1
+          timeout 180 linux/iris --engine=cef --cef-check
+
+      # Iris with CEF under a headless compositor: it must open, lay
+      # out and draw its glass and a page. (CEF runs with no_sandbox
+      # in its own settings, so no WEBKIT_DISABLE_SANDBOX here.)
+      - name: Start Iris with CEF under sway
+        run: |
+          export XDG_RUNTIME_DIR=$(mktemp -d) WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 WLR_HEADLESS_OUTPUTS=1
+          chmod 700 $XDG_RUNTIME_DIR
+          printf 'output HEADLESS-1 resolution 1600x1000 scale 1\\ndefault_border none\\n' > /tmp/sway.conf
+          sway -c /tmp/sway.conf > /tmp/sway-cef.log 2>&1 &
+          for i in $(seq 1 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; sleep 0.2; done
+          export WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
+          export HOME=$(mktemp -d) LIBGL_ALWAYS_SOFTWARE=1 IRIS_CEF_IGNORE_CERT_ERRORS=1
+          linux/iris --engine=cef https://example.org > /tmp/iris-cef.log 2>&1 &
+          sleep 60
+          grim /tmp/iris-cef.png
+          pgrep -x iris > /dev/null || { echo "Iris with CEF did not stay open"; cat /tmp/iris-cef.log; exit 1; }
+          cat /tmp/iris-cef.log
+          python3 - <<'PY'
+          d = open('/tmp/iris-cef.png', 'rb').read()
+          assert len(set(d[1000:200000])) > 64, "the screen is empty"
+          print("drawn")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: iris-cef-screen
+          path: |
+            /tmp/iris-cef.png
+            /tmp/iris-cef.log
+            /tmp/sway-cef.log
+          if-no-files-found: ignore
