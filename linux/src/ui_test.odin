@@ -113,9 +113,8 @@ test_versions :: proc(t: ^testing.T) {
 	testing.expect(t, !version_newer("2.2.0", "2.2"))
 }
 
-// WebKit names its sandboxed web processes after the program name only when
-// it is a valid application ID; otherwise the Flatpak portal refuses to start
-// them and Iris closes (2.2.0 on Fedora).
+// The Flatpak portal only starts processes under a valid application ID
+// (2.2.0 on Fedora closed for want of one).
 @(test)
 test_app_id :: proc(t: ^testing.T) {
 	testing.expect(t, g_application_id_is_valid(APP_ID) != 0, "APP_ID is not a valid application ID")
@@ -174,7 +173,7 @@ test_new_window_choice :: proc(t: ^testing.T) {
 	// a link you click: a tab Iris loads itself (never a blank window)
 	testing.expect_value(t, new_window_choice("https://other.org/x", page, true, true, false, true), Window_Choice.Own_Tab)
 	testing.expect_value(t, new_window_choice("https://other.org/x", page, true, false, false, false), Window_Choice.Own_Tab)
-	// a script's window for the same site, a sign-in or a blank one to fill: WebKit's view
+	// a script's window for the same site, a sign-in or a blank one to fill: the engine's view
 	testing.expect_value(t, new_window_choice("https://www.example.com/pay", page, false, true, false, true), Window_Choice.Related)
 	testing.expect_value(t, new_window_choice("https://accounts.google.com/o", page, false, true, false, true), Window_Choice.Related)
 	testing.expect_value(t, new_window_choice("", page, false, true, false, true), Window_Choice.Related)
@@ -186,13 +185,6 @@ test_new_window_choice :: proc(t: ^testing.T) {
 	testing.expect_value(t, new_window_choice("https://other.org/", page, false, true, false, false), Window_Choice.Own_Tab)
 	// never a file of yours
 	testing.expect_value(t, new_window_choice("file:///etc/passwd", page, true, true, false, false), Window_Choice.Block)
-	// middle click and Ctrl+click (WPE: CEF tells these apart itself, as
-	// OnOpenURLFromTab's disposition)
-	when !ENGINE_CEF {
-		testing.expect(t, link_wants_new_tab(2, 0))
-		testing.expect(t, link_wants_new_tab(1, u32(WPE_MODIFIER_KEYBOARD_CONTROL)))
-		testing.expect(t, !link_wants_new_tab(1, 0))
-	}
 }
 
 @(test)

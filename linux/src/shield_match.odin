@@ -1,7 +1,6 @@
-// Shields for an engine without WebKit's content rules (CEF): the very
-// rules rules.odin makes for WebKit (converter_rules), kept in a compact
+// Shields' matcher: the rules rules.odin makes (converter_rules), kept in a compact
 // file (matcher_bytes: what starts take, without the lists read again) and
-// matched per request. Same order as WebKit: a block counts unless an
+// matched per request. Same order as content blockers use: a block counts unless an
 // "ignore-previous-rules" rule after it matches too. The whole-host blocks
 // are no rules here but host sets (rules.odin), looked up label by label;
 // the other rules are indexed so a request tries few of them: by the
@@ -436,7 +435,7 @@ matcher_free :: proc(m: ^Matcher) {
 }
 
 /// the host sets block this request: a whole host blocked, for any type a
-/// whole-host rule covers, and (unlike WebKit's rules) child frames too;
+/// whole-host rule covers, and (unlike a content blocker's rules) child frames too;
 /// lists is the sets of the lists every level above moderate reads, ultra
 /// the ultra level's own (its lists', Iris's own domains)
 @(private="file") set_blocks :: proc(m: ^Matcher, host: string, t: Req_Type, third, child: bool) -> (lists, ultra: bool) {
@@ -459,7 +458,7 @@ matcher_free :: proc(m: ^Matcher) {
 
 /// the page's own exception ("@@...$document": its document matches an
 /// ignore rule for documents): every request on the page counts it, as
-/// WebKit does. Worked out once a page (matcher_blocks' page_ignore); -1
+/// a content blocker does. Worked out once a page (matcher_blocks' page_ignore); -1
 /// for none.
 matcher_page_ignore :: proc(m: ^Matcher, page_url, page_host: string) -> i32 {
 	if m == nil do return -1

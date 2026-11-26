@@ -1,6 +1,6 @@
-// Shields in the CEF engine (IRIS_ENGINE=cef, see engine_api.odin): the
+// Shields in the CEF engine: the
 // lists shields.odin fetches, turned by rules.odin's converter into the
-// same rules as for WebKit (whole hosts as host sets), kept in a file that
+// same rules as everywhere (whole hosts as host sets), kept in a file that
 // later starts read, matched per request (shield_match.odin) in
 // OnBeforeResourceLoad on CEF's IO thread; hiding goes into each page as a
 // style sheet (cef_view.odin).
@@ -9,7 +9,6 @@ package iris
 import "base:intrinsics"
 
 // (not indented: the whole file is this engine's)
-when ENGINE_CEF {
 
 @(private="file") the_matcher: ^Matcher
 
@@ -76,4 +75,3 @@ req_type_of :: proc "contextless" (rt: i32) -> Req_Type {
 	return .other
 }
 
-} // when ENGINE_CEF

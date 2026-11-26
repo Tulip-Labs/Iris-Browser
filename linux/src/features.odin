@@ -183,7 +183,7 @@ https_is_upgrade :: proc(t: ^Tab, uri: string) -> bool {
 	return len(a) > 0 && a == z
 }
 
-/// the https try failed: WebKit shows why, and one click opens the http
+/// the https try failed: the engine shows why, and one click opens the http
 /// address you asked for (in the sandbox, as every http site)
 https_failed :: proc(t: ^Tab, uri: string) {
 	if !https_is_upgrade(t, uri) do return
@@ -219,7 +219,7 @@ clear_on_exit :: proc() {
 /// at start, before any network session: what sites kept last time goes
 clear_on_start :: proc() {
 	if !settings().clearOnExit do return
-	// WPE's sessions (web/) and CEF's profiles (cef/), on disk and in the cache
+	// the profiles (web/ from older builds, cef/), on disk and in the cache
 	for base in ([?]string{data_dir(), cache_dir()}) do for sub in ([?]string{"web", "cef"}) do os.remove_all(join({base, sub}, context.temp_allocator))
 	history_clear()
 	privacy_forget()

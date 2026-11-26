@@ -1,4 +1,4 @@
-// The CEF engine (IRIS_ENGINE=cef, see engine_api.odin): Chromium through
+// The CEF engine: Chromium through
 // CEF's C API (cef_capi.odin, cef_gen.odin), windowless. This file is the
 // engine itself: the process start (CEF runs this binary again for its
 // renderers), the message pump driven by Iris's GLib loop, the request
@@ -25,7 +25,6 @@ import "core:sys/linux"
 import "core:unicode/utf16"
 
 // (not indented: the whole file is this engine's)
-when ENGINE_CEF {
 
 /// CEF 156's frozen C API (cef_api_versions.h); the bindings are generated
 /// and checked with the same version (tools/cef_headers.sh)
@@ -633,7 +632,7 @@ warm_for_search :: proc() {}
 
 // ---------------------------------------------------------------- renderers: a closed tab's must die
 
-// Why: a closed tab must give its memory back (the WPE bug of 2.2.0-2.2.2,
+// Why: a closed tab must give its memory back (the leak of 2.2.0-2.2.2,
 // in CEF form, would be a renderer kept alive). How, without a request
 // context per tab (that would split cookies and sign-ins): every frame of
 // every browser, subframes too, tells the browser process which renderer
@@ -921,4 +920,3 @@ cef_download_update :: proc(item: ^cef_download_item_t, cb: ^cef_download_item_c
 	download_changed(d)
 }
 
-} // when ENGINE_CEF

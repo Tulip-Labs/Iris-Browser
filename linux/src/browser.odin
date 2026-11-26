@@ -422,15 +422,15 @@ Window_Choice :: enum u8 { Block, Own_Tab, Related }
 /// what a page asking for a new window gets: nothing (an ad, a file, a
 /// script's pop-up without your click), a tab of Iris's own that loads the
 /// address itself, or (a pop-up of the same site or a sign-in page, which
-/// talks to its opener) a view WebKit fills
+/// talks to its opener) a view the engine fills
 new_window_choice :: proc(u, page_url: string, link, gesture, sandboxed, shield: bool) -> Window_Choice {
 	host, _ := host_of(u, context.temp_allocator)
 	page_host, _ := host_of(page_url, context.temp_allocator)
 	// a page opens web addresses in new tabs, never your files or other
-	// programs (WebKit would refuse them in the page itself)
+	// programs (the engine would refuse them in the page itself)
 	if len(u) > 0 && !page_may_open(u, page_url) do return .Block
 	// a link you click is a plain new tab, loaded by Iris (its address is
-	// known, and nothing then depends on WebKit filling a window later),
+	// known, and nothing then depends on the engine filling a window later),
 	// even through a host Iris's list blocks: a webmail's links go through
 	// email click-trackers, and a password reset must open
 	if link && len(u) > 0 && u != "about:blank" do return .Own_Tab

@@ -21,7 +21,6 @@ import "core:os"
 import "core:strings"
 import "core:testing"
 
-when ENGINE_CEF {
 
 extensions_enabled :: proc() -> bool {
 	return env("IRIS_EXTENSIONS") == "1"
@@ -313,4 +312,3 @@ ext_error_text :: proc(code: i32) -> string {
 	testing.expect(t, strings.contains(c.search, "addons.mozilla.org") && strings.contains(c.search, "dark%20reader"))
 }
 
-}

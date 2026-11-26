@@ -1,9 +1,8 @@
-# Builds Iris for Linux (the WPE Flatpak bundle) and Android (the APK) and
-# publishes them as a GitHub release with one SHA256SUMS file. Runs when a
-# tag like v2.0.0 is pushed, or by hand from the Actions tab (give the tag).
-# This is the latest release, which the WPE build's and Android's update
-# checks read. Iris (Chromium), the CEF Flatpak, is not here: it has
-# releases of its own (release-cef.yml, tags cef-v*).
+# Builds Iris for Android (the APK) and publishes it as a GitHub release with
+# a SHA256SUMS file. Runs when a tag like v2.3.1 is pushed, or by hand from the
+# Actions tab (give the tag). This is the latest release, which Android's
+# update check reads. Iris (Chromium), the Linux Flatpak, is not here: it has
+# releases of its own (release-cef.yml, tags cef-v*, never latest).
 name: Release
 
 on:
@@ -27,30 +26,22 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - name: The tag is the version Iris carries
+      - name: The tag is the version Iris for Android carries
         run: sh packaging/check/versions.sh "$TAG"
       - name: The release
         run: |
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --target "$GITHUB_SHA" \
-              --title "Iris ${TAG#v}" --notes-file packaging/release-notes.md
+              --title "Iris ${TAG#v}" --notes-file packaging/release-notes-android.md
           fi
-
-  linux:
-    uses: ./.github/workflows/linux.yml
-    with:
-      only: wpe
-      release: true
 
   android:
     uses: ./.github/workflows/android.yml
     secrets: inherit
 
-  # publishes what was built: Linux always (the release waits for it);
-  # Android when its build passed, otherwise the notes say it follows
+  # publishes the APK
   publish:
-    needs: [create, linux, android]
-    if: always() && needs.create.result == 'success' && needs.linux.result == 'success'
+    needs: [create, android]
     runs-on: ubuntu-24.04
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -61,19 +52,11 @@ jobs:
         with:
           path: art
           merge-multiple: true
-      - name: The files (the Flatpak bundle, and the APK when it was built; Iris for Android finds its updates here)
+      - name: The APK (Iris for Android finds its updates here)
         run: |
           ls -l art
-          files="art/Iris-x86_64.flatpak"
-          if [ -f art/Iris-android.apk ]; then
-            files="$files art/Iris-android.apk"
-          fi
-          if [ ! -f art/Iris-android.apk ]; then
-            gh release view "$TAG" --json body --jq .body > notes.md
-            printf '\n\n**Android:** the APK of this version follows in the next release.\n' >> notes.md
-            gh release edit "$TAG" --notes-file notes.md
-          fi
-          gh release upload "$TAG" $files --clobber
+          [ -f art/Iris-android.apk ] || { echo "::error::the APK was not built"; exit 1; }
+          gh release upload "$TAG" art/Iris-android.apk --clobber
       - name: Checksums of every file
         run: |
           mkdir all && cd all

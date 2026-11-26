@@ -72,7 +72,7 @@ class Odin:
             self.structs[oname] = (cname, fields, os.path.realpath(os.path.dirname(path)))
         # constants named as C names them (checked by value)
         for m in re.finditer(r"^(\w+)\s*::\s*(?:\w+\()?\s*[-(0-9]", strip_comments(src), re.M):
-            if re.match(r"^(WPE|WEBKIT|G|DRM|XDG|WL|EGL|GL|XKB|SOUP|JSC)_[A-Z0-9_]+$", m.group(1)):
+            if re.match(r"^(G|DRM|XDG|WL|EGL|GL|XKB|SOUP)_[A-Z0-9_]+$", m.group(1)):
                 self.consts.append((m.group(1), os.path.realpath(os.path.dirname(path))))
         # foreign procedures
         for blk in re.finditer(r"foreign\s+\w+\s*\{(.*?)\n\}", src, re.S):
@@ -196,7 +196,7 @@ def c_functions(headers, cflags, wanted):
     funcs = {}
     for n in ast.get("inner", []):
         if n.get("kind") == "TypedefDecl":
-            # typedef enum {...} Name: GLib's and WebKit's flags and enums
+            # typedef enum {...} Name: GLib's flags and enums
             if '"kind": "EnumType"' in json.dumps(n.get("inner", [])):
                 TYPEDEFS[n["name"]] = "enum " + n["name"]
                 continue

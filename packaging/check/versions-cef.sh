@@ -1,7 +1,7 @@
 #!/bin/sh
 # The Chromium (CEF) build carries a version of its own (CEF_VERSION in
-# linux/src/version_cef.odin), apart from the WPE build and Android
-# (versions.sh); its release notes (packaging/release-notes-cef.md) must
+# linux/src/version_cef.odin), apart from Android
+# (versions.sh is Android's); its release notes (packaging/release-notes-cef.md) must
 # open with the same one. With a tag (cef-v2.4.0), it must match too.
 set -eu
 cd "$(dirname "$0")/../.."

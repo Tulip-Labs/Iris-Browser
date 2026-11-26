@@ -1,6 +1,6 @@
 // Iris's renderer, OpenGL ES 3 through EGL. Each frame:
 //   1. the scene: the backdrop behind everything (near colourless) and
-//      the page (its WPE frame, an EGL image of WebKit's own DMA-BUF: no
+//      the page (Chromium's frame, an EGL image of its own DMA-BUF: no
 //      copy), into a texture;
 //   2. a blurred copy of it, small (two halvings);
 //   3. the scene on screen, then Liquid Glass wherever the chrome asked for
@@ -504,54 +504,9 @@ texture_upload :: proc(t: ^Texture, data: rawptr, w, h, stride: i32) {
 	t.w, t.h, t.bgra, t.premultiplied = w, h, true, true
 }
 
-/// a DMA-BUF from WebKit, as an EGL image and a texture over it
-image_import :: proc(db: ^WPEBufferDMABuf) -> (Imported, bool) {
-	EGL_LINUX_DMA_BUF_EXT :: 0x3270
-	EGL_LINUX_DRM_FOURCC_EXT :: 0x3271
-	EGL_IMAGE_PRESERVED_KHR :: 0x30D2
-	FD := [4]i32{0x3272, 0x3275, 0x3278, 0x3440}
-	OFFSET := [4]i32{0x3273, 0x3276, 0x3279, 0x3441}
-	PITCH := [4]i32{0x3274, 0x3277, 0x327A, 0x3442}
-	MOD_LO := [4]i32{0x3443, 0x3445, 0x3447, 0x3449}
-	MOD_HI := [4]i32{0x3444, 0x3446, 0x3448, 0x344A}
-	if rnd.create_image == nil || rnd.target_texture == nil do return {}, false
-	b := cast(^WPEBuffer)db
-	w, h := wpe_buffer_get_width(b), wpe_buffer_get_height(b)
-	mod := wpe_buffer_dma_buf_get_modifier(db)
-	a: [64]i32
-	n := 0
-	push :: proc(a: ^[64]i32, n: ^int, k, v: i32) {
-		a[n^] = k
-		a[n^ + 1] = v
-		n^ += 2
-	}
-	push(&a, &n, egl.WIDTH, w)
-	push(&a, &n, egl.HEIGHT, h)
-	push(&a, &n, EGL_LINUX_DRM_FOURCC_EXT, i32(wpe_buffer_dma_buf_get_format(db)))
-	planes := min(wpe_buffer_dma_buf_get_n_planes(db), 4)
-	for i in 0 ..< planes {
-		push(&a, &n, FD[i], wpe_buffer_dma_buf_get_fd(db, i))
-		push(&a, &n, OFFSET[i], i32(wpe_buffer_dma_buf_get_offset(db, i)))
-		push(&a, &n, PITCH[i], i32(wpe_buffer_dma_buf_get_stride(db, i)))
-		if mod != DRM_FORMAT_MOD_INVALID {
-			push(&a, &n, MOD_LO[i], i32(u32(mod & 0xffffffff)))
-			push(&a, &n, MOD_HI[i], i32(u32(mod >> 32)))
-		}
-	}
-	push(&a, &n, EGL_IMAGE_PRESERVED_KHR, 1)
-	a[n] = egl.NONE
-	img := rnd.create_image(rnd.egl_display, egl.NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nil, &a[0])
-	if img == nil do return {}, false
-	t: u32
-	gl.GenTextures(1, &t)
-	gl.BindTexture(gl.TEXTURE_2D, t)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-	rnd.target_texture(gl.TEXTURE_2D, rawptr(img))
-	return {image = img, tex = t, w = w, h = h}, true
-}
+
+/// a buffer's format modifier that says there is none (drm_fourcc.h)
+DRM_FORMAT_MOD_INVALID :: u64(0x00ffffffffffffff)
 
 image_free :: proc(im: Imported) {
 	t := im.tex

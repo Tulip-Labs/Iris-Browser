@@ -19,7 +19,7 @@ Twice a day (`23 5,17 * * *` UTC) and on demand from the Actions tab:
    (Chromium)'s patch version and its release notes. It opens a pull request
    from `cef-update/<chromium version>`.
 4. A pull request made with the workflow's token starts no workflows, so the
-   workflow starts `linux.yml` (CEF only: Rust core tests, bindings checked
+   workflow starts `linux.yml` (Rust core tests, bindings checked
    against the new headers, ABI check, Odin tests, Flatpak build, headless
    Weston run) and `cef-smoke.yml` on that branch, and waits.
 5. Green and the same Chromium major: it merges (squash) and starts

@@ -17,7 +17,6 @@ import "core:strconv"
 import "core:strings"
 import "core:testing"
 
-when ENGINE_CEF {
 
 WIDEVINE_LIB :: "libwidevinecdm.so"
 WIDEVINE_HINT :: "latest-component-updated-widevine-cdm"
@@ -204,4 +203,3 @@ widevine_status :: proc(root: string) -> string {
 	testing.expect_value(t, widevine_stage(root), "4.10.1.0")
 }
 
-}

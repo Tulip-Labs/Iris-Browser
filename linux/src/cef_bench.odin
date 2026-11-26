@@ -1,4 +1,4 @@
-// A benchmark run for CI (IRIS_ENGINE=cef): with IRIS_CEF_BENCH_URL set,
+// A benchmark run for CI: with IRIS_CEF_BENCH_URL set,
 // Iris opens that address in a tab of its own, asks the page every few
 // seconds for its score (IRIS_CEF_BENCH_JS, an expression that is empty
 // until there is one; Speedometer 3's #result-number by default), prints
@@ -15,7 +15,6 @@ import "core:strconv"
 import "core:strings"
 
 // (not indented: the whole file is this engine's)
-when ENGINE_CEF {
 
 @(private="file") BENCH_JS_DEFAULT :: `(() => { const s = document.getElementById('summary'), r = document.getElementById('result-number'); if (!s || !r) return ''; const v = (r.textContent || '').trim(); return v && getComputedStyle(s).display !== 'none' && s.offsetParent !== null ? v : ''; })()`
 
@@ -100,4 +99,3 @@ cef_bench_start :: proc() {
 	browser_quit()
 }
 
-} // when ENGINE_CEF

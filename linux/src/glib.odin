@@ -1,6 +1,6 @@
-// GLib, GObject and GIO: the parts Iris uses (WebKit's API is GObject, and
-// its main loop is GLib's). Declared by hand; abi/check.sh holds every
-// function and marked struct against the real headers.
+// GLib, GObject and GIO: the parts Iris uses (its main loop is GLib's).
+// Declared by hand; abi/check.sh holds every function and marked struct against
+// the real headers.
 package iris
 
 import "base:runtime"

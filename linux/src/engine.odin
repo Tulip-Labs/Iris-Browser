@@ -1,6 +1,6 @@
 // What both engines share around the pages: the containers' list, the
 // scripts pages get, and the downloads' list (the engines' own parts:
-// wpe_engine.odin, cef_engine.odin).
+// cef_engine.odin).
 package iris
 
 import "core:fmt"
@@ -167,7 +167,7 @@ container_remove :: proc(id: string) {
 // ---------------------------------------------------------------- downloads
 
 Download :: struct {
-	/// the engine's handle on it (wpe_engine.odin, cef_engine.odin)
+	/// the engine's handle on it (cef_engine.odin)
 	using engine: Download_Engine,
 	id:        int,
 	name:      string,

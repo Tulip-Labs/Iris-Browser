@@ -1,7 +1,7 @@
 # CEF smoke test: the minimal Odin program that inits CEF (no sandbox,
 # windowless off-screen rendering, external message pump), opens
 # https://example.org and dumps one OnPaint frame. It downloads the pinned
-# CEF 156 minimal tarball; it does NOT build WPE WebKit or the Iris Flatpak.
+# CEF 156 minimal tarball; it does NOT build the Iris Flatpak.
 name: CEF smoke test
 
 on:

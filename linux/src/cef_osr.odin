@@ -1,8 +1,8 @@
-// The CEF engine's GPU frames (IRIS_ENGINE=cef, see engine_api.odin):
+// The CEF engine's GPU frames:
 // Chromium composites on the GPU, and each frame comes to Iris as a
 // DMA-BUF (OnAcceleratedPaint, CefWindowInfo.shared_texture_enabled): it is
 // imported into Iris's EGL (EGL_EXT_image_dma_buf_import, as render.odin
-// does for WPE) and copied, on the GPU, into the page's own texture while
+// does for the page) and copied, on the GPU, into the page's own texture while
 // the callback runs (CEF takes the buffer back to its pool when it
 // returns). No pixel crosses the CPU.
 //
@@ -19,7 +19,6 @@ import "vendor:egl"
 import gl "vendor:OpenGL"
 
 // (not indented: the whole file is this engine's)
-when ENGINE_CEF {
 
 // CEF 156's include/internal/cef_types_linux.h and cef_types_osr.h (plain C
 // structs, not in the generated C API bindings: their sizes and offsets are
@@ -267,4 +266,3 @@ page_free_gpu :: proc(p: ^Page) {
 	if p.popup_tex.owned do texture_free(&p.popup_tex)
 }
 
-} // when ENGINE_CEF

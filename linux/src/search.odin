@@ -340,7 +340,7 @@ untrusted :: proc(url: string) -> bool {
 }
 
 /// what a page may open in a new tab of its own: a web address, never a
-/// file of yours (WebKit keeps web pages away from file: addresses, and a
+/// file of yours (a browser keeps web pages away from file: addresses, and a
 /// tab Iris opens for them must too) unless the page is a local file itself
 page_may_open :: proc(url: string, from: string) -> bool {
 	if url == "about:blank" do return true
@@ -632,7 +632,7 @@ is_sign_in :: proc(h: string) -> bool {
 }
 
 @(test) test_url_edges :: proc(t: ^testing.T) {
-	// a backslash ends the host, as WebKit reads it: no spoofed AI Mode
+	// a backslash ends the host, as browsers read it: no spoofed AI Mode
 	u, _ := url_parse("https://evil.com\\@www.google.com/search?udm=50&q=hi")
 	testing.expect_value(t, u.host, "evil.com")
 	testing.expect(t, !is_ai_mode("https://evil.com\\@www.google.com/search?udm=50&q=hi"))
@@ -668,7 +668,7 @@ is_sign_in :: proc(h: string) -> bool {
 	testing.expect(t, !untrusted("http://192.168.1.1/"))
 	testing.expect(t, !untrusted("http://printer.local/"))
 	testing.expect(t, !untrusted("about:blank"))
-	// an address in any of the forms WebKit reads as IPv4 is an address
+	// an address in any of the forms browsers read as IPv4 is an address
 	testing.expect(t, untrusted("https://3405803783/"))
 	testing.expect(t, untrusted("https://0xcb.0.113.7/"))
 	testing.expect(t, untrusted("https://203.0.113.7./"))

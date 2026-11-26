@@ -15,7 +15,6 @@ import "core:testing"
 import "core:strings"
 import "core:time"
 
-when ENGINE_CEF {
 
 @(private="file") the_engine: ^Adblock
 
@@ -186,4 +185,3 @@ adblock_resources_refresh :: proc() {
 	testing.expect(t, adblock_build([]string{"/nonexistent/list"}) == nil)
 }
 
-}

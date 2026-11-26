@@ -1,8 +1,6 @@
-// Iris for Linux: Odin, Wayland, EGL/GLES and a page engine (WPE WebKit,
-// or CEF when built with -define:IRIS_ENGINE=cef). No GTK, no X11.
+// Iris for Linux: Odin, Wayland, EGL/GLES and CEF (Chromium). No GTK, no X11.
 //
-// One loop runs everything: GLib's (WebKit needs it; CEF's work is pumped
-// from it). The compositor's
+// One loop runs everything: GLib's (CEF's work is pumped from it). The compositor's
 // socket and the key-repeat timer are two of its sources, and just before
 // GLib sleeps, Iris reads what the compositor already sent and sends what
 // it has written (its poll function wraps GLib's).
@@ -54,9 +52,6 @@ foreign glib {
 USAGE :: `Iris %s: a browser made of glass.
 
   iris [ADDRESS...]                open Iris (with these pages)
-  iris --shield-rules LEVEL DIR OUT
-                                   the content rules a Shields level makes from
-                                   the lists in DIR, written to OUT (for checks)
   iris --version
 `
 
@@ -75,17 +70,9 @@ main :: proc() {
 			return
 		case "--render-check":
 			os.exit(render_check(len(args) > 1 ? args[1] : "iris-render.ppm"))
-		case "--shield-rules":
-			if len(args) != 4 {
-				fmt.eprintf(USAGE, BUILD_VERSION)
-				os.exit(2)
-			}
-			os.exit(shield_rules_cli(args[1], args[2], args[3]))
 		}
 	}
-	// WebKit names its sandboxed web processes after this (WTF::applicationID),
-	// and the Flatpak portal only lets them start under the app's own ID:
-	// "iris" is not a valid ID, so WebKit made one up and the portal refused it.
+	// the window's app_id and the Flatpak portal's name for this program
 	g_set_prgname(APP_ID)
 	g_set_application_name("Iris")
 	main_loop = g_main_loop_new(nil, 0)
@@ -103,7 +90,7 @@ main :: proc() {
 	clear_on_start()
 	containers_ensure()
 	if !engine_start() {
-		fmt.eprintln("Iris could not start its page engine (", IRIS_ENGINE, ")")
+		fmt.eprintln("Iris could not start its page engine (Chromium)")
 		os.exit(1)
 	}
 

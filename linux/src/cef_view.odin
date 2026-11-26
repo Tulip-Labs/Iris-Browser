@@ -1,4 +1,4 @@
-// The CEF engine's tab view (IRIS_ENGINE=cef, see engine_api.odin): one
+// The CEF engine's tab view: one
 // windowless CefBrowser per tab and every handler CEF calls for it.
 //
 // A View is Iris's object for one browser: the client and all its
@@ -20,7 +20,6 @@ import "core:strings"
 import "core:time"
 
 // (not indented: the whole file is this engine's)
-when ENGINE_CEF {
 
 Tab_View :: struct {
 	cv: ^View,
@@ -875,7 +874,7 @@ cef_copy_intent :: proc(t: ^Tab) {
 	yt := h == "youtube.com" || strings.has_suffix(h, ".youtube.com") || strings.has_suffix(h, ".youtube-nocookie.com")
 	if yt {
 		run_in(f, YOUTUBE)
-		// no LIGHT_VIDEO here: that script hides VP9/AV1 for the WPE engine,
+		// no LIGHT_VIDEO here: that script hid VP9/AV1 for an engine that had H.264,
 		// which has H.264. This Chromium has no H.264/AAC, so hiding the
 		// codecs it does have left YouTube nothing to play ("your browser
 		// can't play this video")
@@ -909,7 +908,7 @@ cef_copy_intent :: proc(t: ^Tab) {
 // ---------------------------------------------------------------- pop-ups and new tabs
 
 /// a page asks for a new window (OnBeforePopup) or a link wants a tab of its
-/// own (OnOpenURLFromTab): the same choice as the WPE engine's
+/// own (OnOpenURLFromTab): the same choice as for any pop-up
 /// (new_window_choice). A link, or a page's own tab: a tab Iris makes
 /// itself with the address. A pop-up that talks to its opener (a sign-in,
 /// the same site's, a blank one the page writes into: Google, GitHub and
@@ -1856,4 +1855,3 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 	}
 }
 
-} // when ENGINE_CEF
