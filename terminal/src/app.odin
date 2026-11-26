@@ -20,6 +20,8 @@ Options :: struct {
 	dump_state:  string,
 	dump_frame:  string,
 	dump_raw:    string,
+	input:       string, // typed into the program (without a window)
+	input_after: int,
 	no_window:   bool,
 	stats:       bool,
 	cols, rows:  int,

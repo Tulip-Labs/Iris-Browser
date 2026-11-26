@@ -31,7 +31,7 @@ usage: iris-terminal [options] [-e PROGRAM ARGS...]
   --version, --help
 
 for tests: --exec CMD, --dump-screen FILE, --dump-state FILE, --dump-frame FILE,
-           --dump-raw FILE (no window: what the program wrote), --no-window, --stats, --timeout MS, --debug
+           --dump-raw FILE, --input TEXT, --input-after MS (without a window), --no-window, --stats, --timeout MS, --debug
 `
 
 MESLO_URL :: "https://github.com/romkatv/powerlevel10k-media/raw/master/"
@@ -68,6 +68,11 @@ main :: proc() {
 		case "--dump-state": opt.dump_state = next(args, &i, arg)
 		case "--dump-frame": opt.dump_frame = next(args, &i, arg)
 		case "--dump-raw": opt.dump_raw = next(args, &i, arg)
+		case "--input": opt.input = next(args, &i, arg)
+		case "--input-after":
+			v, ok := strconv.parse_int(next(args, &i, arg))
+			if !ok do die(2, "iris-terminal: --input-after wants milliseconds")
+			opt.input_after = v
 		case "--no-window": opt.no_window = true
 		case "--stats": opt.stats = true
 		case "--debug": debug_on = true
@@ -229,7 +234,7 @@ run_headless :: proc(opt: Options) -> int {
 	h.capture = opt.dump_raw != ""
 	start := time.now()
 	timeout := opt.timeout_ms > 0 ? opt.timeout_ms : 30000
-	status := term.headless_run(&h, timeout)
+	status := term.headless_run(&h, timeout, opt.input, opt.input_after > 0 ? opt.input_after : 1500)
 	ms := i64(time.duration_milliseconds(time.since(start)))
 	write_dumps(&h.term, opt)
 	if opt.dump_raw != "" do _ = os.write_entire_file(opt.dump_raw, h.raw[:])

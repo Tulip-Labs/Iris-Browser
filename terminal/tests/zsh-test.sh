@@ -26,17 +26,14 @@ echo "setup: parses, one block, backup kept"
 # a repository and a folder with a space and a non-ASCII name
 mkdir -p "$HOME/proj one/é"
 git init -q -b main "$HOME/proj one" 2>/dev/null || { mkdir -p "$HOME/proj one/.git"; echo 'ref: refs/heads/main' > "$HOME/proj one/.git/HEAD"; }
-cat > "$out/zsh-input.txt" <<IN
-cd "$HOME/proj one/é"
-echo SENTINEL_\$((1+2))
-false
-exit
-IN
+# zsh reads the keyboard (the pty), not stdin: the commands are typed
+input=$(printf 'cd "%s"\recho SENTINEL_$((1+2))\rfalse\rexit\r' "$HOME/proj one/é")
 # (a plain zsh first: is the harness itself fine?)
-"$bin" --no-window --geometry 100x24 --timeout 10000 --exec "zsh -f -i < $out/zsh-input.txt" \
-	--dump-screen "$out/zsh-plain.txt" --dump-raw "$out/zsh-plain.raw" || { echo "--- plain zsh -f -i:"; cat -v "$out/zsh-plain.raw"; fail "even zsh -f -i < file did not finish"; }
-"$bin" --no-window --geometry 100x24 --timeout 10000 \
-	--exec "CONTAINER_ID=testbox zsh -i < $out/zsh-input.txt" --dump-raw "$out/zsh.raw" \
+"$bin" --no-window --geometry 100x24 --timeout 20000 --exec "zsh -f -i" --input "$input" --input-after 1000 \
+	--dump-screen "$out/zsh-plain.txt" --dump-raw "$out/zsh-plain.raw" || { echo "--- plain zsh -f -i:"; cat -v "$out/zsh-plain.raw"; fail "even zsh -f -i did not finish"; }
+grep -q 'SENTINEL_3' "$out/zsh-plain.txt" || { cat "$out/zsh-plain.txt"; fail "a plain zsh did not run the typed command"; }
+"$bin" --no-window --geometry 100x24 --timeout 20000 \
+	--exec "CONTAINER_ID=testbox zsh -i" --input "$input" --input-after 2500 --dump-raw "$out/zsh.raw" \
 	--dump-screen "$out/zsh-screen.txt" --dump-state "$out/zsh-state.txt" || { echo "--- raw:"; cat -v "$out/zsh.raw"; echo "--- screen:"; cat "$out/zsh-screen.txt" || true; fail "zsh did not run"; }
 cat "$out/zsh-screen.txt"
 grep -q 'SENTINEL_3' "$out/zsh-screen.txt" || fail "the command did not run"
