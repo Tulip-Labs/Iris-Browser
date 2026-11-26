@@ -86,6 +86,7 @@ echo "Ctrl+Shift+V pasted the clipboard"
 
 echo "== 3. idle CPU"
 "$bin" --geometry 80x24 --exec "sleep 14" --timeout 30000 > "$out/run3.log" 2>&1 &
+bgpid=$!
 sleep 4
 pid=$(pgrep -x iris-terminal | head -1)
 [ -n "$pid" ] || fail "no iris-terminal running"
@@ -93,8 +94,8 @@ grep -E 'VmRSS|VmHWM' /proc/$pid/status
 t0=$(awk '{print $14+$15}' /proc/$pid/stat); sleep 5; t1=$(awk '{print $14+$15}' /proc/$pid/stat)
 echo "CPU ticks used in 5 idle seconds: $((t1 - t0))"
 [ $((t1 - t0)) -le 1 ] || fail "the idle terminal used CPU"
-pkill -x iris-terminal || true
-wait || true
+kill $bgpid 2>/dev/null || true
+wait $bgpid 2>/dev/null || true
 
 echo "== 4. throughput"
 yes 'The quick brown fox jumps over the lazy dog 0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ' | head -c 52428800 > "$out/big.txt"
