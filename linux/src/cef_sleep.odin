@@ -149,7 +149,7 @@ SLEEP_WATCH_JS :: `(() => {
 @(private="file") devtools :: proc(v: ^View, method, params: string) -> bool {
 	if v == nil || v.host == nil do return false
 	devtools_seq += 1
-	msg := fmt.tprintf(`{"id":%d,"method":"%s","params":%s}`, devtools_seq, method, params)
+	msg := fmt.tprintf(`{{"id":%d,"method":"%s","params":%s}}`, devtools_seq, method, params)
 	return v.host.send_dev_tools_message(v.host, raw_data(msg), uint(len(msg))) != 0
 }
 

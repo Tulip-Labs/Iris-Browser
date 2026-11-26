@@ -514,14 +514,14 @@ PASTE_TIMEOUT_S :: 1.0
 /// typed in by the input method path
 @(private="file") paste_into_page :: proc(t: ^Tab, text: string) {
 	if len(text) == 0 || t.cv == nil do return
-	js := fmt.tprintf(`(() => {
+	js := fmt.tprintf(`(() => {{
   const text = %s;
   const el = document.activeElement || document.body;
   let ev;
-  try { const dt = new DataTransfer(); dt.setData('text/plain', text); ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }); } catch (e) { ev = null; }
+  try {{ const dt = new DataTransfer(); dt.setData('text/plain', text); ev = new ClipboardEvent('paste', {{ clipboardData: dt, bubbles: true, cancelable: true }}); }} catch (e) {{ ev = null; }}
   if (ev && !el.dispatchEvent(ev)) return '1';
   return document.execCommand('insertText', false, text) ? '1' : '0';
-})()`, json_str(text, context.temp_allocator))
+}})()`, json_str(text, context.temp_allocator))
 	run_job(t, edit_frame(t.cv), js, proc(t: ^Tab, result: string, data: rawptr) {
 		s := cast(^string)data
 		if result != "1" && t.page != nil do page_commit_text(t.page, s^)
@@ -717,7 +717,7 @@ run_job :: proc(t: ^Tab, f: ^cef_frame_t, js: string, done: proc(t: ^Tab, result
 	tk := token()
 	append(&jobs, Job{t.id, t.cv, tk, done, plain, data, failed, now_s() + timeout})
 	tag := json_str(fmt.tprintf("%s%s:", ANSWER, tk), context.temp_allocator)
-	run_in(f, fmt.tprintf("(() => { %s\n  const tag = %s; let p; try { p = Promise.resolve((() => (%s))()); } catch (e) { p = Promise.resolve(''); } p.then(r => String(r), () => '').then(r => { say(tag + r); say_done(); }); })();", SAY_JS, tag, js))
+	run_in(f, fmt.tprintf("(() => {{ %s\n  const tag = %s; let p; try {{ p = Promise.resolve((() => (%s))()); }} catch (e) {{ p = Promise.resolve(''); }} p.then(r => String(r), () => '').then(r => {{ say(tag + r); say_done(); }}); }})();", SAY_JS, tag, js))
 	jobs_prune()
 }
 
@@ -756,13 +756,13 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 /// put to sleep)
 @(private="file") media_watch :: proc(v: ^View) -> string {
 	tag := json_str(fmt.tprintf("%s%s:", MEDIA, watch_token(v)), context.temp_allocator)
-	return fmt.tprintf(`(() => {
+	return fmt.tprintf(`(() => {{
   if (window.__irisMedia) return; window.__irisMedia = true;
   %s
   const tag = %s;
-  const tell = () => { const on = [...document.querySelectorAll('video,audio')].some(m => !m.paused && !m.ended && !m.muted); say(tag + (on ? '1' : '0')); };
+  const tell = () => {{ const on = [...document.querySelectorAll('video,audio')].some(m => !m.paused && !m.ended && !m.muted); say(tag + (on ? '1' : '0')); }};
   for (const e of ['play', 'playing', 'pause', 'ended', 'volumechange', 'emptied']) document.addEventListener(e, tell, true);
-})();`, SAY_JS, tag)
+}})();`, SAY_JS, tag)
 }
 
 /// what a copy or cut put on Chromium's clipboard, told to Iris: the text
@@ -773,22 +773,22 @@ tab_run :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string)) {
 /// takes it only right after it saw you copy (COPY_INTENT_S).
 @(private="file") copy_watch :: proc(v: ^View) -> string {
 	tag := json_str(fmt.tprintf("%s%s:", COPY, watch_token(v)), context.temp_allocator)
-	return fmt.tprintf(`(() => {
+	return fmt.tprintf(`(() => {{
   if (window.__irisCopy) return; window.__irisCopy = true;
   %s
   const tag = %s;
-  const sel = () => { const e = document.activeElement; if (e && (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') && typeof e.selectionStart === 'number') return e.value.substring(e.selectionStart, e.selectionEnd); const s = window.getSelection(); return s ? s.toString() : ''; };
-  const tell = t => { if (t) say(tag + t); };
-  const watch = ev => {
+  const sel = () => {{ const e = document.activeElement; if (e && (e.tagName === 'INPUT' || e.tagName === 'TEXTAREA') && typeof e.selectionStart === 'number') return e.value.substring(e.selectionStart, e.selectionEnd); const s = window.getSelection(); return s ? s.toString() : ''; }};
+  const tell = t => {{ if (t) say(tag + t); }};
+  const watch = ev => {{
     if (!ev.isTrusted) return;
     const text = sel(); let told = false;
-    const late = e => { if (e !== ev) return; told = true; window.removeEventListener(ev.type, late, false); tell(ev.defaultPrevented ? (ev.clipboardData ? ev.clipboardData.getData('text/plain') : '') : text); };
+    const late = e => {{ if (e !== ev) return; told = true; window.removeEventListener(ev.type, late, false); tell(ev.defaultPrevented ? (ev.clipboardData ? ev.clipboardData.getData('text/plain') : '') : text); }};
     window.addEventListener(ev.type, late, false);
-    setTimeout(() => { window.removeEventListener(ev.type, late, false); if (!told && !ev.defaultPrevented) tell(text); }, 0);
-  };
+    setTimeout(() => {{ window.removeEventListener(ev.type, late, false); if (!told && !ev.defaultPrevented) tell(text); }}, 0);
+  }};
   window.addEventListener('copy', watch, true);
   window.addEventListener('cut', watch, true);
-})();`, SAY_JS, tag)
+}})();`, SAY_JS, tag)
 }
 
 /// Iris saw you copy or cut in this tab's page (a key, or the menu): the
@@ -870,7 +870,7 @@ cef_copy_intent :: proc(t: ^Tab) {
 	h, _ := host_of(u, context.temp_allocator)
 	css := matcher_css(cef_matcher(), u, h, context.temp_allocator)
 	if len(css) == 0 do return
-	run_in(f, fmt.tprintf(`(() => { const add = () => { const s = document.createElement('style'); s.textContent = %s; (document.head || document.documentElement).appendChild(s); }; if (document.documentElement) add(); else document.addEventListener('readystatechange', add, { once: true }); })();`, json_str(css, context.temp_allocator)))
+	run_in(f, fmt.tprintf(`(() => {{ const add = () => {{ const s = document.createElement('style'); s.textContent = %s; (document.head || document.documentElement).appendChild(s); }}; if (document.documentElement) add(); else document.addEventListener('readystatechange', add, {{ once: true }}); }})();`, json_str(css, context.temp_allocator)))
 }
 
 // ---------------------------------------------------------------- pop-ups and new tabs
