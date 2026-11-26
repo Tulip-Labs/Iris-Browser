@@ -1,3 +1,17 @@
+Iris (Chromium) 2.6.1: cooler and smoother pages, a safer download, and a log for what went wrong.
+
+- **One GPU path, with a ladder down.** Chromium now runs on one GPU stack only (ANGLE on OpenGL ES through EGL, no Vulkan, no Dawn), which removes the "`--ozone-platform=wayland` is not compatible with Vulkan" and Dawn warnings and their start-up work. Frames go GPU (shared DMA-BUF), then GPU compositing with CPU frames, then software; when a step fails, Iris says so in the terminal, remembers it in `<data>/cef/gpu-level` for the next start (delete it, or start with `IRIS_CEF_GPU=1`, to try the GPU again), and goes on. `IRIS_CEF_GPU=readback` picks the middle step.
+- **Less CPU.** A tab out of sight draws one frame a second; CPU frames (the fallback) run at 30 a second, not 60; pages are laid out and drawn on whole device pixels (no blur on 1.25x or 1.5x screens). The Shields engine's cache is read on a thread, not before the first page.
+- **Brave's engine alone.** Once adblock-rust is built, it is the only filter on requests and cosmetic rules; Iris's own matcher only answers until it is there.
+- **Downloads.** A download's callbacks are checked and released as CEF requires, and Iris no longer ends on a stray `SIGPIPE`.
+- **`crash.log`.** `<data>/crash.log` notes every way Iris ends (a signal with its backtrace, the window closing, the engine not starting) and each download start. `iris --perf` (or `IRIS_PERF=1`) prints, every 5 s, frames per second, the GPU or CPU path, Iris's CPU use and Chromium's processes with the busiest one.
+- Not verified on real hardware here: the effect of the GPU step on a given laptop. Please send the terminal output of `iris --perf` and `crash.log` if it still runs hot.
+
+**Install**
+- `flatpak install --user --reinstall Iris-Cef-x86_64.flatpak`
+
+---
+
 Iris (Chromium) 2.6.0: Brave's ad-block engine, Mozilla add-on installer (preview), stricter privacy.
 
 - **Brave's engine.** Ad and tracker blocking now runs on adblock-rust, the engine Brave's Shields use, from Iris's own Rust library (`core/`). On top of what blocked before it handles redirect stand-ins (a harmless replacement for a tracker's script), `$removeparam`, uBlock's cosmetic filters and scriptlets (resources refreshed every four days, lists as before). Until it is built after a list update, the previous matcher answers.

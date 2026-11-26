@@ -168,9 +168,29 @@ RULES_REV :: 4
 	if !ok do return false
 	m := matcher_load(data, cef_cache_key(l))
 	if m == nil do return false
-	cef_adblock_install(adblock_cache_load(l, adblock_key(cef_cache_key(l))))
 	cef_shields_install(m)
 	shields.have = l
+	// Brave's engine from its cache file, on a thread (deserializing a few
+	// hundred thousand rules takes a while: never on the UI thread, never
+	// before the first page); until it is in, the matcher answers
+	Load :: struct { l: Level, key: string, e: ^Adblock }
+	job := new(Load)
+	job.l, job.key = l, adblock_key(cef_cache_key(l), context.allocator)
+	thread.create_and_start_with_poly_data(job, proc(job: ^Load) {
+		job.e = adblock_cache_load(job.l, job.key)
+		runtime.default_temp_allocator_destroy(&runtime.global_default_temp_allocator_data)
+		idle(proc(d: rawptr) {
+			job := cast(^Load)d
+			defer { delete(job.key); free(job) }
+			// a level changed meanwhile, or a newer build is in: this one is not wanted
+			if job.e != nil && job.l == shield_level() && cef_adblock() == nil {
+				cef_adblock_install(job.e)
+				if shields.installed != nil do shields.installed()
+			} else if job.e != nil {
+				iris_adblock_destroy(job.e)
+			}
+		}, job)
+	}, init_context = main_context, self_cleanup = true)
 	log.debugf("shields: the %v matcher read in %.0f ms", l, time.duration_milliseconds(time.since(start)))
 	return true
 }

@@ -185,19 +185,54 @@ engine_subprocess :: proc() -> (code: int, is_sub: bool) {
 	return 0, false
 }
 
-/// how Chromium draws: on the GPU, its frames shared with Iris as
-/// DMA-BUFs (the default where there is a Wayland display and a GPU render
-/// node), or in software (IRIS_CEF_GPU=0, or neither is there)
-@(private="file") gpu_wanted :: proc() -> bool {
+/// how Chromium draws, best first (the ladder; a step down is remembered in
+/// <data>/cef/gpu-level for the next starts, and said on stderr):
+///   0  the GPU, its frames shared with Iris as DMA-BUFs (no pixel on the CPU)
+///   1  the GPU composites and rasterizes, frames read back to the CPU (OnPaint)
+///   2  software: SwiftShader on the headless platform, CPU frames
+/// IRIS_CEF_GPU picks one: 1 or 0-as-the-first, "readback" (step 1), "0" (step 2)
+GPU_LEVEL_SHARED :: 0
+GPU_LEVEL_READBACK :: 1
+GPU_LEVEL_SOFTWARE :: 2
+
+/// the step this run of Chromium was started at (its switches cannot change
+/// while it runs)
+cef_gpu_level: int
+@(private="file") gpu_level_reason: string
+
+@(private="file") gpu_level_start :: proc() -> int {
 	switch env("IRIS_CEF_GPU") {
-	case "0": return false
-	case "1": return true
+	case "0":
+		gpu_level_reason = "IRIS_CEF_GPU=0"
+		return GPU_LEVEL_SOFTWARE
+	case "1":
+		gpu_level_reason = "IRIS_CEF_GPU=1"
+		return GPU_LEVEL_SHARED
+	case "readback":
+		gpu_level_reason = "IRIS_CEF_GPU=readback"
+		return GPU_LEVEL_READBACK
 	}
-	// GPU frames could not be imported on this machine before: software
-	// from the start (IRIS_CEF_GPU=1 tries again)
-	if os.exists(gpu_failed_mark()) do return false
-	if len(env("WAYLAND_DISPLAY")) == 0 && !os.exists(join({env("XDG_RUNTIME_DIR"), "wayland-0"}, context.temp_allocator)) do return false
-	return has_render_node()
+	if len(env("WAYLAND_DISPLAY")) == 0 && !os.exists(join({env("XDG_RUNTIME_DIR"), "wayland-0"}, context.temp_allocator)) {
+		gpu_level_reason = "no Wayland display"
+		return GPU_LEVEL_SOFTWARE
+	}
+	if !has_render_node() {
+		gpu_level_reason = "no GPU render node in /dev/dri (is the Flatpak run with --device=dri?)"
+		return GPU_LEVEL_SOFTWARE
+	}
+	// a step down an earlier run made: kept until the mark is deleted
+	if d, ok := read_file(gpu_level_mark(), context.temp_allocator); ok {
+		s := strings.trim_space(string(d))
+		if s == "1" {
+			gpu_level_reason = "an earlier run could not use shared GPU frames"
+			return GPU_LEVEL_READBACK
+		}
+		if s == "2" {
+			gpu_level_reason = "an earlier run could not use the GPU"
+			return GPU_LEVEL_SOFTWARE
+		}
+	}
+	return GPU_LEVEL_SHARED
 }
 
 @(private="file") has_render_node :: proc() -> bool {
@@ -205,18 +240,30 @@ engine_subprocess :: proc() -> (code: int, is_sub: bool) {
 	return false
 }
 
-@(private="file") gpu_failed_mark :: proc() -> string {
-	return join({data_dir(), "cef", "gpu-frames-failed"}, context.temp_allocator)
+@(private="file") gpu_level_mark :: proc() -> string {
+	return join({data_dir(), "cef", "gpu-level"}, context.temp_allocator)
+}
+
+@(private="file") gpu_level_name :: proc(l: int) -> string {
+	switch l {
+	case GPU_LEVEL_SHARED: return "GPU, shared DMA-BUF frames"
+	case GPU_LEVEL_READBACK: return "GPU compositing, CPU frames (read back)"
+	}
+	return "software (SwiftShader), CPU frames"
 }
 
 /// Chromium runs on the Wayland platform (GPU mode): its own clipboard is
 /// not usable (cef_view.odin pastes into pages directly)
 cef_chromium_wayland: bool
 
-/// GPU frames could not be imported here: remembered for the next starts
+/// GPU frames could not be used here: the next start goes one step down the
+/// ladder (cef_gpu_level), and says so
 cef_gpu_import_failed :: proc() {
+	next := min(max(cef_gpu_level, GPU_LEVEL_SHARED) + 1, GPU_LEVEL_SOFTWARE)
 	make_dirs(join({data_dir(), "cef"}, context.temp_allocator))
-	write_file(gpu_failed_mark(), transmute([]u8)string("GPU frames (DMA-BUF) could not be imported into Iris's EGL on this machine; delete this file or start with IRIS_CEF_GPU=1 to try again\n"))
+	write_file(gpu_level_mark(), transmute([]u8)string(next == GPU_LEVEL_READBACK ? "1\n" : "2\n"))
+	fmt.eprintfln("iris: GPU path failed at step %d (%s): the next start uses step %d (%s); delete %s or start with IRIS_CEF_GPU=1 to try the GPU again", cef_gpu_level, gpu_level_name(cef_gpu_level), next, gpu_level_name(next), gpu_level_mark())
+	cef_diag_log("gpu path failed at step %d, next start: step %d", cef_gpu_level, next)
 }
 
 /// the switches: a renderer per site (a closed tab's renderer is its own,
@@ -227,8 +274,12 @@ cef_gpu_import_failed :: proc() {
 /// (space separated); IRIS_CEF_OZONE picks Chromium's platform.
 cef_switches :: proc() -> []string {
 	out: [dynamic]string
-	gpu := gpu_wanted()
-	cef_gpu_frames = gpu
+	cef_gpu_level = gpu_level_start()
+	gpu := cef_gpu_level < GPU_LEVEL_SOFTWARE
+	cef_gpu_frames = cef_gpu_level == GPU_LEVEL_SHARED
+	if cef_gpu_level != GPU_LEVEL_SHARED || env("IRIS_PERF") == "1" {
+		fmt.eprintfln("iris: GPU step %d: %s%s%s", cef_gpu_level, gpu_level_name(cef_gpu_level), len(gpu_level_reason) > 0 ? " - " : "", gpu_level_reason)
+	}
 	disable := []string{
 		// Chromium's own features Iris has no use for, or does itself
 		"Translate", "MediaRouter", "DialMediaRouteProvider", "GlobalMediaControls", "CastMediaRouteProvider",
@@ -246,6 +297,11 @@ cef_switches :: proc() -> []string {
 		"PrivacySandboxSettings4", "PrivacySandboxAdTopicsContentParity", "CookieDeprecationFacilitatedTesting",
 		// background work a browser Iris is not
 		"BackgroundFetch", "PeriodicBackgroundSync", "NotificationTriggers", "WebAuthenticationCableSecondFactor",
+		// one GPU stack only: ANGLE on OpenGL ES through EGL. No Vulkan, no
+		// Dawn (Skia Graphite) and so no WebGPU: with the Wayland platform
+		// Chromium logs "--ozone-platform=wayland is not compatible with
+		// Vulkan", and Dawn only adds start-up work and warnings
+		"Vulkan", "DefaultANGLEVulkan", "VulkanFromANGLE", "SkiaGraphite", "WebGPUService",
 		// (kept: FedCM, for "Sign in with Google"; Prerender2, which makes
 		// pages a site prerenders open at once; heavy-ad intervention)
 	}
@@ -307,7 +363,7 @@ cef_switches :: proc() -> []string {
 	if gpu {
 		// ANGLE on the desktop's OpenGL through EGL (Chromium's default on
 		// Linux), rasterized on the GPU, tiles in GPU memory
-		append(&out, "--use-gl=angle", "--use-angle=gl-egl", "--enable-gpu-rasterization", "--enable-zero-copy", "--enable-native-gpu-memory-buffers")
+		append(&out, "--use-gl=angle", "--use-angle=gl-egl", "--enable-gpu-rasterization", "--enable-zero-copy", "--disable-vulkan")
 	} else {
 		// GL for Chromium's compositor without a window: SwiftShader is the
 		// one proved to give frames with the headless platform
@@ -323,6 +379,9 @@ cef_switches :: proc() -> []string {
 /// display's own, up to 240)
 cef_frame_rate :: proc() -> i32 {
 	if f, ok := strconv.parse_int(env("IRIS_CEF_FPS")); ok && f > 0 do return i32(clamp(f, 1, 240))
+	// frames read back to the CPU cost a copy each: half the rate, never
+	// more than the eye needs
+	if !cef_gpu_frames do return CEF_FPS / 2
 	return CEF_FPS
 }
 
@@ -373,13 +432,18 @@ engine_start :: proc() -> bool {
 		// Iris's own socket normally catches that first (instance.odin); this
 		// is an Iris that is not answering, or one left from a crash
 		if code := cef_get_exit_code(); code == 24 {
+			cef_diag_start()
+			cef_diag_exit("CEF did not start: another Iris holds the profile")
 			fmt.eprintfln("another Iris (Chromium) still holds the profile in %s; close it (flatpak kill %s) and start again", root, APP_ID)
 		} else {
+			cef_diag_start()
+			cef_diag_exit(fmt.tprintf("CEF did not start (exit code %d)", code))
 			fmt.eprintfln("CEF did not start (exit code %d); libcef and its resources are looked for in %s", code, dir)
 		}
 		return false
 	}
 	started = true
+	cef_diag_start() // after CEF's own signal handlers: these come last
 	// Chromium's processes are Iris's to the end: one whose parent went
 	// (a renderer forked by the zygote) comes to Iris, so none outlives it
 	// (engine_stop ends any still there)
@@ -394,6 +458,7 @@ engine_start :: proc() -> bool {
 	}, nil, nil)
 	cef_shields_start()
 	cef_bench_start()
+	cef_perf_start()
 	return true
 }
 
@@ -458,7 +523,7 @@ engine_stop :: proc() {
 }
 
 /// Chromium's processes under Iris (children and theirs), from /proc
-@(private="file") chromium_descendants :: proc(allocator := context.allocator) -> []Renderer_Proc {
+chromium_descendants :: proc(allocator := context.allocator) -> []Renderer_Proc {
 	out := make([dynamic]Renderer_Proc, allocator)
 	d, err := os.open("/proc")
 	if err != nil do return out[:]
@@ -885,21 +950,30 @@ download_cancel :: proc(d: ^Download) {
 /// CEF is about to download: the file goes to the Downloads folder under a
 /// free name (no dialog)
 cef_download_start :: proc(item: ^cef_download_item_t, suggested: string, cb: ^cef_before_download_callback_t, tab_id := 0) {
+	if item == nil || cb == nil do return
 	d := new(Download)
 	d.tab_id = tab_id
 	d.id = next_download
 	next_download += 1
 	d.cef_id = item.get_id(item)
-	p := unique_download(len(suggested) > 0 ? suggested : "download")
+	// the name CEF suggests, else the item's own, else "download"
+	name := suggested
+	if len(name) == 0 && item.get_suggested_file_name != nil do name = from_userfree(item.get_suggested_file_name(item))
+	p := unique_download(len(name) > 0 ? name : "download")
 	d.path = p
 	d.name = filepath.base(p)
 	inject_at(&downloads, 0, d)
 	path := cef_str(p)
 	cb.cont(cb, &path, 0)
+	cef_diag_log("download %d starts: %s", d.id, d.name)
 	download_changed(d)
 }
 
 cef_download_update :: proc(item: ^cef_download_item_t, cb: ^cef_download_item_callback_t) {
+	if item == nil {
+		rel(cb)
+		return
+	}
 	d := download_by_id(item.get_id(item))
 	if d == nil {
 		rel(cb)

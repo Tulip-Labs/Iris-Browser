@@ -3,7 +3,7 @@
 // checks this against packaging/release-notes-cef.md and the cef-v tag.
 package iris
 
-CEF_VERSION :: "2.6.0"
+CEF_VERSION :: "2.6.1"
 
 /// the version of this build
 BUILD_VERSION :: CEF_VERSION

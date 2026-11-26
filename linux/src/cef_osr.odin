@@ -14,6 +14,7 @@
 // later one).
 package iris
 
+import "base:intrinsics"
 import "core:log"
 import "vendor:egl"
 import gl "vendor:OpenGL"
@@ -248,6 +249,7 @@ page_paint_gpu :: proc(p: ^Page, kind: i32, info: ^cef_accelerated_paint_info_t)
 	if !gpu_copy(src, vis.x, vis.y, vis.width, vis.height, target, 0, 0) do return false
 	// read before CEF takes the buffer back (no tearing, no judder)
 	wait_for_gpu()
+	intrinsics.atomic_add(&cef_frames_gpu, 1)
 	lay_popup_gpu(p)
 	if p.on_frame != nil do p.on_frame(p)
 	return true

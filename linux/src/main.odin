@@ -52,6 +52,7 @@ foreign glib {
 USAGE :: `Iris %s: a browser made of glass.
 
   iris [ADDRESS...]                open Iris (with these pages)
+  iris --perf                      every 5 s on stderr: frames/s, GPU or CPU path, CPU use
   iris --version
 `
 
@@ -91,11 +92,13 @@ main :: proc() {
 	containers_ensure()
 	if !engine_start() {
 		fmt.eprintln("Iris could not start its page engine (Chromium)")
+		cef_diag_exit("the page engine did not start")
 		os.exit(1)
 	}
 
 	if !browser_start() {
 		fmt.eprintln("Iris needs a Wayland session (WAYLAND_DISPLAY), with EGL and OpenGL ES 3.")
+		cef_diag_exit("no Wayland session, EGL or OpenGL ES 3")
 		os.exit(1)
 	}
 	// Google and YouTube's names looked up while the first page loads
@@ -105,6 +108,7 @@ main :: proc() {
 	g_unix_fd_add_full(G_PRIORITY_DEFAULT, i32(display_fd), G_IO_IN | G_IO_HUP | G_IO_ERR, proc "c" (fd: i32, cond: u32, d: rawptr) -> gboolean {
 		context = main_context
 		if !plat.pump(&b.win) || b.win.closed {
+			if !b.win.closed do cef_diag_exit("the Wayland connection ended (the compositor closed it or went away)")
 			g_main_loop_quit(main_loop)
 			return 0
 		}
@@ -130,6 +134,7 @@ main :: proc() {
 	after(3000, proc(_: rawptr) { updates_check() }, nil)
 
 	g_main_loop_run(main_loop)
+	cef_diag_exit("the main loop ended")
 	instance_close()
 	browser_save_session()
 	history_flush()

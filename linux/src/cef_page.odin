@@ -9,6 +9,7 @@
 // the native one) and text.
 package iris
 
+import "base:intrinsics"
 import gl "vendor:OpenGL"
 import "core:math"
 import "core:strings"
@@ -53,6 +54,8 @@ Page :: struct {
 	hidden_since:  f64,
 	hidden_seq:    int,
 	frozen:        bool,
+	/// the frame rate asked of CEF is the low one (a tab out of sight)
+	rate_low:      bool,
 	/// a touchpad's last moves (time ms, dx, dy), for its fling
 	scroll_samples: [FLING_SAMPLES]Scroll_Sample,
 	scroll_n:      int,
@@ -131,6 +134,7 @@ page_view_rect :: proc(p: ^Page) -> cef_rect_t {
 page_paint :: proc(p: ^Page, kind: i32, rects: []cef_rect_t, buffer: rawptr, w, h: i32) {
 	if buffer == nil || w <= 0 || h <= 0 do return
 	cef_software_frame_seen()
+	intrinsics.atomic_add(&cef_frames_cpu, 1)
 	// a woken tab shows its last frame until it has loaded again
 	if p.hold && now_s() < p.hold_until do return
 	if kind == PET_POPUP {
@@ -168,6 +172,10 @@ flush_rendered :: proc(p: ^Page) {}
 
 page_place :: proc(p: ^Page, x, y, w, h: f64, scale: f64) {
 	p.x, p.y = x, y
+	// whole logical pixels: the page is laid out at, and its frames are,
+	// exactly the size it is drawn at (browser.odin snaps it to the device
+	// pixels): no resampling, no blur on a 1.25 or 1.5 screen
+	w, h := math.floor(w), math.floor(h)
 	resized := (w != p.w || h != p.h) && w > 0 && h > 0
 	rescaled := scale != p.scale
 	if resized do p.w, p.h = w, h
@@ -183,7 +191,17 @@ page_place :: proc(p: ^Page, x, y, w, h: f64, scale: f64) {
 page_apply_hidden :: proc(p: ^Page) {
 	host := page_host(p)
 	if host == nil do return
-	host.was_hidden(host, !p.visible && !p.media ? 1 : 0)
+	hidden := !p.visible && !p.media
+	host.was_hidden(host, hidden ? 1 : 0)
+	// a tab out of sight draws at one frame a second whatever it does (a
+	// playing video's tab is not hidden, but nobody sees its frames): it
+	// costs next to nothing, and shows at once when it comes back
+	low := !p.visible
+	if low != p.rate_low {
+		p.rate_low = low
+		host.set_windowless_frame_rate(host, low ? 1 : cef_frame_rate())
+		if !low do host.invalidate(host, PET_VIEW)
+	}
 }
 
 page_set_visible :: proc(p: ^Page, on: bool) {

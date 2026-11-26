@@ -6,6 +6,7 @@
 package iris
 
 import "core:fmt"
+import "core:math"
 import "core:strings"
 import plat "../plat"
 
@@ -85,6 +86,7 @@ browser_start :: proc() -> bool {
 }
 
 browser_quit :: proc() {
+	cef_diag_exit("Iris quits (the window was closed, or the quit command)")
 	browser_save_session()
 	history_flush()
 	privacy_flush()
@@ -111,7 +113,14 @@ browser_draw :: proc(w: ^plat.Window) {
 		r: f32 = b.page_fullscreen ? 0 : 14
 		draw_fill(c.x, c.y + 6, c.z, c.w, r, {0, 0, 0, 0.12}, soft = 16)
 		draw_fill(c.x, c.y, c.z, c.w, r, {1, 1, 1, 1})
-		draw_texture(p.tex, c.x, c.y, c.z, c.w, r)
+		// the page's frame at its own size, on the device pixels (a frame
+		// drawn between pixels, or stretched by a fraction, is blurred)
+		tx, ty, tw, th := c.x, c.y, c.z, c.w
+		if sc := f32(w.scale); sc > 0 && p.tex.w > 0 && p.tex.h > 0 && abs(f32(p.tex.w) - c.z * sc) < sc + 1 && abs(f32(p.tex.h) - c.w * sc) < sc + 1 {
+			tx, ty = math.round(c.x * sc) / sc, math.round(c.y * sc) / sc
+			tw, th = f32(p.tex.w) / sc, f32(p.tex.h) / sc
+		}
+		draw_texture(p.tex, tx, ty, tw, th, r)
 	}
 	// the chrome unchanged and over nothing that moved: its layer, copied
 	// (no blur, no glass, no text this frame)
