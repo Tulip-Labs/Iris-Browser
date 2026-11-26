@@ -341,7 +341,7 @@ cef_view_remake_software :: proc(t: ^Tab) {
 	if v := t.cv; v != nil && v.gpu_good do return
 	if cef_gpu_frames {
 		cef_gpu_frames = false
-		cef_gpu_import_failed() // later starts go to software at once
+		cef_gpu_import_failed() // later starts go one step down at once
 	}
 	Remake :: struct { t: ^Tab, id: int }
 	idle(proc(d: rawptr) {
@@ -360,9 +360,12 @@ cef_view_remake_software :: proc(t: ^Tab) {
 /// stays blank). If no frame of any kind came 3 s after the load ended, the
 /// tab is made again with frames through OnPaint, and later starts go to
 /// software at once (IRIS_CEF_GPU=1 tries the GPU again)
+@(private="file") readback_failed: bool
+
 cef_gpu_watch :: proc(t: ^Tab) {
 	v := t.cv
-	if v == nil || !v.gpu_frames || v.gpu_good || v.painted do return
+	if v == nil || v.gpu_good || v.painted do return
+	if !v.gpu_frames && cef_gpu_level != GPU_LEVEL_READBACK do return
 	Watch :: struct { t: ^Tab, id: int }
 	after(3000, proc(d: rawptr) {
 		w := cast(^Watch)d
@@ -370,8 +373,18 @@ cef_gpu_watch :: proc(t: ^Tab) {
 		t := w.t
 		if !alive(t) || t.id != w.id || t != b.current do return
 		v := t.cv
-		if v == nil || !v.gpu_frames || v.gpu_good || v.painted do return
-		fmt.eprintln("iris: no frame from Chromium's GPU path 3 s after the page loaded: this tab and later ones use CPU frames")
+		if v == nil || v.gpu_good || v.painted do return
+		if !v.gpu_frames {
+			// already on the GPU's read-back frames and still nothing: the
+			// GPU process itself is not working here; software from the next start
+			if cef_gpu_level == GPU_LEVEL_READBACK && !readback_failed {
+				readback_failed = true
+				fmt.eprintln("iris: no frame from Chromium's GPU compositing 3 s after the page loaded: restart Iris to use software rendering")
+				cef_gpu_import_failed()
+			}
+			return
+		}
+		fmt.eprintln("iris: no frame from Chromium's GPU path 3 s after the page loaded: this tab and later ones use CPU frames (GPU compositing, read back); the next start does too")
 		cef_view_remake_software(t)
 	}, boxed(Watch{t, t.id}))
 }
@@ -1681,7 +1694,8 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 					request.set_url(request, &u)
 				}
 			}
-			if site_of(host) != site_of(page_host) && host_blocked(host) do return RV_CANCEL
+			// Brave's engine is the one filter once it is there (the
+			// matcher below only answers until it is built)
 			return RV_CONTINUE
 		}
 		blocked := matcher_blocks(m, url, host, page_host, intrinsics.atomic_load(&v.page_ignore), req_type_of(rt), rt == RT_SUB_FRAME)
@@ -1803,16 +1817,28 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		}
 		return 1
 	}
+	// A download's callbacks come with a reference each, never kept past the
+	// call except the item callback (cef_engine.odin keeps the newest, to
+	// cancel). Nothing here may fail the process: a download that cannot
+	// start is cancelled (and said), the browser and the tab go on.
 	dl.on_before_download = proc "c" (self: ^cef_download_handler_t, browser: ^cef_browser_t, item: ^cef_download_item_t, suggested: ^cef_string_t, cb: ^cef_before_download_callback_t) -> i32 {
 		context = main_context
 		defer { rel(browser); rel(item); rel(cb) }
-		t := vw(self).tab
-		cef_download_start(item, from_cef(suggested), cb, t != nil ? t.id : 0)
+		if item == nil || cb == nil do return 1
+		vwv := vw(self)
+		t := vwv != nil ? vwv.tab : nil
+		tab_id := 0
+		if t != nil && alive(t) do tab_id = t.id
+		cef_download_start(item, suggested != nil ? from_cef(suggested) : "", cb, tab_id)
 		return 1
 	}
 	dl.on_download_updated = proc "c" (self: ^cef_download_handler_t, browser: ^cef_browser_t, item: ^cef_download_item_t, cb: ^cef_download_item_callback_t) {
 		context = main_context
 		defer { rel(browser); rel(item) }
+		if item == nil {
+			rel(cb)
+			return
+		}
 		cef_download_update(item, cb) // keeps cb
 	}
 

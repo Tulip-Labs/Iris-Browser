@@ -10,8 +10,9 @@
 //    extension's search on Mozilla's site
 //
 // What is not here yet: running the add-ons (background pages, content
-// scripts, the browser.* bridge). Until it is, this stays behind
-// IRIS_EXTENSIONS=1, so nobody is told an add-on works that does not.
+// scripts, the browser.* bridge). Add-ons are installed, listed and
+// removed (the add-ons panel, chrome.odin), and the panel says plainly that
+// they do not run yet. IRIS_EXTENSIONS=0 hides all of it.
 package iris
 
 import "core:encoding/json"
@@ -23,7 +24,7 @@ import "core:testing"
 
 
 extensions_enabled :: proc() -> bool {
-	return env("IRIS_EXTENSIONS") == "1"
+	return env("IRIS_EXTENSIONS") != "0"
 }
 
 ext_dir :: proc() -> string {
@@ -258,6 +259,48 @@ extension_install_amo :: proc(slug: string) {
 			browser_toast(fmt.tprintf("%s %s is added", len(e.name) > 0 ? e.name : e.id, e.version))
 		}, install_failed, d)
 	}, install_failed, i)
+}
+
+/// an .xpi already on disk (the user's own file: no Mozilla checksum to
+/// compare, so the core only checks that it is a safe add-on archive)
+extension_install_file :: proc(path: string) {
+	data, ok := read_file(path, context.temp_allocator)
+	if !ok || len(data) == 0 {
+		browser_toast("Iris could not read that file")
+		return
+	}
+	if len(data) > MAX_XPI {
+		browser_toast(ext_error_text(-3))
+		return
+	}
+	summary, code := core_xpi_install(data, ext_dir(), "")
+	if code != 0 {
+		browser_toast(ext_error_text(code))
+		return
+	}
+	e: Ext
+	if json.unmarshal(transmute([]u8)summary, &e, allocator = context.temp_allocator) != nil || !registry_add({e.id, e.dir, e.name, e.version, e.manifest_version, true}) {
+		browser_toast("Iris could not keep the add-on's details")
+		return
+	}
+	browser_toast(fmt.tprintf("%s %s is added (it does not run yet)", len(e.name) > 0 ? e.name : e.id, e.version))
+}
+
+/// the add-on of the Mozilla page the tab shows, if it is one
+extension_install_here :: proc(t: ^Tab) {
+	if t == nil do return
+	c := classify_fields(core_url_classify(t.url))
+	if c.kind != "amo" || !amo_slug_ok(c.slug) {
+		browser_toast("Open an add-on's page on addons.mozilla.org first")
+		return
+	}
+	extension_install_amo(c.slug)
+}
+
+/// the add-on's page on Mozilla's site is open in this tab
+extension_page_here :: proc(t: ^Tab) -> bool {
+	if t == nil || !strings.has_prefix(t.url, "https://addons.mozilla.org/") do return false
+	return classify_fields(core_url_classify(t.url)).kind == "amo"
 }
 
 ext_error_text :: proc(code: i32) -> string {

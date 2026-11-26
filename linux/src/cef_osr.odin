@@ -14,6 +14,8 @@
 // later one).
 package iris
 
+import "base:intrinsics"
+import "core:fmt"
 import "core:log"
 import "vendor:egl"
 import gl "vendor:OpenGL"
@@ -248,6 +250,7 @@ page_paint_gpu :: proc(p: ^Page, kind: i32, info: ^cef_accelerated_paint_info_t)
 	if !gpu_copy(src, vis.x, vis.y, vis.width, vis.height, target, 0, 0) do return false
 	// read before CEF takes the buffer back (no tearing, no judder)
 	wait_for_gpu()
+	intrinsics.atomic_add(&cef_frames_gpu, 1)
 	lay_popup_gpu(p)
 	if p.on_frame != nil do p.on_frame(p)
 	return true
@@ -258,7 +261,7 @@ page_paint_gpu :: proc(p: ^Page, kind: i32, info: ^cef_accelerated_paint_info_t)
 cef_software_frame_seen :: proc() {
 	if cef_gpu_frames && !warned_software {
 		warned_software = true
-		log.warn("CEF: pages are composited in software (Chromium's GPU process is off or failed): expect more CPU use")
+		fmt.eprintln("iris: Chromium composites pages in software (its GPU process is off or failed to start, e.g. no usable GL driver in the sandbox): expect more CPU use; run with IRIS_PERF=1 and read crash.log")
 	}
 }
 

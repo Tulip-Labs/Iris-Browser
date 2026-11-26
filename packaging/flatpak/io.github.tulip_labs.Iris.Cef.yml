@@ -19,8 +19,11 @@
 #   the desktop's OpenGL, GPU rasterization, VA-API video) hands Iris each
 #   frame as a DMA-BUF, copied on the GPU into Iris's own texture (no pixel
 #   through the CPU). Chromium connects to the Wayland display for its GPU
-#   buffers but never opens a window. IRIS_CEF_GPU=0 goes back to software
-#   (SwiftShader, CPU frames).
+#   buffers but never opens a window. One GPU stack only (no Vulkan, no
+#   Dawn). If frames cannot be shared, Iris steps down (GPU compositing with
+#   CPU frames, then SwiftShader), says so on stderr and remembers it in
+#   ~/.var/app/<id>/data/.../cef/gpu-level. IRIS_CEF_GPU=0 forces software.
+# - <data>/crash.log notes how Iris ended; IRIS_PERF=1 prints CPU/frames.
 # - Nothing of Chromium's runs after Iris closes: no component updater, no
 #   crash reporter, no background networking, no field trials; Iris ends
 #   any child process still there when it quits.

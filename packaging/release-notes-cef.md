@@ -1,3 +1,20 @@
+Iris (Chromium) 2.6.1: cooler and smoother pages, a safer download, and a log for what went wrong.
+
+- **One GPU path, with a ladder down.** Chromium now runs on one GPU stack only (ANGLE on OpenGL ES through EGL, no Vulkan, no Dawn), which removes the "`--ozone-platform=wayland` is not compatible with Vulkan" and Dawn warnings and their start-up work. Frames go GPU (shared DMA-BUF), then GPU compositing with CPU frames, then software; when a step fails, Iris says so in the terminal, remembers it in `<data>/cef/gpu-level` for the next start (delete it, or start with `IRIS_CEF_GPU=1`, to try the GPU again), and goes on. `IRIS_CEF_GPU=readback` picks the middle step.
+- **No more SwiftShader.** Iris 2.6.0 and earlier, after one failed GPU frame, left a mark that made Chromium run on SwiftShader (software GL on every core) from then on; the mark is deleted at start. Chromium now ignores its own GPU blocklist and never falls back to SwiftShader behind the GPU's back; Iris says in the terminal when its own drawing or Chromium's is in software.
+- **Containers show their colour.** A container's tab is filled with its colour in the tab strip (it was drawn under the glass and could not be seen), and the address bar takes it too.
+- **Add-ons are visible.** A grid button in the toolbar opens the add-ons panel: installed add-ons with a remove button, "Add this page's add-on" on an addons.mozilla.org page, "Add from a file (.xpi)", and a link to Mozilla's add-on site (the "Add to Iris" notice on Mozilla's pages is on by default too; `IRIS_EXTENSIONS=0` hides all of it). What works: installing (Mozilla's SHA-256 checked for downloads, a safe unpack for files), reading the manifest (Manifest V2 and V3), listing and removing. What does not: **add-ons are not run** - no background pages, no content scripts, no `browser.*`/`chrome.*` APIs, no toolbar buttons of their own, no updates. An installed add-on therefore has no effect on a page yet.
+- **Less CPU.** A tab out of sight draws one frame a second; CPU frames (the fallback) run at 30 a second, not 60; pages are laid out and drawn on whole device pixels (no blur on 1.25x or 1.5x screens). The Shields engine's cache is read on a thread, not before the first page.
+- **Brave's engine alone.** Once adblock-rust is built, it is the only filter on requests and cosmetic rules; Iris's own matcher only answers until it is there.
+- **Downloads.** A download's callbacks are checked and released as CEF requires, and Iris no longer ends on a stray `SIGPIPE`.
+- **`crash.log`.** `<data>/crash.log` notes every way Iris ends (a signal with its backtrace, the window closing, the engine not starting) and each download start. `iris --perf` (or `IRIS_PERF=1`) prints, every 5 s, frames per second, the GPU or CPU path, Iris's CPU use and Chromium's processes with the busiest one.
+- Not verified on real hardware here: the effect of the GPU step on a given laptop. Please send the terminal output of `iris --perf` and `crash.log` if it still runs hot.
+
+**Install**
+- `flatpak install --user --reinstall Iris-Cef-x86_64.flatpak`
+
+---
+
 Iris (Chromium) 2.6.0: Brave's ad-block engine, Mozilla add-on installer (preview), stricter privacy.
 
 - **Brave's engine.** Ad and tracker blocking now runs on adblock-rust, the engine Brave's Shields use, from Iris's own Rust library (`core/`). On top of what blocked before it handles redirect stand-ins (a harmless replacement for a tracker's script), `$removeparam`, uBlock's cosmetic filters and scriptlets (resources refreshed every four days, lists as before). Until it is built after a list update, the previous matcher answers.

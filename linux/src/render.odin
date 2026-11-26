@@ -10,6 +10,7 @@
 //   4. the chrome's own frame (its HTML, transparent around it) on top.
 package iris
 
+import "core:fmt"
 import "core:math"
 import "core:strings"
 import "vendor:egl"
@@ -323,8 +324,24 @@ loc :: proc(p: ^Program, name: string) -> i32 {
 	return l
 }
 
+/// Iris's own GL is a software renderer (llvmpipe, softpipe): every frame of
+/// the glass is drawn by the CPU, so frames are paced (browser_page_frame)
+rnd_software: bool
+rnd_renderer: string
+
 renderer_init :: proc(d: egl.Display) {
 	rnd.egl_display = d
+	if r := gl.GetString(gl.RENDERER); r != nil {
+		rnd_renderer = strings.clone(string(r))
+		low := strings.to_lower(rnd_renderer, context.temp_allocator)
+		rnd_software = strings.contains(low, "llvmpipe") || strings.contains(low, "softpipe") || strings.contains(low, "swrast") || strings.contains(low, "software") || strings.contains(low, "swiftshader")
+		if rnd_software {
+			fmt.eprintfln("iris: Iris's own drawing runs on a SOFTWARE renderer (%s): the window will use a lot of CPU; the Flatpak needs --device=dri and the GL runtime for your GPU (flatpak info shows the runtime's GL extensions)", rnd_renderer)
+		} else if env("IRIS_PERF") == "1" {
+			fmt.eprintfln("iris: GL renderer %s", rnd_renderer)
+		}
+		cef_diag_log("GL renderer: %s%s", rnd_renderer, rnd_software ? " (software)" : "")
+	}
 	rnd.create_image = auto_cast egl.GetProcAddress("eglCreateImageKHR")
 	rnd.destroy_image = auto_cast egl.GetProcAddress("eglDestroyImageKHR")
 	rnd.target_texture = auto_cast egl.GetProcAddress("glEGLImageTargetTexture2DOES")

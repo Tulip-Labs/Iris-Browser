@@ -24,6 +24,8 @@ Wid :: enum u16 {
 	Palette_Scrim, Palette_Card, Palette_Field, Palette_Row,
 	// a certificate that fails (interstitial.odin)
 	Cert_Card, Cert_Proceed,
+	// add-ons (extensions.odin)
+	Addons,
 }
 
 Id :: distinct u64
@@ -40,6 +42,8 @@ Op :: enum u8 {
 	Minimize, Maximize, Close_Window, Focus_Address,
 	/// Iris's page for a failing certificate (n: the tab)
 	Cert_Back, Cert_Details, Cert_Proceed,
+	/// add-ons: install a file, the Mozilla page open, remove one (s: its id)
+	Ext_File, Ext_Here, Ext_Remove, Ext_Page,
 	/// one of Iris 2.3's commands (palette.odin): n is the Command, n2 a tab
 	Command,
 }
@@ -59,7 +63,7 @@ Hit :: struct {
 	cursor: plat.Cursor_Shape,
 }
 
-Panel :: enum u8 { None, Shields, Downloads, Containers, New_Container, Remove_Container, Tab_Menu, Context, Option, New_Space, Report }
+Panel :: enum u8 { None, Shields, Downloads, Containers, New_Container, Remove_Container, Tab_Menu, Context, Option, New_Space, Report, Addons }
 
 Toast :: struct {
 	text, action, url: string,
@@ -516,7 +520,23 @@ chrome_dismiss_dialog :: proc() {
 		chrome_set_focus(false)
 		browser_go(u)
 	case .Focus_Address: chrome_focus_address()
-	case .Toggle_Panel: toggle_panel(Panel(a.n), button_rect(a.n == int(Panel.Shields) ? .Shield : a.n == int(Panel.Downloads) ? .Downloads : .Containers), true)
+	case .Toggle_Panel: toggle_panel(Panel(a.n), button_rect(a.n == int(Panel.Shields) ? .Shield : a.n == int(Panel.Downloads) ? .Downloads : a.n == int(Panel.Addons) ? .Addons : .Containers), true)
+	case .Ext_File:
+		close_panel()
+		portal_open_file(false, proc(d: rawptr, files: []cstring) {
+			if len(files) < 2 || files[0] == nil do return
+			extension_install_file(string(files[0]))
+		}, nil)
+	case .Ext_Here:
+		close_panel()
+		extension_install_here(t)
+	case .Ext_Page: // the add-on search on Mozilla's site, in a tab
+		close_panel()
+		browser_new_tab({url = "https://addons.mozilla.org/firefox/", select = true})
+	case .Ext_Remove:
+		id := strings.clone(a.s, context.temp_allocator)
+		if extension_remove(id) do browser_toast("Add-on removed")
+		chrome_push()
 	case .Shield_Site:
 		if t == nil do break
 		host, _ := host_of(t.url, context.temp_allocator)
@@ -705,7 +725,7 @@ chrome_pointer :: proc(e: plat.Pointer_Event) {
 		return
 	}
 	// a press away from an open panel closes it (and does nothing else)
-	if ui.panel != .None && !inside(ui.panel_rect, p) && k != .Shield && k != .Downloads && k != .Containers && k != .Space_Chip {
+	if ui.panel != .None && !inside(ui.panel_rect, p) && k != .Shield && k != .Downloads && k != .Containers && k != .Addons && k != .Space_Chip {
 		close_panel()
 		if !over || k == .Scrim do return
 	}
@@ -1195,16 +1215,18 @@ PINNED_W :: f32(40)
 	hv: f32 = (ui.hot == i || ui.hot == id(.Tab_Close, t.id) || ui.hot == id(.Tab_Audio, t.id)) ? 1 : 0
 	k, has := container_get(t.container)
 	kc := has ? parse_color(k.color) : [4]f32{}
-	if has && t.container != PRIVATE_ID {
-		// a container's tabs in its colour: a tint and a line along the bottom
-		fill(r, 16, {kc.r, kc.g, kc.b, cur ? 0.24 : 0.14})
-	}
 	if cur {
 		draw_glass(r.x, r.y, r.z, r.w, glass_style({r = 16, kind = 2}))
 	} else if half {
 		draw_glass(r.x, r.y, r.z, r.w, glass_amount(glass_style({r = 16, kind = 2}), 0.55))
 	} else if hv > 0.01 {
 		draw_glass(r.x, r.y, r.z, r.w, glass_amount(glass_style({r = 16, kind = 3}), hv))
+	}
+	if has && t.container != PRIVATE_ID {
+		// a container's tabs in its colour: the whole chip filled with it
+		// (over the glass, which would hide a tint under it), and a line
+		// along the bottom
+		fill(r, 16, {kc.r, kc.g, kc.b, cur ? 0.46 : half ? 0.32 : 0.30 + 0.1 * hv})
 	}
 	if t.sandboxed {
 		draw_fill(r.x + 10, r.y + r.w - 3, r.z - 20, 2, 1, WARN)
@@ -1327,7 +1349,8 @@ PINNED_W :: f32(40)
 	button(.Reload, {87, y + 5, 34, 34}, loading ? .Stop : .Reload, {op = loading ? .Stop : .Reload}, dt)
 	// the actions, from the right
 	d_shown := downloads_active() > 0 || b.unseen_downloads > 0 || ui.panel == .Downloads
-	nb := d_shown ? 3 : 2
+	ext_on := extensions_enabled()
+	nb := (d_shown ? 3 : 2) + (ext_on ? 1 : 0)
 	aw := f32(10 + nb * 34 + (nb - 1) * 2)
 	act_r := [4]f32{W - 10 - aw, y, aw, h}
 	draw_glass(act_r.x, act_r.y, act_r.z, act_r.w, glass_style({r = 22, kind = 0}))
@@ -1350,6 +1373,10 @@ PINNED_W :: f32(40)
 		bx += 36
 	}
 	button(.Containers, {bx, y + 5, 34, 34}, .Layers, {op = .Toggle_Panel, n = int(Panel.Containers)}, dt)
+	if ext_on {
+		bx += 36
+		button(.Addons, {bx, y + 5, 34, 34}, .Grid, {op = .Toggle_Panel, n = int(Panel.Addons)}, dt)
+	}
 	// the address between them
 	ar := [4]f32{136, y, act_r.x - 10 - 136, h}
 	ui.address_rect = ar
@@ -1357,6 +1384,13 @@ PINNED_W :: f32(40)
 	ag := glass_style({r = 22, kind = 0})
 	if ui.focus == .Address do ag.rim_light *= 1.6
 	draw_glass(ar.x, ar.y, ar.z, ar.w, ag)
+	// a container's colour runs through the chrome: the address too
+	if t != nil && t.container != PRIVATE_ID {
+		if k, has := container_get(t.container); has {
+			kc := parse_color(k.color)
+			fill(ar, 22, {kc.r, kc.g, kc.b, 0.16})
+		}
+	}
 	draw_address(ar, dt)
 	// the page loading: a line along the address's bottom
 	if loading {
@@ -1755,6 +1789,17 @@ Pill :: struct {
 		it.buttons[0] = {text = "Add", act = {op = .Add_Container}, primary = true}
 		it.n_buttons = 1
 		append(&items, it)
+	case .Addons:
+		width = 330
+		append(&items, Item{kind = .Title, text = "Add-ons"})
+		append(&items, Item{kind = .Note, text = "Mozilla add-ons (.xpi) can be added, listed and removed here. Iris does not run them yet: no background pages, content scripts or browser.* APIs, so an installed add-on has no effect on pages for now."})
+		list := extensions_list(context.temp_allocator)
+		if len(list) == 0 do append(&items, Item{kind = .Note, text = "No add-ons installed"})
+		for e in list do row(&items, .Trash, fmt.tprintf("%s %s: remove", len(e.name) > 0 ? e.name : e.id, e.version), {op = .Ext_Remove, s = keep(e.id)})
+		append(&items, Item{kind = .Sep})
+		if extension_page_here(t) do row(&items, .Plus, "Add this page's add-on to Iris", {op = .Ext_Here})
+		row(&items, .Open, "Add from a file (.xpi)…", {op = .Ext_File})
+		row(&items, .Globe, "Find add-ons on addons.mozilla.org", {op = .Ext_Page})
 	case .Remove_Container:
 		width = 290
 		append(&items, Item{kind = .Title, text = "Remove a Container"})
