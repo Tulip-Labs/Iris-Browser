@@ -127,8 +127,26 @@ object Store {
         p.edit().putString("history", a.toString()).apply()
     }
 
-    fun visit(url: String, title: String) {
-        if (!url.startsWith("http") || Search.query(url) != null) return
+    /**
+     * A page that writes megabytes into its address or title (with
+     * history.pushState, or a title that keeps growing) leaves none of it in
+     * your history, which Android reads whole each time Iris starts: longer
+     * addresses are not kept, titles are clipped (as on Linux).
+     */
+    const val HISTORY_URL_MAX = 8192
+    const val HISTORY_TITLE_MAX = 512
+
+    /** at most n characters of s, never half of a surrogate pair */
+    fun clip(s: String, n: Int): String {
+        if (s.length <= n) return s
+        var i = n
+        if (i > 0 && Character.isHighSurrogate(s[i - 1])) i--
+        return s.substring(0, i)
+    }
+
+    fun visit(url: String, title0: String) {
+        if (!url.startsWith("http") || url.length > HISTORY_URL_MAX || Search.query(url) != null) return
+        val title = clip(title0, HISTORY_TITLE_MAX)
         val h = history()
         val i = h.indexOfFirst { it.url == url }
         val now = System.currentTimeMillis()

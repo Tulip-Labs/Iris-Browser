@@ -59,17 +59,10 @@ object Downloads {
             val resolver = c.contentResolver
             var uri: Uri? = null
             try {
-                val conn = URL(url).openConnection() as HttpURLConnection
-                agent?.let { conn.setRequestProperty("User-Agent", it) }
-                cookies?.let { conn.setRequestProperty("Cookie", it) }
-                if (referer.startsWith("http")) conn.setRequestProperty("Referer", referer)
-                conn.instanceFollowRedirects = true
-                conn.connectTimeout = 20000
-                conn.readTimeout = 60000
-                if (conn.responseCode !in 200..299) throw IllegalStateException("HTTP ${conn.responseCode}")
-                // a redirect may not leave the web either
-                if (!isWeb(conn.url.toString())) throw IllegalStateException("not a web address")
-                val total = if (length > 0) length else conn.contentLengthLong
+                val conn = open(url, agent, cookies, referer)
+                val expect = conn.contentLengthLong
+                val total = if (length > 0) length else expect
+                var got = 0L
                 val values = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, name)
                     put(MediaStore.Downloads.MIME_TYPE, mime)
@@ -90,10 +83,13 @@ object Downloads {
                             if (n - last > 256 * 1024) { last = n; val v = n; main.post { d.received = v; d.knownTotal = total } }
                         }
                         val v = n
+                        got = n
                         main.post { d.received = v; d.knownTotal = total }
                     }
                 }
                 conn.disconnect()
+                // a connection that ends early is a broken file, not a finished one
+                if (!d.cancelled && expect > 0 && got < expect) throw IllegalStateException("the download stopped part way")
                 if (d.cancelled) {
                     resolver.delete(uri, null, null)
                     main.post { d.failed = true }
@@ -108,6 +104,51 @@ object Downloads {
             }
         }
     }
+
+    /** at most this many redirects before a download gives up */
+    const val MAX_REDIRECTS = 10
+
+    /**
+     * The download's answer, its redirects followed here rather than by
+     * HttpURLConnection, which stops at one from http to https (or back) and
+     * sends the page's cookies on to whatever host a redirect names. Every
+     * hop must be a web address; the cookies go only to the page's own host.
+     */
+    private fun open(url: String, agent: String?, cookies: String?, referer: String): HttpURLConnection {
+        val first = URL(url)
+        var at = first
+        repeat(MAX_REDIRECTS + 1) {
+            if (!isWeb(at.toString())) throw IllegalStateException("not a web address")
+            val conn = at.openConnection() as HttpURLConnection
+            conn.instanceFollowRedirects = false
+            conn.connectTimeout = 20000
+            conn.readTimeout = 60000
+            agent?.let { conn.setRequestProperty("User-Agent", it) }
+            if (cookies != null && cookiesMayGo(at, first)) conn.setRequestProperty("Cookie", cookies)
+            if (referer.startsWith("http")) conn.setRequestProperty("Referer", referer)
+            val code = conn.responseCode
+            if (code in 200..299) return conn
+            val next = if (code in 300..399) conn.getHeaderField("Location") else null
+            conn.disconnect()
+            if (next == null) throw IllegalStateException("HTTP $code")
+            at = redirect(at, next) ?: throw IllegalStateException("not a web address")
+        }
+        throw IllegalStateException("too many redirects")
+    }
+
+    /** where a redirect's Location leads from an address, if it stays on the web */
+    fun redirect(from: URL, location: String): URL? {
+        val u = runCatching { URL(from, location.trim()) }.getOrNull() ?: return null
+        return u.takeIf { isWeb(it.toString()) }
+    }
+
+    /**
+     * Whether the page's cookies may go with a request to `to`: only to the
+     * host they came from, and never from https down to plain http (a
+     * secure cookie would travel unencrypted).
+     */
+    fun cookiesMayGo(to: URL, from: URL): Boolean =
+        to.host.equals(from.host, true) && (to.protocol.equals("https", true) || from.protocol.equals("http", true))
 
     /** an address Iris downloads from: http or https, with a host */
     fun isWeb(url: String): Boolean {

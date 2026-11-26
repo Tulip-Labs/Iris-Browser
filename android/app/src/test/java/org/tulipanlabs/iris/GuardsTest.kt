@@ -69,4 +69,45 @@ class GuardsTest {
         assertFalse(Updater.newer("2.2.3", "2.2.3"))
         assertFalse(Updater.newer("2.2", "2.2.0"))
     }
+
+    @Test fun sharedTextOpensWebLinksOnly() {
+        assertEquals("https://example.com/a", Search.shared("Look at this: https://example.com/a."))
+        assertEquals("https://example.com", Search.shared("example.com"))
+        // a file: page could read Iris's own files: shared text never opens one
+        assertTrue(Search.shared("file:///sdcard/Download/x.html")!!.startsWith("https://www.google.com/search?"))
+        assertTrue(Search.shared("javascript:alert(1)")!!.startsWith("https://www.google.com/search?"))
+        assertTrue(Search.shared("content://downloads/1")!!.startsWith("https://www.google.com/search?"))
+        assertNull(Search.shared("   "))
+    }
+
+    @Test fun addressesAreSitesOfTheirOwn() {
+        assertEquals("bbc.co.uk", Search.site("news.bbc.co.uk"))
+        assertEquals("example.com", Search.site("a.b.example.com"))
+        assertEquals("example.com", Search.site("www.example.com."))
+        assertEquals("192.168.1.4", Search.site("192.168.1.4"))
+        assertFalse(Search.site("192.168.1.4") == Search.site("10.0.1.4"))
+        assertEquals("[::ffff:1.2.3.4]", Search.site("[::ffff:1.2.3.4]"))
+    }
+
+    @Test fun downloadRedirectsStayOnTheWebAndKeepCookiesHome() {
+        val from = java.net.URL("http://example.com/files/a.zip")
+        assertEquals("https://example.com/files/a.zip", Downloads.redirect(from, "https://example.com/files/a.zip").toString())
+        assertEquals("http://example.com/b.zip", Downloads.redirect(from, "/b.zip").toString())
+        assertNull(Downloads.redirect(from, "file:///data/data/org.tulipanlabs.lite/x"))
+        assertNull(Downloads.redirect(from, "javascript:alert(1)"))
+        val https = java.net.URL("https://example.com/a")
+        assertTrue(Downloads.cookiesMayGo(https, from))
+        assertTrue(Downloads.cookiesMayGo(java.net.URL("https://EXAMPLE.com/b"), https))
+        assertFalse(Downloads.cookiesMayGo(java.net.URL("https://cdn.example.net/a"), https))
+        // never from https down to plain http
+        assertFalse(Downloads.cookiesMayGo(java.net.URL("http://example.com/a"), https))
+    }
+
+    @Test fun historyKeepsNoGiantEntries() {
+        assertEquals("hello", Store.clip("hello", 10))
+        assertEquals("hel", Store.clip("hello", 3))
+        // an emoji is two chars: kept whole or not at all
+        assertEquals("a", Store.clip("a\uD83D\uDE00", 2))
+        assertEquals("a\uD83D\uDE00", Store.clip("a\uD83D\uDE00", 3))
+    }
 }

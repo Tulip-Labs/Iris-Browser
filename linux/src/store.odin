@@ -101,10 +101,26 @@ write_file :: proc(path: string, data: []u8) -> bool {
 	return os.rename(tmp, path) == nil
 }
 
+/// a file Iris can no longer read (cut short by a full disk, edited by hand,
+/// or written by a newer Iris) is moved aside as NAME.broken before Iris
+/// starts afresh: the next save would otherwise write over the only copy of
+/// your settings or history
 load_json :: proc($T: typeid, name: string) -> (v: T, ok: bool) {
-	data := read_file(data_path(name), context.temp_allocator) or_return
-	err := json.unmarshal(data, &v)
-	return v, err == nil
+	return load_json_file(T, data_path(name))
+}
+
+load_json_file :: proc($T: typeid, path: string) -> (v: T, ok: bool) {
+	data := read_file(path, context.temp_allocator) or_return
+	if err := json.unmarshal(data, &v); err != nil {
+		_ = os.rename(path, broken_path(path))
+		return {}, false
+	}
+	return v, true
+}
+
+/// where a file Iris could not read is kept
+broken_path :: proc(path: string, allocator := context.temp_allocator) -> string {
+	return strings.concatenate({path, ".broken"}, allocator)
 }
 
 save_json :: proc(name: string, v: any) {
@@ -426,6 +442,29 @@ history_suggest :: proc(q0: string, n: int, allocator := context.temp_allocator)
 		settings_migrate(&s)
 		testing.expect_value(t, s.shieldLevel, Level.ultra)
 	}
+}
+
+@(test) test_broken_files_kept :: proc(t: ^testing.T) {
+	dir := fmt.tprintf("/tmp/iris-test-store-%d", time.now()._nsec)
+	defer os.remove_all(dir)
+	path := join({dir, "settings.json"}, context.temp_allocator)
+	// a good file reads, and stays where it is
+	testing.expect(t, write_file(path, transmute([]u8)string(`{"shields": true, "compact": true}`)))
+	s, ok := load_json_file(Settings, path)
+	testing.expect(t, ok)
+	testing.expect(t, s.compact)
+	testing.expect(t, os.exists(path))
+	// a file cut short is moved aside, never left for the next save to overwrite
+	testing.expect(t, write_file(path, transmute([]u8)string(`{"shields": true, "shieldsOff": ["exa`)))
+	_, ok = load_json_file(Settings, path)
+	testing.expect(t, !ok)
+	testing.expect(t, !os.exists(path))
+	kept, kok := read_file(broken_path(path), context.temp_allocator)
+	testing.expect(t, kok)
+	testing.expect_value(t, string(kept), `{"shields": true, "shieldsOff": ["exa`)
+	// no file at all is just no file
+	_, ok = load_json_file(Settings, join({dir, "none.json"}, context.temp_allocator))
+	testing.expect(t, !ok)
 }
 
 @(test) test_history_limits :: proc(t: ^testing.T) {

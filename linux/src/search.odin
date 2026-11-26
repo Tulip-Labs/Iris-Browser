@@ -248,8 +248,15 @@ host_of :: proc(url: string, allocator := context.allocator) -> (string, bool) {
 	return strings.to_lower(u.host, allocator), true
 }
 
-/// the site a host belongs to ("news.bbc.co.uk" is "bbc.co.uk")
-site_of :: proc(h: string) -> string {
+/// the site a host belongs to ("news.bbc.co.uk" is "bbc.co.uk"). An
+/// address is a site of its own: 192.168.1.4 and 10.0.1.4 are not one site
+/// called "1.4" (that would share Shields' off switch, pop-up trust and
+/// first-party standing between unrelated machines).
+site_of :: proc(h0: string) -> string {
+	h := strings.trim_suffix(h0, ".")
+	if len(h) == 0 do return h0
+	if h[0] == '[' || strings.index_byte(h, ':') >= 0 do return h
+	if _, ip := ipv4_parse(h); ip do return h
 	dots: [64]int
 	n := 0
 	for c, i in transmute([]u8)h do if c == '.' && n < len(dots) {
@@ -714,6 +721,17 @@ is_sign_in :: proc(h: string) -> bool {
 	testing.expect_value(t, resolve("yt cats", context.temp_allocator), "https://www.youtube.com/results?search_query=cats")
 	testing.expect_value(t, site_of("news.bbc.co.uk"), "bbc.co.uk")
 	testing.expect_value(t, site_of("a.b.example.com"), "example.com")
+	// addresses are their own sites, in every form
+	testing.expect_value(t, site_of("192.168.1.4"), "192.168.1.4")
+	testing.expect(t, site_of("192.168.1.4") != site_of("10.0.1.4"))
+	testing.expect_value(t, site_of("0xcb.0.113.7"), "0xcb.0.113.7")
+	testing.expect_value(t, site_of("[::ffff:1.2.3.4]"), "[::ffff:1.2.3.4]")
+	testing.expect_value(t, site_of("::ffff:1.2.3.4"), "::ffff:1.2.3.4")
+	// a name written with its final dot is the same site
+	testing.expect_value(t, site_of("www.example.com."), "example.com")
+	testing.expect_value(t, site_of("example.com"), "example.com")
+	testing.expect_value(t, site_of("localhost"), "localhost")
+	testing.expect_value(t, site_of(""), "")
 	testing.expect_value(t, display_url("https://www.example.com/x", context.temp_allocator), "example.com")
 }
 

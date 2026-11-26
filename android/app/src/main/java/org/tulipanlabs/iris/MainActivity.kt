@@ -113,7 +113,8 @@ class MainActivity : ComponentActivity() {
             // explicit intent could carry javascript:, file: or intent: too
             Intent.ACTION_VIEW -> i.dataString?.let(Search::external)?.let { model.newTab(it) }
             Intent.ACTION_WEB_SEARCH -> i.getStringExtra(SearchManager.QUERY)?.let { model.newTab(Search.aiUrl(it)) }
-            Intent.ACTION_SEND -> i.getStringExtra(Intent.EXTRA_TEXT)?.let { model.newTab(Search.resolve(it)) }
+            // shared text opens its link, or is a question; never a file: page
+            Intent.ACTION_SEND -> i.getStringExtra(Intent.EXTRA_TEXT)?.let(Search::shared)?.let { model.newTab(it) }
         }
     }
 

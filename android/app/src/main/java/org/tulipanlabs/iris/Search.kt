@@ -164,6 +164,22 @@ object Search {
         return q.substringBefore(SEP + AI_INSTRUCTION).removeSuffix(AI_INSTRUCTION).trim().ifEmpty { null }
     }
 
+    /**
+     * What text shared from another app opens: the first web link in it
+     * ("Look at this: https://…"), or what the address bar would make of it.
+     * Shared text never opens a file:, content: or other non-web address
+     * (a file: page could read Iris's own files); such text is a question.
+     */
+    fun shared(text: String): String? {
+        val t = text.trim()
+        if (t.isEmpty()) return null
+        t.split(Regex("\\s+")).firstNotNullOfOrNull { w ->
+            if (w.startsWith("http://", true) || w.startsWith("https://", true)) external(w.trimEnd('.', ',', ';', ')', '"', '\'')) else null
+        }?.let { return it }
+        val r = resolve(t)
+        return external(r) ?: aiUrl(t)
+    }
+
     /** a link another app hands Iris: a web address, or nothing */
     fun external(url: String): String? {
         val t = url.trim()
@@ -185,7 +201,11 @@ object Search {
     fun editable(url: String): String = if (url == "about:blank") "" else query(url) ?: url
 
     /** roughly the registrable part of a host, to tell one site from another */
-    fun site(host: String): String {
+    fun site(host0: String): String {
+        val host = host0.removeSuffix(".").ifEmpty { return host0 }
+        // an address is a site of its own: 192.168.1.4 and 10.0.1.4 are not
+        // one site called "1.4" (Shields' off switch and pop-up trust)
+        if (host.startsWith("[") || ':' in host || ipv4(host) != null) return host
         val l = host.split('.')
         if (l.size <= 2) return host
         val short = setOf("co", "com", "net", "org", "gov", "edu", "ac", "or", "ne", "go")
