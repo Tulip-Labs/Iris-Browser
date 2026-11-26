@@ -13,7 +13,8 @@
 # The CEF (Chromium) engine instead of WPE: IRIS_ENGINE=cef, with CEF_DIR
 # the CEF binary distribution (its Release/ has libcef.so) and
 # CEF_RPATH where libcef.so is at run time (default /app/lib/iris-cef, as
-# the CEF Flatpak installs it); WPE is then not needed at all.
+# the CEF Flatpak installs it); WPE is then not needed at all. The CEF build
+# also needs Rust (cargo): ../core is built first (CORE_PREBUILT=1: it was).
 set -eu
 cd "$(dirname "$0")"
 ENGINE=${IRIS_ENGINE:-wpe}
@@ -25,7 +26,11 @@ wpe) LIBS="$LIBS wpe-webkit-2.0 wpe-platform-2.0 wpe-platform-headless-2.0" ;;
 cef)
 	[ -n "${CEF_DIR:-}" ] && [ -f "$CEF_DIR/Release/libcef.so" ] || { echo "IRIS_ENGINE=cef needs CEF_DIR (with Release/libcef.so)" >&2; exit 2; }
 	RPATH=${CEF_RPATH:-/app/lib/iris-cef}
-	EXTRA="-L$CEF_DIR/Release -Wl,-rpath,$RPATH -pthread"
+	# Iris's Rust core (../core: adblock-rust, the add-on installer), a static library
+	CORE_DIR=$(cd "${CORE_DIR:-../core}" && pwd)
+	[ "${CORE_PREBUILT:-0}" = 1 ] || (cd "$CORE_DIR" && cargo build --release --locked)
+	[ -f "$CORE_DIR/target/release/libiris_core.a" ] || { echo "$CORE_DIR/target/release/libiris_core.a is missing (cargo build --release in core/)" >&2; exit 2; }
+	EXTRA="-L$CEF_DIR/Release -L$CORE_DIR/target/release -Wl,-rpath,$RPATH -pthread"
 	DEFINE="-define:IRIS_ENGINE=cef -define:IRIS_CEF_DIR=$RPATH"
 	;;
 *) echo "IRIS_ENGINE is wpe or cef" >&2; exit 2 ;;

@@ -1,3 +1,15 @@
+Iris (Chromium) 2.6.0: Brave's ad-block engine, Mozilla add-on installer (preview), stricter privacy.
+
+- **Brave's engine.** Ad and tracker blocking now runs on adblock-rust, the engine Brave's Shields use, from Iris's own Rust library (`core/`). On top of what blocked before it handles redirect stand-ins (a harmless replacement for a tracker's script), `$removeparam`, uBlock's cosmetic filters and scriptlets (resources refreshed every four days, lists as before). Until it is built after a list update, the previous matcher answers.
+- **Privacy defaults.** Third-party cookies are blocked, WebRTC sends no UDP outside a proxy (`IRIS_WEBRTC=relaxed` lets calls use UDP, showing only your public address), and Chromium's ad APIs stay off.
+- **Mozilla add-ons (preview, `IRIS_EXTENSIONS=1`).** On an add-on page of addons.mozilla.org, "Add to Iris" downloads the latest `.xpi` from Mozilla's API, checks it against Mozilla's SHA-256, unpacks it safely (no path outside its folder, no links, size limits) and reads its manifest (Manifest V2 and V3). On a Chrome Web Store page, a notice offers the same extension on Mozilla's site. **Add-ons are installed but not run yet**: background pages, content scripts and the `browser.*` bridge come in a later release, which is why this is off by default.
+- Install needs Rust to build from source: the Flatpak does it.
+
+**Install**
+- `flatpak install --user --reinstall Iris-Cef-x86_64.flatpak`
+
+---
+
 Iris (Chromium) 2.5.0: DRM, Brave-style link cleaning and less tracking.
 
 - **DRM (Widevine).** Iris never carries Google's CDM (its licence does not allow it): it copies the one an installed Chrome, Chromium, Brave, Edge, Vivaldi, Opera or Firefox already has into its own folder, and Chromium uses it from the next start. `IRIS_WIDEVINE_DIR` names a folder by hand, `IRIS_WIDEVINE=0` turns it off. In the Flatpak, only the browsers' CDM folders are readable (read-only), nothing else of theirs. Not tested against a live service here: tell me which site fails.

@@ -607,7 +607,9 @@ chrome_dismiss_dialog :: proc() {
 				if target == nil && b.peek != nil && b.peek.id == x.tab do target = b.peek
 				if target != nil do https_fallback(target, x.url)
 			} else if len(x.url) > 0 {
-				browser_new_tab({url = x.url, select = true})
+				handled := false
+				when ENGINE_CEF do handled = extensions_toast_action(x.url)
+				if !handled do browser_new_tab({url = x.url, select = true})
 			}
 			toast_gone(x)
 		}

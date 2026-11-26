@@ -216,6 +216,7 @@ when ENGINE_CEF {
 	if !ok do return false
 	m := matcher_load(data, cef_cache_key(l))
 	if m == nil do return false
+	cef_adblock_install(adblock_cache_load(l, adblock_key(cef_cache_key(l))))
 	cef_shields_install(m)
 	shields.have = l
 	log.debugf("shields: the %v matcher read in %.0f ms", l, time.duration_milliseconds(time.since(start)))
@@ -310,6 +311,7 @@ when ENGINE_CEF {
 	key:     string,
 	parts:   []string, // (WPE, from the heap)
 	matcher: ^Matcher, // (CEF)
+	adblock: ^Adblock, // (CEF) Brave's engine, from the same lists (cef_adblock.odin)
 }
 
 @(private="file") shields_build :: proc(l: Level) {
@@ -356,6 +358,11 @@ when ENGINE_CEF {
 				virtual.arena_destroy(&arena)
 				write_file(cef_cache_path(job.l), data)
 				job.matcher = matcher_load(data, job.key)
+				// Brave's engine from the same lists, for the cosmetic
+				// filters, scriptlets, redirects and $removeparam the matcher
+				// has no form for
+				job.adblock = adblock_build(job.paths[:])
+				adblock_cache_save(job.adblock, job.l, adblock_key(job.key))
 			} else {
 				max_rules := 120_000
 				if v, ok := strconv.parse_int(os.get_env("IRIS_SHIELDS_PART", context.temp_allocator)); ok do max_rules = v
@@ -379,9 +386,13 @@ when ENGINE_CEF {
 			when ENGINE_CEF {
 				if job.matcher == nil {
 					shields.failed[job.l] = true
+					if job.adblock != nil do iris_adblock_destroy(job.adblock)
 				} else if job.l != shield_level() {
 					matcher_free(job.matcher)
+					if job.adblock != nil do iris_adblock_destroy(job.adblock)
 				} else {
+					// the engine first: the matcher's install reapplies the shield to every page
+					cef_adblock_install(job.adblock)
 					cef_shields_install(job.matcher)
 					shields.have = job.l
 				}
@@ -492,6 +503,7 @@ when ENGINE_CEF {
 		if err != nil || time.diff(fi.modification_time, now) > 4 * 24 * time.Hour do append(&old, li)
 	}
 	if len(old) > 0 do fetch(old[:], shield_level(), true)
+	when ENGINE_CEF do adblock_resources_refresh()
 }
 
 @(private="file") Fetch :: struct {

@@ -30,6 +30,9 @@ app-id: io.github.tulip_labs.Iris.Cef
 runtime: org.gnome.Platform
 runtime-version: "50"
 sdk: org.gnome.Sdk
+# Rust for Iris's core (core/: adblock-rust, the add-on installer)
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
 command: iris
 separate-locales: false
 rename-desktop-file: io.github.tulip_labs.Iris.desktop
@@ -94,7 +97,12 @@ modules:
   - name: iris
     buildsystem: simple
     build-options:
+      # cargo fetches the core's crates (pinned by core/Cargo.lock, --locked)
+      build-args:
+        - --share=network
+      append-path: /usr/lib/sdk/rust-stable/bin
       env:
+        CARGO_HOME: /run/build/iris/cargo
         ODIN_ROOT: /run/build/iris/odin
         # the SDK links with gcc (it has no clang)
         ODIN_CLANG_PATH: /usr/bin/gcc
@@ -104,6 +112,11 @@ modules:
       - type: dir
         path: ../../linux
         dest: linux
+      - type: dir
+        path: ../../core
+        dest: core
+        skip:
+          - target
       - type: dir
         path: ../linux
         dest: desktop

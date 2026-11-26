@@ -895,6 +895,13 @@ cef_copy_intent :: proc(t: ^Tab) {
 	if intrinsics.atomic_load(&v.shield_on) == 0 do return
 	h, _ := host_of(u, context.temp_allocator)
 	css := matcher_css(cef_matcher(), u, h, context.temp_allocator)
+	// Brave's cosmetic filters and scriptlets: a superset of the matcher's
+	// hiding, so they replace it once the engine is there
+	if e := cef_adblock(); e != nil && strings.has_prefix(u, "http") {
+		ecss, script, _ := core_adblock_cosmetic(e, u)
+		if len(script) > 0 do run_in(f, script)
+		css = ecss
+	}
 	if len(css) == 0 do return
 	run_in(f, fmt.tprintf(`(() => {{ const add = () => {{ const s = document.createElement('style'); s.textContent = %s; (document.head || document.documentElement).appendChild(s); }}; if (document.documentElement) add(); else document.addEventListener('readystatechange', add, {{ once: true }}); }})();`, json_str(css, context.temp_allocator)))
 }
@@ -1329,6 +1336,7 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 			// connections, typing), counted from the document's start
 			if strings.has_prefix(u, "http") do run_in(frame, SLEEP_WATCH_JS)
 			browser_page_committed(t, u)
+			extensions_page_seen(t, u)
 		}
 	}
 	ld.on_load_end = proc "c" (self: ^cef_load_handler_t, browser: ^cef_browser_t, frame: ^cef_frame_t, status: i32) {
@@ -1654,6 +1662,29 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		host, _ := host_of(url, context.temp_allocator)
 		page_host, _ := host_of(page, context.temp_allocator)
 		if len(page_host) == 0 do page_host = host
+		// Brave's engine, once it is built: blocks, surrogates (a
+		// harmless stand-in for a tracker's script) and $removeparam.
+		// Iris's own domain list still catches third-party hosts it knows
+		if e := cef_adblock(); e != nil && strings.has_prefix(url, "http") {
+			action, payload := core_adblock_check_c(e, url, len(page) > 0 ? page : url, adblock_type_of(rt))
+			switch action {
+			case CORE_BLOCK: return RV_CANCEL
+			case CORE_REDIRECT:
+				if strings.has_prefix(payload, "data:") {
+					u := cef_str(payload)
+					request.set_url(request, &u)
+					return RV_CONTINUE
+				}
+				return RV_CANCEL
+			case CORE_REWRITE:
+				if strings.has_prefix(payload, "http") {
+					u := cef_str(payload)
+					request.set_url(request, &u)
+				}
+			}
+			if site_of(host) != site_of(page_host) && host_blocked(host) do return RV_CANCEL
+			return RV_CONTINUE
+		}
 		blocked := matcher_blocks(m, url, host, page_host, intrinsics.atomic_load(&v.page_ignore), req_type_of(rt), rt == RT_SUB_FRAME)
 		return blocked ? RV_CANCEL : RV_CONTINUE
 	}

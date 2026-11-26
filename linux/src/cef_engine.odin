@@ -265,9 +265,12 @@ cef_switches :: proc() -> []string {
 		"--site-per-process",
 		strings.concatenate({"--disable-features=", strings.join(disable, ",", context.temp_allocator)}, context.temp_allocator),
 		strings.concatenate({"--enable-features=", strings.join(enable[:], ",", context.temp_allocator)}, context.temp_allocator),
-		// WebRTC never shows a page your local or VPN-bypassing addresses
-		// (Brave's default): only the public one of the default route
-		"--force-webrtc-ip-handling-policy=default_public_interface_only",
+		// WebRTC never leaks your local or VPN-bypassing addresses
+		// (disable_non_proxied_udp: no UDP outside a proxy; IRIS_WEBRTC=relaxed
+		// lets calls use UDP again, with only the public address shown)
+		strings.concatenate({"--force-webrtc-ip-handling-policy=", env("IRIS_WEBRTC") == "relaxed" ? "default_public_interface_only" : "disable_non_proxied_udp"}, context.temp_allocator),
+		// third-party cookies blocked (Chromium's own switch for it)
+		"--test-third-party-cookie-phaseout",
 		// nothing in the background, nothing after Iris closes
 		"--disable-background-networking",
 		"--disable-component-update",
