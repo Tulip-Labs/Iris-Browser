@@ -22,7 +22,7 @@ import "core:testing"
 import "core:thread"
 import "core:time"
 
-VERSION :: "2.3.0"
+VERSION :: "2.3.1"
 // the Flatpak's ID: the window's app_id, and the name WebKit gives its sandboxed processes
 APP_ID :: "io.github.tulip_labs.Iris" + APP_ID_ENGINE // (".Cef": the CEF build installs beside the WPE one)
 USER_AGENT :: "Iris/" + VERSION

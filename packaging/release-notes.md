@@ -1,3 +1,24 @@
+Iris 2.3.1: steadier with your files, stricter with addresses, and downloads that follow their links.
+
+**Linux**
+- **A damaged settings or history file is kept, not replaced.** If Iris finds one it cannot read (a full disk, a hand edit, a newer Iris), it now sets it aside as `settings.json.broken` (or `history.json.broken`) and starts fresh, instead of writing over the only copy.
+- **Each IP address is its own site.** Turning Shields off for `192.168.1.4` no longer turns them off for every other address ending in `.1.4`, and two unrelated machines no longer count as one site for pop-ups and trackers.
+- **Shields clean up after themselves.** Rule sets made by an older Iris are now actually removed from disk when new ones replace them; before, they stayed in your cache.
+- **A huge paste no longer freezes the address bar.** A text field keeps up to 64 KB.
+
+**Android**
+- **Downloads follow their redirects.** A download that moves from http to https (or back) now arrives instead of failing; your sign-in cookies go only to the site you downloaded from, never to another host and never over plain http after https.
+- **A download cut short shows as failed**, not as a finished but broken file.
+- **Text shared from another app** opens the first web link in it, or becomes a search. It can no longer open a file on your phone.
+- **Each IP address is its own site**, as on Linux.
+- **Lighter history**: a page that puts megabytes into its address or title leaves none of it behind.
+
+**Install**
+- Linux: `flatpak install --user Iris-x86_64.flatpak`. For the Chromium build: `flatpak install --user Iris-Cef-x86_64.flatpak`.
+- Android: `Iris-android.apk` (Android 10 and newer). It installs over 2.3.0.
+
+---
+
 Iris 2.3.0: a start page of glass, Shields at their strictest, a Chromium build, and the everyday tools.
 
 **Linux**
