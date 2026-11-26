@@ -54,8 +54,13 @@ for y in range(oy, oy + ch):
             n += 1
 print("pixels of the theme red in 'red':", n)
 assert n >= 8, "the red text is not there"
-# and the text has crisp pixels: ink is not all grey fringe
-ink = sum(1 for y in range(oy + 2 * ch, oy + 3 * ch) for x in range(ox, ox + 6 * cw) if (lambda p: p[3] == 255 and min(p[:3]) > 200)(at(x, y)))
-print("white ink pixels in row 2:", ink)
-assert ink >= 10, "no text in row 2"
+# the text of row 2 ("wide|", after two wide characters that may have no font here):
+# bright pixels on the dark glass (the glass itself is below 30)
+ink = sum(1 for y in range(oy + 2 * ch, oy + 3 * ch) for x in range(ox, ox + 12 * cw) if max(at(x, y)[:3]) > 90)
+print("bright pixels in row 2:", ink)
+assert ink >= 15, "no text in row 2"
+# whole pixels: a vertical stem of the '|' at the end of row 1's text is crisp (an exact full-coverage pixel)
+full = sum(1 for y in range(oy + 2 * ch, oy + 3 * ch) for x in range(ox, ox + 12 * cw) if at(x, y)[3] == 255 and min(at(x, y)[:3]) > 200)
+print("full-coverage pixels in row 2:", full)
+assert full >= 3, "the text is blurred: no pixel is fully covered"
 print("frame ok")
