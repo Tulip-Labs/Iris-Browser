@@ -251,7 +251,7 @@ run_window :: proc(opt: Options) -> int {
 	app_load_config(a)
 	a.container = opt.container != "" ? opt.container : a.cfg.container
 	a.font_pt = a.cfg.font_size
-	a.read_buf = make([]u8, 64 * 1024)
+	a.read_buf = make([]u8, 256 * 1024)
 	app_font(a)
 	term.term_init(&a.t, a.cfg.columns, a.cfg.rows, a.cfg.scrollback)
 	app_apply_theme(a)

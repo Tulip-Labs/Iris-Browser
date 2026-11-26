@@ -79,6 +79,10 @@ App :: struct {
 	bytes_in:   u64,
 	first_byte_ms, last_byte_ms: i64,
 	last_gen:   u64,
+	// a flood of output (cat of a big file): the picture waits, it would only slow the reading
+	flood:      bool,
+	hold_until: i64,
+	draw_pending: bool,
 	title_set:  string,
 	read_buf:   []u8,
 }
@@ -298,6 +302,7 @@ app_read_pty :: proc(a: ^App) {
 	if !a.spawned || a.exited do return
 	budget := 4 << 20
 	changed := false
+	start_budget := budget
 	for budget > 0 {
 		n, res := term.pty_read(&a.pty, a.read_buf)
 		if res == .Data {
@@ -317,6 +322,9 @@ app_read_pty :: proc(a: ^App) {
 		if res == .Closed do app_child_gone(a)
 		break
 	}
+	// 128 KB in one go: a flood
+	a.flood = start_budget - budget >= 128 * 1024
+	if a.flood do a.hold_until = now_ms() + 100
 	if changed do app_after_feed(a)
 }
 
@@ -347,6 +355,11 @@ app_after_feed :: proc(a: ^App) {
 	if t.gen != a.last_gen {
 		a.last_gen = t.gen
 		a.hover_ok = false
+		if a.flood && now_ms() < a.hold_until {
+			a.draw_pending = true
+			return
+		}
+		a.draw_pending = false
 		plat.invalidate(&a.win)
 	}
 }
@@ -870,6 +883,7 @@ app_run :: proc(a: ^App) {
 		now := now_ms()
 		if a.sync_deadline != 0 do timeout = i32(max(a.sync_deadline - now, 0))
 		if a.finishing do timeout = 50
+		if a.draw_pending do timeout = i32(max(a.hold_until - now, 1))
 		// a paste on its way: look again soon (a pipe that closes without data wakes poll only with HUP)
 		if clip_waiting() do timeout = 20
 		if a.opt.timeout_ms > 0 && a.opt.exec_cmd != "" && !a.exited do timeout = 100
@@ -882,6 +896,10 @@ app_run :: proc(a: ^App) {
 		if ready & 2 != 0 do app_files_changed(a)
 		if clip_waiting() {
 			if text, done := clip_read(); done do app_paste_text(a, text)
+		}
+		if a.draw_pending && now >= a.hold_until {
+			a.draw_pending = false
+			plat.invalidate(&a.win)
 		}
 		if a.sync_deadline != 0 && now >= a.sync_deadline {
 			a.t.modes.sync = false
