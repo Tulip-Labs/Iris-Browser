@@ -1,0 +1,21 @@
+name: CEF probe (temporary)
+on:
+  push:
+    paths: [".github/workflows/cef-probe.yml"]
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python3 -I packaging/check/cef-update.py latest | tee /tmp/latest.txt
+          cat /tmp/latest.txt
+          curl -fsS https://cef-builds.spotifycdn.com/index.json -o /tmp/index.json
+          python3 -I - <<'PY'
+          import json
+          d=json.load(open('/tmp/index.json'))['linux64']['versions']
+          st=[v for v in d if v['channel']=='stable'][:4]
+          for v in st:
+              f=[x for x in v['files'] if x['type']=='minimal'][0]
+              print('PROBE',v['cef_version'],f['name'],f['sha1'])
+          PY
