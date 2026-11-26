@@ -16,7 +16,7 @@ Cert_Error :: struct {
 	url, host: string,
 	/// what is wrong, in words, and the engine's name for it
 	reason, code: string,
-	/// the engine's hold on the certificate (WPE: a GTlsCertificate), for
+	/// the engine's hold on the certificate for
 	/// "Show anyway"; tab_cert_release lets it go
 	engine:   rawptr,
 	details:  bool,
@@ -102,13 +102,13 @@ cert_committed :: proc(t: ^Tab, uri: string) {
 	cert_clear(t)
 }
 
-/// "Go back": where you were (WPE keeps the page before a failed load on
-/// screen), else back, else the start page (a peek closes)
+/// "Go back": where you were (the page before a failed load, if it is
+/// still on screen), else back, else the start page (a peek closes)
 cert_go_back :: proc(t: ^Tab) {
 	c := t.cert_error
 	if c == nil do return
 	// nothing committed since the failure: the page before is still there
-	// (WPE); CEF committed its error page in its place, and back is back
+	// (CEF commits its error page in its place, so back is back)
 	stayed := tab_has_view(t) && len(c.back_url) > 0 && c.back_url != "about:blank" && c.back_url != c.url && t.committed_url == c.back_url
 	if stayed do set_str(&t.url, c.back_url)
 	cert_clear(t)

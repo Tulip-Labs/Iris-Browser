@@ -83,6 +83,12 @@ Option_Item :: struct {
 
 Field :: enum u8 { None, Address, Find, Prompt, Name, Start, Palette }
 
+/// the kinds of dialog a page asks for (the engine's, chrome_dialog)
+DIALOG_ALERT :: 0
+DIALOG_CONFIRM :: 1
+DIALOG_PROMPT :: 2
+DIALOG_LEAVING :: 3
+
 Ui :: struct {
 	hits, next_hits: [dynamic]Hit,
 	frame_strings:  [dynamic]string,
@@ -331,7 +337,7 @@ chrome_dialog :: proc(id, kind: int, title, message, default_text: string) {
 	line_set(&ui.prompt, default_text)
 	line_select_all(&ui.prompt)
 	close_panel()
-	focus_field(i32(kind) == WEBKIT_SCRIPT_DIALOG_PROMPT ? .Prompt : .None)
+	focus_field(i32(kind) == DIALOG_PROMPT ? .Prompt : .None)
 	b.chrome_focus = true
 	chrome_push()
 }
@@ -607,7 +613,7 @@ chrome_dismiss_dialog :: proc() {
 				if target == nil && b.peek != nil && b.peek.id == x.tab do target = b.peek
 				if target != nil do https_fallback(target, x.url)
 			} else if len(x.url) > 0 {
-				browser_new_tab({url = x.url, select = true})
+				if !extensions_toast_action(x.url) do browser_new_tab({url = x.url, select = true})
 			}
 			toast_gone(x)
 		}
@@ -2033,7 +2039,7 @@ Pill :: struct {
 	w := min(440, W * 0.9)
 	lines := wrap_text(ui.dialog_message, 13.5, w - 44)
 	shown := min(len(lines), 14)
-	prompt := ui.dialog_kind == WEBKIT_SCRIPT_DIALOG_PROMPT
+	prompt := ui.dialog_kind == DIALOG_PROMPT
 	h := 52 + f32(shown) * 19 + (prompt ? 48 : 0) + 58
 	r := [4]f32{(W - w) / 2, H * 0.34 - h / 2, w, h}
 	draw_glass(r.x, r.y, r.z, r.w, glass_style({r = 20, kind = 1}))
@@ -2053,12 +2059,12 @@ Pill :: struct {
 		ly += 48
 	}
 	by := r.y + r.w - 48
-	ok_text := ui.dialog_kind == WEBKIT_SCRIPT_DIALOG_BEFORE_UNLOAD_CONFIRM ? "Leave" : "OK"
+	ok_text := ui.dialog_kind == DIALOG_LEAVING ? "Leave" : "OK"
 	ow := text_width(ok_text, 13, .Bold) + 36
 	bx := r.x + r.z - 18 - ow
 	pill({text = ok_text, act = {op = .Dialog_Ok}, primary = true}, {bx, by, ow, 32}, 10, dt)
-	if ui.dialog_kind != WEBKIT_SCRIPT_DIALOG_ALERT {
-		c_text := ui.dialog_kind == WEBKIT_SCRIPT_DIALOG_BEFORE_UNLOAD_CONFIRM ? "Stay" : "Cancel"
+	if ui.dialog_kind != DIALOG_ALERT {
+		c_text := ui.dialog_kind == DIALOG_LEAVING ? "Stay" : "Cancel"
 		cw := text_width(c_text, 13, .Bold) + 36
 		pill({text = c_text, act = {op = .Dialog_Cancel}}, {bx - cw - 8, by, cw, 32}, 11, dt)
 	}

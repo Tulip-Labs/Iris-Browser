@@ -8,13 +8,13 @@
 
 <p align="center">
   <b>A browser made of glass.</b><br>
-  Linux: Odin, Wayland and WPE WebKit, in real Liquid Glass. No GTK.<br>
+  Linux: Odin, Wayland and Chromium (CEF), in real Liquid Glass. No GTK.<br>
   Android: Kotlin, Jetpack Compose and Cefrium (its own Chromium). Every search asks Google AI Mode.
 </p>
 
 <p align="center">
   <img alt="Odin" src="https://img.shields.io/badge/Odin-dev--2026--11-3882D2?style=flat-square">
-  <img alt="WPE WebKit" src="https://img.shields.io/badge/WPE_WebKit-2.54-2B8DD6?style=flat-square">
+  <img alt="Chromium (CEF)" src="https://img.shields.io/badge/Chromium_(CEF)-156-2B8DD6?style=flat-square">
   <img alt="Wayland" src="https://img.shields.io/badge/Wayland-native-FFBC00?style=flat-square&logo=wayland&logoColor=black">
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-Compose-7F52FF?style=flat-square&logo=kotlin&logoColor=white">
   <img alt="Android 10 and newer" src="https://img.shields.io/badge/Android-10%2B-3DDC84?style=flat-square&logo=android&logoColor=white">
@@ -78,8 +78,8 @@
 
 ## What was new in 2.2.0
 
-- **Iris for Linux is now Odin and WPE WebKit, with no GTK.** Odin talks to Wayland, EGL, OpenGL ES, HarfBuzz, fontconfig and WPE directly, through foreign declarations checked against the real C headers.
-  - Each page frame arrives from WPE as a DMA-BUF and Iris samples it in its own OpenGL ES renderer without a copy, so the Liquid Glass (now a shader) bends the live page.
+- **Iris for Linux is now Odin, with no GTK.** Odin talks to Wayland, EGL, OpenGL ES, HarfBuzz, fontconfig and the page engine directly, through foreign declarations checked against the real C headers.
+  - Each page frame arrives from the engine as a DMA-BUF and Iris samples it in its own OpenGL ES renderer without a copy, so the Liquid Glass (now a shader) bends the live page.
   - The tabs, address bar, menus and dialogs are drawn by Iris itself, in the same frame as their glass: text shaped by HarfBuzz in the desktop's font, glyphs and icons rasterised by Iris.
   - Iris draws a page's own pop-ups in glass too: `<select>` lists, `alert()`, `confirm()` and `prompt()`; file fields use the desktop's portal.
   - Every tab stays awake: no sleeping tabs.
@@ -109,7 +109,7 @@
 ## What was new in 2.0.1
 
 - **Lighter on Linux.**
-  - All tabs share one WebKit web context: one pool of web processes and caches. Containers keep their own cookies and storage.
+  - All tabs share one pool of web processes and caches. Containers keep their own cookies and storage.
   - Each web process has a memory limit and gives memory back early.
   - Sleeping tabs: a background tab sleeps after 10 minutes, and no more than 3 stay awake (never one playing sound).
 - **Less work for the GPU.** The glass chrome is kept as one picture while nothing in it changes, so a playing video redraws only itself.
@@ -125,7 +125,7 @@
 
 Iris is made again from the start.
 
-- **Linux in Swift.** swift-adwaita (GTK 4 and libadwaita), WebKitGTK for the pages, installed as a Flatpak.
+- **Linux in Swift.** swift-adwaita (GTK 4 and libadwaita), installed as a Flatpak.
 - **Real Liquid Glass.** Not frosted glass: what lies behind stays sharp, and the glass bends it.
   - At the rim, the picture is pulled in from beyond the edge, with a touch of colour splitting.
   - A rim of light runs round each piece, and the pointer lights the glass where it is.
@@ -148,13 +148,13 @@ Iris is made again from the start.
 - **Search.** Type an address, or anything else to search Google (with its AI Overview). "Ask Google AI Mode" is one suggestion away. `yt cats` searches YouTube.
 - **Containers.**
   - None to start with: you make your own, each with its own colour.
-  - Each is a WPE network session of its own on disk.
+  - Each is a Chromium request context of its own on disk.
   - Open a new tab in a container, or open the current page in another one.
   - Removing a container deletes everything its sites kept.
 - **Private tabs.** One in-memory world, gone when the last private tab closes.
-- **The sandbox.** Sites Iris does not trust (http, a bare IP, a failing certificate) open in it without asking: a WPE web context of its own (its own web processes, in WebKit's process sandbox), a network session per tab in memory only, and no downloads, camera, microphone, location, clipboard, WebGL, WebRTC or pop-ups. Its tabs have an orange rim.
+- **The sandbox.** Sites Iris does not trust (http, a bare IP, a failing certificate) open in it without asking: a Chromium request context of its own for each tab, in memory only, and no downloads, camera, microphone, location, clipboard, WebGL, WebRTC or pop-ups. Its tabs have an orange rim.
 - **Iris Shields.** Ultra aggressive by default: uBlock Origin's and EasyList's lists plus about 185,000 ad, tracker, fingerprinting and mining domains built into Iris, blocked inside the engine before a request leaves; cookie banners hidden and tracking parameters stripped from links. Links you click always open, and cookie-consent tools are let through so pages never stay locked. A broken site? Right-click, "Reload without Shields".
-- **Cookies stay home.** Third-party cookies are refused, and WebKit's tracking prevention is on.
+- **Cookies stay home.** Third-party cookies are refused.
 - **Pop-ups.**
   - Links that open a new window open as a tab next to yours.
   - Script pop-ups need your click, and go only to the same site or a sign-in page.
@@ -171,7 +171,7 @@ Iris is made again from the start.
   - Your tabs come back next time.
   - A daily check for a newer Iris.
 - **A page's own pop-ups in glass.** `<select>` lists open as glass menus where the page put them; `alert()`, `confirm()` and `prompt()` are glass dialogs; file fields use the desktop's file chooser (through its portal).
-- **Sharp at every scale.** Wayland's fractional scaling: WPE renders each page, and Iris its chrome, at the screen's own pixels, at 1.25, 1.5 or 2.
+- **Sharp at every scale.** Wayland's fractional scaling: Chromium renders each page, and Iris its chrome, at the screen's own pixels, at 1.25, 1.5 or 2.
 
 ### Android
 
@@ -192,9 +192,9 @@ Iris is made again from the start.
 
 **Linux (Flatpak):**
 
-    flatpak install --user Iris-x86_64.flatpak
+    flatpak install --user Iris-Cef-x86_64.flatpak
 
-Download it from the [releases](https://github.com/Tulip-Labs/Iris-Browser/releases). It needs the GNOME 50 runtime, which Flatpak installs from Flathub.
+Download `Iris-Cef-x86_64.flatpak` from the newest `cef-v*` release ("Iris (Chromium)") on the [releases](https://github.com/Tulip-Labs/Iris-Browser/releases) page. It needs the GNOME 50 runtime, which Flatpak installs from Flathub.
 
 On niri, the blur behind the window comes on by itself on 26.04 and newer. No window rule is needed.
 
@@ -229,9 +229,11 @@ On niri, the blur behind the window comes on by itself on 26.04 and newer. No wi
 
 ## Build
 
-**Linux.** You need Odin (dev-2026-11 or newer), a C compiler to link with (clang, or gcc through `ODIN_CLANG_PATH`), and the development files of WPE WebKit 2.54 or newer built with WPEPlatform (`wpe-webkit-2.0`, `wpe-platform-2.0`), libsoup 3, HarfBuzz, fontconfig, Wayland (`wayland-client`, `wayland-egl`, `wayland-cursor`), xkbcommon, EGL and OpenGL ES. Arch Linux's packages have them all.
+**Linux.** You need Odin (dev-2026-11 or newer), a C compiler to link with (clang, or gcc through `ODIN_CLANG_PATH`), Rust (cargo, for Iris's core in `core/`), the development files of libsoup 3, HarfBuzz, fontconfig, Wayland (`wayland-client`, `wayland-egl`, `wayland-cursor`), xkbcommon, EGL and OpenGL ES, and a CEF binary distribution (`CEF_DIR`, whose `Release/` folder has `libcef.so`).
 
     cd linux
+    export CEF_DIR=/path/to/cef_binary
+    ./build.sh check-types   # type-check, no libraries needed
     ./build.sh test          # the tests
     ./build.sh check         # every C binding against the real headers
     ./build.sh               # a quick build to work on (no optimisation)
@@ -240,7 +242,7 @@ On niri, the blur behind the window comes on by itself on 26.04 and newer. No wi
 
 Or the Flatpak, as CI builds it:
 
-    flatpak-builder --user --install --force-clean build packaging/flatpak/io.github.tulip_labs.Iris.yml
+    flatpak-builder --user --install --force-clean build packaging/flatpak/io.github.tulip_labs.Iris.Cef.yml
 
 **Android.** You need JDK 21.
 
@@ -259,10 +261,6 @@ linux/                      Iris for Linux (Odin; no GTK, no X11)
                             through xkbcommon, EGL
   wl/                       Wayland's protocols as Odin tables (generated from the XML)
   src/
-    platform.odin           Iris's WPEPlatform: its own display, views, toplevels and
-                            clipboard (GObject subclasses written in Odin); each frame, a
-                            DMA-BUF, becomes an EGL image sampled with no copy; Wayland's
-                            input becomes WPE events
     render.odin             the OpenGL ES 3 renderer: the dawn, the page, Liquid Glass
     chrome.odin             the chrome, drawn each frame with its glass: tabs, bars, the
                             address, panels, menus, dialogs, notes; clicks and keys
@@ -276,13 +274,24 @@ linux/                      Iris for Linux (Odin; no GTK, no X11)
                             clear on exit; workspaces; split view and compact mode
     reader.odin, reader.js, peek.odin, privacy.odin, palette.odin  the reader, the peek,
                             the privacy report, the command palette (engine-free)
-    page_events.odin, wpe_extra.odin, cef_extra.odin  what the engines tell those
-                            features, and their calls into each engine
-    tab.odin                a WPE web view and its signals
-    engine.odin             the web context, containers, downloads, the sandbox, light video
-    shields.odin, rules.odin  the levels' lists, turned into WPE content rules and compiled
+    page_events.odin, cef_extra.odin  what the page engine tells those features, and
+                            its calls into the engine
+    engine_api.odin         the page engine's contract: what the rest of Iris calls
+    cef_engine.odin, cef_view.odin, cef_page.odin, cef_osr.odin  Chromium through CEF's C
+                            API, windowless: the process and request contexts (containers,
+                            private, sandbox), a tab's browser and its handlers, input and
+                            pixels, GPU frames as DMA-BUFs
+    cef_shields.odin, cef_adblock.odin  Shields in the engine: Iris's own matcher on each
+                            request and adblock-rust (core/) for the lists' full rules
+    cef_sleep.odin, cef_cert.odin, cef_drm.odin  hidden tabs, failing certificates, DRM
+    cef_capi.odin, cef_gen.odin  CEF's C API, generated from its headers
+    tab.odin                a tab: one page view and what it is doing
+    engine.odin             containers, downloads, the scripts pages get
+    shields.odin, rules.odin, shield_match.odin  the levels' lists, turned into rules and
+                            matched per request
+    core_ffi.odin           bindings to the Rust core (core/)
     portal.odin             file fields through the desktop's portal (D-Bus)
-    glib.odin, wpe*.odin, soup_gen.odin  the C functions Iris calls, declared once
+    glib.odin, soup_gen.odin  the C functions Iris calls, declared once
     main.odin, store.odin, search.odin, updates.odin, clipboard.odin
   abi/                      checks every foreign declaration, struct and protocol table
                             against the C headers (clang reads them)

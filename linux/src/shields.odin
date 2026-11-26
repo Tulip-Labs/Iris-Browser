@@ -1,7 +1,6 @@
 // Iris Shields: ad and tracker blocking inside the engine. uBlock Origin's
 // and EasyList's lists (fetched every four days from uBlock's mirrors) are
-// turned into rules on a thread (rules.odin): WebKit compiles them once
-// into content rules and keeps them; CEF keeps them in a compact file of
+// turned into rules on a thread (rules.odin), kept in a compact file of
 // Iris's own (shield_match.odin) that later starts only read. About 185,000
 // ad, tracker, fingerprinting and mining domains built into Iris
 // (tools/shield-domains.sh) block from the first page: until the lists
@@ -15,16 +14,14 @@ import "core:hash"
 import "core:log"
 import "core:mem/virtual"
 import "core:os"
-import "core:strconv"
 import "core:strings"
 import "core:sync"
 import "core:testing"
 import "core:thread"
 import "core:time"
 
-VERSION :: "2.3.1"
-// the Flatpak's ID: the window's app_id, and the name WebKit gives its sandboxed processes
-APP_ID :: "io.github.tulip_labs.Iris" + APP_ID_ENGINE // (".Cef": the CEF build installs beside the WPE one)
+// the Flatpak's ID: the window's app_id
+APP_ID :: "io.github.tulip_labs.Iris.Cef"
 USER_AGENT :: "Iris/" + BUILD_VERSION
 
 @(private="file") DOMAINS_GZ :: #load("shield-domains.txt.gz")
@@ -78,9 +75,6 @@ shield_level :: proc() -> Level {
 }
 
 Shields :: struct {
-	filters:     [dynamic]^WebKitUserContentFilter,
-	waiting:     [dynamic]^WebKitUserContentManager,
-	store:       ^WebKitUserContentFilterStore,
 	dir:         string,
 	/// a load, build or compile is under way (one at a time)
 	busy:        bool,
@@ -105,14 +99,9 @@ shields_start :: proc() {
 	make_dirs(join({shields.dir, "lists"}, context.temp_allocator))
 	// here, before any thread can ask for it
 	_ = builtin_hosts()
-	when ENGINE_CEF {
-		// the matcher the last start made, read now; or, the first time,
-		// Iris's own domains: either way requests are checked from the start
-		if !cef_load_cached(shield_level()) do cef_boot(shield_level())
-	} else {
-		shields.store = webkit_user_content_filter_store_new(cstr(shields.dir))
-		forget_old_rules()
-	}
+	// the matcher the last start made, read now; or, the first time,
+	// Iris's own domains: either way requests are checked from the start
+	if !cef_load_cached(shield_level()) do cef_boot(shield_level())
 	shields_settle()
 	after(8000, proc(_: rawptr) { refresh_lists() }, nil)
 }
@@ -132,12 +121,8 @@ shields_settle :: proc() {
 		shields_build(l)
 		return
 	}
-	when ENGINE_CEF {
-		if cef_load_cached(l) do return
-		shields_build(l)
-	} else {
-		shields_load(l)
-	}
+	if cef_load_cached(l) do return
+	shields_build(l)
 }
 
 @(private="file") shields_done :: proc() {
@@ -145,48 +130,15 @@ shields_settle :: proc() {
 	shields_settle()
 }
 
-shields_ready :: proc() -> bool {
-	return len(shields.filters) > 0
-}
-
-/// what the converter makes changes with this: rules made by an older
-/// Iris are made again (and the old ones removed from WebKit's store)
+/// what the converter makes changes with this: the matcher made by an older
+/// Iris is made again
 RULES_REV :: 4
-
-@(private="file") ids_path :: proc(l: Level, rev := RULES_REV) -> string {
-	if rev < 2 do return fmt.tprintf("%s/%v.ids", shields.dir, l)
-	return fmt.tprintf("%s/%v.r%d.ids", shields.dir, l, rev)
-}
-
-/// WebKit removes a compiled rule set only when it is given somewhere to
-/// answer: with no callback it refuses ("assertion 'callback' failed") and
-/// the old set stays on disk for good. Nothing waits for the answer.
-@(private="file") removed :: proc "c" (o: ^GObject, res: ^GAsyncResult, d: rawptr) {}
-
-/// the rules compiled before RULES_REV, and lists Iris no longer reads, go
-@(private="file") forget_old_rules :: proc() {
-	for l in Level do for rev in 1 ..< RULES_REV {
-		p := ids_path(l, rev)
-		text, ok := read_file(p, context.temp_allocator)
-		if !ok do continue
-		s := string(text)
-		for id in strings.split_lines_iterator(&s) do if len(id) > 0 {
-			webkit_user_content_filter_store_remove(shields.store, cstr(id), nil, rawptr(removed), nil)
-		}
-		os.remove(p)
-	}
-	for name in ([?]string{"ublock", "ublock-privacy", "quick-fixes", "unbreak"}) {
-		os.remove(fmt.tprintf("%s/lists/%s.txt", shields.dir, name))
-	}
-}
 
 @(private="file") list_file :: proc(l: List, allocator := context.temp_allocator) -> string {
 	return fmt.aprintf("%s/lists/%s.txt", shields.dir, list_id(l), allocator = allocator)
 }
 
-// ---------------------------------------------------------------- CEF: the matcher's file
-
-when ENGINE_CEF {
+// ---------------------------------------------------------------- the matcher's file
 
 @(private="file") cef_cache_path :: proc(l: Level) -> string {
 	return fmt.tprintf("%s/cef-%v.bin", shields.dir, l)
@@ -216,6 +168,7 @@ when ENGINE_CEF {
 	if !ok do return false
 	m := matcher_load(data, cef_cache_key(l))
 	if m == nil do return false
+	cef_adblock_install(adblock_cache_load(l, adblock_key(cef_cache_key(l))))
 	cef_shields_install(m)
 	shields.have = l
 	log.debugf("shields: the %v matcher read in %.0f ms", l, time.duration_milliseconds(time.since(start)))
@@ -234,73 +187,6 @@ when ENGINE_CEF {
 	if m := matcher_from(&r); m != nil do cef_shields_install(m)
 }
 
-}
-
-// ---------------------------------------------------------------- loading what was compiled before (WPE)
-
-@(private="file") Load :: struct {
-	l:      Level,
-	got:    []^WebKitUserContentFilter,
-	left:   int,
-	failed: bool,
-}
-
-@(private="file") Load_One :: struct {
-	job: ^Load,
-	i:   int,
-}
-
-@(private="file") shields_load :: proc(l: Level) {
-	if p := env("IRIS_SHIELDS_JSON"); len(p) > 0 {
-		if j, ok := read_file(p); ok {
-			parts := []string{string(j)}
-			shields_compile(parts, l)
-			return
-		}
-	}
-	text, ok := read_file(ids_path(l), context.temp_allocator)
-	ids := ok ? strings.split_lines(strings.trim_space(string(text)), context.temp_allocator) : nil
-	if len(ids) == 0 || ids[0] == "" {
-		shields_build(l)
-		return
-	}
-	shields.busy = true
-	job := new(Load)
-	job^ = {l = l, got = make([]^WebKitUserContentFilter, len(ids)), left = len(ids)}
-	for id, i in ids {
-		one := new(Load_One)
-		one^ = {job, i}
-		webkit_user_content_filter_store_load(shields.store, cstr(id), nil, rawptr(loaded), one)
-	}
-}
-
-@(private="file") loaded :: proc "c" (o: ^GObject, res: ^GAsyncResult, d: rawptr) {
-	context = main_context
-	one := cast(^Load_One)d
-	job := one.job
-	i := one.i
-	free(one)
-	err: ^GError
-	f := webkit_user_content_filter_store_load_finish(cast(^WebKitUserContentFilterStore)o, res, &err)
-	if err != nil do g_error_free(err)
-	job.got[i] = f
-	if f == nil do job.failed = true
-	job.left -= 1
-	if job.left > 0 do return
-	defer {
-		delete(job.got)
-		free(job)
-	}
-	if job.failed {
-		for g in job.got do if g != nil do webkit_user_content_filter_unref(g)
-		shields.busy = false
-		shields_build(job.l)
-	} else {
-		shields_install(job.got, job.l)
-		shields_done()
-	}
-}
-
 // ---------------------------------------------------------------- building: lists -> rules, on a thread
 
 @(private="file") Build :: struct {
@@ -308,8 +194,8 @@ when ENGINE_CEF {
 	paths:   [dynamic]string,
 	lists:   [dynamic]List,
 	key:     string,
-	parts:   []string, // (WPE, from the heap)
-	matcher: ^Matcher, // (CEF)
+	matcher: ^Matcher,
+	adblock: ^Adblock, // Brave's engine, from the same lists (cef_adblock.odin)
 }
 
 @(private="file") shields_build :: proc(l: Level) {
@@ -319,10 +205,8 @@ when ENGINE_CEF {
 	if len(missing) > 0 && !shields.fetch_tried[l] {
 		shields.fetch_tried[l] = true
 		fetch(missing[:], l, false)
-		// rules already in place (CEF always has some) wait for the lists;
-		// with none, Iris's own domains are made into rules meanwhile
-		_, have := shields.have.?
-		if ENGINE_CEF || have do return
+		// the rules in place (there are always some) wait for the lists
+		return
 	}
 	shields.busy = true
 	shields.stale = false
@@ -332,7 +216,7 @@ when ENGINE_CEF {
 		append(&job.paths, list_file(li, context.allocator))
 		append(&job.lists, li)
 	}
-	when ENGINE_CEF do job.key = cef_cache_key(l, context.allocator)
+	job.key = cef_cache_key(l, context.allocator)
 	thread.create_and_start_with_poly_data(job, proc(job: ^Build) {
 		start := time.now()
 		arena: virtual.Arena
@@ -350,19 +234,16 @@ when ENGINE_CEF {
 			// level with them
 			conv.builtin = !any || job.l == .ultra
 			rules := converter_rules(&conv)
-			when ENGINE_CEF {
-				data := matcher_bytes(&rules, job.key)
-				context.allocator = main_context.allocator
-				virtual.arena_destroy(&arena)
-				write_file(cef_cache_path(job.l), data)
-				job.matcher = matcher_load(data, job.key)
-			} else {
-				max_rules := 120_000
-				if v, ok := strconv.parse_int(os.get_env("IRIS_SHIELDS_PART", context.temp_allocator)); ok do max_rules = v
-				job.parts = rules_json(&rules, max_rules, runtime.heap_allocator())
-				context.allocator = main_context.allocator
-				virtual.arena_destroy(&arena)
-			}
+			data := matcher_bytes(&rules, job.key)
+			context.allocator = main_context.allocator
+			virtual.arena_destroy(&arena)
+			write_file(cef_cache_path(job.l), data)
+			job.matcher = matcher_load(data, job.key)
+			// Brave's engine from the same lists, for the cosmetic
+			// filters, scriptlets, redirects and $removeparam the matcher
+			// has no form for
+			job.adblock = adblock_build(job.paths[:])
+			adblock_cache_save(job.adblock, job.l, adblock_key(job.key))
 		}
 		log.debugf("shields: the %v rules made in %.0f ms", job.l, time.duration_milliseconds(time.since(start)))
 		// this thread's temporary memory (its own: init_context leaves it to us)
@@ -376,114 +257,26 @@ when ENGINE_CEF {
 				delete(job.key)
 				free(job)
 			}
-			when ENGINE_CEF {
-				if job.matcher == nil {
-					shields.failed[job.l] = true
-				} else if job.l != shield_level() {
-					matcher_free(job.matcher)
-				} else {
-					cef_shields_install(job.matcher)
-					shields.have = job.l
-				}
-				shields_done()
+			if job.matcher == nil {
+				shields.failed[job.l] = true
+				if job.adblock != nil do iris_adblock_destroy(job.adblock)
+			} else if job.l != shield_level() {
+				matcher_free(job.matcher)
+				if job.adblock != nil do iris_adblock_destroy(job.adblock)
 			} else {
-				// WebKit copies the JSON: it goes as soon as it is handed over
-				shields_compile(job.parts, job.l)
-				for p in job.parts do delete(p, runtime.heap_allocator())
-				delete(job.parts, runtime.heap_allocator())
+				// the engine first: the matcher's install reapplies the shield to every page
+				cef_adblock_install(job.adblock)
+				cef_shields_install(job.matcher)
+				shields.have = job.l
 			}
+			shields_done()
 		}, job)
 	}, init_context = main_context, self_cleanup = true)
-}
-
-// ---------------------------------------------------------------- compiling: rules -> WebKit's filters
-
-@(private="file") Compile :: struct {
-	l:    Level,
-	ids:  []string,
-	got:  []^WebKitUserContentFilter,
-	left: int,
-}
-
-@(private="file") shields_compile :: proc(parts: []string, l: Level) {
-	if len(parts) == 0 {
-		shields.failed[l] = true
-		shields_done()
-		return
-	}
-	shields.busy = true
-	job := new(Compile)
-	stamp := time.to_unix_seconds(time.now())
-	job^ = {l = l, ids = make([]string, len(parts)), got = make([]^WebKitUserContentFilter, len(parts)), left = len(parts)}
-	for json, i in parts {
-		job.ids[i] = fmt.aprintf("iris-%v-%d-%d", l, stamp, i)
-		b := g_bytes_new(raw_data(json), len(json))
-		one := new(Load_One)
-		one^ = {cast(^Load)job, i}
-		webkit_user_content_filter_store_save(shields.store, cstr(job.ids[i]), b, nil, rawptr(saved), one)
-		g_bytes_unref(b)
-	}
-}
-
-@(private="file") saved :: proc "c" (o: ^GObject, res: ^GAsyncResult, d: rawptr) {
-	context = main_context
-	one := cast(^Load_One)d
-	job := cast(^Compile)one.job
-	i := one.i
-	free(one)
-	err: ^GError
-	f := webkit_user_content_filter_store_save_finish(cast(^WebKitUserContentFilterStore)o, res, &err)
-	if err != nil {
-		log.warnf("the shield's rules did not compile: %s", err.message)
-		g_error_free(err)
-	}
-	job.got[i] = f
-	job.left -= 1
-	if job.left > 0 do return
-	defer {
-		for id in job.ids do delete(id)
-		delete(job.ids)
-		delete(job.got)
-		free(job)
-		shields_done()
-	}
-	for g in job.got do if g == nil {
-		for x in job.got do if x != nil do webkit_user_content_filter_unref(x)
-		shields.failed[job.l] = true
-		return
-	}
-	// the parts compiled before go
-	if old, ok := read_file(ids_path(job.l), context.temp_allocator); ok {
-		s := string(old)
-		outer: for id in strings.split_lines_iterator(&s) {
-			for n in job.ids do if n == id do continue outer
-			webkit_user_content_filter_store_remove(shields.store, cstr(id), nil, rawptr(removed), nil)
-		}
-	}
-	write_file(ids_path(job.l), transmute([]u8)strings.join(job.ids, "\n", context.temp_allocator))
-	shields_install(job.got, job.l)
-}
-
-@(private="file") shields_install :: proc(made: []^WebKitUserContentFilter, l: Level) {
-	// a level changed meanwhile: shields_done makes that one next
-	if l != shield_level() {
-		for m in made do if m != nil do webkit_user_content_filter_unref(m)
-		return
-	}
-	for f in shields.filters do webkit_user_content_filter_unref(f)
-	clear(&shields.filters)
-	for m in made do if m != nil do append(&shields.filters, m)
-	for ucm in shields.waiting do for f in shields.filters do webkit_user_content_manager_add_filter(ucm, f)
-	clear(&shields.waiting)
-	shields.have = l
-	if shields.installed != nil do shields.installed()
 }
 
 // ---------------------------------------------------------------- the lists, from uBlock's mirrors
 
 @(private="file") refresh_lists :: proc() {
-	// rules given (IRIS_SHIELDS_JSON, the tests): no lists
-	if len(env("IRIS_SHIELDS_JSON")) > 0 do return
 	old: [dynamic]List
 	defer delete(old)
 	now := time.now()
@@ -492,6 +285,7 @@ when ENGINE_CEF {
 		if err != nil || time.diff(fi.modification_time, now) > 4 * 24 * time.Hour do append(&old, li)
 	}
 	if len(old) > 0 do fetch(old[:], shield_level(), true)
+	adblock_resources_refresh()
 }
 
 @(private="file") Fetch :: struct {
@@ -573,32 +367,11 @@ when ENGINE_CEF {
 		// now; the others when they are next asked for)
 		shields.stale = true
 		shields.failed = {}
-		when !ENGINE_CEF {
-			if f.rebuild_all do for other in Level do if other != shield_level() do os.remove(ids_path(other))
-		}
 	}
 	shields_settle()
 }
 
 // ---------------------------------------------------------------- pages
-
-/// a page takes the shield's rules (none where the shield is down)
-shields_apply :: proc(ucm: ^WebKitUserContentManager, host: string) {
-	webkit_user_content_manager_remove_all_filters(ucm)
-	shields_forget(ucm)
-	if !shields_on_for(host) do return
-	if len(shields.filters) == 0 {
-		append(&shields.waiting, ucm)
-	} else {
-		for f in shields.filters do webkit_user_content_manager_add_filter(ucm, f)
-	}
-}
-
-shields_forget :: proc(ucm: ^WebKitUserContentManager) {
-	for i := 0; i < len(shields.waiting); {
-		if shields.waiting[i] == ucm { unordered_remove(&shields.waiting, i) } else { i += 1 }
-	}
-}
 
 @(test) test_builtin_domains :: proc(t: ^testing.T) {
 	set := builtin_hosts()

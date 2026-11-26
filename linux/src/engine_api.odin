@@ -1,15 +1,9 @@
-// The page engine, chosen when Iris is built:
-//
-//   odin build src ...                          WPE WebKit (the default)
-//   odin build src ... -define:IRIS_ENGINE=cef  CEF (Chromium), windowless
+// The page engine: CEF (Chromium), windowless (cef_*.odin).
 //
 // Everything else in linux/src (the chrome, the tabs' list, history,
-// containers' data, downloads' list, Shields' lists) is the same for both.
-// An engine is a set of files whose whole body sits in `when ENGINE_CEF` or
-// `when !ENGINE_CEF` (wpe_*.odin, cef_*.odin), and it provides the
-// procedures below; the shared code calls only these. A procedure missing
-// from an engine is a compile error in that engine's build, so
-// `odin check src -define:IRIS_ENGINE=...` is the contract's test.
+// containers' data, downloads' list, Shields' lists) calls only the
+// procedures below, which the engine provides; one missing is a compile
+// error, so `odin check src` is the contract's test.
 //
 // Process and engine
 //   engine_subprocess() -> (code, is_sub)  first thing in main (CEF re-runs
@@ -36,7 +30,7 @@
 //   page_latch, flush_rendered, page_place, page_set_visible,
 //   page_set_active, page_focus, page_pointer, page_key, set_keymap,
 //   clipboard_from_desktop
-// Iris 2.3's features (wpe_extra.odin, cef_extra.odin)
+// Iris 2.3's features (cef_extra.odin)
 //   tab_set_muted(t, on), tab_run_isolated(t, js, done) (a world of Iris's
 //   own where the engine has one), tab_show_html(t, html, base) and
 //   tab_reader_exit(t) (the reader), engine_theme_changed() (Iris went
@@ -56,15 +50,6 @@
 package iris
 
 import "core:strings"
-
-IRIS_ENGINE :: #config(IRIS_ENGINE, "wpe")
-ENGINE_CEF :: IRIS_ENGINE == "cef"
-
-#assert(IRIS_ENGINE == "wpe" || IRIS_ENGINE == "cef", "IRIS_ENGINE is wpe or cef")
-
-// the CEF build is an app of its own (io.github.tulip_labs.Iris.Cef), so
-// both can be installed and tried side by side
-when ENGINE_CEF { APP_ID_ENGINE :: ".Cef" } else { APP_ID_ENGINE :: "" }
 
 /// the editing commands a context menu sends (tab_edit)
 EDIT_CUT :: "Cut"

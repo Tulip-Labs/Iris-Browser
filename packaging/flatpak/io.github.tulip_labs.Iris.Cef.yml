@@ -1,10 +1,9 @@
-# Iris with Chromium (CEF) as its page engine, as a Flatpak of its own
-# (io.github.tulip_labs.Iris.Cef, beside the WPE build, for trying it):
-# the same Odin app from linux/, built with -define:IRIS_ENGINE=cef, and
+# Iris (Chromium) for Linux, as a Flatpak (io.github.tulip_labs.Iris.Cef):
+# the Odin app from linux/ with Chromium (CEF) as its page engine, on
 # CEF 156.0.32 (Chromium 156.0.8078.109) from its minimal binary
 # distribution, nothing built from source.
 #
-# What differs from the WPE Flatpak, plainly:
+# Worth knowing, plainly:
 # - Chromium's own renderer sandbox is off (no_sandbox: it needs a setuid
 #   helper or user namespaces, which a Flatpak gives neither); renderers
 #   run inside Flatpak's sandbox only.
@@ -12,7 +11,10 @@
 #   proprietary codecs: VP8/VP9/AV1/Opus/Vorbis play, H.264/H.265/AAC do
 #   not (YouTube is fine; some sites' video is not). The ffmpeg-full
 #   extension would not help (Chromium does not use GStreamer), so it is
-#   not here.
+#   not here. A CEF built with them (packaging/codecs.md) replaces the url
+#   and sha256 below (packaging/flatpak/use-codecs.sh does it).
+# - DRM: Widevine is never shipped; Iris copies the CDM of a browser that
+#   is installed (src/cef_drm.odin).
 # - Pages are drawn off-screen on the GPU: Chromium's GPU process (ANGLE on
 #   the desktop's OpenGL, GPU rasterization, VA-API video) hands Iris each
 #   frame as a DMA-BUF, copied on the GPU into Iris's own texture (no pixel
@@ -27,6 +29,9 @@ app-id: io.github.tulip_labs.Iris.Cef
 runtime: org.gnome.Platform
 runtime-version: "50"
 sdk: org.gnome.Sdk
+# Rust for Iris's core (core/: adblock-rust, the add-on installer)
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
 command: iris
 separate-locales: false
 rename-desktop-file: io.github.tulip_labs.Iris.desktop
@@ -42,6 +47,15 @@ finish-args:
   - --filesystem=xdg-run/pipewire-0
   - --filesystem=xdg-download
   - --talk-name=org.freedesktop.FileManager1 # "show in folder" for downloads
+  # DRM: Iris copies Widevine from a browser already installed (it cannot
+  # ship Google's CDM); only each browser's CDM folder is readable, never
+  # its profile (src/cef_drm.odin)
+  - --filesystem=~/.config/google-chrome/WidevineCdm:ro
+  - --filesystem=~/.config/chromium/WidevineCdm:ro
+  - --filesystem=~/.config/BraveSoftware/Brave-Browser/WidevineCdm:ro
+  - --filesystem=~/.config/microsoft-edge/WidevineCdm:ro
+  - --filesystem=/opt/google/chrome/WidevineCdm:ro
+  - --filesystem=/opt/brave.com/brave/WidevineCdm:ro
 
 cleanup:
   - /include
@@ -82,16 +96,25 @@ modules:
   - name: iris
     buildsystem: simple
     build-options:
+      # cargo fetches the core's crates (pinned by core/Cargo.lock, --locked)
+      build-args:
+        - --share=network
+      append-path: /usr/lib/sdk/rust-stable/bin
       env:
+        CARGO_HOME: /run/build/iris/cargo
         ODIN_ROOT: /run/build/iris/odin
         # the SDK links with gcc (it has no clang)
         ODIN_CLANG_PATH: /usr/bin/gcc
-        IRIS_ENGINE: cef
         CEF_RPATH: /app/lib/iris-cef
     sources:
       - type: dir
         path: ../../linux
         dest: linux
+      - type: dir
+        path: ../../core
+        dest: core
+        skip:
+          - target
       - type: dir
         path: ../linux
         dest: desktop

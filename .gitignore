@@ -13,3 +13,4 @@ linux/*.ppm
 shell/iris-shell
 shell/logic.test
 shell/dist/
+core/target/

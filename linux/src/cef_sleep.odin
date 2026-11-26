@@ -1,4 +1,4 @@
-// The CEF engine's hidden tabs (IRIS_ENGINE=cef): frozen at once, put to
+// The CEF engine's hidden tabs: frozen at once, put to
 // sleep only much later.
 //
 // Freezing: a tab you leave is hidden (was_hidden) and frozen at once
@@ -32,7 +32,6 @@ import "core:strconv"
 import "core:strings"
 
 // (not indented: the whole file is this engine's)
-when ENGINE_CEF {
 
 /// a woken tab's last frame stays at most this long while it loads again
 SLEEP_HOLD_S :: 4.0
@@ -353,4 +352,3 @@ url_plausible :: proc(u: string) -> bool {
 
 // ---- END CEF_LOGIC_SLEEP
 
-} // when ENGINE_CEF

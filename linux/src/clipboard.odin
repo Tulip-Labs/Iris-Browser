@@ -1,4 +1,4 @@
-// The desktop's clipboard (Wayland's data device) and WebKit's, kept in
+// The desktop's clipboard (Wayland's data device) and the page's, kept in
 // step: what a page copies, other apps can paste; what the desktop copies,
 // pages can paste.
 package iris

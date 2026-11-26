@@ -1,4 +1,4 @@
-// The CEF engine (IRIS_ENGINE=cef, see engine_api.odin): Chromium through
+// The CEF engine: Chromium through
 // CEF's C API (cef_capi.odin, cef_gen.odin), windowless. This file is the
 // engine itself: the process start (CEF runs this binary again for its
 // renderers), the message pump driven by Iris's GLib loop, the request
@@ -25,7 +25,6 @@ import "core:sys/linux"
 import "core:unicode/utf16"
 
 // (not indented: the whole file is this engine's)
-when ENGINE_CEF {
 
 /// CEF 156's frozen C API (cef_api_versions.h); the bindings are generated
 /// and checked with the same version (tools/cef_headers.sh)
@@ -238,6 +237,15 @@ cef_switches :: proc() -> []string {
 		"InterestFeedContentSuggestions", "SidePanelPinning", "ReadAnythingPermanentAccessibility",
 		"CertificateTransparencyComponentUpdater", "AutofillServerCommunication",
 		"SafeBrowsingRealTimeUrlLookup", "WebOTP",
+		// Google's advertising APIs (what Brave's Shields turn off too):
+		// topics, interest groups (Protected Audience), attribution
+		// reporting, shared storage, private state tokens, related sets
+		"BrowsingTopics", "BrowsingTopicsParameters", "BrowsingTopicsDocumentAPI", "InterestGroupStorage", "Fledge",
+		"FledgeBiddingAndAuctionServer", "PrivacySandboxAdsAPIsOverride", "AttributionReportingCrossAppWeb",
+		"SharedStorageAPI", "PrivateStateTokens", "TrustTokens", "FirstPartySets", "RelatedWebsiteSets",
+		"PrivacySandboxSettings4", "PrivacySandboxAdTopicsContentParity", "CookieDeprecationFacilitatedTesting",
+		// background work a browser Iris is not
+		"BackgroundFetch", "PeriodicBackgroundSync", "NotificationTriggers", "WebAuthenticationCableSecondFactor",
 		// (kept: FedCM, for "Sign in with Google"; Prerender2, which makes
 		// pages a site prerenders open at once; heavy-ad intervention)
 	}
@@ -256,6 +264,12 @@ cef_switches :: proc() -> []string {
 		"--site-per-process",
 		strings.concatenate({"--disable-features=", strings.join(disable, ",", context.temp_allocator)}, context.temp_allocator),
 		strings.concatenate({"--enable-features=", strings.join(enable[:], ",", context.temp_allocator)}, context.temp_allocator),
+		// WebRTC never leaks your local or VPN-bypassing addresses
+		// (disable_non_proxied_udp: no UDP outside a proxy; IRIS_WEBRTC=relaxed
+		// lets calls use UDP again, with only the public address shown)
+		strings.concatenate({"--force-webrtc-ip-handling-policy=", env("IRIS_WEBRTC") == "relaxed" ? "default_public_interface_only" : "disable_non_proxied_udp"}, context.temp_allocator),
+		// third-party cookies blocked (Chromium's own switch for it)
+		"--test-third-party-cookie-phaseout",
 		// nothing in the background, nothing after Iris closes
 		"--disable-background-networking",
 		"--disable-component-update",
@@ -347,6 +361,11 @@ engine_start :: proc() -> bool {
 	for n in ([?]string{"SingletonLock", "SingletonSocket", "SingletonCookie"}) {
 		os.remove(join({root, n}, context.temp_allocator))
 		os.remove(join({root, "default", n}, context.temp_allocator))
+	}
+	// DRM: a Widevine CDM an installed browser has, handed to Chromium
+	// (cef_drm.odin); it reads the hint file as it starts
+	if env("IRIS_WIDEVINE") != "0" {
+		if v := widevine_stage(root); len(v) > 0 do log.infof("Widevine CDM %s", v)
 	}
 	if cef_initialize(&main_args, &s, &the_app, nil) == 0 {
 		// 24 (CEF_RESULT_CODE_NORMAL_EXIT_PROCESS_NOTIFIED): another browser
@@ -613,7 +632,7 @@ warm_for_search :: proc() {}
 
 // ---------------------------------------------------------------- renderers: a closed tab's must die
 
-// Why: a closed tab must give its memory back (the WPE bug of 2.2.0-2.2.2,
+// Why: a closed tab must give its memory back (the leak of 2.2.0-2.2.2,
 // in CEF form, would be a renderer kept alive). How, without a request
 // context per tab (that would split cookies and sign-ins): every frame of
 // every browser, subframes too, tells the browser process which renderer
@@ -901,4 +920,3 @@ cef_download_update :: proc(item: ^cef_download_item_t, cb: ^cef_download_item_c
 	download_changed(d)
 }
 
-} // when ENGINE_CEF

@@ -1,7 +1,7 @@
 # CEF smoke test: the minimal Odin program that inits CEF (no sandbox,
 # windowless off-screen rendering, external message pump), opens
 # https://example.org and dumps one OnPaint frame. It downloads the pinned
-# CEF 156 minimal tarball; it does NOT build WPE WebKit or the Iris Flatpak.
+# CEF 156 minimal tarball; it does NOT build the Iris Flatpak.
 name: CEF smoke test
 
 on:
@@ -14,9 +14,7 @@ env:
   # Odin dev-2026-11a, pinned by checksum (the same Odin linux.yml pins)
   ODIN_URL: https://github.com/odin-lang/Odin/releases/download/dev-2026-11a/odin-linux-amd64-dev-2026-11a.tar.gz
   ODIN_SHA256: 65c9f6e97d6f8a30930e151f270ce5aeaa98fe8b2ba49fe067394e2af04f7618
-  # CEF 156.0.32, Chromium 156.0.8078.109, minimal distribution
-  CEF_TARBALL: cef_binary_156.0.32+g3d1f4ab+chromium-156.0.8078.109_linux64_minimal.tar.bz2
-  CEF_DIRNAME: cef_binary_156.0.32+g3d1f4ab+chromium-156.0.8078.109_linux64_minimal
+  # the CEF build is the one in packaging/cef_version.lock (cef-pin.sh)
 
 jobs:
   smoke:
@@ -37,9 +35,12 @@ jobs:
           echo /opt/odin >> $GITHUB_PATH
           echo ODIN_ROOT=/opt/odin >> $GITHUB_ENV
 
-      - name: CEF 156 minimal
+      - name: The CEF pin (packaging/cef_version.lock)
+        run: sh packaging/check/cef-pin.sh
+      - name: CEF minimal (packaging/cef_version.lock)
         run: |
-          curl -sSfL "https://cef-builds.spotifycdn.com/$CEF_TARBALL" -o /tmp/cef.tar.bz2
+          curl -sSfL "https://cef-builds.spotifycdn.com/$CEF_TARBALL.tar.bz2" -o /tmp/cef.tar.bz2
+          sh packaging/check/cef-pin.sh --verify /tmp/cef.tar.bz2
           mkdir -p /tmp/cef && tar -xjf /tmp/cef.tar.bz2 -C /tmp/cef
           echo "CEF_DIR=/tmp/cef/$CEF_DIRNAME" >> $GITHUB_ENV
           ls -la "/tmp/cef/$CEF_DIRNAME/Release/libcef.so" "/tmp/cef/$CEF_DIRNAME/Resources"

@@ -1,0 +1,211 @@
+# Keeps Iris (Chromium) on the newest stable CEF, so Chromium's security
+# fixes reach it within about a day of Spotify publishing the build.
+#
+# Twice a day (and by hand): read https://cef-builds.spotifycdn.com/index.json,
+# compare the newest stable linux64 minimal build with packaging/cef_version.lock.
+# When it is newer (or its SHA-1 changed), download it, check the SHA-1 against
+# the index, measure the SHA-256, and open a pull request that updates the lock,
+# the Flatpak manifest, Iris (Chromium)'s patch version and its release notes.
+# Then run the CEF build and tests on that branch (workflow_dispatch: a push or
+# pull request made with GITHUB_TOKEN starts no workflows), and
+#   - a new patch of the Chromium major Iris is on: merge when green, then
+#     publish the release (not for a run that only fills in checksums; set the repository variable CEF_AUTORELEASE to
+#     "false" to stop at the merge);
+#   - a new Chromium major: open the pull request and run the build, but leave
+#     the merge to a person (the C bindings are frozen at CEF API 15600; a new
+#     major can change what the binding generator makes);
+#   - red: comment on the pull request and fail this run (GitHub emails you).
+#
+# Needed once, in the repository settings:
+#   Settings > Actions > General > Workflow permissions: "Read and write" and
+#   "Allow GitHub Actions to create and approve pull requests".
+# If the default branch requires reviews, the merge step fails and the pull
+# request waits for a person; that is the safe way to fail.
+#
+# Not run yet: written without access to the CEF index (the sandbox it was
+# written in cannot reach cef-builds.spotifycdn.com), so the first run on the
+# real index is the real test. packaging/check/test_cef_update.py covers the
+# decision logic against a made-up index.
+name: CEF update
+
+on:
+  schedule:
+    - cron: "23 5,17 * * *"
+  workflow_dispatch:
+    inputs:
+      merge:
+        description: "Merge and release when green (false: leave the pull request open)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: cef-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Is there a newer CEF?
+        id: latest
+        run: |
+          python3 -I packaging/check/cef-update.py latest | tee "$GITHUB_OUTPUT"
+
+      # a public repository's scheduled workflows are switched off after 60
+      # days without repository activity; enabling this one again each run
+      # starts the count over (best effort)
+      - name: Keep this schedule alive
+        run: gh workflow enable cef-update.yml || echo "::notice::could not re-enable the schedule (harmless)"
+
+      - name: Nothing to do
+        if: steps.latest.outputs.update != 'true'
+        run: echo "CEF ${{ steps.latest.outputs.current }} is the newest stable build."
+
+      - name: Download, check the SHA-1, measure the SHA-256
+        if: steps.latest.outputs.update == 'true'
+        id: tarball
+        env:
+          NAME: ${{ steps.latest.outputs.name }}
+          SHA1: ${{ steps.latest.outputs.sha1 }}
+        run: |
+          set -eu
+          curl -sSfL --retry 5 --retry-delay 20 "https://cef-builds.spotifycdn.com/$NAME" -o /tmp/cef.tar.bz2
+          echo "$SHA1  /tmp/cef.tar.bz2" | sha1sum -c -
+          # it must unpack to the libcef.so Iris loads
+          tar -tjf /tmp/cef.tar.bz2 | grep -q '/Release/libcef.so$'
+          echo "sha256=$(sha256sum /tmp/cef.tar.bz2 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: The branch and the pull request
+        if: steps.latest.outputs.update == 'true'
+        id: pr
+        env:
+          CEF_VERSION: ${{ steps.latest.outputs.cef_version }}
+          CHROMIUM: ${{ steps.latest.outputs.chromium }}
+          CURRENT: ${{ steps.latest.outputs.current }}
+          SHA1: ${{ steps.latest.outputs.sha1 }}
+          SHA256: ${{ steps.tarball.outputs.sha256 }}
+          MAJOR_BUMP: ${{ steps.latest.outputs.major_bump }}
+          VERSION_CHANGES: ${{ steps.latest.outputs.version_changes }}
+        run: |
+          set -eu
+          branch="cef-update/$CHROMIUM"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          # a pull request for this build is already open: this run only watches it
+          existing=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "pr=$existing" >> "$GITHUB_OUTPUT"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch" "origin/$DEFAULT_BRANCH"
+          python3 -I packaging/check/cef-update.py apply --cef-version "$CEF_VERSION" --sha1 "$SHA1" --sha256 "$SHA256" | tee /tmp/apply.out
+          python3 -I packaging/check/test_cef_update.py
+          sh packaging/check/versions-cef.sh
+          git add -A packaging linux/src/version_cef.odin experiments
+          git commit -q -m "CEF $CEF_VERSION (Chromium $CHROMIUM)" -m "From $CURRENT. Checked against Spotify's index (SHA-1) and measured (SHA-256) by .github/workflows/cef-update.yml."
+          git push --force origin "$branch"
+          if [ "$MAJOR_BUMP" = true ]; then
+            note="A new Chromium major. A person merges this one: the C bindings are frozen at CEF API 15600, so read the build's result first (bindings against the new headers, ABI check, smoke test)."
+          else
+            note="A patch of the Chromium major Iris is already on. It merges itself when the build and tests are green."
+          fi
+          gh pr create --base "$DEFAULT_BRANCH" --head "$branch" \
+            --title "CEF $CEF_VERSION (Chromium $CHROMIUM)" \
+            --body "Chromium $CHROMIUM (CEF $CEF_VERSION), from $CURRENT.
+
+          $note
+
+          What changed: packaging/cef_version.lock, the Flatpak manifest, Iris (Chromium)'s patch version and release notes. Opened by the CEF update workflow." \
+            > /tmp/pr.url
+          echo "pr=$(basename "$(cat /tmp/pr.url)")" >> "$GITHUB_OUTPUT"
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+      # a pull request made with GITHUB_TOKEN starts no workflows, so start
+      # the CEF jobs on its branch (their checks attach to the head commit)
+      - name: Build and test that branch
+        if: steps.latest.outputs.update == 'true'
+        id: build
+        env:
+          BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          set -eu
+          since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run linux.yml --ref "$BRANCH"
+          gh workflow run cef-smoke.yml --ref "$BRANCH"
+          find_run() {
+            for _ in $(seq 1 30); do
+              id=$(gh run list --workflow "$1" --branch "$BRANCH" --event workflow_dispatch --json databaseId,createdAt \
+                --jq "[.[] | select(.createdAt >= \"$since\")] | sort_by(.createdAt) | last | .databaseId // empty")
+              [ -n "$id" ] && { echo "$id"; return; }
+              sleep 10
+            done
+            echo "no run of $1 appeared" >&2; return 1
+          }
+          linux_id=$(find_run linux.yml)
+          smoke_id=$(find_run cef-smoke.yml)
+          echo "linux=$linux_id smoke=$smoke_id"
+          ok=true
+          gh run watch "$linux_id" --exit-status --interval 60 >/dev/null || ok=false
+          gh run watch "$smoke_id" --exit-status --interval 60 >/dev/null || ok=false
+          echo "green=$ok" >> "$GITHUB_OUTPUT"
+          echo "runs=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$linux_id and $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$smoke_id" >> "$GITHUB_OUTPUT"
+
+      - name: Red
+        if: steps.latest.outputs.update == 'true' && steps.build.outputs.green != 'true'
+        env:
+          PR: ${{ steps.pr.outputs.pr }}
+          RUNS: ${{ steps.build.outputs.runs }}
+        run: |
+          gh pr comment "$PR" --body "The CEF build or tests failed on this branch: $RUNS. Not merged. Iris stays on the CEF in packaging/cef_version.lock until this is fixed or closed."
+          echo "::error::CEF update PR #$PR failed its build: $RUNS"
+          exit 1
+
+      - name: Green, same Chromium major
+        if: steps.latest.outputs.update == 'true' && steps.build.outputs.green == 'true' && steps.latest.outputs.major_bump != 'true' && (github.event_name == 'schedule' || inputs.merge)
+        id: merge
+        env:
+          PR: ${{ steps.pr.outputs.pr }}
+          RUNS: ${{ steps.build.outputs.runs }}
+        run: |
+          set -eu
+          gh pr comment "$PR" --body "Build and tests are green: $RUNS."
+          if gh pr merge "$PR" --squash --delete-branch; then
+            echo "merged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::could not merge PR #$PR (branch protection?): it waits for a person"
+            gh pr comment "$PR" --body "Green, but GitHub would not let this workflow merge it (branch protection?). Merge it by hand."
+          fi
+
+      - name: Green, new Chromium major
+        if: steps.latest.outputs.update == 'true' && steps.build.outputs.green == 'true' && steps.latest.outputs.major_bump == 'true'
+        env:
+          PR: ${{ steps.pr.outputs.pr }}
+          RUNS: ${{ steps.build.outputs.runs }}
+        run: |
+          gh pr comment "$PR" --body "A new Chromium major, and the build and tests are green: $RUNS. Read the bindings check, then merge it yourself."
+
+      - name: Release
+        if: steps.merge.outputs.merged == 'true' && steps.latest.outputs.version_changes == 'true' && vars.CEF_AUTORELEASE != 'false'
+        run: |
+          set -eu
+          git fetch origin "$DEFAULT_BRANCH"
+          git checkout -q "origin/$DEFAULT_BRANCH"
+          ver=$(sed -n 's/^CEF_VERSION :: "\(.*\)"$/\1/p' linux/src/version_cef.odin)
+          # the release workflow tags and builds the commit it is run on
+          gh workflow run release-cef.yml --ref "$DEFAULT_BRANCH" -f "tag=cef-v$ver"
+          echo "Started the release of Iris (Chromium) $ver."

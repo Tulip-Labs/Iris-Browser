@@ -7,7 +7,6 @@ package iris
 import "core:strings"
 
 // (not indented: the whole file is this engine's)
-when ENGINE_CEF {
 
 tab_cert_proceed :: proc(t: ^Tab, url, host: string, engine: rawptr) {
 	// the host is in the sandbox this run (cert_host_sandboxed): tab_load
@@ -19,4 +18,3 @@ tab_cert_proceed :: proc(t: ^Tab, url, host: string, engine: rawptr) {
 /// CEF keeps no hold on the certificate for Iris (it asks again)
 tab_cert_release :: proc(engine: rawptr) {}
 
-} // when ENGINE_CEF

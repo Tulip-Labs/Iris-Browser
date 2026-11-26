@@ -1,4 +1,4 @@
-// The CEF engine's page on screen (IRIS_ENGINE=cef, see engine_api.odin):
+// The CEF engine's page on screen:
 // CEF draws the page off-screen and hands Iris its pixels (OnPaint, BGRA,
 // premultiplied, with the rectangles that changed) when it composites in
 // software; only those rectangles go up into the page's texture, and the
@@ -16,7 +16,6 @@ import "core:unicode/utf16"
 import plat "../plat"
 
 // (not indented: the whole file is this engine's)
-when ENGINE_CEF {
 
 Page :: struct {
 	view:          ^View,
@@ -604,4 +603,3 @@ windows_key_code :: proc(keysym, sym: u32) -> i32 {
 
 // ---- END CEF_LOGIC_KEYS
 
-} // when ENGINE_CEF

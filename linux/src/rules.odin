@@ -1,14 +1,12 @@
 // Filter lists (EasyList and uBlock Origin's syntax) turned into rules: the
 // lists' blocks, hiding and exceptions as Rule values, and their commonest
 // kind, "||host^" (a whole host blocked), folded with Iris's own domains
-// into sorted host sets instead. From there, WebKit gets JSON content rules
-// in parts small enough for its compiler (rules_json, written part by part),
-// and CEF a matcher (shield_match.odin) that looks hosts up in the sets.
+// into sorted host sets instead. From there, a matcher (shield_match.odin)
+// looks hosts up in the sets.
 // All the strings live in one arena: the caller makes it the context's
 // allocator for the whole conversion.
 package iris
 
-import "base:runtime"
 import "core:slice"
 import "core:strings"
 import "core:testing"
@@ -244,7 +242,7 @@ listed :: proc(sorted: []string, host: string) -> bool {
 
 // ---------------------------------------------------------------- rules
 
-/// one rule, as WebKit's content rules say it
+/// one rule, as the content-rule format says it
 Rule :: struct {
 	/// the url-filter is host_pattern(host) ("||host^"), else filter
 	host, filter: string,
@@ -257,7 +255,7 @@ Rule :: struct {
 	frames:       bool, // only loads in a child frame
 }
 
-/// the rules of a conversion, in WebKit's order
+/// the rules of a conversion, in the content-rule order
 Rules :: struct {
 	list:          [dynamic]Rule,
 	/// the whole-host blocks (the sets) stand before list[block_at] (the
@@ -339,7 +337,7 @@ host_pattern :: proc(d: string) -> string {
 		cosmetic(c, line[:i], line[i + 2:])
 		return
 	}
-	// other cosmetic and scriptlet syntax WebKit cannot follow
+	// other cosmetic and scriptlet syntax the matcher cannot follow
 	for m in ([?]string{"#@#", "#?#", "#$#", "#%#", "#@?#", "#@$#", "$$", "##^"}) do if strings.contains(line, m) do return
 	network(c, line)
 }
@@ -410,7 +408,7 @@ UNSUPPORTED :: [?]string{":has-text(", ":-abp-", ":style(", ":remove(", ":matche
 			pattern, opts = l[:i], tail
 		}
 	}
-	// regular expressions: WebKit's are a smaller language; left out
+	// regular expressions: left out
 	if len(pattern) > 1 && pattern[0] == '/' && pattern[len(pattern) - 1] == '/' do return
 	types, not_types: Req_Types
 	has_types, want_frame, not_frame := false, false, false
@@ -447,7 +445,7 @@ UNSUPPORTED :: [?]string{":has-text(", ":-abp-", ":style(", ":remove(", ":matche
 			document_exception = true
 		case:
 			ts, frame, ok := type_of(name)
-			if !ok do return // redirect, removeparam, csp: no WebKit equivalent
+			if !ok do return // redirect, removeparam, csp: no equivalent
 			if negated {
 				not_types += ts
 				if frame do not_frame = true
@@ -526,7 +524,7 @@ UNSUPPORTED :: [?]string{":has-text(", ":-abp-", ":style(", ":remove(", ":matche
 	append(c.ultra_only ? &c.ublocks : &c.blocks, r)
 }
 
-/// a filter's pattern as WebKit's url-filter (a small regular expression)
+/// a filter's pattern as a url-filter (a small regular expression)
 url_filter :: proc(p0: string) -> (string, bool) {
 	p := p0
 	b := strings.builder_make()
@@ -568,12 +566,12 @@ url_filter :: proc(p0: string) -> (string, bool) {
 	return s, true
 }
 
-/// the rules in WebKit's order: hiding first (WebKit takes the rules that
-/// hide everywhere only from before its other rules); then what only the
+/// the rules in the content-rule order: hiding first (the rules that
+/// hide everywhere come before the others); then what only the
 /// ultra level has (the ultra-only lists' rules, Iris's own domains, the
 /// pings rule), which the video sites skip; then the blocks every level
 /// above moderate has (the host sets among them); then the exceptions and
-/// what is always left alone, which every part of WebKit's ends with
+/// what is always left alone, which every part ends with
 converter_rules :: proc(c: ^Converter) -> Rules {
 	r := Rules{level = c.level}
 	if c.level == .ultra do for s in CONSENT_HIDE do append(&c.generic, s)
@@ -674,12 +672,7 @@ converter_rules :: proc(c: ^Converter) -> Rules {
 	return
 }
 
-// ---------------------------------------------------------------- WebKit's JSON
-
-@(private="file") TYPE_NAMES := [Req_Type]string {
-	.document = "document", .image = "image", .style_sheet = "style-sheet", .script = "script", .font = "font", .raw = "raw",
-	.svg_document = "svg-document", .media = "media", .popup = "popup", .ping = "ping", .fetch = "fetch", .websocket = "websocket", .other = "other",
-}
+// ---------------------------------------------------------------- strings
 
 @(private="file") write_json_str :: proc(b: ^strings.Builder, s: string) {
 	strings.write_byte(b, '"')
@@ -704,164 +697,6 @@ converter_rules :: proc(c: ^Converter) -> Rules {
 	strings.write_byte(b, '"')
 }
 
-@(private="file") write_json_list :: proc(b: ^strings.Builder, items: []string) {
-	strings.write_byte(b, '[')
-	for s, i in items {
-		if i > 0 do strings.write_byte(b, ',')
-		write_json_str(b, s)
-	}
-	strings.write_byte(b, ']')
-}
-
-/// host_pattern(h) as a JSON string, written straight (h is lower-case)
-@(private="file") write_host_filter :: proc(b: ^strings.Builder, h: string) {
-	strings.write_string(b, `"^[^:]+://+([^:/]+\\.)?`)
-	for c in transmute([]u8)h {
-		if strings.index_byte(".+?{}()[]$|^*", c) >= 0 do strings.write_string(b, "\\\\")
-		strings.write_byte(b, c)
-	}
-	strings.write_string(b, `[:/]"`)
-}
-
-@(private="file") write_rule :: proc(b: ^strings.Builder, r: Rule) {
-	strings.write_string(b, `{"trigger":{"url-filter":`)
-	if len(r.host) > 0 { write_host_filter(b, r.host) } else { write_json_str(b, r.filter) }
-	if r.types != {} {
-		strings.write_string(b, `,"resource-type":[`)
-		first := true
-		for t in r.types {
-			if !first do strings.write_byte(b, ',')
-			first = false
-			strings.write_byte(b, '"')
-			strings.write_string(b, TYPE_NAMES[t])
-			strings.write_byte(b, '"')
-		}
-		strings.write_byte(b, ']')
-	}
-	if r.frames do strings.write_string(b, `,"load-context":["child-frame"]`)
-	if r.party == 1 do strings.write_string(b, `,"load-type":["first-party"]`)
-	if r.party == 2 do strings.write_string(b, `,"load-type":["third-party"]`)
-	if len(r.if_dom) > 0 {
-		strings.write_string(b, `,"if-domain":`)
-		write_json_list(b, r.if_dom)
-	}
-	if len(r.unless_dom) > 0 {
-		strings.write_string(b, `,"unless-domain":`)
-		write_json_list(b, r.unless_dom)
-	}
-	strings.write_string(b, `},"action":{"type":"`)
-	switch r.action {
-	case .block: strings.write_string(b, "block")
-	case .ignore: strings.write_string(b, "ignore-previous-rules")
-	case .hide:
-		strings.write_string(b, `css-display-none","selector":`)
-		write_json_str(b, r.selector)
-		strings.write_string(b, "}}")
-		return
-	}
-	strings.write_string(b, `"}}`)
-}
-
-@(private="file") Json_Parts :: struct {
-	r:     ^Rules,
-	parts: [dynamic]string,
-	b:     strings.Builder,
-	n:     int,
-	room:  int,
-	size:  int, // the bytes a full part took (the next one's builder starts there)
-	alloc: runtime.Allocator,
-	/// the ultra level's rules are being written: a part that ends among
-	/// them ends with the video sites' rule too (an ignore rule only reaches
-	/// the rules of its own part)
-	ultra_open: bool,
-}
-
-@(private="file") part_end :: proc(j: ^Json_Parts) {
-	if j.n == 0 {
-		if len(j.parts) > 0 do return
-		j.b = strings.builder_make(0, 1024, j.alloc)
-		strings.write_byte(&j.b, '[')
-	}
-	if j.ultra_open {
-		if j.n > 0 do strings.write_byte(&j.b, ',')
-		write_rule(&j.b, j.r.list[j.r.media_at])
-		j.n += 1
-	}
-	for x in j.r.list[j.r.tail_at:] {
-		if j.n > 0 do strings.write_byte(&j.b, ',')
-		write_rule(&j.b, x)
-		j.n += 1
-	}
-	strings.write_byte(&j.b, ']')
-	s := strings.to_string(j.b)
-	j.size = max(j.size, len(s))
-	// the part's builder gave back what it grew past
-	append(&j.parts, strings.clone(s, j.alloc))
-	strings.builder_destroy(&j.b)
-	j.n = 0
-}
-
-@(private="file") part_add :: proc(j: ^Json_Parts, r: Rule) {
-	if j.n == 0 {
-		j.b = strings.builder_make(0, j.size + j.size / 8 + 1024, j.alloc)
-		strings.write_byte(&j.b, '[')
-	} else {
-		strings.write_byte(&j.b, ',')
-	}
-	write_rule(&j.b, r)
-	j.n += 1
-	if j.n >= j.room do part_end(j)
-}
-
-/// the rules as WebKit's JSON arrays of at most max_rules each (every part
-/// ends with the exceptions, so each part stands alone), written one rule
-/// at a time from allocator (the heap, in Iris: a builder that grows in
-/// an arena would leave every smaller copy of itself behind)
-rules_json :: proc(r: ^Rules, max_rules: int, allocator: runtime.Allocator) -> []string {
-	j := Json_Parts{r = r, room = max(1000, max_rules - (len(r.list) - r.tail_at) - 1), alloc = allocator}
-	// the parts' list too: the caller's arena may be gone before it reads them
-	j.parts.allocator = allocator
-	any_t := Rule{types = ALL_TYPES, action = .block}
-	third_t := Rule{types = ALL_TYPES, party = 2, action = .block}
-	add_set :: proc(j: ^Json_Parts, set: string, t: Rule, builtin: bool, covered := "") {
-		t := t
-		s := set
-		for h in strings.split_lines_iterator(&s) {
-			if len(h) == 0 do continue
-			if builtin && !usable(h) do continue
-			// blocked everywhere already, by the other lists
-			if _, ok := set_find(covered, h); ok do continue
-			t.host = h
-			part_add(j, t)
-		}
-	}
-	for x, i in r.list[:r.ultra_at] {
-		if i == r.uhides_at do j.ultra_open = true
-		part_add(&j, x)
-	}
-	j.ultra_open = true
-	// the ultra level's whole-host blocks
-	if r.builtin do add_set(&j, builtin_hosts(), r.builtin_third ? third_t : any_t, true, r.hosts_any)
-	add_set(&j, r.uhosts_any, any_t, false)
-	add_set(&j, r.uhosts_third, third_t, false)
-	for x, i in r.list[r.ultra_at:r.block_at] {
-		if r.ultra_at + i == r.media_at do j.ultra_open = false
-		part_add(&j, x)
-	}
-	// the other lists'
-	add_set(&j, r.hosts_any, any_t, false)
-	add_set(&j, r.hosts_third, third_t, false)
-	for x in r.list[r.block_at:r.tail_at] do part_add(&j, x)
-	part_end(&j)
-	return j.parts[:]
-}
-
-/// the rules as WebKit's JSON (Converter in, parts out)
-converter_finish :: proc(c: ^Converter, max_rules: int) -> []string {
-	r := converter_rules(c)
-	return rules_json(&r, max_rules, context.allocator)
-}
-
 regex_escape :: proc(s: string) -> string {
 	b := strings.builder_make()
 	for c in transmute([]u8)s {
@@ -877,12 +712,6 @@ json_str :: proc(s: string, allocator := context.allocator) -> string {
 	return strings.to_string(b)
 }
 
-json_list :: proc(items: []string) -> string {
-	b := strings.builder_make()
-	write_json_list(&b, items)
-	return strings.to_string(b)
-}
-
 // ---------------------------------------------------------------- tests
 
 @(test) test_domain_rules :: proc(t: ^testing.T) {
@@ -890,19 +719,6 @@ json_list :: proc(items: []string) -> string {
 	testing.expect(t, !usable("cloudfront.net"))
 	testing.expect(t, !usable("accounts.google.com"))
 	testing.expect(t, !usable("cdn.cookielaw.org"))
-	arena: virtual.Arena
-	_ = virtual.arena_init_growing(&arena)
-	defer virtual.arena_destroy(&arena)
-	context.allocator = virtual.arena_allocator(&arena)
-	c := Converter{level = .aggressive}
-	converter_add_domains(&c, {"ads.example.com", "gstatic.com", "x.ads.example.com"})
-	all := strings.join(converter_finish(&c, 120_000), "")
-	testing.expect(t, strings.contains(all, "ads\\\\.example\\\\.com"))
-	// a parent covers its subdomains: one rule
-	testing.expect(t, !strings.contains(all, "x\\\\.ads"))
-	testing.expect(t, !strings.contains(all, "gstatic"))
-	// the same JSON as before for a host: one host pattern
-	testing.expect(t, strings.contains(all, `"url-filter":"^[^:]+://+([^:/]+\\.)?ads\\.example\\.com[:/]"`))
 }
 
 @(test) test_filter_rules :: proc(t: ^testing.T) {
@@ -911,39 +727,10 @@ json_list :: proc(items: []string) -> string {
 	defer virtual.arena_destroy(&arena)
 	context.allocator = virtual.arena_allocator(&arena)
 	c := Converter{level = .moderate}
-	converter_add_list(&c, "! comment\n||ads.example.com^$script\nexample.org##.ad-box\n##.generic-ad\n@@||good.example.com^$document\n||cdn.example.net/x.js$redirect=noop\n||whole.example^\n")
+	converter_add_list(&c, "! comment\n||ads.example.com^$script\n||whole.example^\n")
 	r := converter_rules(&c)
 	// the whole host goes into the set, for other sites' requests (moderate)
 	testing.expect_value(t, r.hosts_third, "whole.example")
-	all := strings.join(rules_json(&r, 120_000, context.allocator), "")
-	// a third-party block at the moderate level
-	testing.expect(t, strings.contains(all, "\"load-type\":[\"third-party\"]"))
-	testing.expect(t, strings.contains(all, "\"resource-type\":[\"script\"]"))
-	testing.expect(t, strings.contains(all, "whole\\\\.example"))
-	// a site's own hiding stays, the generic one is for the higher levels
-	testing.expect(t, strings.contains(all, ".ad-box"))
-	testing.expect(t, !strings.contains(all, ".generic-ad"))
-	// the page exception, and no rule from a redirect it cannot follow
-	testing.expect(t, strings.contains(all, "ignore-previous-rules"))
-	testing.expect(t, !strings.contains(all, "cdn\\\\.example"))
-}
-
-@(test) test_json_parts :: proc(t: ^testing.T) {
-	arena: virtual.Arena
-	_ = virtual.arena_init_growing(&arena)
-	defer virtual.arena_destroy(&arena)
-	context.allocator = virtual.arena_allocator(&arena)
-	c := Converter{level = .aggressive}
-	ds: [dynamic]string
-	for i in 0 ..< 2500 do append(&ds, strings.concatenate({"ads", strings.repeat("a", i % 7 + 1), "-", strings.repeat("b", i / 7 + 1), ".example"}))
-	converter_add_domains(&c, ds[:])
-	parts := converter_finish(&c, 1000)
-	testing.expect(t, len(parts) >= 3)
-	for p in parts {
-		testing.expect(t, strings.has_prefix(p, "[{") && strings.has_suffix(p, "}]"))
-		// every part ends with the exceptions
-		testing.expect(t, strings.contains(p, "whatsapp"))
-	}
 }
 
 @(test) test_host_sets :: proc(t: ^testing.T) {
@@ -962,22 +749,4 @@ json_list :: proc(items: []string) -> string {
 	list := [?]string{"ads.example.com", "tracker.net"}
 	testing.expect(t, listed(list[:], "x.tracker.net"))
 	testing.expect(t, !listed(list[:], "example.com"))
-}
-
-/// every WebKit part with ultra-only rules in it stops them for the video
-/// sites itself (an ignore rule reaches only the rules of its own part)
-@(test) test_json_parts_media :: proc(t: ^testing.T) {
-	arena: virtual.Arena
-	_ = virtual.arena_init_growing(&arena)
-	defer virtual.arena_destroy(&arena)
-	context.allocator = virtual.arena_allocator(&arena)
-	c := Converter{level = .ultra, builtin = true}
-	converter_add_list(&c, "||ads.example.com^$script\n")
-	parts := converter_finish(&c, 50_000)
-	testing.expect(t, len(parts) >= 4)
-	// (the generic hiding's rule names the video sites too: part 0 has both)
-	for p, i in parts {
-		n := strings.count(p, `"*youtube-nocookie.com","*linkedin.com"`)
-		if i < len(parts) - 1 do testing.expectf(t, n >= (i == 0 ? 2 : 1), "part %d has no video sites' rule", i)
-	}
 }

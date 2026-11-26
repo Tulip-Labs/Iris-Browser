@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Getting started — Iris docs</title>
-  <meta name="description" content="Install Iris on Linux as a Flatpak (WebKit or Chromium engine) or on Android as an APK, and keep it up to date.">
+  <meta name="description" content="Install Iris on Linux as a Flatpak (Chromium engine) or on Android as an APK, and keep it up to date.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0B0C0E" media="(prefers-color-scheme: dark)">
@@ -15,7 +15,7 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Iris">
   <meta property="og:title" content="Getting started — Iris docs">
-  <meta property="og:description" content="Install Iris on Linux as a Flatpak (WebKit or Chromium engine) or on Android as an APK, and keep it up to date.">
+  <meta property="og:description" content="Install Iris on Linux as a Flatpak (Chromium engine) or on Android as an APK, and keep it up to date.">
   <meta property="og:url" content="https://tulip-labs.github.io/Iris-Browser/docs/">
   <meta property="og:image" content="https://tulip-labs.github.io/Iris-Browser/assets/iris-512.png">
   <meta name="twitter:card" content="summary">
@@ -34,7 +34,7 @@
       <ul class="nav">
         <li><a href="../index.html#features">Features</a></li>
         <li><a href="../index.html#privacy">Privacy</a></li>
-        <li><a href="../index.html#engines">Engines</a></li>
+        <li><a href="../index.html#engines">Engine</a></li>
         <li><a href="../index.html#android">Android</a></li>
         <li><a href="../index.html#install">Install</a></li>
         <li><a href="index.html" aria-current="page">Docs</a></li>
@@ -55,7 +55,7 @@
           <li><a href="index.html" aria-current="page">Getting started</a>
             <ul>
               <li><a href="#linux">Linux (Flatpak)</a></li>
-              <li><a href="#cef">The Chromium build</a></li>
+              <li><a href="#cef">What to know</a></li>
               <li><a href="#android">Android</a></li>
               <li><a href="#updates">Updates</a></li>
               <li><a href="#first">First steps</a></li>
@@ -80,29 +80,25 @@
         <p class="lead">Iris runs on Linux (Wayland) and Android. Both come from <a href="https://github.com/Tulip-Labs/Iris-Browser/releases/latest">GitHub Releases</a>. There are no package repositories: the old apt, dnf and zypper repositories are discontinued.</p>
 
         <h2 id="linux">Linux (Flatpak)</h2>
-        <p>Iris for Linux ships as one Flatpak bundle, <code>Iris-x86_64.flatpak</code>, on the WPE WebKit engine. It is a native Wayland app (no X11, no GTK).</p>
+        <p>Iris for Linux is <strong>Iris (Chromium)</strong>, one Flatpak bundle, <code>Iris-Cef-x86_64.flatpak</code>, with pages drawn by Chromium through CEF 156. It is a native Wayland app (no X11, no GTK). Its releases are tagged <code>cef-v</code> (for example <code>cef-v2.4.0</code>, titled "Iris (Chromium) 2.4.0"), with their own version number. They carry only the bundle and its <code>SHA256SUMS</code>, and they are never the "latest" release, which is Android's.</p>
         <ol>
-          <li>Download <code>Iris-x86_64.flatpak</code> from the <a href="https://github.com/Tulip-Labs/Iris-Browser/releases/latest">latest release</a>.</li>
+          <li>Download <code>Iris-Cef-x86_64.flatpak</code> from the newest <code>cef-v</code> release on the <a href="https://github.com/Tulip-Labs/Iris-Browser/releases">releases page</a>.</li>
           <li>Iris needs the GNOME 50 runtime, which Flatpak installs from Flathub. If the Flathub remote isn't set up yet:
             <pre><code>flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo</code></pre>
           </li>
           <li>Install the bundle:
-            <pre><code>flatpak install --user Iris-x86_64.flatpak</code></pre>
+            <pre><code>flatpak install --user Iris-Cef-x86_64.flatpak</code></pre>
           </li>
         </ol>
-        <p>The app ID is <code>io.github.tulip_labs.Iris</code>. On niri 26.04 and newer the blur behind the window comes on by itself; no window rule is needed. Elsewhere the window stays nearly solid.</p>
-
-        <h2 id="cef">The Chromium (CEF) build <span class="from">From 2.3</span></h2>
-        <p>Beside the WPE build there is a second Flatpak, <strong>Iris (Chromium)</strong>, app ID <code>io.github.tulip_labs.Iris.Cef</code>: the same app built on CEF 156. It installs side by side with the WPE build. It has <a href="https://github.com/Tulip-Labs/Iris-Browser/releases">releases of its own</a>, tagged <code>cef-v</code> (for example <code>cef-v2.4.0</code>, titled "Iris (Chromium) 2.4.0"), with its own version number. They carry only <code>Iris-Cef-x86_64.flatpak</code> and its <code>SHA256SUMS</code>, and they are never the "latest" release, which stays the WPE build and Android. Download the bundle from the newest <code>cef-v</code> release and install it:</p>
-        <pre><code>flatpak install --user Iris-Cef-x86_64.flatpak</code></pre>
-        <p>Iris (Chromium) checks its own releases once a day and links to the new bundle when there is one; installing it the same way updates it. To build it yourself instead:</p>
+        <p>The app ID is <code>io.github.tulip_labs.Iris.Cef</code>. On niri 26.04 and newer the blur behind the window comes on by itself; no window rule is needed. Elsewhere the window stays nearly solid. To build it yourself instead:</p>
         <pre><code>flatpak-builder --user --install --force-clean build packaging/flatpak/io.github.tulip_labs.Iris.Cef.yml</code></pre>
-        <p>What it gives up next to the WPE build:</p>
+
+        <h2 id="cef">What to know about the Linux build</h2>
         <ul>
-          <li><strong>Chromium's renderer sandbox is off.</strong> It needs a setuid helper or user namespaces, and a Flatpak has neither. Renderers run inside Flatpak's sandbox only; WPE keeps its own process sandbox.</li>
+          <li><strong>Chromium's renderer sandbox is off.</strong> It needs a setuid helper or user namespaces, and a Flatpak has neither. Renderers run inside Flatpak's sandbox only.</li>
           <li><strong>No H.264, H.265 or AAC.</strong> CEF's binaries ship without the proprietary codecs. VP9, AV1 and Opus play, and YouTube works.</li>
-          <li><strong>More CPU for page frames</strong>, which are copied instead of shared with no copy as in WPE. Chromium composites in software by default; <code>IRIS_CEF_GPU=1</code> tries the GPU.</li>
-          <li><strong>Much larger.</strong> <code>libcef.so</code> alone is a few hundred MB.</li>
+          <li><strong>Page frames come from the GPU</strong> as DMA-BUFs, copied on the GPU with no pixel through the CPU. <code>IRIS_CEF_GPU=0</code> goes back to software frames, which use more CPU.</li>
+          <li><strong>Large.</strong> <code>libcef.so</code> alone is a few hundred MB.</li>
         </ul>
 
         <h2 id="android">Android</h2>
@@ -114,7 +110,7 @@
 
         <h2 id="updates">Updates</h2>
         <ul>
-          <li><strong>Linux:</strong> once a day Iris asks GitHub for the newest release and tells you when there is one. To update, download the new <code>Iris-x86_64.flatpak</code> and install it the same way.</li>
+          <li><strong>Linux:</strong> once a day Iris asks GitHub for the newest <code>cef-v</code> release and links to its bundle when there is one. To update, download the new <code>Iris-Cef-x86_64.flatpak</code> and install it the same way.</li>
           <li><strong>Android:</strong> Iris checks GitHub once a day, downloads the new APK and has Android install it over itself. Updates come only from Iris's own releases, over https.</li>
         </ul>
 

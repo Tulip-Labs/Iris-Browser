@@ -1,4 +1,4 @@
-// The CEF engine's tab view (IRIS_ENGINE=cef, see engine_api.odin): one
+// The CEF engine's tab view: one
 // windowless CefBrowser per tab and every handler CEF calls for it.
 //
 // A View is Iris's object for one browser: the client and all its
@@ -20,7 +20,6 @@ import "core:strings"
 import "core:time"
 
 // (not indented: the whole file is this engine's)
-when ENGINE_CEF {
 
 Tab_View :: struct {
 	cv: ^View,
@@ -875,7 +874,7 @@ cef_copy_intent :: proc(t: ^Tab) {
 	yt := h == "youtube.com" || strings.has_suffix(h, ".youtube.com") || strings.has_suffix(h, ".youtube-nocookie.com")
 	if yt {
 		run_in(f, YOUTUBE)
-		// no LIGHT_VIDEO here: that script hides VP9/AV1 for the WPE engine,
+		// no LIGHT_VIDEO here: that script hid VP9/AV1 for an engine that had H.264,
 		// which has H.264. This Chromium has no H.264/AAC, so hiding the
 		// codecs it does have left YouTube nothing to play ("your browser
 		// can't play this video")
@@ -895,6 +894,13 @@ cef_copy_intent :: proc(t: ^Tab) {
 	if intrinsics.atomic_load(&v.shield_on) == 0 do return
 	h, _ := host_of(u, context.temp_allocator)
 	css := matcher_css(cef_matcher(), u, h, context.temp_allocator)
+	// Brave's cosmetic filters and scriptlets: a superset of the matcher's
+	// hiding, so they replace it once the engine is there
+	if e := cef_adblock(); e != nil && strings.has_prefix(u, "http") {
+		ecss, script, _ := core_adblock_cosmetic(e, u)
+		if len(script) > 0 do run_in(f, script)
+		css = ecss
+	}
 	if len(css) == 0 do return
 	run_in(f, fmt.tprintf(`(() => {{ const add = () => {{ const s = document.createElement('style'); s.textContent = %s; (document.head || document.documentElement).appendChild(s); }}; if (document.documentElement) add(); else document.addEventListener('readystatechange', add, {{ once: true }}); }})();`, json_str(css, context.temp_allocator)))
 }
@@ -902,7 +908,7 @@ cef_copy_intent :: proc(t: ^Tab) {
 // ---------------------------------------------------------------- pop-ups and new tabs
 
 /// a page asks for a new window (OnBeforePopup) or a link wants a tab of its
-/// own (OnOpenURLFromTab): the same choice as the WPE engine's
+/// own (OnOpenURLFromTab): the same choice as for any pop-up
 /// (new_window_choice). A link, or a page's own tab: a tab Iris makes
 /// itself with the address. A pop-up that talks to its opener (a sign-in,
 /// the same site's, a blank one the page writes into: Google, GitHub and
@@ -1329,6 +1335,7 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 			// connections, typing), counted from the document's start
 			if strings.has_prefix(u, "http") do run_in(frame, SLEEP_WATCH_JS)
 			browser_page_committed(t, u)
+			extensions_page_seen(t, u)
 		}
 	}
 	ld.on_load_end = proc "c" (self: ^cef_load_handler_t, browser: ^cef_browser_t, frame: ^cef_frame_t, status: i32) {
@@ -1564,6 +1571,12 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 			tab_load_later(t, target)
 			return 1
 		}
+		// other redirectors (social "leaving" pages, click counters) and AMP
+		// viewers: the real address (debounce.odin)
+		if target, ok := debounce_url(u); ok {
+			tab_load_later(t, target)
+			return 1
+		}
 		// a link you click loses its tracking parameters
 		if gesture != 0 && redirect == 0 {
 			if clean := shields_clean_url(u); clean != u {
@@ -1648,6 +1661,29 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		host, _ := host_of(url, context.temp_allocator)
 		page_host, _ := host_of(page, context.temp_allocator)
 		if len(page_host) == 0 do page_host = host
+		// Brave's engine, once it is built: blocks, surrogates (a
+		// harmless stand-in for a tracker's script) and $removeparam.
+		// Iris's own domain list still catches third-party hosts it knows
+		if e := cef_adblock(); e != nil && strings.has_prefix(url, "http") {
+			action, payload := core_adblock_check_c(e, url, len(page) > 0 ? page : url, adblock_type_of(rt))
+			switch action {
+			case CORE_BLOCK: return RV_CANCEL
+			case CORE_REDIRECT:
+				if strings.has_prefix(payload, "data:") {
+					u := cef_str(payload)
+					request.set_url(request, &u)
+					return RV_CONTINUE
+				}
+				return RV_CANCEL
+			case CORE_REWRITE:
+				if strings.has_prefix(payload, "http") {
+					u := cef_str(payload)
+					request.set_url(request, &u)
+				}
+			}
+			if site_of(host) != site_of(page_host) && host_blocked(host) do return RV_CANCEL
+			return RV_CONTINUE
+		}
 		blocked := matcher_blocks(m, url, host, page_host, intrinsics.atomic_load(&v.page_ignore), req_type_of(rt), rt == RT_SUB_FRAME)
 		return blocked ? RV_CANCEL : RV_CONTINUE
 	}
@@ -1819,4 +1855,3 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 	}
 }
 
-} // when ENGINE_CEF

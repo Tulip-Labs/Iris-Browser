@@ -5,7 +5,6 @@
 package iris
 
 // (not indented: the whole file is this engine's)
-when ENGINE_CEF {
 
 tab_set_muted :: proc(t: ^Tab, on: bool) {
 	if v := t.cv; v != nil && v.host != nil do v.host.set_audio_muted(v.host, on ? 1 : 0)
@@ -51,4 +50,3 @@ tab_run_isolated :: proc(t: ^Tab, js: string, done: proc(t: ^Tab, result: string
 	tab_run(t, js, done)
 }
 
-} // when ENGINE_CEF

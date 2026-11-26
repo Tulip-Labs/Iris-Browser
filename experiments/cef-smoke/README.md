@@ -8,16 +8,15 @@ prints `FAIL` and exits 1.
 - **Scenario 1 — tab close frees memory.** Opens 3 tabs on distinct pages,
   records the CEF process tree and its total RSS, closes 2 tabs, and
   requires the closed tabs' memory to be really gone: fewer CEF processes
-  and total RSS at most 70% of before. This is the guarantee the WPE
-  WebKit build lacked in 2.2.0–2.2.2 (a closed tab's page lived on, video
-  kept playing, memory never came back, because Iris held one reference
-  too many on each page).
+  and total RSS at most 70% of before. This is the guarantee Iris
+  needs from any engine: a closed tab's page must not live on (video
+  playing, memory never coming back) because Iris held one reference too
+  many on it.
 - **Scenario 2 — single page frame.** Opens https://example.org, waits for
   one `OnPaint` frame, dumps it to `frame.ppm`.
 
 This is an experiment, not Iris: nothing in `linux/`, `android/` or
-`packaging/` is touched. See `cef-linux-retry-INVESTIGATION.md` at the repo
-root for why this exists and what the full swap would cost.
+`packaging/` is touched. Iris for Linux itself is in `linux/`.
 
 Pinned versions: **CEF 156.0.32** (Chromium 156.0.8078.109, minimal
 distribution) and **Odin dev-2026-11a** (the same Odin `linux.yml` pins).
@@ -89,8 +88,7 @@ closed tab really dies:
    mode; `OnBeforeClose` is the signal the browser object is being
    destroyed — that is where Iris must drop every reference to the tab
    (`CefBrowser`, `CefBrowserHost`, client, any map entry). Any reference
-   kept past `OnBeforeClose` keeps the page and its renderer alive: the
-   WPE bug, in CEF form.
+   kept past `OnBeforeClose` keeps the page and its renderer alive: a leak.
 4. **Match tabs by browser identifier, not by pointer.** CEF hands
    `OnBeforeClose` a *different* `cef_browser_t*` wrapper than
    `OnAfterCreated` did for the same tab, so pointer equality never

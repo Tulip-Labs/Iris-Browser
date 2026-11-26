@@ -15,7 +15,7 @@ Tab :: struct {
 	can_back:       bool,
 	can_forward:    bool,
 	zoom:           f64,
-	/// the engine's view of the page (wpe_tab.odin, cef_view.odin)
+	/// the engine's view of the page (cef_view.odin)
 	using view:     Tab_View,
 	page:           ^Page,
 	/// a site Iris does not trust: its own processes and a throwaway world
