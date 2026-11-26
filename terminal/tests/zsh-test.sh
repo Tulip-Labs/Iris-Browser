@@ -27,7 +27,7 @@ echo "setup: parses, one block, backup kept"
 mkdir -p "$HOME/proj one/é"
 git init -q -b main "$HOME/proj one" 2>/dev/null || { mkdir -p "$HOME/proj one/.git"; echo 'ref: refs/heads/main' > "$HOME/proj one/.git/HEAD"; }
 # zsh reads the keyboard (the pty), not stdin: the commands are typed
-input=$(printf 'cd "%s"\recho SENTINEL_$((1+2))\rfalse\rexit\r' "$HOME/proj one/é")
+input=$(printf 'cd "%s"\recho SENTINEL_$((1+2))\rfalse\rexit 0\r' "$HOME/proj one/é")
 # (a plain zsh first: is the harness itself fine?)
 "$bin" --no-window --geometry 100x24 --timeout 20000 --exec "zsh -f -i" --input "$input" --input-after 1000 \
 	--dump-screen "$out/zsh-plain.txt" --dump-raw "$out/zsh-plain.raw" || { echo "--- plain zsh -f -i:"; cat -v "$out/zsh-plain.raw"; fail "even zsh -f -i did not finish"; }
