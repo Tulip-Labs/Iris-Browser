@@ -342,7 +342,15 @@ engine_start :: proc() -> bool {
 	s.root_cache_path = cef_str(root)
 	s.cache_path = cef_str(join({root, "default"}, context.temp_allocator))
 	if cef_initialize(&main_args, &s, &the_app, nil) == 0 {
-		log.errorf("CEF did not start (exit code %d); libcef and its resources are looked for in %s", cef_get_exit_code(), dir)
+		// 24 (CEF_RESULT_CODE_NORMAL_EXIT_PROCESS_NOTIFIED): another browser
+		// process holds this profile and Chromium handed the launch to it.
+		// Iris's own socket normally catches that first (instance.odin); this
+		// is an Iris that is not answering, or one left from a crash
+		if code := cef_get_exit_code(); code == 24 {
+			log.errorf("another Iris (Chromium) still holds the profile in %s; close it (flatpak kill %s) and start again", root, APP_ID)
+		} else {
+			log.errorf("CEF did not start (exit code %d); libcef and its resources are looked for in %s", code, dir)
+		}
 		return false
 	}
 	started = true
