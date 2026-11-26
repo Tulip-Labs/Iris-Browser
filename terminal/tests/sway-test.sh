@@ -99,7 +99,10 @@ wait $bgpid 2>/dev/null || true
 
 echo "== 4. throughput"
 yes 'The quick brown fox jumps over the lazy dog 0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ' | head -c 52428800 > "$out/big.txt"
-"$bin" --geometry 100x30 --exec "cat $out/big.txt" --stats --timeout 60000 > "$out/run4.log" 2>&1 || fail "cat"
+rc=0
+"$bin" --geometry 100x30 --exec "cat $out/big.txt" --stats --timeout 60000 > "$out/run4.log" 2>&1 || rc=$?
+echo "iris-terminal exit status: $rc"
+[ "$rc" = 0 ] || fail "cat: exit status $rc"
 grep stats "$out/run4.log" || true
 grep -E '^bytes=' "$out/run4.log"
 mbs=$(sed -n 's/^bytes=[0-9]* ms=[0-9]* MB\/s=\([0-9.]*\).*/\1/p' "$out/run4.log")

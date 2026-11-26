@@ -374,6 +374,7 @@ app_child_gone :: proc(a: ^App) {
 	}
 	a.exited = true
 	a.status = a.pty.status
+	logf("the child ended with status %d (reaped: %v)", a.status, a.pty.exited)
 	if a.opt.exec_cmd != "" {
 		a.finishing = true
 		a.finish_ms = now_ms()
