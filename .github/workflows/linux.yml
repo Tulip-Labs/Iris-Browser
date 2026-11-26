@@ -124,9 +124,10 @@ jobs:
           apt_get install -y --no-install-recommends -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold flatpak flatpak-builder elfutils librsvg2-common desktop-file-utils optipng weston dbus-user-session procps
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - name: The CEF pin (packaging/cef_version.lock)
+        run: sh packaging/check/cef-pin.sh
       - name: The CEF tarball's checksum into the manifest (while it is a placeholder)
         run: |
-          sh packaging/check/cef-pin.sh
           m=packaging/flatpak/io.github.tulip_labs.Iris.Cef.yml
           if grep -q 'sha256: 0\{64\}' $m; then
             curl -sSfL "https://cef-builds.spotifycdn.com/$CEF_TARBALL.tar.bz2" -o /tmp/cef.tar.bz2

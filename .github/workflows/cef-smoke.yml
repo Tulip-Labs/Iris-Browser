@@ -35,9 +35,10 @@ jobs:
           echo /opt/odin >> $GITHUB_PATH
           echo ODIN_ROOT=/opt/odin >> $GITHUB_ENV
 
+      - name: The CEF pin (packaging/cef_version.lock)
+        run: sh packaging/check/cef-pin.sh
       - name: CEF minimal (packaging/cef_version.lock)
         run: |
-          sh packaging/check/cef-pin.sh
           curl -sSfL "https://cef-builds.spotifycdn.com/$CEF_TARBALL.tar.bz2" -o /tmp/cef.tar.bz2
           sh packaging/check/cef-pin.sh --verify /tmp/cef.tar.bz2
           mkdir -p /tmp/cef && tar -xjf /tmp/cef.tar.bz2 -C /tmp/cef
