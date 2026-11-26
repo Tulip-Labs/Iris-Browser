@@ -23,6 +23,8 @@ when ENGINE_CEF {
 	url, js:  string,
 	tab:      ^Tab,
 	tab_id:   int,
+	polls:    int,
+	answers:  int,
 	started:  f64,
 	timeout:  f64,
 	done:     bool,
@@ -66,8 +68,19 @@ cef_bench_start :: proc() {
 		return
 	}
 	if t != b.current do browser_select(t) // the benchmark needs a page in sight
+	bench.polls += 1
+	// once a minute: where the page is, from the engine's own callbacks and
+	// from the page, so a run that never scores says why
+	if bench.polls % 20 == 1 {
+		fmt.printf("IRIS_CEF_BENCH_STATE t=%.0f url=%s title=%q loading=%v answers=%d/%d gpu_frames=%v\n",
+			now_s() - bench.started, t.url, t.title, t.loading, bench.answers, bench.polls - 1, cef_gpu_frames)
+		tab_run(t, `document.readyState + ' ' + location.href + ' ' + ((document.querySelector('#progress-completed, .progress-completed, #info, #summary') || {}).textContent || '').slice(0, 80).replace(/\s+/g, ' ')`, proc(t: ^Tab, result: string) {
+			fmt.printf("IRIS_CEF_BENCH_PAGE %s\n", result)
+		})
+	}
 	tab_run(t, bench.js, proc(t: ^Tab, result: string) {
 		if bench.done do return
+		bench.answers += 1
 		if r := strings.trim_space(result); len(r) > 0 && r != "undefined" && r != "null" do bench_end(r)
 	})
 	after(BENCH_POLL_MS, bench_poll, nil)
