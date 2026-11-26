@@ -10,7 +10,7 @@ Iris (`Iris.Cef`) supports Mozilla Add-ons (`.xpi`) from [addons.mozilla.org](ht
 | Notice on Chrome Web Store pages with a button to the same extension on Mozilla's site | Built |
 | Running add-ons: background pages and service workers, content scripts, the `browser.*` / `chrome.*` bridge, toolbar icons and popups, `contextualIdentities` to Containers | **Not built yet** |
 
-It is off unless `IRIS_EXTENSIONS=1`, because installing an add-on that cannot run yet would only mislead. The rest of this page describes what Iris is built to support once the runtime lands.
+It is on by default (`IRIS_EXTENSIONS=0` hides it): the add-ons panel installs, lists and removes add-ons, and says plainly that they do not run yet. The rest of this page describes what Iris is built to support once the runtime lands.
 
 ## What works (target)
 
