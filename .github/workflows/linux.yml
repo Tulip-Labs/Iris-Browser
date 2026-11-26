@@ -13,6 +13,11 @@ on:
     branches: ["**"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      only:
+        description: "wpe or cef: build only that engine (empty: both)"
+        type: string
+        default: ""
   workflow_call:
     inputs:
       only:
@@ -29,10 +34,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # CEF 156.0.32 (Chromium 156.0.8078.109), minimal distribution, for the
-  # CEF build (IRIS_ENGINE=cef); its checksum is pinned in
-  # packaging/flatpak/io.github.tulip_labs.Iris.Cef.yml once known
-  CEF_TARBALL: cef_binary_156.0.32+g3d1f4ab+chromium-156.0.8078.109_linux64_minimal
+  # The CEF build (IRIS_ENGINE=cef) is the one in packaging/cef_version.lock,
+  # which .github/workflows/cef-update.yml keeps current; the jobs read it
+  # with packaging/check/cef-pin.sh (CEF_TARBALL and the checksums)
   # Odin dev-2026-11a, pinned by checksum
   ODIN_URL: https://github.com/odin-lang/Odin/releases/download/dev-2026-11a/odin-linux-amd64-dev-2026-11a.tar.gz
   ODIN_SHA256: 65c9f6e97d6f8a30930e151f270ce5aeaa98fe8b2ba49fe067394e2af04f7618
@@ -267,6 +271,8 @@ jobs:
         run: |
           sh core/check-header.sh
           cd core && cargo test --locked && cargo build --release --locked
+      - name: The CEF build to use (packaging/cef_version.lock)
+        run: sh packaging/check/cef-pin.sh
       - uses: actions/cache@v4
         with:
           path: /opt/cef.tar.bz2
@@ -275,6 +281,7 @@ jobs:
         run: |
           [ -f /opt/cef.tar.bz2 ] || curl -sSfL "https://cef-builds.spotifycdn.com/$CEF_TARBALL.tar.bz2" -o /opt/cef.tar.bz2
           sha256sum /opt/cef.tar.bz2
+          sh packaging/check/cef-pin.sh --verify /opt/cef.tar.bz2
           tar -xjf /opt/cef.tar.bz2 -C /opt --no-same-owner
           # CEF reads its ICU data and resources from libcef.so's folder
           cp /opt/$CEF_TARBALL/Resources/icudtl.dat /opt/$CEF_TARBALL/Resources/*.pak /opt/$CEF_TARBALL/Release/
@@ -294,7 +301,7 @@ jobs:
           sh linux/tools/bind_cef.sh
           diff -u /tmp/cef_capi.odin linux/src/cef_capi.odin
           diff -u /tmp/cef_gen.odin linux/src/cef_gen.odin
-      - name: Tests (CEF engine: adblock-rust through the FFI, the add-on installer, DRM staging)
+      - name: "Tests (CEF engine: adblock-rust through the FFI, the add-on installer, DRM staging)"
         run: CORE_PREBUILT=1 IRIS_ENGINE=cef CEF_RPATH=$CEF_DIR/Release sh linux/build.sh test
       - name: Build (optimised, CEF engine)
         run: CORE_PREBUILT=1 IRIS_ENGINE=cef CEF_RPATH=$CEF_DIR/Release sh linux/build.sh release
@@ -322,9 +329,11 @@ jobs:
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
       - name: The CEF tarball's checksum into the manifest (while it is a placeholder)
         run: |
+          sh packaging/check/cef-pin.sh
           m=packaging/flatpak/io.github.tulip_labs.Iris.Cef.yml
           if grep -q 'sha256: 0\{64\}' $m; then
             curl -sSfL "https://cef-builds.spotifycdn.com/$CEF_TARBALL.tar.bz2" -o /tmp/cef.tar.bz2
+            sh packaging/check/cef-pin.sh --verify /tmp/cef.tar.bz2
             sum=$(sha256sum /tmp/cef.tar.bz2 | cut -d' ' -f1)
             echo "::warning::CEF tarball sha256 is $sum: pin it in $m"
             sed -i "s/sha256: 0\{64\}/sha256: $sum/" $m
@@ -362,7 +371,7 @@ jobs:
   # not a real-world score. Informational for now: it never fails the run.
   bench:
     needs: flatpak-cef
-    if: inputs.only != 'wpe' && !inputs.release
+    if: inputs.only == '' && !inputs.release
     continue-on-error: true
     runs-on: ubuntu-24.04
     timeout-minutes: 120

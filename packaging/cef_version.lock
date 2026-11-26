@@ -1,0 +1,11 @@
+# The CEF build Iris (Chromium) is made against. Written by
+# .github/workflows/cef-update.yml (packaging/check/cef-update.py); read by
+# linux.yml and cef-smoke.yml, and mirrored into the Flatpak manifest. Do
+# not edit by hand unless you are pinning a build yourself.
+#   cef_version: as Spotify's index lists it (CEF version + git hash + Chromium)
+#   sha1:        what Spotify's index.json says the minimal tarball's SHA-1 is
+#   sha256:      what the updater measured after checking the SHA-1 (the Flatpak pins it)
+# An empty sha1/sha256 means "not measured yet": the next run fills them in.
+cef_version=156.0.32+g3d1f4ab+chromium-156.0.8078.109
+sha1=
+sha256=
