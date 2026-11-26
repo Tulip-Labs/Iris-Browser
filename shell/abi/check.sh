@@ -40,7 +40,13 @@ PY
 mkdir "$t/odin"; mv "$t/dump.odin" "$t/odin/"
 cc -o "$t/c" "$t/dump.c" "$t"/gen-*.c "$t/xdg-shell.c" $(pkg-config --cflags --libs wayland-client)
 "$t/c" > "$t/c.txt"
-odin build "$t/odin" -collection:shellwl="$here" -out:"$t/o" -o:none -extra-linker-flags:"$(pkg-config --libs-only-L wayland-client | tr -s ' ')"
+L=$(pkg-config --libs-only-L wayland-client | tr -s ' ')
+# (an empty -extra-linker-flags is an error in Odin: only when there is something)
+if [ -n "$L" ]; then
+	odin build "$t/odin" -collection:shellwl="$here" -out:"$t/o" -o:none -extra-linker-flags:"$L"
+else
+	odin build "$t/odin" -collection:shellwl="$here" -out:"$t/o" -o:none
+fi
 "$t/o" > "$t/o.txt"
 python3 - "$t/c.txt" "$t/o.txt" <<'PY'
 import sys
