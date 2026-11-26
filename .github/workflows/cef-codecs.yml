@@ -1,0 +1,69 @@
+# Builds CEF (Chromium) from source WITH proprietary codecs (H.264, H.265,
+# AAC), the one thing the free runners cannot do: it needs about 150 GB of
+# disk, 32+ cores and hours. Run it by hand, naming a larger or self-hosted
+# runner label (packaging/codecs.md). Not run yet: written from CEF's
+# documented build (automate-git.py, GN_DEFINES), so the first run may need
+# small fixes. Those codecs are patented: shipping this build may need
+# licences, which is the publisher's to settle.
+name: CEF with codecs
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Label of a large or self-hosted runner (150 GB+ disk, 32+ cores)"
+        required: true
+      branch:
+        description: "CEF branch (the Chromium build number: 8078 for CEF 156)"
+        required: true
+        default: "8078"
+      version:
+        description: "Name for the release (for example 156.0.32)"
+        required: true
+        default: "156.0.32"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 1800
+    env:
+      GN_DEFINES: is_official_build=true use_sysroot=true symbol_level=0 chrome_pgo_phase=0 proprietary_codecs=true ffmpeg_branding=Chrome enable_widevine=true
+      GYP_MSVS_VERSION: ""
+      CEF_ARCHIVE_FORMAT: tar.bz2
+    steps:
+      - name: Tools Chromium's build needs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git python3 curl lsb-release sudo pkg-config bzip2 xz-utils
+      - name: automate-git.py and the build
+        run: |
+          mkdir -p ~/cef/code ~/cef/depot_tools
+          cd ~/cef
+          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools.git depot_tools
+          export PATH="$HOME/cef/depot_tools:$PATH"
+          curl -fsSL https://raw.githubusercontent.com/chromiumembedded/cef/master/tools/automate/automate-git.py -o automate-git.py
+          python3 automate-git.py --download-dir="$HOME/cef/code" --depot-tools-dir="$HOME/cef/depot_tools" \
+            --branch=${{ inputs.branch }} --x64-build --no-debug-build --minimal-distrib-only --force-clean
+      - name: The distribution and its checksum
+        run: |
+          set -eu
+          d=$(ls -d ~/cef/code/chromium/src/cef/binary_distrib | head -1)
+          f=$(ls "$d"/cef_binary_*_linux64_minimal.tar.bz2 | head -1)
+          mkdir -p out && cp "$f" out/
+          (cd out && sha256sum "$(basename "$f")" | tee SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cef-codecs
+          path: out/
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="cef-codecs-${{ inputs.version }}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --prerelease --latest=false \
+            --title "CEF ${{ inputs.version }} with proprietary codecs" \
+            --notes "CEF built with proprietary_codecs=true ffmpeg_branding=Chrome. Use it with packaging/flatpak/use-codecs.sh. H.264/H.265/AAC are patented: licensing is the publisher's to settle."
+          gh release upload "$tag" out/* --clobber

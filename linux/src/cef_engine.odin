@@ -238,6 +238,15 @@ cef_switches :: proc() -> []string {
 		"InterestFeedContentSuggestions", "SidePanelPinning", "ReadAnythingPermanentAccessibility",
 		"CertificateTransparencyComponentUpdater", "AutofillServerCommunication",
 		"SafeBrowsingRealTimeUrlLookup", "WebOTP",
+		// Google's advertising APIs (what Brave's Shields turn off too):
+		// topics, interest groups (Protected Audience), attribution
+		// reporting, shared storage, private state tokens, related sets
+		"BrowsingTopics", "BrowsingTopicsParameters", "BrowsingTopicsDocumentAPI", "InterestGroupStorage", "Fledge",
+		"FledgeBiddingAndAuctionServer", "PrivacySandboxAdsAPIsOverride", "AttributionReportingCrossAppWeb",
+		"SharedStorageAPI", "PrivateStateTokens", "TrustTokens", "FirstPartySets", "RelatedWebsiteSets",
+		"PrivacySandboxSettings4", "PrivacySandboxAdTopicsContentParity", "CookieDeprecationFacilitatedTesting",
+		// background work a browser Iris is not
+		"BackgroundFetch", "PeriodicBackgroundSync", "NotificationTriggers", "WebAuthenticationCableSecondFactor",
 		// (kept: FedCM, for "Sign in with Google"; Prerender2, which makes
 		// pages a site prerenders open at once; heavy-ad intervention)
 	}
@@ -256,6 +265,9 @@ cef_switches :: proc() -> []string {
 		"--site-per-process",
 		strings.concatenate({"--disable-features=", strings.join(disable, ",", context.temp_allocator)}, context.temp_allocator),
 		strings.concatenate({"--enable-features=", strings.join(enable[:], ",", context.temp_allocator)}, context.temp_allocator),
+		// WebRTC never shows a page your local or VPN-bypassing addresses
+		// (Brave's default): only the public one of the default route
+		"--force-webrtc-ip-handling-policy=default_public_interface_only",
 		// nothing in the background, nothing after Iris closes
 		"--disable-background-networking",
 		"--disable-component-update",
@@ -347,6 +359,11 @@ engine_start :: proc() -> bool {
 	for n in ([?]string{"SingletonLock", "SingletonSocket", "SingletonCookie"}) {
 		os.remove(join({root, n}, context.temp_allocator))
 		os.remove(join({root, "default", n}, context.temp_allocator))
+	}
+	// DRM: a Widevine CDM an installed browser has, handed to Chromium
+	// (cef_drm.odin); it reads the hint file as it starts
+	if env("IRIS_WIDEVINE") != "0" {
+		if v := widevine_stage(root); len(v) > 0 do log.infof("Widevine CDM %s", v)
 	}
 	if cef_initialize(&main_args, &s, &the_app, nil) == 0 {
 		// 24 (CEF_RESULT_CODE_NORMAL_EXIT_PROCESS_NOTIFIED): another browser

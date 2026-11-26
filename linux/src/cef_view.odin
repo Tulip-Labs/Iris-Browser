@@ -1564,6 +1564,12 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 			tab_load_later(t, target)
 			return 1
 		}
+		// other redirectors (social "leaving" pages, click counters) and AMP
+		// viewers: the real address (debounce.odin)
+		if target, ok := debounce_url(u); ok {
+			tab_load_later(t, target)
+			return 1
+		}
 		// a link you click loses its tracking parameters
 		if gesture != 0 && redirect == 0 {
 			if clean := shields_clean_url(u); clean != u {

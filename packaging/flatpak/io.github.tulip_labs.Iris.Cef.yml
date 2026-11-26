@@ -12,7 +12,10 @@
 #   proprietary codecs: VP8/VP9/AV1/Opus/Vorbis play, H.264/H.265/AAC do
 #   not (YouTube is fine; some sites' video is not). The ffmpeg-full
 #   extension would not help (Chromium does not use GStreamer), so it is
-#   not here.
+#   not here. A CEF built with them (packaging/codecs.md) replaces the url
+#   and sha256 below (packaging/flatpak/use-codecs.sh does it).
+# - DRM: Widevine is never shipped; Iris copies the CDM of a browser that
+#   is installed (src/cef_drm.odin).
 # - Pages are drawn off-screen on the GPU: Chromium's GPU process (ANGLE on
 #   the desktop's OpenGL, GPU rasterization, VA-API video) hands Iris each
 #   frame as a DMA-BUF, copied on the GPU into Iris's own texture (no pixel
@@ -42,6 +45,15 @@ finish-args:
   - --filesystem=xdg-run/pipewire-0
   - --filesystem=xdg-download
   - --talk-name=org.freedesktop.FileManager1 # "show in folder" for downloads
+  # DRM: Iris copies Widevine from a browser already installed (it cannot
+  # ship Google's CDM); only each browser's CDM folder is readable, never
+  # its profile (src/cef_drm.odin)
+  - --filesystem=~/.config/google-chrome/WidevineCdm:ro
+  - --filesystem=~/.config/chromium/WidevineCdm:ro
+  - --filesystem=~/.config/BraveSoftware/Brave-Browser/WidevineCdm:ro
+  - --filesystem=~/.config/microsoft-edge/WidevineCdm:ro
+  - --filesystem=/opt/google/chrome/WidevineCdm:ro
+  - --filesystem=/opt/brave.com/brave/WidevineCdm:ro
 
 cleanup:
   - /include

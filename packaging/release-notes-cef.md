@@ -1,3 +1,15 @@
+Iris (Chromium) 2.5.0: DRM, Brave-style link cleaning and less tracking.
+
+- **DRM (Widevine).** Iris never carries Google's CDM (its licence does not allow it): it copies the one an installed Chrome, Chromium, Brave, Edge, Vivaldi, Opera or Firefox already has into its own folder, and Chromium uses it from the next start. `IRIS_WIDEVINE_DIR` names a folder by hand, `IRIS_WIDEVINE=0` turns it off. In the Flatpak, only the browsers' CDM folders are readable (read-only), nothing else of theirs. Not tested against a live service here: tell me which site fails.
+- **Debouncing and De-AMP.** Links through Facebook's, Instagram's, YouTube's, Slack's, LinkedIn's, Steam's, DuckDuckGo's and Bing's click redirectors, and Google AMP viewers, open the real page directly, on top of the Google results and tracking-parameter cleaning that were already there.
+- **Less tracking, as Brave's Shields.** Chromium's advertising APIs are off (Topics, Protected Audience, attribution reporting, shared storage, private state tokens, related website sets), and WebRTC shows pages only the public address of your connection, never your local one.
+- **Codecs.** Unchanged in this release: this Chromium plays VP8, VP9, AV1, Opus and Vorbis, not H.264, H.265 or AAC. Those are compiled into Chromium itself and cannot be added afterwards. `packaging/codecs.md` and the `cef-codecs` workflow build a CEF that has them (you run it once, on a large runner).
+
+**Install**
+- `flatpak install --user --reinstall Iris-Cef-x86_64.flatpak`
+
+---
+
 Iris (Chromium) 2.4.3: starts again after Iris closed on its own.
 
 - A lock Chromium left in the profile when Iris closed or crashed is cleared when no Iris is running, so the next start works. If starting fails, the reason is printed in the terminal.
