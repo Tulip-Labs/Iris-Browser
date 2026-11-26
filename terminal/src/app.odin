@@ -68,6 +68,7 @@ App :: struct {
 	start_ms, bell_ms, sync_deadline: i64,
 	// the child
 	spawned:    bool,
+	pidfd:      linux.Fd, // readable when the child has ended
 	offer:      bool, // asking whether to set zsh up
 	exited:     bool,
 	finishing:  bool,
@@ -249,6 +250,8 @@ app_spawn :: proc(a: ^App) {
 	}
 	a.pty = p
 	a.spawned = true
+	a.pidfd = -1
+	if fd, err := linux.pidfd_open(p.pid, {}); err == .NONE do a.pidfd = linux.Fd(fd)
 	term.pty_resize(&a.pty, a.t.cols, a.t.rows, fonts.cell_w, fonts.cell_h)
 }
 
@@ -365,6 +368,11 @@ app_after_feed :: proc(a: ^App) {
 }
 
 app_child_gone :: proc(a: ^App) {
+	if a.exited do return
+	if a.pidfd >= 0 {
+		linux.close(a.pidfd)
+		a.pidfd = -1
+	}
 	term.pty_reap(&a.pty)
 	// a moment for the status
 	for _ in 0 ..< 50 {
@@ -888,12 +896,20 @@ app_run :: proc(a: ^App) {
 		// a paste on its way: look again soon (a pipe that closes without data wakes poll only with HUP)
 		if clip_waiting() do timeout = 20
 		if a.opt.timeout_ms > 0 && a.opt.exec_cmd != "" && !a.exited do timeout = 100
-		extra := [3]linux.Fd{-1, a.ino, clip_fd()}
-		if a.spawned && !a.exited do extra[0] = a.pty.master
+		extra := [4]linux.Fd{-1, a.ino, clip_fd(), -1}
+		if a.spawned && !a.exited {
+			extra[0] = a.pty.master
+			extra[3] = a.pidfd
+		}
 		ready, ok := plat.wait(&a.win, timeout, extra[:])
 		if !ok do break
 		now = now_ms()
 		if ready & 1 != 0 do app_read_pty(a)
+		// the child ended (poll tells nothing of a pty that hung up with nothing left to read)
+		if ready & 8 != 0 && !a.exited {
+			app_read_pty(a)
+			if !a.exited do app_child_gone(a)
+		}
 		if ready & 2 != 0 do app_files_changed(a)
 		if clip_waiting() {
 			if text, done := clip_read(); done do app_paste_text(a, text)
