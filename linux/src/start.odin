@@ -1,7 +1,8 @@
 // Iris's start page, drawn by Iris: no web page behind it (a new tab opens
 // at once and costs no web process until you go somewhere). The backdrop,
 // the Iris ring (clear glass with light through it, red to blue and never
-// purple) and one search, in the middle.
+// purple; drawn once into a texture) and one search, in the middle.
+// Nothing on it moves.
 package iris
 
 import "core:strings"
@@ -9,10 +10,8 @@ import plat "../plat"
 
 START_PLACEHOLDER :: "Search or enter address"
 
-/// the start page came into view: it appears again (ring, then search)
+/// the start page came into view: its search takes the keys
 chrome_start_shown :: proc() {
-	ui.start_t0 = ui.clock
-	ui.start_fresh = true
 	line_set(&ui.start, "")
 	focus_field(.Start)
 	chrome_push()
@@ -51,57 +50,24 @@ start_layout :: proc(card: [4]f32) -> (ring: [4]f32, search: [4]f32) {
 	return
 }
 
+/// the start page, still: the ring (copied from its texture) and the
+/// search, its rim a little brighter while it has the keys
 draw_start :: proc(W, H: f32, dt: f32) {
-	if ui.start_fresh {
-		// the clock of the frame it first shows in
-		ui.start_t0 = ui.clock
-		ui.start_fresh = false
-	}
 	card := chrome_card(W, H)
-	ring, sr := start_layout(card)
-	kr, m1 := motion(ui.start_t0, ui.clock, 220)
-	ks, m2 := motion(ui.start_t0, ui.clock, 220, 40)
-	if m1 || m2 do ui.animating = true
-
-	// the ring: clear glass, scaled in a little, its colours turning a few
-	// degrees as it appears and with the pointer (never on their own)
-	if ring.z >= 24 {
-		sc := motion_from(0.96, 1, kr)
-		d := ring.z * sc
-		cx, cy := ring.x + ring.z / 2, ring.y + ring.w / 2
-		px := ui.pointer.x > 0 ? (ui.pointer.x - cx) / max(W, 1) : 0
-		g := Glass{
-			radius = d / 2, tint = theme.dark ? {1, 1, 1, 0.05} : {1, 1, 1, 0.12},
-			bend = d * 0.07, rim = d * 0.07, lens = 0, frost = 0.15, shadow = 1,
-			rim_light = 1, dispersion = true,
-			ring = d * 0.14, spectrum = theme.dark ? 0.75 : 0.6, spin = 0.04 * px + motion_from(-0.03, 0, kr),
-		}
-		g = glass_amount(g, kr)
-		g.spectrum *= kr
-		draw_glass(cx - d / 2, cy - d / 2, d, d, g)
-	}
-
-	// the search: a glass capsule that grows a touch when it has the keys
+	ring, r := start_layout(card)
+	if ring.z >= 24 do draw_ring(ring.x + ring.z / 2, ring.y + ring.w / 2, ring.z)
 	focused := ui.focus == .Start
-	if spring_step(&ui.start_focus, focused ? 1 : 0, dt) do ui.animating = true
-	f := ui.start_focus.x
-	grow := 1 + 0.02 * f
-	r := [4]f32{sr.x - sr.z * (grow - 1) / 2, sr.y - sr.w * (grow - 1) / 2 + motion_from(6, 0, ks), sr.z * grow, sr.w * grow}
 	g := glass_style({r = r.w / 2, kind = 0})
-	g.rim_light *= 1 + 0.6 * f
+	if focused do g.rim_light *= 1.6
 	g.shadow = 1
-	draw_glass(r.x, r.y, r.z, r.w, glass_amount(g, ks))
-	ic := DIM
-	ic.a *= ks
-	draw_icon(.Search, r.x + 20, r.y + (r.w - 18) / 2, 18, ic)
+	draw_glass(r.x, r.y, r.z, r.w, g)
+	draw_icon(.Search, r.x + 20, r.y + (r.w - 18) / 2, 18, DIM)
 	fr := start_field_rect(r)
 	if focused {
 		draw_field(&ui.start, fr, 16, START_PLACEHOLDER, dt)
 	} else {
 		text := line_string(&ui.start)
-		c := len(text) > 0 ? INK : DIM
-		c.a *= ks
-		draw_text(len(text) > 0 ? text : START_PLACEHOLDER, fr.x, baseline(fr.y, fr.w, 16), 16, c, max_w = fr.z)
+		draw_text(len(text) > 0 ? text : START_PLACEHOLDER, fr.x, baseline(fr.y, fr.w, 16), 16, len(text) > 0 ? INK : DIM, max_w = fr.z)
 	}
 	hit(id(.Start_Field), r, {}, .Text)
 }

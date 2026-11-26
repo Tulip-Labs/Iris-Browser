@@ -5,7 +5,8 @@ and then Iris from `linux/` (Odin; Wayland, EGL and OpenGL ES, no GTK) with
 the GNOME 50 SDK, which gives WPE GLib, libsoup and GStreamer. No Flatpak
 runtime ships WPE WebKit, so it is built here. WPE takes a few hours the first time; CI keeps it in its cache.
 CI builds it on every push (`.github/workflows/linux.yml`, job `flatpak`), and
-each release carries the bundle, `Iris-x86_64.flatpak`:
+each release (tags `v*`, `.github/workflows/release.yml`) carries the bundle,
+`Iris-x86_64.flatpak`:
 
     flatpak install --user Iris-x86_64.flatpak
 
@@ -48,6 +49,31 @@ minutes. libcef.so, its `.pak` files, `icudtl.dat` and `locales/` go to
 `/app/lib/iris-cef` (CEF reads the ICU data from libcef.so's folder).
 
     flatpak-builder --user --install --force-clean build packaging/flatpak/io.github.tulip_labs.Iris.Cef.yml
+
+### Its own releases (tags `cef-v*`)
+
+The Chromium build is delivered apart from the WPE build and Android: a tag
+`cef-vX.Y.Z` runs `.github/workflows/release-cef.yml`, which builds only
+this Flatpak (linux.yml's `odin-cef` and `flatpak-cef` jobs) and publishes a
+release "Iris (Chromium) X.Y.Z" with only `Iris-Cef-x86_64.flatpak` and
+`SHA256SUMS`, its notes from `packaging/release-notes-cef.md`. It is never
+marked latest, so the WPE build's and Android's update checks
+(`releases/latest`) never see it; Iris (Chromium) looks for the newest
+`cef-v*` release itself and links to its bundle. Its version is
+`CEF_VERSION` in `linux/src/version_cef.odin`; `packaging/check/versions-cef.sh`
+checks it against the notes and the tag. The `v*` releases no longer carry
+the CEF bundle.
+
+    # CEF_VERSION and the top line of release-notes-cef.md say 2.4.0
+    sh packaging/check/versions-cef.sh cef-v2.4.0
+    git tag cef-v2.4.0 && git push origin cef-v2.4.0
+
+CI also runs Speedometer 3.1 in this Flatpak and in Google Chrome (job
+`bench`, informational) and puts both scores and their ratio in the job
+summary. Runners have no GPU, so both draw in software: the ratio is Iris's
+overhead next to Chrome, not a real-world score. Iris runs it through
+`IRIS_CEF_BENCH_URL=<url>`: it loads the page, waits for the score, prints
+`SPEEDOMETER <score>` and exits.
 
 The tarball's sha256 in the manifest is a placeholder until CI prints the
 real one (job `flatpak-cef`, as a warning): pin it then.

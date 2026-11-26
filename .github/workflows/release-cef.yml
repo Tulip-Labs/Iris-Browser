@@ -1,0 +1,74 @@
+# Iris (Chromium): the CEF Flatpak alone, as a release of its own. Runs when
+# a tag like cef-v2.4.0 is pushed, or by hand from the Actions tab (give the
+# tag). Nothing else is built: no WPE bundle, no Android APK.
+#
+# The release is never marked latest, so the WPE build's and Android's
+# update checks (releases/latest) never see it; Iris (Chromium) finds it
+# itself (linux/src/updates.odin: the newest cef-v* release in the list).
+# Its version is CEF_VERSION in linux/src/version_cef.odin, its notes
+# packaging/release-notes-cef.md ("Iris (Chromium) X.Y.Z: ..." on top).
+name: Release (Chromium)
+
+on:
+  push:
+    tags: ["cef-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish, for example cef-v2.4.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # the release page, with its notes, before any file
+  create:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag is the version Iris (Chromium) carries
+        run: sh packaging/check/versions-cef.sh "$TAG"
+      - name: The release (never the latest one)
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --latest=false \
+              --title "Iris (Chromium) ${TAG#cef-v}" --notes-file packaging/release-notes-cef.md
+          else
+            gh release edit "$TAG" --latest=false
+          fi
+
+  # only the CEF jobs of linux.yml (odin-cef, flatpak-cef), no benchmark
+  linux:
+    uses: ./.github/workflows/linux.yml
+    with:
+      only: cef
+      release: true
+
+  publish:
+    needs: [create, linux]
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-cef
+          path: art
+      - name: The bundle and its checksum (nothing else goes on this release)
+        run: |
+          ls -l art
+          cd art
+          sha256sum Iris-Cef-x86_64.flatpak > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$TAG" Iris-Cef-x86_64.flatpak SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Still not the latest release
+        run: |
+          gh release edit "$TAG" --latest=false --repo "$GITHUB_REPOSITORY"
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+          echo "latest release: ${latest:-none}"
+          case "$latest" in cef-v*) echo "::error::$latest is marked latest: the WPE and Android updaters would read it"; exit 1 ;; esac

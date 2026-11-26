@@ -218,7 +218,7 @@ cef_cert_error_text :: proc(code: i32) -> (reason, name: string) {
 draw_interstitial :: proc(t: ^Tab, r: [4]f32, dt: f32, opaque := false) {
 	c := t.cert_error
 	if c == nil || r.z < 40 || r.w < 40 do return
-	k, moving := motion(c.t0, ui.clock, 220)
+	k, moving := fade(c.t0, ui.clock)
 	if moving do ui.animating = true
 	// it takes every click in the tab's place
 	if opaque do fill(r, 14, theme.dark ? {0.09, 0.10, 0.11, 1} : {0.96, 0.96, 0.97, 1})
@@ -234,7 +234,7 @@ draw_interstitial :: proc(t: ^Tab, r: [4]f32, dt: f32, opaque := false) {
 	h := 64 + 30 + 24 + f32(len(body)) * 19 + 20 + 34 + 24
 	if c.details do h += 14 + f32(len(details)) * 17 + 12 + 28
 	h = min(h, r.w - 24)
-	cr := [4]f32{r.x + (r.z - w) / 2, r.y + max(12, (r.w - h) * 0.42) + motion_from(8, 0, k), w, h}
+	cr := [4]f32{r.x + (r.z - w) / 2, r.y + max(12, (r.w - h) * 0.42), w, h}
 	draw_glass(cr.x, cr.y, cr.z, cr.w, glass_amount(glass_style({r = 24, kind = 1}), k))
 
 	ink, dim := INK, DIM

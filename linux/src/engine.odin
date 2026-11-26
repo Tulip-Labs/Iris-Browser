@@ -32,8 +32,6 @@ LIGHT_VIDEO :: `(() => {
   HTMLMediaElement.prototype.canPlayType = function (t) { return heavy.test(t) ? '' : can.call(this, t); };
 })();`
 
-/// Google AI Mode in Iris's glass (the same file as Iris for Android's)
-AI_GLASS :: #load("aimode.js", string)
 /// YouTube with no ads and nothing for it to notice (the same file as Iris
 /// for Android's)
 YOUTUBE :: #load("youtube.js", string)
@@ -90,8 +88,9 @@ Container :: struct {
 }
 
 PRIVATE_ID :: "private"
-CONTAINER_ICONS :: [?]string{"person", "briefcase", "cart", "bank", "home", "heart", "game", "book", "plane", "code", "music", "star"}
-PALETTE :: [?]string{"#0a84ff", "#ff9f0a", "#30d158", "#ff375f", "#8e8e93", "#64d2ff", "#ffd60a", "#ac8e68"}
+/// the colours a container can have (no purple): blue, teal, green,
+/// yellow, orange, red, pink, graphite
+PALETTE :: [?]string{"#0a84ff", "#30b0c7", "#30d158", "#ffd60a", "#ff9f0a", "#ff453a", "#ff6482", "#8e8e93"}
 
 containers: [dynamic]Container
 @(private="file") containers_loaded: bool
@@ -107,18 +106,8 @@ new_id :: proc() -> string {
 containers_ensure :: proc() {
 	if containers_loaded do return
 	containers_loaded = true
-	if l, ok := load_json([dynamic]Container, "containers.json"); ok {
-		containers = l
-		return
-	}
-	p := PALETTE
-	append(&containers,
-		Container{new_id(), "Personal", p[0], "person"},
-		Container{new_id(), "Work", p[1], "briefcase"},
-		Container{new_id(), "Shopping", p[3], "cart"},
-		Container{new_id(), "Banking", p[2], "bank"},
-	)
-	containers_save()
+	// none to begin with: you make the ones you want
+	if l, ok := load_json([dynamic]Container, "containers.json"); ok do containers = l
 }
 
 @(private="file") containers_save :: proc() {
@@ -145,16 +134,21 @@ valid_container_id :: proc(id: string) -> bool {
 	return true
 }
 
-container_add :: proc(name, icon: string) -> Container {
+/// a new container, named and in one of PALETTE's colours ("" for the
+/// first one no container has yet)
+container_add :: proc(name, color0: string) -> Container {
 	containers_ensure()
 	p := PALETTE
-	color := p[len(containers) % len(p)]
-	outer: for c in p {
-		for k in containers do if k.color == c do continue outer
-		color = c
-		break
+	color := color0
+	if len(color) == 0 {
+		color = p[len(containers) % len(p)]
+		outer: for c in p {
+			for k in containers do if k.color == c do continue outer
+			color = c
+			break
+		}
 	}
-	k := Container{new_id(), strings.clone(name), color, strings.clone(icon)}
+	k := Container{new_id(), strings.clone(name), strings.clone(color), "dot"}
 	append(&containers, k)
 	containers_save()
 	return k

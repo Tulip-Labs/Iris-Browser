@@ -51,6 +51,20 @@ View :: struct {
 	popup_id:    i32,
 	popup_opener: i32,
 	popup_t0:    f64,
+	/// the opener's address, for judging the pop-up's first real one
+	popup_from:  string,
+	/// its browser was made with shared textures (GPU frames), and one of
+	/// them came through
+	gpu_frames:  bool,
+	gpu_good:    bool,
+	/// the pop-up was asked for with your click (it may then go anywhere
+	/// but an ad's host: a sign-in, a bank's 3-D Secure page)
+	popup_gesture: bool,
+	/// a held pop-up: since when it has been blank and not loading
+	popup_idle_since: f64,
+	/// the main frame's document came from a form (POST): never put to
+	/// sleep (waking it would send the form again)
+	posted:      bool,
 	/// the reader's page, written into the fresh blank document the tab is
 	/// navigating to (cef_extra.odin's tab_show_html)
 	reader_html: string,
@@ -101,6 +115,7 @@ View :: struct {
 	delete(v.frames)
 	delete(v.pending)
 	delete(v.reader_html)
+	delete(v.popup_from)
 	for x in v.watch_tokens do delete(x)
 	delete(v.watch_tokens)
 	free(v)
@@ -143,6 +158,12 @@ View :: struct {
 /// renderer it is in
 views_unreported :: proc() -> bool {
 	for v in all_views do if v.tab != nil && len(v.frames) == 0 do return true
+	return false
+}
+
+/// a live pop-up was opened by the browser with this id
+views_opened_by :: proc(id: i32) -> bool {
+	for v in all_views do if v.tab != nil && v.popup_opener == id do return true
 	return false
 }
 
@@ -215,6 +236,7 @@ tab_ensure_web :: proc(t: ^Tab, related: rawptr = nil) -> ^View {
 	append(&all_views, v)
 	t.cv = v
 
+	v.gpu_frames = cef_gpu_frames
 	if related == nil {
 		wi := cef_window_info_t{size = size_of(cef_window_info_t)}
 		windowless(&wi)
@@ -227,7 +249,14 @@ tab_ensure_web :: proc(t: ^Tab, related: rawptr = nil) -> ^View {
 		}
 	}
 
-	t.page = page_new(v)
+	if p := t.page; p != nil && p.view == nil {
+		// a tab waking from sleep: its last frame stays on screen until the
+		// page has loaded again (cef_sleep.odin)
+		p.view = v
+		p.hold, p.hold_until = true, now_s() + SLEEP_HOLD_S
+	} else {
+		t.page = page_new(v)
+	}
 	v.page = t.page
 	t.page.user = t
 	t.page.on_frame = proc(p: ^Page) { browser_page_frame(cast(^Tab)p.user) }
@@ -237,18 +266,19 @@ tab_ensure_web :: proc(t: ^Tab, related: rawptr = nil) -> ^View {
 	return v
 }
 
-/// a browser drawn off-screen, its frames through OnPaint (no shared
-/// textures on Linux)
+/// a browser drawn off-screen: its frames as DMA-BUFs from Chromium's GPU
+/// compositor (OnAcceleratedPaint, cef_osr.odin) when GPU frames are on,
+/// else as pixels (OnPaint)
 @(private="file") windowless :: proc(wi: ^cef_window_info_t) {
 	wi.windowless_rendering_enabled = 1
-	wi.shared_texture_enabled = 0
+	wi.shared_texture_enabled = cef_gpu_frames ? 1 : 0
 	wi.external_begin_frame_enabled = 0
 	wi.parent_window = 0
 	wi.runtime_style = CEF_RUNTIME_STYLE_ALLOY
 }
 
 @(private="file") browser_settings :: proc(bs: ^cef_browser_settings_t, sandboxed: bool) {
-	bs.windowless_frame_rate = CEF_FPS
+	bs.windowless_frame_rate = cef_frame_rate()
 	bs.background_color = 0xFFFFFFFF
 	if sandboxed {
 		// a site Iris does not trust: no clipboard, no WebGL
@@ -262,7 +292,14 @@ tab_ensure_web :: proc(t: ^Tab, related: rawptr = nil) -> ^View {
 /// closes now, and nothing of Iris's keeps it
 tab_release_web :: proc(t: ^Tab) {
 	v := t.cv
-	if v == nil do return
+	if v == nil {
+		// a tab asleep: its last frame goes
+		if p := t.page; p != nil && p.view == nil {
+			t.page = nil
+			page_free(p)
+		}
+		return
+	}
 	browser_forget_dialog(t)
 	browser_detach(t)
 	forget_asks(t)
@@ -279,7 +316,7 @@ tab_release_web :: proc(t: ^Tab) {
 	forget_certs(t)
 }
 
-@(private="file") main_frame :: proc(v: ^View) -> ^cef_frame_t {
+main_frame :: proc(v: ^View) -> ^cef_frame_t {
 	if v.browser == nil do return nil
 	return v.browser.get_main_frame(v.browser)
 }
@@ -295,6 +332,28 @@ tab_release_web :: proc(t: ^Tab) {
 	rel(f)
 }
 
+/// the tab's browser made again with frames through OnPaint (its GPU
+/// frames could not be imported): after this turn of CEF's loop
+cef_view_remake_software :: proc(t: ^Tab) {
+	// a browser whose GPU frames came through before: this one frame is
+	// dropped (the next will come), the browser stays
+	if v := t.cv; v != nil && v.gpu_good do return
+	if cef_gpu_frames {
+		cef_gpu_frames = false
+		cef_gpu_import_failed() // later starts go to software at once
+	}
+	Remake :: struct { t: ^Tab, id: int }
+	idle(proc(d: rawptr) {
+		r := cast(^Remake)d
+		defer free(r)
+		t := r.t
+		if !alive(t) || t.id != r.id || t.cv == nil || !t.cv.gpu_frames do return
+		u := strings.clone(t.url, context.temp_allocator)
+		tab_release_web(t)
+		if len(u) > 0 do tab_load(t, u)
+	}, boxed(Remake{t, t.id}))
+}
+
 /// opens an address in the view as it is (no https-first, no sandbox turn)
 cef_load :: proc(v: ^View, u: string) { load_url(v, u) }
 
@@ -302,6 +361,10 @@ cef_load :: proc(v: ^View, u: string) { load_url(v, u) }
 /// a trusted one comes out of it
 tab_load :: proc(t: ^Tab, u0: string) {
 	if len(u0) == 0 do return
+	if internal_url(u0) {
+		browser_toast("Chromium's internal pages are not part of Iris")
+		return
+	}
 	// https first (features.odin), then without tracking parameters
 	u := shields_clean_url(https_first(t, u0))
 	want := untrusted(u)
@@ -323,8 +386,20 @@ tab_load :: proc(t: ^Tab, u0: string) {
 
 tab_back :: proc(t: ^Tab) { if v := t.cv; v != nil && v.browser != nil do v.browser.go_back(v.browser) }
 tab_forward :: proc(t: ^Tab) { if v := t.cv; v != nil && v.browser != nil do v.browser.go_forward(v.browser) }
-tab_reload :: proc(t: ^Tab) { if v := t.cv; v != nil && v.browser != nil do v.browser.reload(v.browser) }
-tab_reload_bypass :: proc(t: ^Tab) { if v := t.cv; v != nil && v.browser != nil do v.browser.reload_ignore_cache(v.browser) }
+tab_reload :: proc(t: ^Tab) {
+	if cef_tab_asleep(t) {
+		tab_load(t, strings.clone(t.url, context.temp_allocator)) // a sleeping tab wakes
+		return
+	}
+	if v := t.cv; v != nil && v.browser != nil do v.browser.reload(v.browser)
+}
+tab_reload_bypass :: proc(t: ^Tab) {
+	if cef_tab_asleep(t) {
+		tab_load(t, strings.clone(t.url, context.temp_allocator))
+		return
+	}
+	if v := t.cv; v != nil && v.browser != nil do v.browser.reload_ignore_cache(v.browser)
+}
 tab_stop :: proc(t: ^Tab) { if v := t.cv; v != nil && v.browser != nil do v.browser.stop_load(v.browser) }
 
 /// Chromium's zoom is a level: each step 20% (1.2^level)
@@ -394,6 +469,14 @@ tab_download :: proc(t: ^Tab, url: string) {
 		if t.page != nil && len(text) > 0 do page_commit_text(t.page, text)
 		return
 	}
+	// Chromium on the Wayland platform (GPU mode) is a Wayland client of
+	// its own with no surface and no focus: its clipboard can neither read
+	// the desktop's nor be trusted to keep what is written to it. So the
+	// desktop's text goes into the page directly, never through it
+	if cef_chromium_wayland {
+		paste_into_page(t, text)
+		return
+	}
 	// in step already (or nothing from the desktop): Chromium's own
 	// clipboard is pasted, what the page copied there with all its formats
 	if text == chromium_clip || len(text) == 0 {
@@ -424,6 +507,34 @@ tab_download :: proc(t: ^Tab, url: string) {
 
 PASTE_TIMEOUT_S :: 1.0
 
+/// the desktop's text pasted into the focused field of the focused frame:
+/// the page's paste handlers get it first (a paste event carrying it, for
+/// editors that read clipboardData), then, unless one took it, it is
+/// inserted as typed text (undo works); if no script can run there, it is
+/// typed in by the input method path
+@(private="file") paste_into_page :: proc(t: ^Tab, text: string) {
+	if len(text) == 0 || t.cv == nil do return
+	js := fmt.tprintf(`(() => {
+  const text = %s;
+  const el = document.activeElement || document.body;
+  let ev;
+  try { const dt = new DataTransfer(); dt.setData('text/plain', text); ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }); } catch (e) { ev = null; }
+  if (ev && !el.dispatchEvent(ev)) return '1';
+  return document.execCommand('insertText', false, text) ? '1' : '0';
+})()`, json_str(text, context.temp_allocator))
+	run_job(t, edit_frame(t.cv), js, proc(t: ^Tab, result: string, data: rawptr) {
+		s := cast(^string)data
+		if result != "1" && t.page != nil do page_commit_text(t.page, s^)
+		delete(s^)
+		free(s)
+	}, boxed(strings.clone(text)), PASTE_TIMEOUT_S, proc(t: ^Tab, data: rawptr) {
+		s := cast(^string)data
+		if t != nil && t.page != nil do page_commit_text(t.page, s^)
+		delete(s^)
+		free(s)
+	})
+}
+
 @(private="file") boxed :: proc(x: $T) -> ^T {
 	p := new(T)
 	p^ = x
@@ -443,7 +554,7 @@ PASTE_TIMEOUT_S :: 1.0
 
 /// Ctrl+V in the page: the clipboard in step first, then the key itself
 cef_paste_key :: proc(t: ^Tab, native: i32, mods: u32) {
-	if t.sandboxed {
+	if t.sandboxed || cef_chromium_wayland {
 		clipboard_to_chromium(t, nil) // typed in
 		return
 	}
@@ -557,7 +668,7 @@ COPY_INTENT_S :: 1.0
   const say = m => { if (!pristine || !pristine.i.isConnected) pristine = fresh(); try { if (pristine) { pristine.f(m); return; } } catch (e) {} fallback(m); };
   const say_done = () => { if (pristine) { try { pristine.i.remove(); } catch (e) {} pristine = null; } };`
 
-@(private="file") run_in :: proc(f: ^cef_frame_t, js: string) {
+run_in :: proc(f: ^cef_frame_t, js: string) {
 	if f == nil do return
 	s := cef_str(js)
 	url := cef_str(SCRIPT_URL)
@@ -594,7 +705,7 @@ COPY_INTENT_S :: 1.0
 }
 
 /// runs js (an expression; a promise is waited for) in frame f of t's page
-@(private="file") run_job :: proc(t: ^Tab, f: ^cef_frame_t, js: string, done: proc(t: ^Tab, result: string, data: rawptr), data: rawptr = nil, timeout := JOB_TIMEOUT_S, failed: proc(t: ^Tab, data: rawptr) = nil, plain: proc(t: ^Tab, result: string) = nil) {
+run_job :: proc(t: ^Tab, f: ^cef_frame_t, js: string, done: proc(t: ^Tab, result: string, data: rawptr), data: rawptr = nil, timeout := JOB_TIMEOUT_S, failed: proc(t: ^Tab, data: rawptr) = nil, plain: proc(t: ^Tab, result: string) = nil) {
 	if f == nil {
 		if failed != nil do failed(t, data)
 		return
@@ -736,7 +847,6 @@ cef_copy_intent :: proc(t: ^Tab) {
 	h, _ := host_of(u, context.temp_allocator)
 	top := f.is_main(f) != 0
 	yt := h == "youtube.com" || strings.has_suffix(h, ".youtube.com") || strings.has_suffix(h, ".youtube-nocookie.com")
-	if top && (h == "www.google.com" || h == "google.com") do run_in(f, AI_GLASS)
 	if yt {
 		run_in(f, YOUTUBE)
 		if settings().lightVideo do run_in(f, LIGHT_VIDEO)
@@ -778,6 +888,12 @@ cef_copy_intent :: proc(t: ^Tab) {
 	link := from_link || (tabby && gesture)
 	background := disposition == CEF_WOD_NEW_BACKGROUND_TAB || !gesture
 	real := len(u) > 0 && u != "about:blank"
+	// never a tab for Chromium's own pages, a script, or an address that is
+	// not one (a drag's data, a garbled string)
+	if len(u) > 0 && (internal_url(u) || !url_plausible_from(u, t.url)) {
+		if !link && shield && !t.sandboxed do browser_toast("Pop-up blocked")
+		return .Block
+	}
 	choice := new_window_choice(u, t.url, link, gesture, t.sandboxed, shield)
 	switch choice {
 	case .Own_Tab:
@@ -819,7 +935,7 @@ cef_copy_intent :: proc(t: ^Tab) {
 /// the pop-up's tab (Related): made now, in OnBeforePopup (its View's client
 /// goes back to CEF, which makes the browser); held, not shown, until it
 /// has somewhere to be (popup_reveal)
-@(private="file") popup_tab :: proc(opener: ^Tab, ov: ^View, u: string, popup_id: i32) -> ^View {
+@(private="file") popup_tab :: proc(opener: ^Tab, ov: ^View, u: string, popup_id: i32, gesture: bool) -> ^View {
 	p := browser_new_tab({container = opener.container, after = opener, related = rawptr(ov)})
 	if p == nil || p.cv == nil do return nil
 	p.sandboxed = opener.sandboxed // (never: Related is not given in the sandbox)
@@ -827,15 +943,84 @@ cef_copy_intent :: proc(t: ^Tab) {
 	p.cv.popup_id = popup_id
 	p.cv.popup_opener = ov.id
 	p.cv.popup_t0 = now_s()
-	// a window the page only writes into, and that never paints: shown
-	// anyway after a while, as WebKit's would be
-	Check :: struct { t: ^Tab, id: int }
-	after(1200, proc(d: rawptr) {
-		c := cast(^Check)d
-		defer free(c)
-		if browser_has_tab(c.t) && c.t.id == c.id && c.t.held && c.t.page != nil && c.t.page.tex.id != 0 do popup_reveal(c.t)
-	}, boxed(Check{p, p.id}))
+	p.cv.popup_idle_since = now_s()
+	p.cv.popup_gesture = gesture
+	set_str(&p.cv.popup_from, opener.url)
+	// a window the page only writes into (a print preview, a payment
+	// form): shown once something is in it; one that stays blank (an ad's
+	// pop-under waiting for its address) is never shown, and goes
+	Check :: struct { t: ^Tab, id: int, n: int }
+	after(POPUP_LOOK_MS, popup_look, boxed(Check{p, p.id, 0}))
 	return p.cv
+}
+
+POPUP_LOOK_MS :: 1200
+/// blank and idle (not loading) this long: the pop-up goes
+POPUP_IDLE_S :: 7.0
+
+/// a held pop-up with no address of its own: is anything in it yet?
+@(private="file") popup_look :: proc(d: rawptr) {
+	Check :: struct { t: ^Tab, id: int, n: int }
+	c := cast(^Check)d
+	t := c.t
+	if !browser_has_tab(t) || t.id != c.id || !t.held || t.cv == nil {
+		free(c)
+		return
+	}
+	// loading (a form posted into it, a slow sign-in page): not idle
+	if t.loading do t.cv.popup_idle_since = now_s()
+	if !t.loading && now_s() - t.cv.popup_idle_since > POPUP_IDLE_S {
+		// blank, and nothing on its way: nobody asked for it to stay
+		free(c)
+		browser_close_later(t)
+		return
+	}
+	c.n += 1
+	run_job(t, main_frame(t.cv), `(() => { const b = document.body; return b && ((b.innerText || '').trim().length > 0 || document.images.length > 0 || b.querySelector('canvas,embed,object,iframe,form,svg')) ? '1' : '0'; })()`, proc(t: ^Tab, result: string, data: rawptr) {
+		c := cast(^Check)data
+		if result == "1" {
+			free(c)
+			popup_reveal(t)
+			return
+		}
+		after(POPUP_LOOK_MS, popup_look, c)
+	}, c, failed = proc(t: ^Tab, data: rawptr) {
+		c := cast(^Check)data
+		if t != nil && t.held {
+			after(POPUP_LOOK_MS, popup_look, c)
+		} else {
+			free(c)
+		}
+	})
+}
+
+/// a held pop-up reached its first real address: shown if a pop-up from
+/// its opener may go there (the same choice as when it was asked for),
+/// else closed (a pop-under sent on to an ad)
+@(private="file") popup_arrived :: proc(t: ^Tab, v: ^View, u: string) -> (shown: bool) {
+	page_host, _ := host_of(v.popup_from, context.temp_allocator)
+	shield := shields_on_for(page_host)
+	host, _ := host_of(u, context.temp_allocator)
+	choice: Window_Choice
+	switch {
+	case internal_url(u) || !url_plausible_from(u, v.popup_from):
+		choice = .Block
+	case v.popup_gesture:
+		// your click asked for it: any site may follow (Okta, Auth0,
+		// Keycloak, SAML, Discord, Steam, Klarna, a bank's 3-D Secure...),
+		// but an ad's host
+		choice = shield && host_blocked(host) ? .Block : .Related
+	case:
+		choice = new_window_choice(u, v.popup_from, false, false, t.sandboxed, shield)
+	}
+	if choice == .Block {
+		t.held = false
+		browser_close_later(t)
+		if shield do browser_toast("Pop-up blocked")
+		return false
+	}
+	popup_reveal(t)
+	return true
 }
 
 /// a held pop-up shows (a real address, or its first paint)
@@ -986,7 +1171,7 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		// a pop-up that talks to its opener: CEF makes it, windowless, for a
 		// tab of Iris's (its View's client); it shares the opener's request
 		// context (its container, its cookies)
-		pv := popup_tab(t, v, u, popup_id)
+		pv := popup_tab(t, v, u, popup_id, user_gesture != 0)
 		if pv == nil do return 1
 		windowless(wi)
 		if settings != nil do browser_settings(settings, t.sandboxed)
@@ -1031,6 +1216,8 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 			if v.tab.held do v.host.was_hidden(v.host, 0)
 			if v.tab == b.current && !b.chrome_focus do page_focus(p, true)
 		}
+		// a tab muted before (a woken one, a remade one) stays muted
+		if v.tab.muted do v.host.set_audio_muted(v.host, 1)
 		if len(v.pending) > 0 {
 			u := strings.clone(v.pending, context.temp_allocator)
 			set_str(&v.pending, "")
@@ -1084,6 +1271,7 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		if t == nil do return
 		t.loading, t.can_back, t.can_forward = loading != 0, back != 0, fwd != 0
 		if !t.loading do t.progress = 1
+		if t.held do vw(self).popup_idle_since = now_s()
 		browser_tab_changed(t)
 	}
 	ld.on_load_start = proc "c" (self: ^cef_load_handler_t, browser: ^cef_browser_t, frame: ^cef_frame_t, transition: i32) {
@@ -1108,6 +1296,9 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		if t := v.tab; t != nil && frame.is_main(frame) != 0 {
 			u := from_userfree(frame.get_url(frame))
 			page_hiding(t, v, frame, u)
+			// what cef_sleep.odin asks before a tab may sleep (live
+			// connections, typing), counted from the document's start
+			if strings.has_prefix(u, "http") do run_in(frame, SLEEP_WATCH_JS)
 			browser_page_committed(t, u)
 		}
 	}
@@ -1124,6 +1315,7 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 			v.reader_html = ""
 		}
 		page_scripts(t, frame)
+		if frame.is_main(frame) != 0 do cef_sleep_woke(t, frame)
 		if frame.is_main(frame) != 0 && !tab_is_private(t) && !t.sandboxed do history_record(t.url, t.title)
 		if frame.is_main(frame) != 0 do browser_page_finished(t)
 	}
@@ -1153,8 +1345,8 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		u := from_cef(url)
 		if u == "about:blank" && len(t.url) > 0 do return
 		set_str(&t.url, u)
-		// a pop-up's first real address: it shows now
-		if t.held && len(u) > 0 && u != "about:blank" do popup_reveal(t)
+		// a pop-up's first real address: shown now, or closed
+		if t.held && u != "about:blank" && len(u) > 0 && !popup_arrived(t, vw(self), u) do return
 		h, _ := host_of(u, context.temp_allocator)
 		tab_shields_apply(t, h)
 		browser_tab_changed(t)
@@ -1255,9 +1447,32 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		defer rel(browser)
 		v := vw(self)
 		if p := v.page; p != nil do page_paint(p, kind, ([^]cef_rect_t)(rects)[:n], buffer, w, h)
-		// a pop-up the page writes into, with no address of its own: shown
-		// once it has painted and had its moment to navigate
-		if t := v.tab; t != nil && t.held && now_s() - v.popup_t0 > 1.2 do popup_reveal(t)
+	}
+	r.on_accelerated_paint = proc "c" (self: ^cef_render_handler_t, browser: ^cef_browser_t, kind: i32, n: uint, rects: ^cef_rect_t, info: rawptr) {
+		context = main_context
+		defer rel(browser)
+		v := vw(self)
+		p := v.page
+		if p == nil do return
+		// a woken tab shows its last frame until it has loaded again
+		if p.hold && now_s() < p.hold_until do return
+		if page_paint_gpu(p, kind, cast(^cef_accelerated_paint_info_t)info) {
+			v.gpu_good = true
+		} else if t := v.tab; t != nil {
+			// the DMA-BUF could not be imported here: a browser that never
+			// gave a good GPU frame is made again with frames through
+			// OnPaint (and so is every later one); else the frame is dropped
+			cef_view_remake_software(t)
+		}
+	}
+	// a drag from the page (a link, an image, selected text): Iris has no
+	// drag and drop into or out of its pages yet, so it is refused here,
+	// and Chromium ends it at once; nothing of the drag's data is ever
+	// opened (no tab, no navigation)
+	r.start_dragging = proc "c" (self: ^cef_render_handler_t, browser: ^cef_browser_t, drag_data: rawptr, allowed_ops: i32, x, y: i32) -> i32 {
+		rel(browser)
+		rel(drag_data)
+		return 0
 	}
 	r.on_popup_show = proc "c" (self: ^cef_render_handler_t, browser: ^cef_browser_t, show: i32) {
 		context = main_context
@@ -1274,14 +1489,21 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 	q.on_before_browse = proc "c" (self: ^cef_request_handler_t, browser: ^cef_browser_t, frame: ^cef_frame_t, request: ^cef_request_t, gesture: i32, redirect: i32) -> i32 {
 		context = main_context
 		defer { rel(browser); rel(frame); rel(request) }
-		t := vw(self).tab
-		if t == nil || frame.is_main(frame) == 0 do return 0
+		v := vw(self)
+		t := v.tab
+		if t == nil do return 0
 		u := from_userfree(request.get_url(request))
+		// Chromium's own pages (chrome://, devtools://, about:flags...) are
+		// not part of Iris, in no frame
+		if internal_url_in_frame(u, frame.is_main(frame) != 0) do return 1
+		if frame.is_main(frame) == 0 do return 0
+		method := from_userfree(request.get_method(request))
+		v.posted = method != "GET" && method != ""
 		// a form sent (POST): never turned into another address (its body
 		// would be lost, or sent twice); across the sandbox's edge only from
 		// inside the sandbox (sandbox_move_for): a normal tab never sends a
 		// form, with your cookies, to a site Iris does not trust
-		if method := from_userfree(request.get_method(request)); method != "GET" && method != "" {
+		if v.posted {
 			if strings.has_prefix(u, "http") && untrusted(u) != t.sandboxed {
 				switch sandbox_move_for(t.sandboxed, true) {
 				case .Reload, .Stay:
@@ -1512,7 +1734,8 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 	dl.on_before_download = proc "c" (self: ^cef_download_handler_t, browser: ^cef_browser_t, item: ^cef_download_item_t, suggested: ^cef_string_t, cb: ^cef_before_download_callback_t) -> i32 {
 		context = main_context
 		defer { rel(browser); rel(item); rel(cb) }
-		cef_download_start(item, from_cef(suggested), cb)
+		t := vw(self).tab
+		cef_download_start(item, from_cef(suggested), cb, t != nil ? t.id : 0)
 		return 1
 	}
 	dl.on_download_updated = proc "c" (self: ^cef_download_handler_t, browser: ^cef_browser_t, item: ^cef_download_item_t, cb: ^cef_download_item_callback_t) {

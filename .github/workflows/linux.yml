@@ -3,7 +3,9 @@
 # draws one frame offscreen, starts Iris at a fractional scale under a
 # headless Wayland compositor, and builds the Flatpak bundle (which builds
 # WPE WebKit itself: no runtime ships it). The release workflow calls this
-# too and publishes the bundle.
+# too and publishes the bundle: release.yml (tags v*) with only: wpe,
+# release-cef.yml (tags cef-v*) with only: cef. The bench job compares Iris
+# (CEF) with Google Chrome on Speedometer; releases skip it.
 name: Linux
 
 on:
@@ -12,6 +14,15 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      only:
+        description: "wpe or cef: build only that engine (empty: both)"
+        type: string
+        default: ""
+      release:
+        description: "Called by a release: skip the benchmark"
+        type: boolean
+        default: false
 
 concurrency:
   group: linux-${{ github.workflow }}-${{ github.ref }}
@@ -30,6 +41,7 @@ jobs:
   # Arch Linux has WPE WebKit 2.54 with WPEPlatform, so the app builds in
   # seconds here; the Flatpak below builds its own WPE.
   odin:
+    if: inputs.only != 'cef'
     runs-on: ubuntu-24.04
     container:
       image: archlinux:latest
@@ -50,9 +62,12 @@ jobs:
           echo ODIN_ROOT=/opt/odin >> $GITHUB_ENV
       - name: One version everywhere (Linux, Android, metainfo, release notes)
         run: sh packaging/check/versions.sh
-      - name: AI Mode's glass and the YouTube script are the same on Android and Linux
+      - name: The YouTube script (and AI Mode's glass, while Linux has it) are the same on Android and Linux
         run: |
-          cmp linux/src/aimode.js android/app/src/main/assets/js/aimode.js
+          # Linux may stop carrying aimode.js; Android keeps it either way
+          if [ -f linux/src/aimode.js ]; then
+            cmp linux/src/aimode.js android/app/src/main/assets/js/aimode.js
+          fi
           cmp linux/src/youtube.js android/app/src/main/assets/js/youtube.js
       - name: Every C binding against the real headers
         run: sh linux/abi/check.sh
@@ -152,6 +167,7 @@ jobs:
   # installed and started. WPE WebKit is built inside it; the cache keeps
   # the built module (and ccache) so later runs build only Iris.
   flatpak:
+    if: inputs.only != 'cef'
     runs-on: ubuntu-24.04
     timeout-minutes: 345
     steps:
@@ -222,6 +238,7 @@ jobs:
   # own headers, and the binary started once (it loads libcef, registers
   # the C API version and answers --version). No WPE is needed.
   odin-cef:
+    if: inputs.only != 'wpe'
     runs-on: ubuntu-24.04
     container:
       image: archlinux:latest
@@ -253,6 +270,8 @@ jobs:
           cp /opt/$CEF_TARBALL/Resources/icudtl.dat /opt/$CEF_TARBALL/Resources/*.pak /opt/$CEF_TARBALL/Release/
           cp -r /opt/$CEF_TARBALL/Resources/locales /opt/$CEF_TARBALL/Release/
           echo CEF_DIR=/opt/$CEF_TARBALL >> $GITHUB_ENV
+      - name: The Chromium build's own version (version_cef.odin, release-notes-cef.md)
+        run: sh packaging/check/versions-cef.sh
       - name: The CEF bindings against CEF's headers
         run: IRIS_ENGINE=cef sh linux/build.sh check
       - name: The CEF bindings are what tools/bind_cef.sh makes
@@ -274,6 +293,7 @@ jobs:
   # The CEF build as its own Flatpak (io.github.tulip_labs.Iris.Cef): CEF is
   # downloaded, not built, so this takes minutes, not hours.
   flatpak-cef:
+    if: inputs.only != 'wpe'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -321,3 +341,99 @@ jobs:
           flatpak kill io.github.tulip_labs.Iris.Cef 2>/dev/null || true
           [ $alive = 1 ] || { echo "Iris (CEF) from the Flatpak exited before 40 seconds"; exit 1; }
           echo "Iris (CEF) from the Flatpak ran for 40 seconds on Wayland."
+
+  # Speedometer 3.1 in Iris (CEF, the Flatpak above) and in Google Chrome
+  # stable, one after the other on the same runner. Runners have no GPU, so
+  # both draw with software GL: the ratio is Iris's overhead next to Chrome,
+  # not a real-world score. Informational for now: it never fails the run.
+  bench:
+    needs: flatpak-cef
+    if: inputs.only != 'wpe' && !inputs.release
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      # WebKit/Speedometer has no tags: the head of its release/3.1 branch
+      SPEEDOMETER_REF: 1386415be8fef2f6b6bbdbe1828872471c5d802a
+      # 10 is Speedometer's default; fewer keeps the job short in software GL
+      BENCH_ITERATIONS: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-cef
+          path: art
+      - name: Flatpak, Weston and the GNOME 50 runtime
+        run: |
+          sudo rm -f /var/lib/man-db/auto-update
+          apt_get() { timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 "$@" || { sleep 30; timeout 600 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 "$@"; }; }
+          apt_get update
+          apt_get install -y --no-install-recommends -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold flatpak weston dbus-user-session procps
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive ./art/Iris-Cef-x86_64.flatpak
+          google-chrome --version
+      - name: Speedometer, served on localhost
+        run: |
+          mkdir -p /tmp/speedometer && cd /tmp/speedometer
+          git init -q && git fetch -q --depth 1 https://github.com/WebKit/Speedometer "$SPEEDOMETER_REF" && git checkout -q FETCH_HEAD
+          python3 -m http.server 8000 --bind 127.0.0.1 --directory /tmp/speedometer > /tmp/http.log 2>&1 &
+          for i in $(seq 1 50); do curl -sf http://127.0.0.1:8000/index.html >/dev/null && break; sleep 0.2; done
+          echo "BENCH_URL=http://127.0.0.1:8000/index.html?iterationCount=$BENCH_ITERATIONS&startAutomatically=true" >> $GITHUB_ENV
+      - name: Google Chrome (headless, DevTools protocol)
+        timeout-minutes: 45
+        run: |
+          python3 -I packaging/check/speedometer-chrome.py "$BENCH_URL" google-chrome | tee /tmp/chrome.txt
+          score=$(sed -n 's/^SPEEDOMETER \([0-9.]*\)$/\1/p' /tmp/chrome.txt | tail -1)
+          [ -n "$score" ] || { echo "no score from Chrome"; exit 1; }
+          echo "CHROME_SCORE=$score" >> $GITHUB_ENV
+      # IRIS_CEF_BENCH_URL: Iris loads the page, waits for Speedometer to
+      # finish, prints SPEEDOMETER <score> and exits
+      - name: Iris (CEF) under headless Weston
+        timeout-minutes: 60
+        run: |
+          export XDG_RUNTIME_DIR=$(mktemp -d)
+          chmod 700 $XDG_RUNTIME_DIR
+          weston --backend=headless --socket=wayland-1 --width=1600 --height=1000 > /tmp/weston.txt 2>&1 &
+          for i in $(seq 1 50); do [ -S $XDG_RUNTIME_DIR/wayland-1 ] && break; sleep 0.2; done
+          [ -S $XDG_RUNTIME_DIR/wayland-1 ] || { cat /tmp/weston.txt; exit 1; }
+          export WAYLAND_DISPLAY=wayland-1
+          rc=0
+          timeout 3300 dbus-run-session -- flatpak run --user --env=LIBGL_ALWAYS_SOFTWARE=1 --env=IRIS_CEF_BENCH_URL="$BENCH_URL" --env=IRIS_CEF_BENCH_TIMEOUT=1800 \
+            io.github.tulip_labs.Iris.Cef > /tmp/iris-bench.txt 2>&1 || rc=$?
+          flatpak kill io.github.tulip_labs.Iris.Cef 2>/dev/null || true
+          # (anywhere on a line: CEF's own logging may share the output)
+          # Iris prints "IRIS_CEF_BENCH score=<n> seconds=<s> gpu_frames=<f>"
+          score=$(tr -d '\r' < /tmp/iris-bench.txt | sed -n -e 's/.*IRIS_CEF_BENCH score=\([0-9][0-9.]*\).*/\1/p' -e 's/.*SPEEDOMETER \([0-9][0-9.]*\).*/\1/p' | tail -1)
+          if [ -z "$score" ]; then
+            echo "no score from Iris (exit $rc)"; grep IRIS_CEF_BENCH /tmp/iris-bench.txt; grep -v -e dbus -e IRIS_CEF_BENCH /tmp/iris-bench.txt | tail -60; exit 1
+          fi
+          echo "SPEEDOMETER $score"
+          echo "IRIS_SCORE=$score" >> $GITHUB_ENV
+      - name: The scores, in the job summary
+        if: always()
+        run: |
+          ratio=""
+          if [ -n "${IRIS_SCORE:-}" ] && [ -n "${CHROME_SCORE:-}" ]; then
+            ratio=$(awk -v a="$IRIS_SCORE" -v b="$CHROME_SCORE" 'BEGIN { if (b > 0) printf "%.2f", a / b }')
+          fi
+          {
+            echo "### Speedometer 3.1 ($BENCH_ITERATIONS iterations, software GL, no GPU)"
+            echo
+            echo "| Browser | Score |"
+            echo "| --- | --- |"
+            echo "| Iris (Chromium, CEF) | ${IRIS_SCORE:-no score} |"
+            echo "| Google Chrome stable, headless | ${CHROME_SCORE:-no score} |"
+            echo
+            echo "Iris / Chrome: **${ratio:-n/a}** (1.00 means no overhead; runners have no GPU, so this is Iris's overhead next to Chrome, not a real-world score)"
+          } >> $GITHUB_STEP_SUMMARY
+          cat $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-bench
+          path: |
+            /tmp/iris-bench.txt
+            /tmp/chrome.txt
+            /tmp/weston.txt
+          if-no-files-found: ignore

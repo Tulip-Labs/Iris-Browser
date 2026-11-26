@@ -113,8 +113,20 @@ browser_draw :: proc(w: ^plat.Window) {
 		draw_fill(c.x, c.y, c.z, c.w, r, {1, 1, 1, 1})
 		draw_texture(p.tex, c.x, c.y, c.z, c.w, r)
 	}
-	frame_scene_done()
+	// the chrome unchanged and over nothing that moved: its layer, copied
+	// (no blur, no glass, no text this frame)
+	again := ui.dirty || !ui.cacheable
+	frame_scene_done(blur = again)
+	if !again && layer_copy() do return
+	layer_begin()
 	chrome_draw(f32(w.width), f32(w.height))
+	layer_end()
+}
+
+/// a page's certificate page on screen (Iris draws it in the chrome)
+cert_on_screen :: proc() -> bool {
+	for t in screen_tabs() do if t.cert_error != nil do return true
+	return false
 }
 
 /// Iris's glass for each kind the chrome asks for: clear and colourless,
@@ -141,7 +153,7 @@ browser_layout :: proc() {
 		c := browser_tab_rect(t)
 		if c.z > 0 && c.w > 0 do page_place(t.page, f64(c.x), f64(c.y), f64(c.z), f64(c.w), w.scale)
 	}
-	plat.invalidate(w)
+	chrome_push() // the chrome, laid out again
 }
 
 /// the tabs whose pages are on screen: the current one, its split partner,
@@ -271,11 +283,14 @@ browser_select :: proc(t: ^Tab) {
 		set_str(&settings().space, t.space)
 	}
 	if split_on() && !split_has(t) do split_end()
+	// (CEF engine agent) the new tab is current before the old one is
+	// hidden: the engine may freeze or put to sleep the tab you left, and
+	// must not take it for the current one
+	b.current = t
 	if old != nil && old.page != nil {
 		page_set_visible(old.page, false)
 		page_focus(old.page, false)
 	}
-	b.current = t
 	if !tab_is_start(t) do chrome_leave_start()
 	if !tab_has_view(t) && len(t.url) > 0 {
 		u := strings.clone(t.url, context.temp_allocator)
@@ -525,7 +540,9 @@ browser_pointer :: proc(e: plat.Pointer_Event) {
 		}
 	}
 	send_to(t, e, pt)
-	if e.kind == .Motion do plat.invalidate(&b.win) // the pointer's light on the glass
+	// the pointer's light on the glass: only near the bars (over the page
+	// the page answers for itself)
+	if e.kind == .Motion && (t == .Chrome || f32(e.y) < b.card.y + 60) do chrome_push()
 }
 
 /// Iris's own keys first (but those a web app may want, which its page has

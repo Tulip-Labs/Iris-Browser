@@ -1,9 +1,10 @@
 // The CEF engine's page on screen (IRIS_ENGINE=cef, see engine_api.odin):
 // CEF draws the page off-screen and hands Iris its pixels (OnPaint, BGRA,
-// premultiplied, with the rectangles that changed); only those rectangles
-// go up into the page's texture, and the renderer's shader reads BGRA
-// (Texture.bgra). A <select>'s list is a popup CEF paints apart: it is
-// laid over the page in the same texture. Input is forwarded explicitly:
+// premultiplied, with the rectangles that changed) when it composites in
+// software; only those rectangles go up into the page's texture, and the
+// renderer's shader reads BGRA (Texture.bgra). On the GPU its frames come
+// as DMA-BUFs instead (cef_osr.odin). A <select>'s list is a popup CEF
+// paints apart: it is laid over the page in the same texture. Input is forwarded explicitly:
 // pointer, wheel, keys (Windows key codes as CEF wants, the xkb keycode as
 // the native one) and text.
 package iris
@@ -37,6 +38,26 @@ Page :: struct {
 	popup_on:      bool,
 	popup_px:      []u8,
 	popup_w, popup_h: i32,
+	/// the popup's GPU frame (cef_osr.odin)
+	popup_tex:     Texture,
+	/// a tab put to sleep (cef_sleep.odin): its last frame, with no view
+	/// behind it (view is nil); hold: that frame stays on screen while the
+	/// page loads again, until it has loaded (or hold_until)
+	hold:          bool,
+	hold_until:    f64,
+	/// where the page was scrolled when it went to sleep, for its address
+	restore_url:   string,
+	restore_scroll: [2]f64,
+	/// hidden: since when, and which time (a later show or hide makes a
+	/// timer of the time before do nothing); frozen by DevTools'
+	/// Page.setWebLifecycleState (cef_sleep.odin)
+	hidden_since:  f64,
+	hidden_seq:    int,
+	frozen:        bool,
+	/// a touchpad's last moves (time ms, dx, dy), for its fling
+	scroll_samples: [FLING_SAMPLES]Scroll_Sample,
+	scroll_n:      int,
+	fling:         ^Fling,
 }
 
 page_new :: proc(v: ^View) -> ^Page {
@@ -47,9 +68,18 @@ page_new :: proc(v: ^View) -> ^Page {
 
 page_free :: proc(p: ^Page) {
 	if p == nil do return
+	fling_stop(p)
 	if p.tex.owned do texture_free(&p.tex)
+	page_free_gpu(p)
 	delete(p.popup_px)
+	delete(p.restore_url)
 	free(p)
+}
+
+/// the browser behind the page (nil while it sleeps, or before CEF made it)
+@(private="file") page_host :: proc(p: ^Page) -> ^cef_browser_host_t {
+	if p == nil || p.view == nil do return nil
+	return p.view.host
 }
 
 /// the size CEF lays the page out at (view coordinates)
@@ -62,7 +92,8 @@ page_view_rect :: proc(p: ^Page) -> cef_rect_t {
 /// the rectangles that changed, into the texture (all of it when its size
 /// changed); data is w*h BGRA
 @(private="file") upload_rects :: proc(t: ^Texture, data: rawptr, w, h: i32, rects: []cef_rect_t) {
-	if t.id == 0 || !t.owned || t.w != w || t.h != h {
+	// (a texture of GPU frames is RGBA: a software frame replaces it whole)
+	if t.id == 0 || !t.owned || t.w != w || t.h != h || !t.bgra {
 		texture_upload(t, data, w, h, w * 4)
 		return
 	}
@@ -100,6 +131,9 @@ page_view_rect :: proc(p: ^Page) -> cef_rect_t {
 /// is current)
 page_paint :: proc(p: ^Page, kind: i32, rects: []cef_rect_t, buffer: rawptr, w, h: i32) {
 	if buffer == nil || w <= 0 || h <= 0 do return
+	cef_software_frame_seen()
+	// a woken tab shows its last frame until it has loaded again
+	if p.hold && now_s() < p.hold_until do return
 	if kind == PET_POPUP {
 		n := int(w) * int(h) * 4
 		if len(p.popup_px) != n {
@@ -121,8 +155,9 @@ page_popup_show :: proc(p: ^Page, on: bool) {
 	if !on {
 		delete(p.popup_px)
 		p.popup_px = nil
+		page_free_gpu(p)
 		// the page under the list is drawn again
-		if h := p.view.host; h != nil do h.invalidate(h, PET_VIEW)
+		if h := page_host(p); h != nil do h.invalidate(h, PET_VIEW)
 	}
 }
 
@@ -138,7 +173,7 @@ page_place :: proc(p: ^Page, x, y, w, h: f64, scale: f64) {
 	rescaled := scale != p.scale
 	if resized do p.w, p.h = w, h
 	p.scale = scale
-	host := p.view.host
+	host := page_host(p)
 	if host == nil do return
 	if rescaled do host.notify_screen_info_changed(host)
 	if resized || rescaled do host.was_resized(host)
@@ -147,20 +182,26 @@ page_place :: proc(p: ^Page, x, y, w, h: f64, scale: f64) {
 /// a page out of sight is hidden (it stops painting and slows its timers),
 /// unless it plays sound or video: those are never put to sleep
 page_apply_hidden :: proc(p: ^Page) {
-	host := p.view.host
+	host := page_host(p)
 	if host == nil do return
 	host.was_hidden(host, !p.visible && !p.media ? 1 : 0)
 }
 
 page_set_visible :: proc(p: ^Page, on: bool) {
+	was := p.visible
 	p.visible = on
 	page_apply_hidden(p)
+	if !on do fling_stop(p)
+	// a tab you left is frozen at once, and may sleep much later; one you
+	// come back to is alive at once (cef_sleep.odin)
+	if was && !on do cef_sleep_consider(cast(^Tab)p.user)
+	if on && !was do cef_sleep_shown(cast(^Tab)p.user)
 }
 
 page_set_active :: proc(p: ^Page, on: bool) {}
 
 page_focus :: proc(p: ^Page, on: bool) {
-	if host := p.view.host; host != nil do host.set_focus(host, on ? 1 : 0)
+	if host := page_host(p); host != nil do host.set_focus(host, on ? 1 : 0)
 }
 
 /// CEF reads keys by Windows key code and xkb keycode: no keymap needed
@@ -206,9 +247,15 @@ cursor_of_cef :: proc(t: i32) -> plat.Cursor_Shape {
 }
 
 /// a pointer event in window coordinates, for this page
+/// a woken tab still shows its last frame: what you do goes to nothing
+/// (not to a page you cannot see yet)
+@(private="file") holding :: proc(p: ^Page) -> bool {
+	return p.hold && now_s() < p.hold_until
+}
+
 page_pointer :: proc(p: ^Page, e: plat.Pointer_Event) {
-	host := p.view.host
-	if host == nil do return
+	host := page_host(p)
+	if host == nil || holding(p) do return
 	x, y := e.x - p.x, e.y - p.y
 	ev := cef_mouse_event_t{x = i32(math.round(x)), y = i32(math.round(y)), modifiers = flags(e.mods, p.buttons)}
 	switch e.kind {
@@ -234,27 +281,37 @@ page_pointer :: proc(p: ^Page, e: plat.Pointer_Event) {
 		case 3: kind = MBT_RIGHT
 		case: return
 		}
+		fling_stop(p) // a click stops a fling, as a finger on the pad does
 		if e.pressed { p.buttons |= button_flag(e.button) } else { p.buttons &= ~button_flag(e.button) }
 		ev.modifiers = flags(e.mods, p.buttons)
 		host.send_mouse_click_event(host, &ev, kind, e.pressed ? 0 : 1, i32(max(1, e.clicks)))
 	case .Scroll:
+		// sent as it comes (each Wayland pointer frame), never held for a
+		// frame of Iris's: Chromium scrolls on its compositor at once.
 		// Chromium's deltas point up; a wheel notch (15 from the
 		// compositor, 3 lines) is Chromium's 120
+		fling_stop(p)
 		dx, dy := -e.dx, -e.dy
 		if e.precise {
 			ev.modifiers |= EVENTFLAG_PRECISION_SCROLLING_DELTA
+			scroll_sample(p, now_s() * 1000, dx, dy) // (one clock for the samples and the stop: Iris's)
 		} else {
 			dx, dy = dx * 8, dy * 8
+			p.scroll_n = 0
 		}
 		ev.x, ev.y = i32(p.pointer.x), i32(p.pointer.y)
 		host.send_mouse_wheel_event(host, &ev, i32(math.round(dx)), i32(math.round(dy)))
 	case .Scroll_Stop:
+		// the fingers left the touchpad (wl_pointer.axis_stop): CEF's
+		// windowless wheel events have no phases, so Iris flings itself,
+		// as GTK does, from the last moves' speed
+		fling_start(p, now_s() * 1000)
 	}
 }
 
 page_key :: proc(p: ^Page, e: plat.Key_Event) {
-	host := p.view.host
-	if host == nil do return
+	host := page_host(p)
+	if host == nil || holding(p) do return
 	ctrl := .Ctrl in e.mods
 	// Ctrl+V: Chromium's clipboard gets the desktop's text first (it has no
 	// desktop of its own), then the key goes to the page, whose paste event
@@ -304,7 +361,7 @@ page_key :: proc(p: ^Page, e: plat.Key_Event) {
 
 /// text typed into the page as one piece (an input method's commit, a paste)
 page_commit_text :: proc(p: ^Page, text: string) {
-	host := p.view.host
+	host := page_host(p)
 	if host == nil || len(text) == 0 do return
 	s := cef_str(text)
 	none := cef_range_t{max(u32), max(u32)} // no range to replace: at the caret
@@ -314,7 +371,7 @@ page_commit_text :: proc(p: ^Page, text: string) {
 /// what an input method is composing, shown in the page (no Wayland text
 /// input in Iris's platform yet: ready for it)
 page_preedit :: proc(p: ^Page, text: string) {
-	host := p.view.host
+	host := page_host(p)
 	if host == nil do return
 	if len(text) == 0 {
 		host.ime_cancel_composition(host)
@@ -325,6 +382,120 @@ page_preedit :: proc(p: ^Page, text: string) {
 	sel := cef_range_t{u32(len(text)), u32(len(text))}
 	host.ime_set_composition(host, &s, 0, nil, &none, &sel)
 }
+
+// ---------------------------------------------------------------- touchpad fling
+
+Fling :: struct {
+	page:    ^Page,
+	vx, vy:  f64, // px per ms, Chromium's direction
+	last:    f64, // ms
+	timer:   u32,
+}
+
+@(private="file") scroll_sample :: proc(p: ^Page, t, dx, dy: f64) {
+	if p.scroll_n == FLING_SAMPLES {
+		copy(p.scroll_samples[:], p.scroll_samples[1:])
+		p.scroll_n -= 1
+	}
+	p.scroll_samples[p.scroll_n] = {t, dx, dy}
+	p.scroll_n += 1
+}
+
+fling_stop :: proc(p: ^Page) {
+	if p == nil do return
+	if f := p.fling; f != nil {
+		p.fling = nil
+		g_source_remove(f.timer)
+		free(f)
+	}
+}
+
+@(private="file") fling_start :: proc(p: ^Page, t: f64) {
+	// axis_stop comes once per axis: the first starts the fling, the next
+	// (with no moves left) changes nothing
+	if p.scroll_n == 0 do return
+	fling_stop(p)
+	vx, vy, ok := fling_velocity(p.scroll_samples[:p.scroll_n], t)
+	p.scroll_n = 0
+	if !ok do return
+	f := new(Fling)
+	f^ = {page = p, vx = vx, vy = vy, last = now_s() * 1000}
+	p.fling = f
+	// a timer only while the page flings (about 1 s at most)
+	f.timer = g_timeout_add_full(G_PRIORITY_DEFAULT, FLING_TICK_MS, proc "c" (d: rawptr) -> gboolean {
+		context = main_context
+		f := cast(^Fling)d
+		p := f.page
+		host := page_host(p)
+		now := now_s() * 1000
+		dx, dy, more := fling_step(&f.vx, &f.vy, now - f.last)
+		f.last = now
+		if host != nil && (dx != 0 || dy != 0) {
+			ev := cef_mouse_event_t{x = i32(p.pointer.x), y = i32(p.pointer.y), modifiers = EVENTFLAG_PRECISION_SCROLLING_DELTA}
+			host.send_mouse_wheel_event(host, &ev, i32(math.round(dx)), i32(math.round(dy)))
+		}
+		if more && host != nil do return 1
+		p.fling = nil
+		free(f)
+		return 0
+	}, f, nil)
+}
+
+// ---- pure logic, no CEF in it (scratch tests copy it from between the
+// markers) ---- BEGIN CEF_LOGIC_FLING
+
+FLING_SAMPLES :: 8
+FLING_TICK_MS :: 8
+/// moves older than this before the fingers left do not count
+FLING_WINDOW_MS :: 100.0
+/// slower than this (px/ms) is not a fling
+FLING_MIN_SPEED :: 0.25
+FLING_MAX_SPEED :: 8.0
+/// speed kept per millisecond (about GTK's deceleration)
+FLING_FRICTION :: 0.9965
+FLING_STOP_SPEED :: 0.03
+
+Scroll_Sample :: struct {
+	t, dx, dy: f64,
+}
+
+/// the speed the fingers left the pad at (px/ms), from its last moves
+fling_velocity :: proc(samples: []Scroll_Sample, stop_t: f64) -> (vx, vy: f64, ok: bool) {
+	sx, sy: f64
+	first := -1.0
+	n := 0
+	for s in samples {
+		if stop_t - s.t > FLING_WINDOW_MS || s.t > stop_t + 1 do continue
+		if first < 0 do first = s.t
+		sx += s.dx
+		sy += s.dy
+		n += 1
+	}
+	if n < 2 do return
+	span := max(stop_t - first, 8.0)
+	vx, vy = sx / span, sy / span
+	speed := abs(vx) + abs(vy)
+	if speed < FLING_MIN_SPEED do return 0, 0, false
+	if speed > FLING_MAX_SPEED {
+		k := FLING_MAX_SPEED / speed
+		vx, vy = vx * k, vy * k
+	}
+	return vx, vy, true
+}
+
+/// one step of a fling dt ms long: the distance to scroll, and whether it
+/// goes on (the speed decays exponentially)
+fling_step :: proc(vx, vy: ^f64, dt: f64) -> (dx, dy: f64, more: bool) {
+	d := clamp(dt, 1, 50)
+	k := math.pow(FLING_FRICTION, d)
+	// the distance under an exponentially decaying speed over d ms
+	dist := (1 - k) / (1 - FLING_FRICTION)
+	dx, dy = vx^ * dist, vy^ * dist
+	vx^, vy^ = vx^ * k, vy^ * k
+	return dx, dy, abs(vx^) + abs(vy^) >= FLING_STOP_SPEED
+}
+
+// ---- END CEF_LOGIC_FLING
 
 // ---- pure logic, no CEF in it (scratch tests copy it from between the
 // markers) ---- BEGIN CEF_LOGIC_KEYS

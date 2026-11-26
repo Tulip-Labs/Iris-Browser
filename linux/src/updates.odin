@@ -1,6 +1,7 @@
 // New versions: Iris asks GitHub once a day and says when there is one. It
 // never installs anything itself; the Flatpak updates the way every Flatpak
-// does (your software centre, or flatpak update).
+// does (your software centre, or flatpak update). The Chromium (CEF) build
+// has releases of its own (cef-vX.Y.Z) and points to its new bundle.
 //
 // And `iris --shield-rules LEVEL DIR OUT`: the content rules a level makes
 // from the lists in DIR, for checks.
@@ -11,9 +12,19 @@ import "core:fmt"
 import "core:os"
 import "core:strconv"
 import "core:strings"
+import "core:testing"
 import "core:time"
 
-RELEASES_API :: "https://api.github.com/repos/Tulip-Labs/Iris-Browser/releases/latest"
+// The WPE build (and Android) ship on tags vX.Y.Z and read the latest
+// release; the Chromium (CEF) build ships on its own tags, cef-vX.Y.Z,
+// marked never latest, so it reads the list and takes its newest one.
+RELEASES_LATEST :: "https://api.github.com/repos/Tulip-Labs/Iris-Browser/releases/latest"
+RELEASES_LIST :: "https://api.github.com/repos/Tulip-Labs/Iris-Browser/releases?per_page=20"
+RELEASES_PAGE :: "https://github.com/Tulip-Labs/Iris-Browser/releases"
+CEF_TAG_PREFIX :: "cef-v"
+CEF_BUNDLE :: "Iris-Cef-x86_64.flatpak"
+
+when ENGINE_CEF { RELEASES_API :: RELEASES_LIST } else { RELEASES_API :: RELEASES_LATEST }
 
 /// a is newer than b ("2.10" > "2.9.9")
 version_newer :: proc(a, b: string) -> bool {
@@ -25,6 +36,53 @@ version_newer :: proc(a, b: string) -> bool {
 		if x != y do return x > y
 	}
 	return false
+}
+
+Gh_Release_Asset :: struct {
+	name:                 string,
+	browser_download_url: string,
+}
+
+Gh_Release :: struct {
+	tag_name: string,
+	html_url: string,
+	draft:    bool,
+	prerelease: bool, // (CEF engine agent) a test build: never offered
+	assets:   []Gh_Release_Asset,
+}
+
+/// The release this build updates to, from GitHub's answer (temp memory):
+/// for the CEF build (cef) the newest non-draft cef-v* release in the list,
+/// with the link to its Iris-Cef-x86_64.flatpak when it has one; for the
+/// WPE build the latest release, unless it is a cef-v* one. ok is false
+/// when there is none.
+release_pick :: proc(data: []u8, cef: bool) -> (version, link: string, ok: bool) {
+	if cef {
+		list: []Gh_Release
+		if json.unmarshal(data, &list, allocator = context.temp_allocator) != nil do return
+		best: ^Gh_Release
+		best_v: string
+		for &r in list {
+			if r.draft || r.prerelease || !strings.has_prefix(r.tag_name, CEF_TAG_PREFIX) do continue
+			v := strings.trim_prefix(r.tag_name, CEF_TAG_PREFIX)
+			if len(v) == 0 do continue
+			if best == nil || version_newer(v, best_v) {
+				best, best_v = &r, v
+			}
+		}
+		if best == nil do return
+		link = len(best.html_url) > 0 ? best.html_url : RELEASES_PAGE
+		for a in best.assets {
+			if a.name == CEF_BUNDLE && len(a.browser_download_url) > 0 do link = a.browser_download_url
+		}
+		return best_v, link, true
+	}
+	r: Gh_Release
+	if json.unmarshal(data, &r, allocator = context.temp_allocator) != nil do return
+	if strings.has_prefix(r.tag_name, CEF_TAG_PREFIX) do return
+	v := strings.trim_prefix(r.tag_name, "v")
+	if len(v) == 0 do return
+	return v, len(r.html_url) > 0 ? r.html_url : RELEASES_PAGE, true
 }
 
 @(private="file") update_session: ^SoupSession
@@ -56,18 +114,46 @@ updates_check :: proc() {
 		n: uint
 		p := g_bytes_get_data(bytes, &n)
 		if p == nil do return
-		Release :: struct {
-			tag_name: string,
-			html_url: string,
-		}
-		r: Release
-		if json.unmarshal(([^]u8)(p)[:n], &r, allocator = context.temp_allocator) != nil do return
-		v := strings.trim_prefix(r.tag_name, "v")
-		if len(v) == 0 || !version_newer(v, VERSION) do return
+		v, link, ok := release_pick(([^]u8)(p)[:n], ENGINE_CEF)
+		if !ok || !version_newer(v, BUILD_VERSION) do return
 		delete(release_page)
-		release_page = strings.clone(len(r.html_url) > 0 ? r.html_url : "https://github.com/Tulip-Labs/Iris-Browser/releases")
-		chrome_toast(fmt.tprintf("Iris %s is out. Your software centre or flatpak update installs it.", v), "What's new", release_page, life_ms = 10000)
+		release_page = strings.clone(link)
+		when ENGINE_CEF {
+			// a bundle, not a repository: the new one is downloaded and installed over it
+			chrome_toast(fmt.tprintf("Iris (Chromium) %s is out. Install the new %s over this one.", v, CEF_BUNDLE), "Download", release_page, life_ms = 10000)
+		} else {
+			chrome_toast(fmt.tprintf("Iris %s is out. Your software centre or flatpak update installs it.", v), "What's new", release_page, life_ms = 10000)
+		}
 	}), msg)
+}
+
+@(test)
+test_release_pick :: proc(t: ^testing.T) {
+	list := `[
+		{"tag_name": "cef-v2.5.0", "draft": true, "html_url": "https://x/draft"},
+		{"tag_name": "cef-v2.6.0", "prerelease": true, "html_url": "https://x/pre"},
+		{"tag_name": "v2.4.1", "draft": false, "html_url": "https://x/v2.4.1"},
+		{"tag_name": "cef-v2.4.10", "draft": false, "html_url": "https://x/cef-v2.4.10",
+		 "assets": [{"name": "SHA256SUMS", "browser_download_url": "https://x/sums"},
+		            {"name": "Iris-Cef-x86_64.flatpak", "browser_download_url": "https://x/cef.flatpak"}]},
+		{"tag_name": "cef-v2.4.9", "draft": false, "html_url": "https://x/cef-v2.4.9"}
+	]`
+	v, link, ok := release_pick(transmute([]u8)list, true)
+	testing.expect(t, ok)
+	testing.expect_value(t, v, "2.4.10")
+	testing.expect_value(t, link, "https://x/cef.flatpak")
+	_, _, ok = release_pick(transmute([]u8)string(`[{"tag_name": "v2.4.1"}]`), true)
+	testing.expect(t, !ok)
+	// a pre-release only is no update
+	_, _, ok = release_pick(transmute([]u8)string(`[{"tag_name": "cef-v9.0.0", "prerelease": true}]`), true)
+	testing.expect(t, !ok)
+	// the WPE build never takes a Chromium release, even if one is latest
+	_, _, ok = release_pick(transmute([]u8)string(`{"tag_name": "cef-v2.4.0"}`), false)
+	testing.expect(t, !ok)
+	v, link, ok = release_pick(transmute([]u8)string(`{"tag_name": "v2.4.1", "html_url": "https://x/v2.4.1"}`), false)
+	testing.expect(t, ok)
+	testing.expect_value(t, v, "2.4.1")
+	testing.expect_value(t, link, "https://x/v2.4.1")
 }
 
 /// iris --shield-rules LEVEL DIR OUT
@@ -87,7 +173,7 @@ shield_rules_cli :: proc(level_name, dir, out: string) -> int {
 	for li in level_lists(l) {
 		text, err := os.read_entire_file_from_path(fmt.tprintf("%s/%s.txt", dir, list_id(li)), context.allocator)
 		if err != nil do continue
-		converter_add_list(&c, string(text), list_generic_ok(li))
+		converter_add_list(&c, string(text), list_generic_ok(li), list_ultra_only(li))
 		lists += 1
 	}
 	// as Iris itself does: its own domains until the lists come, and at ultra

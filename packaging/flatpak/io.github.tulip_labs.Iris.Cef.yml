@@ -13,8 +13,15 @@
 #   not (YouTube is fine; some sites' video is not). The ffmpeg-full
 #   extension would not help (Chromium does not use GStreamer), so it is
 #   not here.
-# - Pages are drawn off-screen and copied (CEF has no shared textures on
-#   Linux): more CPU for video and scrolling than WPE's zero-copy frames.
+# - Pages are drawn off-screen on the GPU: Chromium's GPU process (ANGLE on
+#   the desktop's OpenGL, GPU rasterization, VA-API video) hands Iris each
+#   frame as a DMA-BUF, copied on the GPU into Iris's own texture (no pixel
+#   through the CPU). Chromium connects to the Wayland display for its GPU
+#   buffers but never opens a window. IRIS_CEF_GPU=0 goes back to software
+#   (SwiftShader, CPU frames).
+# - Nothing of Chromium's runs after Iris closes: no component updater, no
+#   crash reporter, no background networking, no field trials; Iris ends
+#   any child process still there when it quits.
 # - About 10 times the size: libcef.so alone is a few hundred MB.
 app-id: io.github.tulip_labs.Iris.Cef
 runtime: org.gnome.Platform
@@ -29,9 +36,9 @@ rename-appdata-file: io.github.tulip_labs.Iris.metainfo.xml
 finish-args:
   - --share=ipc # Chromium's shared memory (/dev/shm)
   - --share=network
-  - --socket=wayland # Iris is Wayland only (CEF draws off-screen: no X11)
+  - --socket=wayland # Iris is Wayland only; Chromium's GPU buffers come through it too (no X11)
   - --socket=pulseaudio
-  - --device=dri # the GPU; cameras come through the portal and PipeWire
+  - --device=dri # the GPU (Chromium's GPU process, VA-API); cameras come through the portal and PipeWire
   - --filesystem=xdg-run/pipewire-0
   - --filesystem=xdg-download
   - --talk-name=org.freedesktop.FileManager1 # "show in folder" for downloads
@@ -66,6 +73,11 @@ modules:
       # the setuid sandbox helper cannot work in a Flatpak (and Iris starts
       # CEF with no_sandbox); nothing else here is setuid
       - rm -f /app/lib/iris-cef/chrome-sandbox
+      # everything else is loaded: libEGL/libGLESv2 (ANGLE), the V8
+      # snapshots, the .pak resources, and SwiftShader with its Vulkan
+      # loader (the software fallback). Every locale stays (small: Chromium's
+      # own words in pages, e.g. form messages and date pickers, in the
+      # desktop's language)
 
   - name: iris
     buildsystem: simple

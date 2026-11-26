@@ -1,6 +1,9 @@
-# Builds Iris for Linux (the Flatpak bundle) and Android (the APK) and
+# Builds Iris for Linux (the WPE Flatpak bundle) and Android (the APK) and
 # publishes them as a GitHub release with one SHA256SUMS file. Runs when a
 # tag like v2.0.0 is pushed, or by hand from the Actions tab (give the tag).
+# This is the latest release, which the WPE build's and Android's update
+# checks read. Iris (Chromium), the CEF Flatpak, is not here: it has
+# releases of its own (release-cef.yml, tags cef-v*).
 name: Release
 
 on:
@@ -35,6 +38,9 @@ jobs:
 
   linux:
     uses: ./.github/workflows/linux.yml
+    with:
+      only: wpe
+      release: true
 
   android:
     uses: ./.github/workflows/android.yml
@@ -59,10 +65,6 @@ jobs:
         run: |
           ls -l art
           files="art/Iris-x86_64.flatpak"
-          # the Chromium (CEF) build, a second app beside it
-          if [ -f art/Iris-Cef-x86_64.flatpak ]; then
-            files="$files art/Iris-Cef-x86_64.flatpak"
-          fi
           if [ -f art/Iris-android.apk ]; then
             files="$files art/Iris-android.apk"
           fi
