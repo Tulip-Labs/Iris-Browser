@@ -12,6 +12,9 @@ Headless :: struct {
 	pty:   Pty,
 	/// bytes read from the child
 	total: int,
+	/// keep what the child wrote (for --dump-raw)
+	capture: bool,
+	raw:     [dynamic]u8,
 }
 
 /// the child's exit code and the terminal as it ended
@@ -27,6 +30,7 @@ headless_start :: proc(h: ^Headless, argv: []string, env: []string, cols, rows: 
 
 headless_destroy :: proc(h: ^Headless) {
 	pty_close(&h.pty)
+	delete(h.raw)
 	term_destroy(&h.term)
 }
 
@@ -41,6 +45,7 @@ headless_pump :: proc(h: ^Headless, ms: i32) -> bool {
 		n, res := pty_read(&h.pty, buf[:])
 		if res == .Data {
 			h.total += n
+			if h.capture do append(&h.raw, ..buf[:n])
 			term_feed(&h.term, buf[:n])
 			if len(h.term.out) > 0 {
 				pty_write(&h.pty, h.term.out[:])

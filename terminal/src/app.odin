@@ -19,6 +19,7 @@ Options :: struct {
 	dump_screen: string,
 	dump_state:  string,
 	dump_frame:  string,
+	dump_raw:    string,
 	no_window:   bool,
 	stats:       bool,
 	cols, rows:  int,

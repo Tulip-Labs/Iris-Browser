@@ -31,7 +31,7 @@ usage: iris-terminal [options] [-e PROGRAM ARGS...]
   --version, --help
 
 for tests: --exec CMD, --dump-screen FILE, --dump-state FILE, --dump-frame FILE,
-           --no-window, --stats, --timeout MS, --debug
+           --dump-raw FILE (no window: what the program wrote), --no-window, --stats, --timeout MS, --debug
 `
 
 MESLO_URL :: "https://github.com/romkatv/powerlevel10k-media/raw/master/"
@@ -67,6 +67,7 @@ main :: proc() {
 		case "--dump-screen": opt.dump_screen = next(args, &i, arg)
 		case "--dump-state": opt.dump_state = next(args, &i, arg)
 		case "--dump-frame": opt.dump_frame = next(args, &i, arg)
+		case "--dump-raw": opt.dump_raw = next(args, &i, arg)
 		case "--no-window": opt.no_window = true
 		case "--stats": opt.stats = true
 		case "--debug": debug_on = true
@@ -225,11 +226,13 @@ run_headless :: proc(opt: Options) -> int {
 	if !term.headless_start(&h, argv[:], term.pty_env({"IRIS_TERMINAL_NERD=0"}), cols, rows, cfg.scrollback) do die(1, "iris-terminal: could not start %s", argv[0])
 	theme := term.theme_by_name(cfg.theme, true)
 	term.term_apply_theme(&h.term, theme)
+	h.capture = opt.dump_raw != ""
 	start := time.now()
 	timeout := opt.timeout_ms > 0 ? opt.timeout_ms : 30000
 	status := term.headless_run(&h, timeout)
 	ms := i64(time.duration_milliseconds(time.since(start)))
 	write_dumps(&h.term, opt)
+	if opt.dump_raw != "" do _ = os.write_entire_file(opt.dump_raw, h.raw[:])
 	if opt.stats do print_stats(u64(h.total), ms)
 	term.headless_destroy(&h)
 	return status

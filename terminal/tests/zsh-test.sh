@@ -32,9 +32,12 @@ echo SENTINEL_\$((1+2))
 false
 exit
 IN
-"$bin" --no-window --geometry 100x24 --timeout 30000 \
-	--exec "CONTAINER_ID=testbox zsh -i < $out/zsh-input.txt" \
-	--dump-screen "$out/zsh-screen.txt" --dump-state "$out/zsh-state.txt" || { cat "$out/zsh-screen.txt" || true; fail "zsh did not run"; }
+# (a plain zsh first: is the harness itself fine?)
+"$bin" --no-window --geometry 100x24 --timeout 10000 --exec "zsh -f -i < $out/zsh-input.txt" \
+	--dump-screen "$out/zsh-plain.txt" --dump-raw "$out/zsh-plain.raw" || { echo "--- plain zsh -f -i:"; cat -v "$out/zsh-plain.raw"; fail "even zsh -f -i < file did not finish"; }
+"$bin" --no-window --geometry 100x24 --timeout 10000 \
+	--exec "CONTAINER_ID=testbox zsh -i < $out/zsh-input.txt" --dump-raw "$out/zsh.raw" \
+	--dump-screen "$out/zsh-screen.txt" --dump-state "$out/zsh-state.txt" || { echo "--- raw:"; cat -v "$out/zsh.raw"; echo "--- screen:"; cat "$out/zsh-screen.txt" || true; fail "zsh did not run"; }
 cat "$out/zsh-screen.txt"
 grep -q 'SENTINEL_3' "$out/zsh-screen.txt" || fail "the command did not run"
 grep -q '⬢ testbox' "$out/zsh-screen.txt" || fail "the prompt lacks the container name"
