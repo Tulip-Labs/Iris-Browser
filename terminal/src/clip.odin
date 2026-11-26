@@ -240,6 +240,7 @@ clip_read :: proc() -> (text: string, done: bool) {
 	}
 	linux.close(clip.read_fd)
 	clip.read_fd = -1
+	logf("paste: read %d bytes", len(clip.reading))
 	return strings.clone(string(clip.reading[:]), context.temp_allocator), true
 }
 

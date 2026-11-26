@@ -397,6 +397,7 @@ itoa :: proc(n: int) -> string {
 // ---------------------------------------------------------------- pasting and copying
 
 app_paste_text :: proc(a: ^App, text: string) {
+	logf("paste: %d bytes to the program", len(text))
 	if len(text) == 0 do return
 	out := make([dynamic]u8, context.temp_allocator)
 	term.paste_bytes(&a.t, &out, text)
