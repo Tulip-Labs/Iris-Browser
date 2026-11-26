@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ext-foreign-toplevel-list-v1 (wayland-protocols, staging), message tables
+     only. abi/check-wayland.sh compares them with the system's copy. -->
+<protocol name="ext_foreign_toplevel_list_v1">
+  <interface name="ext_foreign_toplevel_list_v1" version="1">
+    <event name="toplevel">
+      <arg name="toplevel" type="new_id" interface="ext_foreign_toplevel_handle_v1"/>
+    </event>
+    <event name="finished"/>
+    <request name="stop"/>
+    <request name="destroy" type="destructor"/>
+  </interface>
+  <interface name="ext_foreign_toplevel_handle_v1" version="1">
+    <request name="destroy" type="destructor"/>
+    <event name="closed"/>
+    <event name="done"/>
+    <event name="title">
+      <arg name="title" type="string"/>
+    </event>
+    <event name="app_id">
+      <arg name="app_id" type="string"/>
+    </event>
+    <event name="identifier">
+      <arg name="identifier" type="string"/>
+    </event>
+  </interface>
+</protocol>

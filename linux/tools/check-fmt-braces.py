@@ -17,7 +17,9 @@ def read_str(s,i):
         else: out.append(s[j]); j+=1
     return ''.join(out),j+1
 hits=[]
-for f in sorted(glob.glob('linux/src/**/*.odin',recursive=True)):
+# no arguments: the browser's linux/src; or the folders to read (the shell's)
+dirs=sys.argv[1:] or ['linux/src']
+for f in sorted(f for d in dirs for f in glob.glob(d+'/**/*.odin',recursive=True)):
     s=open(f).read()
     for m in pat.finditer(s):
         i=m.end()

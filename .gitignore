@@ -10,3 +10,6 @@ linux/.zig-cache/
 linux/zig-out/
 linux/iris
 linux/*.ppm
+shell/iris-shell
+shell/logic.test
+shell/dist/
