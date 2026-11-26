@@ -92,6 +92,7 @@ CI (`.github/workflows/terminal.yml`) uses them under a headless sway.
 - It was proved by tests under a headless sway with software rendering, and with real
   vim, less, tmux and zsh; it has not been run on a real GPU and a real niri session
   by its author.
+- The keyboard is taken once, when the seat first offers one (the window code is the browser's): after unplugging every keyboard, open a new window.
 - Resizing reflows the main screen's lines (wrapped lines rejoin), but not the
   alternate screen: full-screen programs redraw on SIGWINCH.
 
