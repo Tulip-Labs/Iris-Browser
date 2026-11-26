@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Iris — a browser made of glass</title>
-  <meta name="description" content="Iris is a free web browser for Linux and Android by Tulip Labs: Liquid Glass drawn by its own renderer on Wayland and WPE WebKit, Shields that stop ads and trackers inside the engine, and nothing collected about you.">
+  <meta name="description" content="Iris is a free web browser for Linux and Android by Tulip Labs: Liquid Glass drawn by its own renderer on Wayland, with Chromium drawing the pages, Shields that stop ads and trackers inside the engine, and nothing collected about you.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0B0C0E" media="(prefers-color-scheme: dark)">
@@ -41,7 +41,7 @@
       <ul class="nav">
         <li><a href="#features">Features</a></li>
         <li><a href="#privacy">Privacy</a></li>
-        <li><a href="#engines">Engines</a></li>
+        <li><a href="#engines">Engine</a></li>
         <li><a href="#android">Android</a></li>
         <li><a href="#install">Install</a></li>
         <li><a href="docs/index.html">Docs</a></li>
@@ -153,7 +153,7 @@
       <header class="section__head reveal">
         <p class="eyebrow">Features</p>
         <h2 id="features-title">Clear by design.</h2>
-        <p class="section__lede">Iris for Linux is written in Odin and talks to Wayland, OpenGL ES and WPE WebKit directly. No GTK, no X11. Every piece of its chrome is drawn by Iris itself, in the same frame as its glass.</p>
+        <p class="section__lede">Iris for Linux is written in Odin and talks to Wayland and OpenGL ES directly, with Chromium (CEF) drawing the pages. No GTK, no X11. Every piece of its chrome is drawn by Iris itself, in the same frame as its glass.</p>
       </header>
 
       <h3 class="subhead reveal">In Iris today</h3>
@@ -251,25 +251,24 @@
       </div>
     </section>
 
-    <!-- Two engines -->
+    <!-- The engine -->
     <section class="section" id="engines" aria-labelledby="engines-title">
       <header class="section__head reveal">
-        <p class="eyebrow">Two engines</p>
-        <h2 id="engines-title">One Iris. Your choice of engine.</h2>
-        <p class="section__lede">The same Odin app, the same glass, built on either engine. Both Flatpaks install side by side.</p>
+        <p class="eyebrow">The engine</p>
+        <h2 id="engines-title">Chromium underneath, glass on top.</h2>
+        <p class="section__lede">Iris for Linux is "Iris (Chromium)": the Odin app and its glass, with pages drawn by Chromium through CEF.</p>
       </header>
       <div class="engines">
         <article class="card glass engine reveal" data-tilt>
-          <p class="engine__tag">Default</p>
-          <h3>WPE WebKit</h3>
-          <p>Each page frame arrives as a DMA-BUF and Iris samples it with no copy, so the glass bends the live page. WebKit keeps its own process sandbox inside Flatpak's.</p>
-          <p class="engine__id"><code>io.github.tulip_labs.Iris</code></p>
+          <p class="engine__tag">Linux</p>
+          <h3>Chromium (CEF)</h3>
+          <p>"Iris (Chromium)" is built on CEF as a Flatpak. It is larger than a plain browser shell, has no proprietary codecs, and runs its renderers inside Flatpak's sandbox only.</p>
+          <p class="engine__id"><code>io.github.tulip_labs.Iris.Cef</code></p>
         </article>
         <article class="card glass engine reveal" data-tilt>
-          <p class="engine__tag engine__tag--soon">Coming in 2.3</p>
-          <h3>Chromium (CEF)</h3>
-          <p>"Iris (Chromium)", built on CEF as a Flatpak of its own, for when you want Chromium underneath. It is larger, has no proprietary codecs, and runs its renderers inside Flatpak's sandbox only.</p>
-          <p class="engine__id"><code>io.github.tulip_labs.Iris.Cef</code></p>
+          <p class="engine__tag">On the GPU</p>
+          <h3>GPU frames</h3>
+          <p>Each page frame arrives as a DMA-BUF and is copied on the GPU into Iris's own texture, with no pixel through the CPU, so the glass bends the live page.</p>
         </article>
       </div>
     </section>
@@ -307,22 +306,22 @@
       <header class="section__head reveal">
         <p class="eyebrow">Install</p>
         <h2 id="install-title">Get Iris.</h2>
-        <p class="section__lede">Both builds come from GitHub Releases. The <a href="docs/index.html">docs</a> cover updates, the Chromium build and building from source.</p>
+        <p class="section__lede">Both builds come from GitHub Releases. The <a href="docs/index.html">docs</a> cover updates and building from source.</p>
       </header>
       <div class="engines">
         <article class="card glass install reveal">
           <h3>Linux</h3>
           <ol class="steps">
-            <li>Download <a href="https://github.com/Tulip-Labs/Iris-Browser/releases/latest"><code>Iris-x86_64.flatpak</code></a> from the latest release.</li>
+            <li>Download <a href="https://github.com/Tulip-Labs/Iris-Browser/releases"><code>Iris-Cef-x86_64.flatpak</code></a> from the newest <code>cef-v</code> release ("Iris (Chromium)").</li>
             <li>Iris needs the GNOME 50 runtime, which Flatpak installs from Flathub. If Flathub isn't set up yet:
               <pre><code>flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo</code></pre>
             </li>
             <li>Install the bundle:
-              <pre><code>flatpak install --user Iris-x86_64.flatpak</code></pre>
+              <pre><code>flatpak install --user Iris-Cef-x86_64.flatpak</code></pre>
             </li>
           </ol>
           <p class="note">On niri 26.04 and newer, the blur behind the window comes on by itself.</p>
-          <a class="btn btn--primary" href="https://github.com/Tulip-Labs/Iris-Browser/releases/latest">Download the Flatpak</a>
+          <a class="btn btn--primary" href="https://github.com/Tulip-Labs/Iris-Browser/releases">Download the Flatpak</a>
         </article>
         <article class="card glass install reveal">
           <h3>Android</h3>

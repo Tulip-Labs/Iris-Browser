@@ -1,10 +1,9 @@
-# Iris with Chromium (CEF) as its page engine, as a Flatpak of its own
-# (io.github.tulip_labs.Iris.Cef, beside the WPE build, for trying it):
-# the same Odin app from linux/, built with -define:IRIS_ENGINE=cef, and
+# Iris (Chromium) for Linux, as a Flatpak (io.github.tulip_labs.Iris.Cef):
+# the Odin app from linux/ with Chromium (CEF) as its page engine, on
 # CEF 156.0.32 (Chromium 156.0.8078.109) from its minimal binary
 # distribution, nothing built from source.
 #
-# What differs from the WPE Flatpak, plainly:
+# Worth knowing, plainly:
 # - Chromium's own renderer sandbox is off (no_sandbox: it needs a setuid
 #   helper or user namespaces, which a Flatpak gives neither); renderers
 #   run inside Flatpak's sandbox only.
@@ -106,7 +105,6 @@ modules:
         ODIN_ROOT: /run/build/iris/odin
         # the SDK links with gcc (it has no clang)
         ODIN_CLANG_PATH: /usr/bin/gcc
-        IRIS_ENGINE: cef
         CEF_RPATH: /app/lib/iris-cef
     sources:
       - type: dir

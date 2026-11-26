@@ -6,7 +6,7 @@ Iris bundles or uses the following. Each keeps its own license.
 |---|---|---|
 | swift-adwaita (Sergey Armodin and contributors) | Swift interface to GTK 4 and libadwaita (Linux) | MIT |
 | GTK 4, libadwaita, GLib, libsoup (The GNOME Project) | Window, widgets, rendering, networking (Linux); from the GNOME runtime | LGPL 2.1 or later |
-| WebKit (Apple and contributors) and WebKitGTK | The web engine on Linux; from the GNOME runtime | BSD 2-Clause and LGPL 2.1 |
+| Chromium Embedded Framework (CEF) and Chromium (The Chromium Authors) | The web engine on Linux; the CEF binary distribution, with libcef.so | BSD 3-Clause (with the licenses of the components Chromium bundles) |
 | Swift standard library and Foundation (Apple and the Swift project) | Linked into Iris for Linux | Apache License 2.0 with Runtime Library Exception |
 | ext-background-effect-v1 protocol code (wayland-scanner output) | Asking the compositor for blur | MIT |
 | Ad and tracker domain list, Linux (`linux/src/shield-domains.txt.gz`, made by `linux/tools/shield-domains.sh`) | Iris Shields | From hagezi/dns-blocklists Pro mini (GPL-3.0), StevenBlack/hosts (MIT) and the whole-domain rules of EasyList, EasyPrivacy and uBlock Origin's filters (GPL-3.0 / CC BY-SA 3.0) |

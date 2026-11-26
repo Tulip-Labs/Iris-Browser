@@ -34,7 +34,7 @@
       <ul class="nav">
         <li><a href="../index.html#features">Features</a></li>
         <li><a href="../index.html#privacy">Privacy</a></li>
-        <li><a href="../index.html#engines">Engines</a></li>
+        <li><a href="../index.html#engines">Engine</a></li>
         <li><a href="../index.html#android">Android</a></li>
         <li><a href="../index.html#install">Install</a></li>
         <li><a href="index.html" aria-current="page">Docs</a></li>
@@ -83,25 +83,23 @@
         <ul>
           <li><strong>Shields:</strong> right-click the page and choose <em>Site broken? Reload without Shields</em> <span class="nowrap"><span class="from">From 2.3</span>.</span> Or turn Shields off for the site in the Shields panel. See <a href="shields.html#broken">Shields</a>.</li>
           <li><strong>The sandbox:</strong> sites on plain http, a bare IP address or a failing certificate open in the sandbox (orange rim), where downloads, the camera, WebRTC and pop-ups are off. That is on purpose.</li>
-          <li><strong>A site that needs Chromium:</strong> try the Chromium (CEF) build <span class="nowrap"><span class="from">From 2.3</span>.</span> It installs beside the WPE build.</li>
         </ul>
 
         <h2 id="flatpak">The Flatpak won't install</h2>
         <p>The bundle needs the GNOME 50 runtime from Flathub. Add the Flathub remote, then install again:</p>
         <pre><code>flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user Iris-x86_64.flatpak</code></pre>
+flatpak install --user Iris-Cef-x86_64.flatpak</code></pre>
 
         <h2 id="blur">No blur behind the window</h2>
         <p>The glass shows the desktop blurred only where the compositor offers background blur through <code>ext-background-effect-v1</code> (niri 26.04 and newer, and others that adopt it). Elsewhere the window stays nearly solid. This is expected.</p>
 
         <h2 id="x11">Iris doesn't start</h2>
         <p>Iris for Linux is a Wayland app with no X11 code, so it needs a Wayland session. If it still won't start, run it from a terminal and <a href="https://github.com/Tulip-Labs/Iris-Browser/issues">open an issue</a> with what it prints:</p>
-        <pre><code>flatpak run io.github.tulip_labs.Iris</code></pre>
+        <pre><code>flatpak run io.github.tulip_labs.Iris.Cef</code></pre>
 
         <h2 id="video">Video</h2>
         <ul>
-          <li>On the WPE build, decoding on the graphics chip is off, because some drivers broke the picture into blocks.</li>
-          <li>The Chromium build doesn't play H.264, H.265 or AAC. VP9, AV1 and Opus play, and so does YouTube.</li>
+          <li>Iris for Linux doesn't play H.264, H.265 or AAC. VP9, AV1 and Opus play, and so does YouTube.</li>
         </ul>
 
         <h2 id="faq">FAQ</h2>

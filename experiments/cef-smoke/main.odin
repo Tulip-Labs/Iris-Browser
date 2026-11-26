@@ -5,8 +5,8 @@
 //  1. tab-close memory: open 3 tabs (each with its own request context,
 //     so each gets its own renderer process), close 2, and prove the
 //     closed tabs' memory is really gone — fewer renderer processes and
-//     total renderer RSS down by a clear margin. This is the WPE WebKit
-//     bug (2.2.0-2.2.2) not happening again: a closed tab must really die.
+//     total renderer RSS down by a clear margin. This is the guarantee
+//     a closed tab gives: it must really die.
 //  2. single page: open https://example.org, wait for one OnPaint frame,
 //     dump it to frame.ppm (P6 RGB) and print PASS.
 //
@@ -47,8 +47,8 @@ phase: int
 
 // tab-close scenario state. Tabs are created one at a time so OnAfterCreated
 // order matches creation order; the browser pointer is dropped in
-// OnBeforeClose (below) — keeping it would keep the page alive, the same
-// trap as the WPE bug (Iris held one reference too many on each page).
+// OnBeforeClose (below) — keeping it would keep the page alive: a
+// leak (one reference too many on a page).
 Tab :: struct {
 	browser: ^cef_browser_t,
 	id:      i32,
@@ -195,7 +195,7 @@ life_on_before_close :: proc "c" (self: ^cef_life_span_handler_t, browser: rawpt
 	if phase == 2 {
 		// Drop our reference: the browser object is about to be destroyed,
 		// and anything still pointing at it keeps the page (and its
-		// renderer) alive. This is the WPE-bug trap, in CEF form. Match by
+		// renderer) alive. This is the leak trap. Match by
 		// identifier, not pointer: CEF hands OnBeforeClose a different
 		// cef_browser_t* wrapper than OnAfterCreated did for the same tab.
 		closing_id := (^cef_browser_t)(browser).get_identifier((^cef_browser_t)(browser))
@@ -360,7 +360,7 @@ cond_closed_two     :: proc() -> bool { return tabs_closed >= 2 }
 // cef-smoke with --type=zygote cmdlines; the 4 grandchildren hold the
 // pages at ~45-122 MB RSS each.) The honest measurement is therefore the
 // whole subtree: when tabs really die, their processes leave the tree and
-// the summed RSS falls. A WPE-style leak — closed tabs kept alive by a
+// the summed RSS falls. A leak — closed tabs kept alive by a
 // stray reference — would show up here as processes that never leave.
 descendant_snapshot :: proc() -> (count: int, rss_kb: int) {
 	my_pid := os.get_pid()
@@ -413,7 +413,7 @@ TAB_URLS := [3]string{"https://example.org", "https://example.com", "https://exa
 // processes AND total renderer RSS down at least 30%. The count alone is
 // not enough (Chromium may keep one small warm spare renderer); the RSS
 // drop is the real guarantee. Either condition failing means a closed
-// tab is still alive somewhere — the WPE bug, in CEF form.
+// tab is still alive somewhere — a leak.
 scenario_tab_close :: proc(window_info: ^cef_window_info_t, browser_settings: ^cef_browser_settings_t) {
 	phase = 2
 	fmt.println("scenario 1: tab close frees memory")
