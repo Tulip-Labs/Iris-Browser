@@ -3,6 +3,7 @@
 package iris
 
 import "core:strings"
+import "core:testing"
 import "core:unicode"
 import "core:unicode/utf8"
 import plat "../plat"
@@ -69,13 +70,21 @@ line_undo :: proc(l: ^Line) -> bool {
 	return true
 }
 
+/// the most a line holds, in bytes (an address of 8 KB is already more than
+/// history keeps)
+LINE_MAX :: 64 * 1024
+
 /// text typed or pasted, over the selection (line breaks become spaces)
 line_insert :: proc(l: ^Line, s0: string) {
 	s, _ := strings.replace_all(s0, "\n", " ", context.temp_allocator)
 	s, _ = strings.replace_all(s, "\r", "", context.temp_allocator)
 	s, _ = strings.replace_all(s, "\t", " ", context.temp_allocator)
-	remember(l)
 	lo, hi := line_selection(l)
+	// a paste of megabytes (a log, a whole file) would be shaped every
+	// frame and copied into every undo step: a line keeps LINE_MAX bytes
+	s = clip(s, max(0, LINE_MAX - (len(l.text) - (hi - lo))))
+	if len(s) == 0 && lo == hi do return
+	remember(l)
 	remove_range(&l.text, lo, hi)
 	inject_at(&l.text, lo, ..transmute([]u8)s)
 	l.cursor = lo + len(s)
@@ -235,3 +244,24 @@ line_key :: proc(l: ^Line, e: plat.Key_Event) -> Line_Result {
 	}
 	return .Ignored
 }
+
+@(test) test_line_max :: proc(t: ^testing.T) {
+	l: Line
+	defer line_free(&l)
+	big := strings.repeat("\u00e9", LINE_MAX, context.temp_allocator) // two bytes each
+	line_insert(&l, big)
+	testing.expect(t, len(l.text) <= LINE_MAX)
+	testing.expect(t, len(l.text) >= LINE_MAX - 1)
+	// never half a character
+	testing.expect_value(t, len(l.text) % 2, 0)
+	testing.expect_value(t, l.cursor, len(l.text))
+	// a full line takes no more, and leaves no undo step for nothing
+	steps := len(l.undo)
+	line_insert(&l, "x")
+	testing.expect_value(t, len(l.undo), steps)
+	// typing over a selection still works when full
+	line_select_all(&l)
+	line_insert(&l, "ok")
+	testing.expect_value(t, line_string(&l), "ok")
+}
+
