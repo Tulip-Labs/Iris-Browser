@@ -628,6 +628,9 @@ tab_find_stop :: proc(t: ^Tab) {
 
 @(private="file") jobs: [dynamic]Job
 @(private="file") jobs_timer: bool
+/// the benchmark run logs what reaches on_console_message (CI diagnosis)
+cef_bench_diag: bool
+cef_bench_logged: int
 @(private="file") ANSWER :: "\x01iris:"
 @(private="file") MEDIA :: "\x01iris-media:"
 @(private="file") COPY :: "\x01iris-copy:"
@@ -1390,7 +1393,12 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 	d.on_console_message = proc "c" (self: ^cef_display_handler_t, browser: ^cef_browser_t, level: i32, message: ^cef_string_t, source: ^cef_string_t, line: i32) -> i32 {
 		context = main_context
 		defer rel(browser)
-		return console_message(vw(self), from_cef(message)) ? 1 : 0
+		m := from_cef(message)
+		if cef_bench_diag && cef_bench_logged < 200 {
+			cef_bench_logged += 1
+			fmt.printf("IRIS_CEF_CONSOLE level=%d len=%d %q\n", level, len(m), m[:min(len(m), 90)])
+		}
+		return console_message(vw(self), m) ? 1 : 0
 	}
 	d.on_favicon_urlchange = proc "c" (self: ^cef_display_handler_t, browser: ^cef_browser_t, urls: rawptr) {
 		context = main_context

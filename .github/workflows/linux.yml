@@ -399,7 +399,7 @@ jobs:
           [ -S $XDG_RUNTIME_DIR/wayland-1 ] || { cat /tmp/weston.txt; exit 1; }
           export WAYLAND_DISPLAY=wayland-1
           rc=0
-          timeout 3300 dbus-run-session -- flatpak run --user --env=LIBGL_ALWAYS_SOFTWARE=1 --env=IRIS_CEF_BENCH_URL="$BENCH_URL" --env=IRIS_CEF_BENCH_TIMEOUT=1800 \
+          timeout 3300 dbus-run-session -- flatpak run --user --env=LIBGL_ALWAYS_SOFTWARE=1 --env=IRIS_CEF_BENCH_URL="$BENCH_URL" --env=IRIS_CEF_BENCH_TIMEOUT=600 \
             io.github.tulip_labs.Iris.Cef > /tmp/iris-bench.txt 2>&1 || rc=$?
           flatpak kill io.github.tulip_labs.Iris.Cef 2>/dev/null || true
           # (anywhere on a line: CEF's own logging may share the output)
