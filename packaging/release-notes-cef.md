@@ -1,6 +1,7 @@
 Iris (Chromium) 2.4.2: one Iris at a time, and no more blank pages.
 
 - YouTube plays again: a script meant for the other engine hid the video formats this Chromium plays, and the ad blocker was not the cause.
+- Links opened in a normal tab no longer show garbage characters: normal tabs now live in their own profile, made the way a container's is. You sign in again once.
 - No made-up containers: none exist at the start; the docs said otherwise.
 
 **Linux (Flatpak, `io.github.tulip_labs.Iris.Cef`)**
