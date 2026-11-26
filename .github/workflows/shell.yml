@@ -1,0 +1,151 @@
+# Iris Shell for niri (shell/): type-checks the Odin app, checks that the
+# Wayland tables written by hand match wayland-scanner's, runs the tests
+# (niri's event stream, colours, the KDL and config.kdl edits on a temporary
+# folder), builds it, and runs it for real on a headless sway (which has
+# wlr-layer-shell): the background must map and draw a frame, a second start
+# must replace the first, and --setup-niri / --remove-niri must leave
+# config.kdl as it was. The release workflow (release-shell.yml) calls this
+# one and publishes the tarball.
+name: Shell
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "shell/**"
+      - "linux/wl/**"
+      - "linux/tools/check-fmt-braces.py"
+      - "packaging/check/versions-shell.sh"
+      - "packaging/release-notes-shell.md"
+      - ".github/workflows/shell.yml"
+      - ".github/workflows/release-shell.yml"
+  pull_request:
+    paths:
+      - "shell/**"
+      - "linux/wl/**"
+      - "linux/tools/check-fmt-braces.py"
+      - "packaging/check/versions-shell.sh"
+      - "packaging/release-notes-shell.md"
+      - ".github/workflows/shell.yml"
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: shell-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Odin dev-2026-11a, pinned by checksum (as linux.yml)
+  ODIN_URL: https://github.com/odin-lang/Odin/releases/download/dev-2026-11a/odin-linux-amd64-dev-2026-11a.tar.gz
+  ODIN_SHA256: 65c9f6e97d6f8a30930e151f270ce5aeaa98fe8b2ba49fe067394e2af04f7618
+
+jobs:
+  shell:
+    runs-on: ubuntu-24.04
+    container:
+      image: archlinux:latest
+      options: --shm-size=1g --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wayland, EGL, sway (a headless compositor with layer-shell) and the tools
+        run: |
+          pacman -Syu --noconfirm --needed wayland wayland-protocols mesa libdrm pkgconf clang gcc python diffutils git sway grim procps-ng > /dev/null
+          pkg-config --modversion wayland-client wayland-egl egl glesv2 wayland-protocols
+      - name: Odin
+        run: |
+          curl -sSfL "$ODIN_URL" -o /tmp/odin.tar.gz
+          echo "$ODIN_SHA256  /tmp/odin.tar.gz" | sha256sum -c -
+          mkdir -p /opt/odin && tar -xzf /tmp/odin.tar.gz -C /opt/odin --strip-components=1
+          echo /opt/odin >> $GITHUB_PATH
+          echo ODIN_ROOT=/opt/odin >> $GITHUB_ENV
+      - name: The version, and the release notes' first line
+        run: sh packaging/check/versions-shell.sh
+      - name: Format strings with a brace (Odin reads { as a placeholder)
+        run: python3 linux/tools/check-fmt-braces.py shell/src shell/logic
+      - name: The browser's Wayland tables are copied here unchanged
+        run: |
+          cmp linux/wl/client.odin shell/wl/client.odin
+          cmp linux/wl/protocols.odin shell/wl/protocols.odin
+      - name: wl/protocols_shell.odin is what tools/gen.sh makes from protocols/*.xml
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          sh shell/tools/gen.sh
+          git diff --exit-code shell/wl/protocols_shell.odin
+      - name: The layer-shell and capture tables against wayland-scanner's
+        run: sh shell/abi/check.sh
+      - name: Type-check (with vet)
+        run: sh shell/build.sh check
+      - name: Tests
+        run: sh shell/build.sh test
+      - name: Build (optimised) and package
+        run: sh shell/build.sh package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shell
+          path: shell/dist/iris-shell-x86_64.tar.gz
+      - name: setup-niri and remove-niri leave config.kdl as it was
+        run: |
+          export XDG_CONFIG_HOME=$(mktemp -d)
+          mkdir -p $XDG_CONFIG_HOME/niri
+          printf 'layout {\n    gaps 4\n}\nspawn-at-startup "waybar"\n' > $XDG_CONFIG_HOME/niri/config.kdl
+          cp $XDG_CONFIG_HOME/niri/config.kdl /tmp/config.orig
+          shell/iris-shell --setup-niri
+          grep -q 'include "iris-shell.kdl"' $XDG_CONFIG_HOME/niri/config.kdl
+          grep -q '// hidden by Iris Shell: spawn-at-startup "waybar"' $XDG_CONFIG_HOME/niri/config.kdl
+          grep -q 'spawn-at-startup "iris-shell"' $XDG_CONFIG_HOME/niri/iris-shell.kdl
+          cmp $XDG_CONFIG_HOME/niri/config.kdl.before-iris-shell /tmp/config.orig
+          shell/iris-shell --setup-niri   # again: nothing changes
+          [ "$(grep -c 'include "iris-shell.kdl"' $XDG_CONFIG_HOME/niri/config.kdl)" = 1 ]
+          shell/iris-shell --remove-niri
+          [ ! -e $XDG_CONFIG_HOME/niri/iris-shell.kdl ]
+          cmp $XDG_CONFIG_HOME/niri/config.kdl /tmp/config.orig
+      - name: The background maps on a headless sway and draws a frame
+        run: |
+          export XDG_RUNTIME_DIR=$(mktemp -d) WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 WLR_HEADLESS_OUTPUTS=1
+          chmod 700 $XDG_RUNTIME_DIR
+          printf 'output HEADLESS-1 resolution 1280x800\ndefault_border none\n' > /tmp/sway.conf
+          sway -c /tmp/sway.conf > /tmp/sway.log 2>&1 &
+          for i in $(seq 1 50); do ls $XDG_RUNTIME_DIR/wayland-* >/dev/null 2>&1 && break; sleep 0.2; done
+          export WAYLAND_DISPLAY=$(basename $(ls $XDG_RUNTIME_DIR/wayland-* | grep -v lock | head -1))
+          export LIBGL_ALWAYS_SOFTWARE=1 HOME=$(mktemp -d) IRIS_THEME=dark
+          # one frame, then it leaves (exit 1 after 10 seconds without one)
+          shell/iris-shell --check 2>&1 | tee /tmp/check.log
+          grep -q "check ok: 1 output(s) mapped" /tmp/check.log
+          # for real
+          shell/iris-shell > /tmp/shell.log 2>&1 &
+          sleep 4
+          pid=$(pgrep -x iris-shell)
+          [ -n "$pid" ] || { cat /tmp/shell.log /tmp/sway.log; exit 1; }
+          shell/iris-shell --status
+          grep -E 'VmRSS|VmHWM' /proc/$pid/status
+          grim /tmp/shell.png
+          python3 - <<'PY'
+          d = open('/tmp/shell.png', 'rb').read()
+          print("screenshot:", len(d), "bytes")
+          assert len(d) > 50000 and len(set(d[1000:200000])) > 64, "the screen is empty"
+          print("drawn")
+          PY
+          # still: no CPU used while nothing changes
+          t0=$(awk '{print $14+$15}' /proc/$pid/stat); sleep 5; t1=$(awk '{print $14+$15}' /proc/$pid/stat)
+          echo "CPU ticks used in 5 idle seconds: $((t1 - t0))"
+          [ $((t1 - t0)) -le 1 ]
+          # one shell at a time: starting it again replaces the first
+          shell/iris-shell > /tmp/shell2.log 2>&1 &
+          sleep 4
+          ! kill -0 $pid 2>/dev/null || { echo "the first shell is still running"; exit 1; }
+          [ "$(pgrep -cx iris-shell)" = 1 ] || { pgrep -ax iris-shell; exit 1; }
+          shell/iris-shell --quit
+          sleep 1
+          ! pgrep -x iris-shell || { echo "iris-shell did not stop"; exit 1; }
+          cat /tmp/shell.log /tmp/shell2.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shell-logs
+          path: |
+            /tmp/shell.png
+            /tmp/shell.log
+            /tmp/shell2.log
+            /tmp/check.log
+            /tmp/sway.log
+          if-no-files-found: ignore

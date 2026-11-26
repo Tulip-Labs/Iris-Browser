@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ext-image-capture-source-v1 (wayland-protocols, staging), message tables
+     only. abi/check-wayland.sh compares them with the system's copy. -->
+<protocol name="ext_image_capture_source_v1">
+  <interface name="ext_image_capture_source_v1" version="1">
+    <request name="destroy" type="destructor"/>
+  </interface>
+  <interface name="ext_output_image_capture_source_manager_v1" version="1">
+    <request name="create_source">
+      <arg name="source" type="new_id" interface="ext_image_capture_source_v1"/>
+      <arg name="output" type="object" interface="wl_output"/>
+    </request>
+    <request name="destroy" type="destructor"/>
+  </interface>
+  <interface name="ext_foreign_toplevel_image_capture_source_manager_v1" version="1">
+    <request name="create_source">
+      <arg name="source" type="new_id" interface="ext_image_capture_source_v1"/>
+      <arg name="toplevel_handle" type="object" interface="ext_foreign_toplevel_handle_v1"/>
+    </request>
+    <request name="destroy" type="destructor"/>
+  </interface>
+</protocol>
