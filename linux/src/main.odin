@@ -91,6 +91,14 @@ main :: proc() {
 	main_loop = g_main_loop_new(nil, 0)
 	g_main_context_set_poll_func(g_main_context_default(), poll_with_wayland)
 
+	// an Iris is already running: it opens the addresses as tabs, this one goes
+	{
+		cwd0, _ := os.get_working_directory(context.temp_allocator)
+		if instance_forward(cwd0, args) {
+			fmt.println("Iris is already open: opened there.")
+			return
+		}
+	}
 	// "forget everything on close": what sites kept last time goes first
 	clear_on_start()
 	containers_ensure()
@@ -131,9 +139,11 @@ main :: proc() {
 		if len(u) > 0 do browser_new_tab({url = u, select = true})
 	}
 	if len(b.tabs) == 0 do browser_new_tab({select = true})
+	instance_listen()
 	after(3000, proc(_: rawptr) { updates_check() }, nil)
 
 	g_main_loop_run(main_loop)
+	instance_close()
 	browser_save_session()
 	history_flush()
 	engine_stop()

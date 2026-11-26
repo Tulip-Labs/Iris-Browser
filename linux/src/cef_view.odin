@@ -57,6 +57,8 @@ View :: struct {
 	/// them came through
 	gpu_frames:  bool,
 	gpu_good:    bool,
+	/// a frame through OnPaint arrived (Chromium compositing on the CPU)
+	painted:     bool,
 	/// the pop-up was asked for with your click (it may then go anywhere
 	/// but an ad's host: a sign-in, a bank's 3-D Secure page)
 	popup_gesture: bool,
@@ -352,6 +354,27 @@ cef_view_remake_software :: proc(t: ^Tab) {
 		tab_release_web(t)
 		if len(u) > 0 do tab_load(t, u)
 	}, boxed(Remake{t, t.id}))
+}
+
+/// a page in sight that has loaded but shows nothing: Chromium sends no
+/// frame at all on some GPU setups (no import error to catch, the page just
+/// stays blank). If no frame of any kind came 3 s after the load ended, the
+/// tab is made again with frames through OnPaint, and later starts go to
+/// software at once (IRIS_CEF_GPU=1 tries the GPU again)
+cef_gpu_watch :: proc(t: ^Tab) {
+	v := t.cv
+	if v == nil || !v.gpu_frames || v.gpu_good || v.painted do return
+	Watch :: struct { t: ^Tab, id: int }
+	after(3000, proc(d: rawptr) {
+		w := cast(^Watch)d
+		defer free(w)
+		t := w.t
+		if !alive(t) || t.id != w.id || t != b.current do return
+		v := t.cv
+		if v == nil || !v.gpu_frames || v.gpu_good || v.painted do return
+		fmt.eprintln("iris: no frame from Chromium's GPU path 3 s after the page loaded: this tab and later ones use CPU frames")
+		cef_view_remake_software(t)
+	}, boxed(Watch{t, t.id}))
 }
 
 /// opens an address in the view as it is (no https-first, no sandbox turn)
@@ -852,7 +875,10 @@ cef_copy_intent :: proc(t: ^Tab) {
 	yt := h == "youtube.com" || strings.has_suffix(h, ".youtube.com") || strings.has_suffix(h, ".youtube-nocookie.com")
 	if yt {
 		run_in(f, YOUTUBE)
-		if settings().lightVideo do run_in(f, LIGHT_VIDEO)
+		// no LIGHT_VIDEO here: that script hides VP9/AV1 for the WPE engine,
+		// which has H.264. This Chromium has no H.264/AAC, so hiding the
+		// codecs it does have left YouTube nothing to play ("your browser
+		// can't play this video")
 	}
 	if top && strings.has_prefix(u, "http") && !(h == "www.google.com" || strings.has_suffix(h, ".youtube.com") || h == "mail.google.com" || h == "docs.google.com") {
 		run_in(f, SCROLL_UNLOCK)
@@ -1321,6 +1347,7 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		if frame.is_main(frame) != 0 do cef_sleep_woke(t, frame)
 		if frame.is_main(frame) != 0 && !tab_is_private(t) && !t.sandboxed do history_record(t.url, t.title)
 		if frame.is_main(frame) != 0 do browser_page_finished(t)
+		if frame.is_main(frame) != 0 do cef_gpu_watch(t)
 	}
 	ld.on_load_error = proc "c" (self: ^cef_load_handler_t, browser: ^cef_browser_t, frame: ^cef_frame_t, code: i32, text: ^cef_string_t, failed: ^cef_string_t) {
 		context = main_context
@@ -1454,6 +1481,7 @@ engine_answer_dialog :: proc(id: int, yes: bool, text: string) {
 		context = main_context
 		defer rel(browser)
 		v := vw(self)
+		v.painted = true
 		if p := v.page; p != nil do page_paint(p, kind, ([^]cef_rect_t)(rects)[:n], buffer, w, h)
 	}
 	r.on_accelerated_paint = proc "c" (self: ^cef_render_handler_t, browser: ^cef_browser_t, kind: i32, n: uint, rects: ^cef_rect_t, info: rawptr) {

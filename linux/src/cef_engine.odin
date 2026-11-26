@@ -342,7 +342,15 @@ engine_start :: proc() -> bool {
 	s.root_cache_path = cef_str(root)
 	s.cache_path = cef_str(join({root, "default"}, context.temp_allocator))
 	if cef_initialize(&main_args, &s, &the_app, nil) == 0 {
-		log.errorf("CEF did not start (exit code %d); libcef and its resources are looked for in %s", cef_get_exit_code(), dir)
+		// 24 (CEF_RESULT_CODE_NORMAL_EXIT_PROCESS_NOTIFIED): another browser
+		// process holds this profile and Chromium handed the launch to it.
+		// Iris's own socket normally catches that first (instance.odin); this
+		// is an Iris that is not answering, or one left from a crash
+		if code := cef_get_exit_code(); code == 24 {
+			log.errorf("another Iris (Chromium) still holds the profile in %s; close it (flatpak kill %s) and start again", root, APP_ID)
+		} else {
+			log.errorf("CEF did not start (exit code %d); libcef and its resources are looked for in %s", code, dir)
+		}
 		return false
 	}
 	started = true
@@ -502,6 +510,7 @@ engine_stop :: proc() {
 
 @(private="file") global_ctx: ^cef_request_context_t
 @(private="file") private_ctx: ^cef_request_context_t
+@(private="file") main_ctx: ^cef_request_context_t
 @(private="file") container_ctx: map[string]^cef_request_context_t
 
 @(private="file") new_context :: proc(cache_path: string) -> ^cef_request_context_t {
@@ -527,8 +536,12 @@ tab_context :: proc(t: ^Tab) -> ^cef_request_context_t {
 		color_scheme(c)
 		return c
 	case t.container == "":
-		if global_ctx == nil do global_ctx = cef_request_context_get_global_context()
-		c = global_ctx
+		// the main world is its own context on disk, made the way a
+		// container's is (the global one carried what Chromium's own
+		// first-run left in the profile: pages from it showed as
+		// garbage characters where a container's were fine)
+		if main_ctx == nil do main_ctx = new_context(join({cef_root(), "main"}, context.temp_allocator))
+		c = main_ctx
 	case t.container == PRIVATE_ID || !valid_container_id(t.container):
 		if private_ctx == nil do private_ctx = new_context("")
 		c = private_ctx
@@ -565,6 +578,7 @@ engine_theme_changed :: proc() {
 	if !contexts_ready do return
 	if global_ctx == nil do global_ctx = cef_request_context_get_global_context()
 	color_scheme(global_ctx)
+	color_scheme(main_ctx)
 	color_scheme(private_ctx)
 	for _, c in container_ctx do color_scheme(c)
 	views_each_context(color_scheme)

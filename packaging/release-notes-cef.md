@@ -1,3 +1,18 @@
+Iris (Chromium) 2.4.2: one Iris at a time, and no more blank pages.
+
+- YouTube plays again: a script meant for the other engine hid the video formats this Chromium plays, and the ad blocker was not the cause.
+- Links opened in a normal tab no longer show garbage characters: normal tabs now live in their own profile, made the way a container's is. You sign in again once.
+- No made-up containers: none exist at the start; the docs said otherwise.
+
+**Linux (Flatpak, `io.github.tulip_labs.Iris.Cef`)**
+- **Opening Iris again works.** Starting it while it's already open (the launcher clicked again, `flatpak run` again, a link opened from another app) now opens a tab in the Iris you already have. Before, the second start failed with "Iris could not start its page engine".
+- **No more blank pages on GPUs where Chromium sends no frames.** If a page has loaded and nothing has appeared 3 seconds later, Iris shows that tab with CPU frames and uses them from then on. `IRIS_CEF_GPU=1` tries the GPU again.
+
+**Install**
+- `flatpak install --user --reinstall Iris-Cef-x86_64.flatpak`
+
+---
+
 Iris (Chromium) 2.4.1: the page scripts work again.
 
 **Linux (Flatpak, `io.github.tulip_labs.Iris.Cef`)**

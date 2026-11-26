@@ -5,7 +5,7 @@
 // against packaging/release-notes-cef.md and the cef-v tag.
 package iris
 
-CEF_VERSION :: "2.4.1"
+CEF_VERSION :: "2.4.2"
 
 /// the version of this build: CEF_VERSION in the CEF build, VERSION in the WPE one
 when ENGINE_CEF { BUILD_VERSION :: CEF_VERSION } else { BUILD_VERSION :: VERSION }
