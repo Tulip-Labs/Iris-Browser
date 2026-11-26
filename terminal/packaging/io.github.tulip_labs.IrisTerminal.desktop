@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=Iris Terminal
+GenericName=Terminal
+Comment=A clear-glass terminal for niri, zsh and containers
+Exec=iris-terminal
+Icon=io.github.tulip_labs.IrisTerminal
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=terminal;shell;zsh;console;command;prompt;distrobox;toolbox;
+StartupNotify=false
+StartupWMClass=io.github.tulip_labs.IrisTerminal
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=iris-terminal

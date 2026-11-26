@@ -13,3 +13,6 @@ linux/*.ppm
 shell/iris-shell
 shell/logic.test
 shell/dist/
+terminal/iris-terminal
+terminal/term.test
+terminal/dist/

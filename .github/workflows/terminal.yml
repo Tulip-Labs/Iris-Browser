@@ -1,0 +1,147 @@
+# Iris Terminal (terminal/): type-checks the Odin app, checks the Wayland
+# tables written by hand against wayland-scanner's, runs the unit tests (the
+# emulator against real vim, less, tmux and bash on a pty; keys, mouse,
+# selection, search, config, the zsh and niri setup on temporary folders),
+# builds and packages it, then runs it FOR REAL on a headless sway: a script
+# prints colours, wide characters, the alternate screen and a link and the
+# screen must be exactly what is expected; the frame it drew is checked pixel
+# by pixel; keys and a paste arrive in a program; an idle terminal uses no CPU;
+# a 50 MB cat must run at 50 MB/s or more. A real zsh runs the zsh setup.
+# The release workflow (release-terminal.yml) calls this one and publishes
+# the tarball.
+name: Terminal
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "terminal/**"
+      - "linux/wl/**"
+      - "linux/plat/**"
+      - "shell/tools/gen_wayland.py"
+      - "linux/tools/check-fmt-braces.py"
+      - "packaging/check/versions-terminal.sh"
+      - "packaging/release-notes-terminal.md"
+      - ".github/workflows/terminal.yml"
+      - ".github/workflows/release-terminal.yml"
+  pull_request:
+    paths:
+      - "terminal/**"
+      - "linux/wl/**"
+      - "linux/plat/**"
+      - "shell/tools/gen_wayland.py"
+      - "linux/tools/check-fmt-braces.py"
+      - "packaging/check/versions-terminal.sh"
+      - "packaging/release-notes-terminal.md"
+      - ".github/workflows/terminal.yml"
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: terminal-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Odin dev-2026-11a, pinned by checksum (as linux.yml)
+  ODIN_URL: https://github.com/odin-lang/Odin/releases/download/dev-2026-11a/odin-linux-amd64-dev-2026-11a.tar.gz
+  ODIN_SHA256: 65c9f6e97d6f8a30930e151f270ce5aeaa98fe8b2ba49fe067394e2af04f7618
+
+jobs:
+  terminal:
+    runs-on: ubuntu-24.04
+    container:
+      image: archlinux:latest
+      options: --shm-size=1g --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wayland, EGL, fonts, sway (a headless compositor), zsh, vim, tmux and the tools
+        run: |
+          pacman -Syu --noconfirm --needed wayland wayland-protocols mesa libdrm pkgconf clang gcc python diffutils git sway grim procps-ng libxkbcommon fontconfig harfbuzz zsh vim tmux wtype wl-clipboard curl > /dev/null
+          pkg-config --modversion wayland-client wayland-egl wayland-cursor egl glesv2 xkbcommon fontconfig harfbuzz wayland-protocols
+          zsh --version
+      - name: Odin
+        run: |
+          curl -sSfL "$ODIN_URL" -o /tmp/odin.tar.gz
+          echo "$ODIN_SHA256  /tmp/odin.tar.gz" | sha256sum -c -
+          mkdir -p /opt/odin && tar -xzf /tmp/odin.tar.gz -C /opt/odin --strip-components=1
+          echo /opt/odin >> $GITHUB_PATH
+          echo ODIN_ROOT=/opt/odin >> $GITHUB_ENV
+      - name: The version, and the release notes' first line
+        run: sh packaging/check/versions-terminal.sh
+      - name: Format strings with a brace (Odin reads { as a placeholder)
+        run: python3 linux/tools/check-fmt-braces.py terminal/src terminal/term
+      - name: The browser's window, keyboard and Wayland code is copied here unchanged
+        run: |
+          cmp linux/wl/client.odin terminal/wl/client.odin
+          cmp linux/wl/protocols.odin terminal/wl/protocols.odin
+          cmp linux/plat/window.odin terminal/plat/window.odin
+          cmp linux/plat/xkb.odin terminal/plat/xkb.odin
+      - name: wl/protocols_terminal.odin is what tools/gen.sh makes from protocols/*.xml
+        run: |
+          cp terminal/wl/protocols_terminal.odin /tmp/protocols_terminal.committed
+          sh terminal/tools/gen.sh
+          cmp terminal/wl/protocols_terminal.odin /tmp/protocols_terminal.committed
+      - name: The primary-selection table against wayland-scanner's
+        run: sh terminal/abi/check.sh
+      - name: Type-check (with vet)
+        run: sh terminal/build.sh check
+      - name: Unit tests (the emulator on real programs, keys, mouse, config, zsh and niri setup)
+        run: sh terminal/build.sh test
+      - name: Build (optimised) and package
+        run: sh terminal/build.sh package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: terminal
+          path: terminal/dist/iris-terminal-x86_64.tar.gz
+      - name: The tarball installs, and removes itself
+        run: |
+          export HOME=$(mktemp -d)
+          tar -xzf terminal/dist/iris-terminal-x86_64.tar.gz -C /tmp
+          sh /tmp/iris-terminal-x86_64/install.sh
+          test -x $HOME/.local/bin/iris-terminal
+          grep -q "^Exec=$HOME/.local/bin/iris-terminal" $HOME/.local/share/applications/io.github.tulip_labs.IrisTerminal.desktop
+          grep -q "^Name=Iris Terminal" $HOME/.local/share/applications/io.github.tulip_labs.IrisTerminal.desktop
+          test -f $HOME/.local/share/icons/hicolor/scalable/apps/io.github.tulip_labs.IrisTerminal.svg
+          test -f /tmp/iris-terminal-x86_64/THIRD_PARTY_NOTICES.txt
+          $HOME/.local/bin/iris-terminal --version | grep -qx "iris-terminal 1.0.0"
+          sh /tmp/iris-terminal-x86_64/install.sh --remove
+          test ! -e $HOME/.local/bin/iris-terminal
+          test ! -e $HOME/.local/share/applications/io.github.tulip_labs.IrisTerminal.desktop
+      - name: setup-niri and remove-niri leave config.kdl as it was
+        run: |
+          export XDG_CONFIG_HOME=$(mktemp -d)
+          mkdir -p $XDG_CONFIG_HOME/niri
+          printf 'layout {\n    gaps 4\n}\nspawn-at-startup "waybar"\n' > $XDG_CONFIG_HOME/niri/config.kdl
+          cp $XDG_CONFIG_HOME/niri/config.kdl /tmp/config.orig
+          terminal/iris-terminal --setup-niri
+          grep -q 'include "iris-terminal.kdl"' $XDG_CONFIG_HOME/niri/config.kdl
+          grep -q 'io.github.tulip_labs.IrisTerminal' $XDG_CONFIG_HOME/niri/iris-terminal.kdl
+          cmp $XDG_CONFIG_HOME/niri/config.kdl.before-iris-terminal /tmp/config.orig
+          terminal/iris-terminal --setup-niri   # again: nothing changes
+          [ "$(grep -c 'include "iris-terminal.kdl"' $XDG_CONFIG_HOME/niri/config.kdl)" = 1 ]
+          terminal/iris-terminal --remove-niri
+          [ ! -e $XDG_CONFIG_HOME/niri/iris-terminal.kdl ]
+          cmp $XDG_CONFIG_HOME/niri/config.kdl /tmp/config.orig
+      - name: zsh (a real one) sets up, draws its prompt, says where it is, and removes itself
+        run: sh terminal/tests/zsh-test.sh terminal/iris-terminal
+      - name: Without a window, through a real pty (the sequences, and 50 MB of text)
+        run: |
+          yes 'The quick brown fox jumps over the lazy dog 0123456789' | head -c 52428800 > /tmp/big.txt
+          terminal/iris-terminal --no-window --geometry 100x30 --exec 'cat /tmp/big.txt' --stats | tee /tmp/headless-stats.txt
+          terminal/iris-terminal --no-window --geometry 60x14 --exec "sh terminal/tests/emit.sh" --dump-screen /tmp/headless-screen.txt
+          python3 - <<'PY'
+          got = open('/tmp/headless-screen.txt').read().rstrip("\n")
+          want = open('terminal/tests/expected-screen.txt').read().rstrip("\n")
+          assert got == want, "the headless screen differs"
+          print("headless screen: exact")
+          PY
+      - name: On a headless sway, for real (screen, frame, keys, paste, idle CPU, throughput)
+        run: OUT=/tmp/terminal-test sh terminal/tests/sway-test.sh terminal/iris-terminal
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: terminal-logs
+          path: |
+            /tmp/terminal-test
+            /tmp/headless-screen.txt
+          if-no-files-found: ignore

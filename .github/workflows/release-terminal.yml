@@ -1,0 +1,70 @@
+# Iris Terminal for niri: the tarball alone, as a release of its own. Runs when
+# a tag like terminal-v1.0.0 is pushed, or by hand from the Actions tab (give the
+# tag). Only iris-terminal-x86_64.tar.gz and SHA256SUMS go on the release.
+#
+# The release is never marked latest, so the browser's update checks
+# (releases/latest) never see it. Its version is VERSION in
+# terminal/src/version.odin, its notes packaging/release-notes-terminal.md
+# ("Iris Terminal X.Y.Z: ..." on top).
+name: Release (Terminal)
+
+on:
+  push:
+    tags: ["terminal-v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish, for example terminal-v1.0.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  # the release page, with its notes, before any file
+  create:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag is the version Iris Terminal carries
+        run: sh packaging/check/versions-terminal.sh "$TAG"
+      - name: The release (never the latest one)
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --latest=false \
+              --title "Iris Terminal ${TAG#terminal-v}" --notes-file packaging/release-notes-terminal.md
+          else
+            gh release edit "$TAG" --latest=false
+          fi
+
+  # everything terminal.yml checks, and the tarball
+  terminal:
+    uses: ./.github/workflows/terminal.yml
+
+  publish:
+    needs: [create, terminal]
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: terminal
+          path: art
+      - name: The tarball and its checksum (nothing else goes on this release)
+        run: |
+          ls -l art
+          cd art
+          sha256sum iris-terminal-x86_64.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+          gh release upload "$TAG" iris-terminal-x86_64.tar.gz SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Still not the latest release
+        run: |
+          gh release edit "$TAG" --latest=false --repo "$GITHUB_REPOSITORY"
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+          echo "latest release: ${latest:-none}"
+          case "$latest" in terminal-v*) echo "::error::$latest is marked latest: the browser's updaters would read it"; exit 1 ;; esac

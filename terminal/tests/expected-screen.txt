@@ -1,0 +1,12 @@
+red bold true orange
+      |
+漢字 wide|
+é combining|
+link after
+back on main
+
+         at 8,10
+curly strike rev
+0123456!
+a       b
+done
