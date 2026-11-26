@@ -1,3 +1,12 @@
+Iris (Chromium) 2.4.3: starts again after Iris closed on its own.
+
+- A lock Chromium left in the profile when Iris closed or crashed is cleared when no Iris is running, so the next start works. If starting fails, the reason is printed in the terminal.
+
+**Install**
+- `flatpak install --user --reinstall Iris-Cef-x86_64.flatpak`
+
+---
+
 Iris (Chromium) 2.4.2: one Iris at a time, and no more blank pages.
 
 - YouTube plays again: a script meant for the other engine hid the video formats this Chromium plays, and the ad blocker was not the cause.
