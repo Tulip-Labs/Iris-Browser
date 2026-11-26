@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Building from source — Iris docs</title>
-  <meta name="description" content="Build Iris for Linux from source with Odin, on WPE WebKit or CEF, as a Flatpak, and Iris for Android with Gradle.">
+  <meta name="description" content="Build Iris for Linux from source with Odin, on Chromium (CEF), as a Flatpak, and Iris for Android with Gradle.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0B0C0E" media="(prefers-color-scheme: dark)">
@@ -15,7 +15,7 @@
   <meta property="og:type" content="article">
   <meta property="og:site_name" content="Iris">
   <meta property="og:title" content="Building from source — Iris docs">
-  <meta property="og:description" content="Build Iris for Linux from source with Odin, on WPE WebKit or CEF, as a Flatpak, and Iris for Android with Gradle.">
+  <meta property="og:description" content="Build Iris for Linux from source with Odin, on Chromium (CEF), as a Flatpak, and Iris for Android with Gradle.">
   <meta property="og:url" content="https://tulip-labs.github.io/Iris-Browser/docs/building.html">
   <meta property="og:image" content="https://tulip-labs.github.io/Iris-Browser/assets/iris-512.png">
   <meta name="twitter:card" content="summary">
@@ -34,7 +34,7 @@
       <ul class="nav">
         <li><a href="../index.html#features">Features</a></li>
         <li><a href="../index.html#privacy">Privacy</a></li>
-        <li><a href="../index.html#engines">Engines</a></li>
+        <li><a href="../index.html#engines">Engine</a></li>
         <li><a href="../index.html#android">Android</a></li>
         <li><a href="../index.html#install">Install</a></li>
         <li><a href="index.html" aria-current="page">Docs</a></li>
@@ -60,9 +60,8 @@
           <li><a href="building.html" aria-current="page">Building from source</a>
             <ul>
               <li><a href="#needs">What you need</a></li>
-              <li><a href="#wpe">Build (WPE WebKit)</a></li>
-              <li><a href="#cef">Build (CEF)</a></li>
-              <li><a href="#flatpak">The Flatpaks</a></li>
+              <li><a href="#build">Build</a></li>
+              <li><a href="#flatpak">The Flatpak</a></li>
               <li><a href="#android">Android</a></li>
               <li><a href="#layout">Where things are</a></li>
             </ul>
@@ -78,7 +77,7 @@
 
         <p class="eyebrow">Documentation</p>
         <h1>Building from source</h1>
-        <p class="lead">Iris for Linux is written in Odin. It talks to Wayland, EGL, OpenGL ES, HarfBuzz, fontconfig and the web engine directly, with no GTK. Iris for Android is Kotlin and Jetpack Compose.</p>
+        <p class="lead">Iris for Linux is written in Odin. It talks to Wayland, EGL, OpenGL ES, HarfBuzz, fontconfig and Chromium (through CEF) directly, with no GTK. Iris for Android is Kotlin and Jetpack Compose.</p>
         <pre><code>git clone https://github.com/Tulip-Labs/Iris-Browser.git
 cd Iris-Browser</code></pre>
 
@@ -86,31 +85,27 @@ cd Iris-Browser</code></pre>
         <ul>
           <li>Odin, dev-2026-11 or newer.</li>
           <li>A C compiler to link with: clang, or gcc through <code>ODIN_CLANG_PATH</code>. When clang is missing, <code>build.sh</code> picks gcc by itself.</li>
-          <li>The development files of WPE WebKit 2.54 or newer, built with WPEPlatform (<code>wpe-webkit-2.0</code>, <code>wpe-platform-2.0</code>), libsoup 3, HarfBuzz, fontconfig, Wayland (<code>wayland-client</code>, <code>wayland-egl</code>, <code>wayland-cursor</code>), xkbcommon, EGL and OpenGL ES.</li>
+          <li>Rust (cargo): Iris's core in <code>core/</code> (adblock-rust) is built first.</li>
+          <li>The development files of libsoup 3, HarfBuzz, fontconfig, Wayland (<code>wayland-client</code>, <code>wayland-egl</code>, <code>wayland-cursor</code>), xkbcommon, EGL and OpenGL ES.</li>
+          <li>A CEF binary distribution: <code>CEF_DIR</code> points at it, and its <code>Release/</code> folder has <code>libcef.so</code>.</li>
         </ul>
-        <p>Arch Linux's packages have them all. The CEF build doesn't need WPE.</p>
+        <p>Arch Linux's packages have the development files.</p>
 
-        <h2 id="wpe">Build (WPE WebKit)</h2>
+        <h2 id="build">Build</h2>
         <pre><code>cd linux
+export CEF_DIR=/path/to/cef_binary
+./build.sh check-types   # type-check, no libraries needed
 ./build.sh test          # the tests
 ./build.sh check         # every C binding against the real headers
 ./build.sh               # a quick build to work on (no optimisation)
 ./build.sh release       # the optimised build, as the Flatpak ships it
 ./iris</code></pre>
-        <p><code>./build.sh check-engines</code> type-checks both engines without any libraries. <code>./build.sh install DIR</code> puts a release build in <code>DIR/libexec/iris</code>.</p>
+        <p><code>./build.sh install DIR</code> puts a release build in <code>DIR/libexec/iris</code>. <code>CEF_RPATH</code> says where <code>libcef.so</code> is at run time. It defaults to <code>/app/lib/iris-cef</code>, where the Flatpak installs it.</p>
 
-        <h2 id="cef">Build (CEF) <span class="from">From 2.3</span></h2>
-        <p>Set <code>IRIS_ENGINE=cef</code> and point <code>CEF_DIR</code> at a CEF binary distribution whose <code>Release/</code> folder has <code>libcef.so</code>:</p>
-        <pre><code>cd linux
-IRIS_ENGINE=cef CEF_DIR=/path/to/cef_binary ./build.sh release</code></pre>
-        <p><code>CEF_RPATH</code> says where <code>libcef.so</code> is at run time. It defaults to <code>/app/lib/iris-cef</code>, where the CEF Flatpak installs it. <code>IRIS_ENGINE=cef ./build.sh check</code> checks the CEF bindings.</p>
-
-        <h2 id="flatpak">The Flatpaks</h2>
-        <p>The WPE Flatpak builds WPE WebKit 2.54.3 itself, because no Flatpak runtime ships it. This takes a few hours the first time.</p>
+        <h2 id="flatpak">The Flatpak</h2>
+        <p>The Flatpak downloads CEF's minimal distribution instead of building it, so it builds in minutes:</p>
         <pre><code>flatpak install --user flathub org.gnome.Sdk//50
-flatpak-builder --user --install --force-clean build packaging/flatpak/io.github.tulip_labs.Iris.yml</code></pre>
-        <p>The CEF Flatpak <span class="from">From 2.3</span> downloads CEF's minimal distribution instead of building it, so it builds in minutes:</p>
-        <pre><code>flatpak-builder --user --install --force-clean build packaging/flatpak/io.github.tulip_labs.Iris.Cef.yml</code></pre>
+flatpak-builder --user --install --force-clean build packaging/flatpak/io.github.tulip_labs.Iris.Cef.yml</code></pre>
 
         <h2 id="android">Android</h2>
         <p>You need JDK 21.</p>
@@ -120,9 +115,9 @@ flatpak-builder --user --install --force-clean build packaging/flatpak/io.github
 
         <h2 id="layout">Where things are</h2>
         <ul>
-          <li><code>linux/</code>: Iris for Linux. <code>build.sh</code>, the window and Wayland client in <code>plat/</code>, and the app in <code>src/</code>: the renderer, the chrome, text, tabs, both engines and Shields.</li>
+          <li><code>linux/</code>: Iris for Linux. <code>build.sh</code>, the window and Wayland client in <code>plat/</code>, and the app in <code>src/</code>: the renderer, the chrome, text, tabs, the Chromium engine and Shields.</li>
           <li><code>android/</code>: Iris for Android (Kotlin, Compose, Cefrium).</li>
-          <li><code>packaging/</code>: the Flatpak manifests, desktop file and metainfo.</li>
+          <li><code>packaging/</code>: the Flatpak manifest, desktop file and metainfo.</li>
           <li><code>assets/icon/</code>: the icon.</li>
         </ul>
         <p>The README's <a href="https://github.com/Tulip-Labs/Iris-Browser#how-it-is-made">How it is made</a> describes each file and how the glass is drawn.</p>
