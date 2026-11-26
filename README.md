@@ -147,7 +147,7 @@ Iris is made again from the start.
 - **Iris's own start page in every new tab**, drawn by Iris itself: the Iris glass ring and a search field in the middle, nothing else. No page loads behind it, so a new tab opens at once and costs no web process. It follows your desktop's light or dark mode.
 - **Search.** Type an address, or anything else to search Google (with its AI Overview). "Ask Google AI Mode" is one suggestion away. `yt cats` searches YouTube.
 - **Containers.**
-  - Personal, Work, Shopping and Banking to start with, and any you add.
+  - None to start with: you make your own, each with its own colour.
   - Each is a WPE network session of its own on disk.
   - Open a new tab in a container, or open the current page in another one.
   - Removing a container deletes everything its sites kept.

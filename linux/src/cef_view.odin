@@ -875,7 +875,10 @@ cef_copy_intent :: proc(t: ^Tab) {
 	yt := h == "youtube.com" || strings.has_suffix(h, ".youtube.com") || strings.has_suffix(h, ".youtube-nocookie.com")
 	if yt {
 		run_in(f, YOUTUBE)
-		if settings().lightVideo do run_in(f, LIGHT_VIDEO)
+		// no LIGHT_VIDEO here: that script hides VP9/AV1 for the WPE engine,
+		// which has H.264. This Chromium has no H.264/AAC, so hiding the
+		// codecs it does have left YouTube nothing to play ("your browser
+		// can't play this video")
 	}
 	if top && strings.has_prefix(u, "http") && !(h == "www.google.com" || strings.has_suffix(h, ".youtube.com") || h == "mail.google.com" || h == "docs.google.com") {
 		run_in(f, SCROLL_UNLOCK)
