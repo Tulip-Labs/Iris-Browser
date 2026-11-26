@@ -158,6 +158,11 @@ RULES_REV :: 3
 	return fmt.tprintf("%s/%v.r%d.ids", shields.dir, l, rev)
 }
 
+/// WebKit removes a compiled rule set only when it is given somewhere to
+/// answer: with no callback it refuses ("assertion 'callback' failed") and
+/// the old set stays on disk for good. Nothing waits for the answer.
+@(private="file") removed :: proc "c" (o: ^GObject, res: ^GAsyncResult, d: rawptr) {}
+
 /// the rules compiled before RULES_REV, and lists Iris no longer reads, go
 @(private="file") forget_old_rules :: proc() {
 	for l in Level do for rev in 1 ..< RULES_REV {
@@ -166,7 +171,7 @@ RULES_REV :: 3
 		if !ok do continue
 		s := string(text)
 		for id in strings.split_lines_iterator(&s) do if len(id) > 0 {
-			webkit_user_content_filter_store_remove(shields.store, cstr(id), nil, nil, nil)
+			webkit_user_content_filter_store_remove(shields.store, cstr(id), nil, rawptr(removed), nil)
 		}
 		os.remove(p)
 	}
@@ -452,7 +457,7 @@ when ENGINE_CEF {
 		s := string(old)
 		outer: for id in strings.split_lines_iterator(&s) {
 			for n in job.ids do if n == id do continue outer
-			webkit_user_content_filter_store_remove(shields.store, cstr(id), nil, nil, nil)
+			webkit_user_content_filter_store_remove(shields.store, cstr(id), nil, rawptr(removed), nil)
 		}
 	}
 	write_file(ids_path(job.l), transmute([]u8)strings.join(job.ids, "\n", context.temp_allocator))
