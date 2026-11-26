@@ -68,9 +68,9 @@ jobs:
           cmp linux/wl/protocols.odin shell/wl/protocols.odin
       - name: wl/protocols_shell.odin is what tools/gen.sh makes from protocols/*.xml
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          cp shell/wl/protocols_shell.odin /tmp/protocols_shell.committed
           sh shell/tools/gen.sh
-          git diff --exit-code shell/wl/protocols_shell.odin
+          cmp shell/wl/protocols_shell.odin /tmp/protocols_shell.committed
       - name: The layer-shell and capture tables against wayland-scanner's
         run: sh shell/abi/check.sh
       - name: Type-check (with vet)
