@@ -66,7 +66,7 @@ rm -f "$out/typed.txt" "$out/pasted.txt"
 "$bin" --geometry 50x10 --exec "head -n 1 > $out/typed.txt" --timeout 30000 > "$out/run2.log" 2>&1 &
 pid=$!
 sleep 3
-wtype "hello iris" -k Return || fail "wtype"
+wtype -s 400 "hello iris" -k Return || fail "wtype"
 for i in $(seq 1 30); do [ -s "$out/typed.txt" ] && break; sleep 0.2; done
 wait $pid || true
 [ "$(cat "$out/typed.txt")" = "hello iris" ] || fail "typed: '$(cat "$out/typed.txt" 2>/dev/null)'"
@@ -77,9 +77,9 @@ sleep 3
 printf 'pasted from the clipboard' | wl-copy > "$out/wl-copy.log" 2>&1 || echo "wl-copy: exit $?"
 sleep 1
 echo "clipboard as a client sees it: $(wl-paste -n 2>&1 || true)"
-wtype -M ctrl -M shift -k v -m shift -m ctrl || echo "wtype ctrl+shift+v: exit $?"
+wtype -s 400 -M ctrl -M shift -k v -m shift -m ctrl || echo "wtype ctrl+shift+v: exit $?"
 sleep 1
-wtype -k Return || echo "wtype return: exit $?"
+wtype -s 400 -k Return || echo "wtype return: exit $?"
 for i in $(seq 1 30); do [ -s "$out/pasted.txt" ] && break; sleep 0.2; done
 wait $pid || true
 [ "$(cat "$out/pasted.txt")" = "pasted from the clipboard" ] || fail "pasted: '$(cat "$out/pasted.txt" 2>/dev/null)'"
