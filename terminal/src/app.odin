@@ -869,6 +869,8 @@ app_run :: proc(a: ^App) {
 		now := now_ms()
 		if a.sync_deadline != 0 do timeout = i32(max(a.sync_deadline - now, 0))
 		if a.finishing do timeout = 50
+		// a paste on its way: look again soon (a pipe that closes without data wakes poll only with HUP)
+		if clip_waiting() do timeout = 20
 		if a.opt.timeout_ms > 0 && a.opt.exec_cmd != "" && !a.exited do timeout = 100
 		extra := [3]linux.Fd{-1, a.ino, clip_fd()}
 		if a.spawned && !a.exited do extra[0] = a.pty.master
@@ -877,7 +879,7 @@ app_run :: proc(a: ^App) {
 		now = now_ms()
 		if ready & 1 != 0 do app_read_pty(a)
 		if ready & 2 != 0 do app_files_changed(a)
-		if ready & 4 != 0 {
+		if clip_waiting() {
 			if text, done := clip_read(); done do app_paste_text(a, text)
 		}
 		if a.sync_deadline != 0 && now >= a.sync_deadline {

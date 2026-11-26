@@ -196,6 +196,7 @@ clip_primary :: proc(text: string) {
 /// asks for the clipboard (or the primary selection). Our own text is
 /// returned at once; the desktop's arrives later (clip_fd, clip_read)
 clip_paste :: proc(primary: bool) -> (text: string, now: bool) {
+	logf("paste: primary=%v own=%v offer=%v", primary, primary ? clip.p_source != nil : clip.source != nil, primary ? clip.p_offer != nil : clip.offer != nil)
 	if primary {
 		if clip.p_source != nil do return clip.p_text, true
 		if clip.p_offer == nil do return "", false
@@ -204,7 +205,7 @@ clip_paste :: proc(primary: bool) -> (text: string, now: bool) {
 		if clip.offer == nil do return "", false
 	}
 	fds: [2]linux.Fd
-	if linux.pipe2(&fds, {.CLOEXEC}) != .NONE do return "", false
+	if linux.pipe2(&fds, {.CLOEXEC, .NONBLOCK}) != .NONE do return "", false
 	if primary {
 		wl.zwp_primary_selection_offer_v1_receive(clip.p_offer, TEXT_TYPES[0], i32(fds[1]))
 	} else {
@@ -222,21 +223,25 @@ clip_paste :: proc(primary: bool) -> (text: string, now: bool) {
 /// the pipe to wait on (-1: no paste is coming)
 clip_fd :: proc() -> linux.Fd { return clip.read_fd }
 
-/// the pipe is readable: reads; the text when it is complete
+/// the pipe is readable (or its writer is gone): reads what is there; the
+/// text when the writer has closed it
 clip_read :: proc() -> (text: string, done: bool) {
 	if clip.read_fd < 0 do return "", false
 	buf: [8192]u8
 	for {
 		n, err := linux.read(clip.read_fd, buf[:])
 		if err == .EAGAIN do return "", false
+		if err == .EINTR do continue
 		if n > 0 {
 			if len(clip.reading) < 1 << 24 do append(&clip.reading, ..buf[:n])
-			if n < len(buf) do return "", false // poll again
 			continue
 		}
-		break
+		break // the end (or an error): what came is the text
 	}
 	linux.close(clip.read_fd)
 	clip.read_fd = -1
 	return strings.clone(string(clip.reading[:]), context.temp_allocator), true
 }
+
+/// is a paste on its way?
+clip_waiting :: proc() -> bool { return clip.read_fd >= 0 }

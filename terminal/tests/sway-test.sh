@@ -74,11 +74,12 @@ echo "typed text reached the program: hello iris"
 "$bin" --geometry 50x10 --exec "head -n 1 > $out/pasted.txt" --timeout 30000 > "$out/run2b.log" 2>&1 &
 pid=$!
 sleep 3
-printf 'pasted from the clipboard' | wl-copy
+printf 'pasted from the clipboard' | wl-copy > "$out/wl-copy.log" 2>&1 || echo "wl-copy: exit $?"
 sleep 1
-wtype -M ctrl -M shift -k v -m shift -m ctrl
+echo "clipboard as a client sees it: $(wl-paste -n 2>&1 || true)"
+wtype -M ctrl -M shift -k v -m shift -m ctrl || echo "wtype ctrl+shift+v: exit $?"
 sleep 1
-wtype -k Return
+wtype -k Return || echo "wtype return: exit $?"
 for i in $(seq 1 30); do [ -s "$out/pasted.txt" ] && break; sleep 0.2; done
 wait $pid || true
 [ "$(cat "$out/pasted.txt")" = "pasted from the clipboard" ] || fail "pasted: '$(cat "$out/pasted.txt" 2>/dev/null)'"
