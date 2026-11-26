@@ -175,8 +175,30 @@ screen_tabs :: proc() -> []^Tab {
 	return out[:]
 }
 
+@(private="file") page_draw_at: f64
+@(private="file") page_draw_queued: bool
+
+/// the most window draws a second the pages' frames may ask for when Iris
+/// draws in software (a CPU-drawn glass window at 60 fps is every core)
+SOFT_DRAW_FPS :: 15.0
+
 browser_page_frame :: proc(t: ^Tab) {
 	if tab_on_screen(t) {
+		if rnd_software {
+			wait := 1 / SOFT_DRAW_FPS - (now_s() - page_draw_at)
+			if wait > 0 {
+				if !page_draw_queued {
+					page_draw_queued = true
+					after(u32(wait * 1000) + 1, proc(_: rawptr) {
+						page_draw_queued = false
+						page_draw_at = now_s()
+						plat.invalidate(&b.win)
+					}, nil)
+				}
+				return
+			}
+			page_draw_at = now_s()
+		}
 		plat.invalidate(&b.win)
 		return
 	}

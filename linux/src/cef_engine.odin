@@ -220,6 +220,13 @@ cef_gpu_level: int
 		gpu_level_reason = "no GPU render node in /dev/dri (is the Flatpak run with --device=dri?)"
 		return GPU_LEVEL_SOFTWARE
 	}
+	// Iris 2.6.0 and before left this mark after one failed GPU frame and
+	// then ran Chromium on SwiftShader (every core busy) for good: gone now,
+	// the ladder starts again from the GPU
+	if old := join({data_dir(), "cef", "gpu-frames-failed"}, context.temp_allocator); os.exists(old) {
+		os.remove(old)
+		fmt.eprintln("iris: removed the old software-rendering mark of Iris 2.6.0 and earlier: the GPU is tried again")
+	}
 	// a step down an earlier run made: kept until the mark is deleted
 	if d, ok := read_file(gpu_level_mark(), context.temp_allocator); ok {
 		s := strings.trim_space(string(d))
@@ -363,7 +370,13 @@ cef_switches :: proc() -> []string {
 	if gpu {
 		// ANGLE on the desktop's OpenGL through EGL (Chromium's default on
 		// Linux), rasterized on the GPU, tiles in GPU memory
-		append(&out, "--use-gl=angle", "--use-angle=gl-egl", "--enable-gpu-rasterization", "--enable-zero-copy", "--disable-vulkan")
+		append(&out, "--use-gl=angle", "--use-angle=gl-egl", "--enable-gpu-rasterization", "--enable-zero-copy", "--disable-vulkan",
+			// the GPU is Mesa's through the render node: never Chromium's
+			// own blocklist (it knows no Flatpak driver and falls back to
+			// SwiftShader, every core busy), and never SwiftShader behind
+			// the GPU's back: if the GPU fails, Chromium composites in
+			// plain software (one thread) and Iris says so
+			"--ignore-gpu-blocklist", "--disable-software-rasterizer", "--disable-gpu-driver-bug-workarounds")
 	} else {
 		// GL for Chromium's compositor without a window: SwiftShader is the
 		// one proved to give frames with the headless platform

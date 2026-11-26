@@ -182,8 +182,7 @@ cef_perf_start :: proc() {
 	gfps, cfps := f64(gpu - perf.gpu) / dt, f64(cpu - perf.cpu) / dt
 	path := cef_gpu_frames ? "GPU(dmabuf)" : "CPU(OnPaint)"
 	kids := chromium_descendants(context.temp_allocator)
-	hot := ""
-	hot_cpu := -1.0
+	by_kind := make(map[string]f64, 8, context.temp_allocator)
 	for k in kids {
 		stat, err := os.read_entire_file(fmt.tprintf("/proc/%d/stat", k.pid), context.temp_allocator)
 		if err != nil do continue
@@ -197,13 +196,12 @@ cef_perf_start :: proc() {
 		prev := perf_prev[key] or_else t
 		perf_prev[key] = t
 		pct := f64(t - prev) / CLK / dt * 100
-		if pct > hot_cpu {
-			hot_cpu = pct
-			hot = fmt.tprintf("%s pid %d", kind, k.pid)
-		}
+		by_kind[kind] += pct
 	}
-	fmt.eprintfln("iris: perf: %.1f frames/s (%.1f gpu, %.1f cpu), path %s (step %d), Iris cpu %.0f%%, %d chromium processes, busiest: %s %.0f%%",
-		gfps + cfps, gfps, cfps, path, cef_gpu_level, iris_cpu, len(kids), hot, max(hot_cpu, 0))
+	kinds := strings.builder_make(context.temp_allocator)
+	for kind, pct in by_kind do fmt.sbprintf(&kinds, " %s %.0f%%", kind, pct)
+	fmt.eprintfln("iris: perf: %.1f frames/s (%.1f gpu, %.1f cpu), path %s (step %d), Iris cpu %.0f%%, own GL %s%s, %d chromium processes, cpu by kind:%s",
+		gfps + cfps, gfps, cfps, path, cef_gpu_level, iris_cpu, rnd_renderer, rnd_software ? " (SOFTWARE)" : "", len(kids), strings.to_string(kinds))
 	perf.at, perf.gpu, perf.cpu, perf.ticks = now, gpu, cpu, ticks
 }
 
