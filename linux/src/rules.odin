@@ -688,7 +688,17 @@ converter_rules :: proc(c: ^Converter) -> Rules {
 		case '"': strings.write_string(b, "\\\"")
 		case '\\': strings.write_string(b, "\\\\")
 		case '\n', '\r', '\t': strings.write_byte(b, ' ')
-		case: if c >= 0x20 do strings.write_byte(b, c)
+		case:
+			if c >= 0x20 {
+				strings.write_byte(b, c)
+			} else {
+				// other control characters as \u00XX: dropping them lost the
+				// \x01 that marks the CEF script answers, so none arrived
+				hex := "0123456789abcdef"
+				strings.write_string(b, "\\u00")
+				strings.write_byte(b, hex[c >> 4])
+				strings.write_byte(b, hex[c & 15])
+			}
 		}
 	}
 	strings.write_byte(b, '"')

@@ -39,6 +39,7 @@ cef_bench_start :: proc() {
 	u := env("IRIS_CEF_BENCH_URL")
 	if len(u) == 0 do return
 	bench.url = strings.clone(u)
+	cef_bench_diag = true
 	js := env("IRIS_CEF_BENCH_JS")
 	bench.js = strings.clone(len(js) > 0 ? js : BENCH_JS_DEFAULT)
 	bench.timeout = 900
@@ -74,6 +75,12 @@ cef_bench_start :: proc() {
 	if bench.polls % 20 == 1 {
 		fmt.printf("IRIS_CEF_BENCH_STATE t=%.0f url=%s title=%q loading=%v answers=%d/%d gpu_frames=%v\n",
 			now_s() - bench.started, t.url, t.title, t.loading, bench.answers, bench.polls - 1, cef_gpu_frames)
+		// the plain way, no hidden frame: does a console message arrive at all?
+		if t.cv != nil {
+			f := main_frame(t.cv)
+			run_in(f, `console.info('IRISDIAG raw ' + document.readyState); console.log('IRISDIAG log')`)
+			if f != nil do rel(f)
+		}
 		tab_run(t, `document.readyState + ' ' + location.href + ' ' + ((document.querySelector('#progress-completed, .progress-completed, #info, #summary') || {}).textContent || '').slice(0, 80).replace(/\s+/g, ' ')`, proc(t: ^Tab, result: string) {
 			fmt.printf("IRIS_CEF_BENCH_PAGE %s\n", result)
 		})

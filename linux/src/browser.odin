@@ -688,7 +688,7 @@ key_answer :: proc(result: string, seq: int) -> Key_Answer {
 		return
 	}
 	// (a pending answer stays for the next ask; a final one is taken)
-	js := fmt.tprintf("(() => { const s = window.__irisKeys; const r = s ? s.r : ''; if (s && r !== 'pending') s.r = ''; return '%d:' + r; })()", seq)
+	js := fmt.tprintf("(() => {{ const s = window.__irisKeys; const r = s ? s.r : ''; if (s && r !== 'pending') s.r = ''; return '%d:' + r; }})()", seq)
 	tab_run_isolated(t, js, proc(t: ^Tab, result: string) {
 		if key_ask.done do return
 		switch key_answer(result, key_ask.seq) {

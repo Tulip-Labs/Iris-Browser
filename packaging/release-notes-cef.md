@@ -1,3 +1,14 @@
+Iris (Chromium) 2.4.1: the page scripts work again.
+
+**Linux (Flatpak, `io.github.tulip_labs.Iris.Cef`)**
+- **Copy, paste, reader, the audio indicator, page shortcuts and tab freezing work.** In 2.4.0, every script Iris runs inside a page failed before it started. Odin's text formatting reads `{` as a placeholder, so each script came out with "%!(MISSING CLOSE BRACE)" in it. Separately, the marker on every answer was being dropped. Both are fixed, and CI now refuses a format string like that.
+- **Background tabs really freeze now.** The message that freezes them was built the same broken way.
+
+**Install**
+- `flatpak install --user --reinstall Iris-Cef-x86_64.flatpak`
+
+---
+
 Iris (Chromium) 2.4.0: the Chromium build of Iris, now with releases of its own.
 
 **Linux (Flatpak, `io.github.tulip_labs.Iris.Cef`)**
